@@ -49,12 +49,16 @@ local CLASS_DISPELS = {
 	MAGE    = { Curse = true },
 	WARLOCK = { Magic = true },
 }
-local DISPEL_COLORS = {
-	Magic   = { 0.20, 0.60, 1.00 },
-	Curse   = { 0.64, 0.19, 0.79 },
-	Disease = { 0.55, 0.41, 0.18 },
-	Poison  = { 0.12, 0.69, 0.29 },
+-- Default-Dispel-Farben (Fallback, wenn der Nutzer keine eigenen gesetzt hat).
+local DISPEL_DEFAULTS = {
+	Magic   = { r = 0.20, g = 0.60, b = 1.00 },
+	Curse   = { r = 0.64, g = 0.19, b = 0.79 },
+	Disease = { r = 0.55, g = 0.41, b = 0.18 },
+	Poison  = { r = 0.12, g = 0.69, b = 0.29 },
 }
+-- Blizzard-Dispel-Typ-Enum-Indizes (für die Color-Curve): 1 Magic, 2 Curse, 3 Disease, 4 Poison.
+local C_UnitAuras = C_UnitAuras
+local issecretvalue = issecretvalue
 
 local TEXTURES = {
 	["Lumen Gradient"] = (ns.Style and ns.Style.barTexture) or (T .. "lumen-gradient"),
@@ -116,6 +120,8 @@ local FAKE = {
 	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15 },
 }
 
+local GROUP_SIZE = 5   -- feste Gruppengröße: Raid-Gruppen & Dungeon-Gruppe sind immer 5 (nie gemischt)
+
 local frames = {}
 local container
 local playerDispels = {}
@@ -123,23 +129,51 @@ local unitToFrame = {}
 
 local function db() return ns.Lumen.db.profile.raidframes end
 
+-- Aktiver Layout-/Positions-Kontext: Schlachtzug (raid) vs. 5er-Gruppe/Dungeon (party).
+-- Im Testmodus nach Test-Größe (5 = party, sonst raid).
+local function layoutCtx()
+	local d = db()
+	if d.testMode then return (d.testSize == 5) and d.party or d.raid end
+	return IsInRaid() and d.raid or d.party
+end
+
 local function classColor(class)
 	local c = RAID_CLASS_COLORS[class]
 	if c then return c.r, c.g, c.b end
 	return 0.6, 0.6, 0.6
 end
-local function dispelColor(dt)
-	local c = DISPEL_COLORS[dt]
-	if c then return c[1], c[2], c[3] end
+-- Konfigurierte Dispel-Farbe (oder Default) für einen Typ.
+local function dispelCol(d, key)
+	local c = (d.dispelColors and d.dispelColors[key]) or DISPEL_DEFAULTS[key]
+	return c.r or 0.5, c.g or 0.5, c.b or 0.5
 end
-local function fillRGB(d, class, dt)
-	if d.dispelRecolor and dt then
-		local r, g, b = dispelColor(dt)
-		if r then return r, g, b end
-	end
+-- Grundfarbe des Lebensbalkens: Klassenfarbe oder feste Füllfarbe (KEINE Dispel-Logik mehr).
+local function fillRGB(d, class)
 	if d.useClassColor then return classColor(class) end
 	local c = d.fillColor or {}
 	return c.r or 0.2, c.g or 0.6, c.b or 0.3
+end
+
+-- Dispel-Farb-Curve (12.0): Blizzard wertet den (secret) Dispel-Typ intern gegen die
+-- Curve aus und liefert die Farbe -> typ-genau im Kampf, ohne den secret-Wert zu lesen.
+-- Wird lazily gebaut und bei Settings-Änderungen invalidiert (siehe UpdateLayout).
+local dispelCurve
+local function buildDispelCurve()
+	dispelCurve = nil
+	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and Enum and Enum.LuaCurveType) then return end
+	local d = db()
+	local function pt(c, idx, key)
+		local r, g, b = dispelCol(d, key)
+		c:AddPoint(idx, CreateColor(r, g, b))
+	end
+	local c = C_CurveUtil.CreateColorCurve()
+	c:SetType(Enum.LuaCurveType.Step)
+	pt(c, 0, "Magic")   -- none/Fallback
+	pt(c, 1, "Magic")
+	pt(c, 2, "Curse")
+	pt(c, 3, "Disease")
+	pt(c, 4, "Poison")
+	dispelCurve = c
 end
 
 local function pointInset(point, x, y)
@@ -159,9 +193,11 @@ local function justifyFor(point)
 	elseif strfind(point, "RIGHT") then return "RIGHT" end
 	return "CENTER"
 end
-local function applyText(fs, frame, point, x, y, size, color)
+-- Schrift-Umrandung: gespeicherter Wert -> WoW-SetFont-Flag
+local OUTLINE_FLAGS = { none = "", outline = "OUTLINE", thick = "THICKOUTLINE" }
+local function applyText(fs, frame, point, x, y, size, color, outline)
 	point = point or "CENTER"
-	fs:SetFont(STANDARD_TEXT_FONT, max(6, size or 12), "OUTLINE")
+	fs:SetFont(STANDARD_TEXT_FONT, max(6, size or 12), OUTLINE_FLAGS[outline] or "OUTLINE")
 	fs:ClearAllPoints()
 	local ix, iy = pointInset(point, x, y)
 	fs:SetPoint(point, frame, point, ix, iy)
@@ -187,18 +223,41 @@ local function GetFakeList(size)
 	return list
 end
 
--- Dispel-Typ. Im Kampf ist dispelName secret -> pcall, liefert dann nil.
-function Raidframes:GetDispelType(u)
-	if not (AuraUtil and AuraUtil.ForEachAura) then return nil end
-	local found
-	local ok = pcall(function()
-		AuraUtil.ForEachAura(u, "HARMFUL", nil, function(aura)
-			local dt = aura and aura.dispelName
-			if dt and playerDispels[dt] then found = dt; return true end
-		end, true)
-	end)
-	if ok then return found end
-	return nil
+-- Wiederverwendete Scratch-Farbe (keine Tabelle pro Aufruf im heißen Pfad).
+local dispelScratch = { r = 1, g = 1, b = 1 }
+
+-- Secret-sichere Dispel-Erkennung (12.0):
+--  * Filter "HARMFUL|RAID_PLAYER_DISPELLABLE" -> Blizzard liefert nur, was ICH dispellen
+--    kann (intern in C++, kein Lua-Vergleich auf secret). "Alle" -> "HARMFUL" + nil-Check.
+--  * dispelName ~= nil ist ein secret-sicherer nil-Check (liest den Wert nicht) und sagt,
+--    OB ein (typisierter) dispellbarer Debuff anliegt — auch bei secret Boss-Debuffs.
+--  * Farbe via GetAuraDispelTypeColor + Curve: Blizzard wertet den secret Typ intern aus
+--    und gibt die Farbe zurück -> typ-genau im Kampf, ohne den secret-Wert zu lesen.
+-- Rückgabe: hasDispel(bool, secret-frei), r, g, b (ggf. secret -> nur an C++-Setter geben).
+function Raidframes:GetDispel(u, d)
+	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
+	if not dispelCurve then buildDispelCurve() end
+	local filter = d.dispelShowAll and "HARMFUL" or "HARMFUL|RAID_PLAYER_DISPELLABLE"
+	local i = 1
+	while true do
+		local aura = C_UnitAuras.GetAuraDataByIndex(u, i, filter)
+		if not aura then break end
+		i = i + 1
+		if aura.dispelName ~= nil then   -- secret-sicher
+			if dispelCurve and C_UnitAuras.GetAuraDispelTypeColor then
+				local col = C_UnitAuras.GetAuraDispelTypeColor(u, aura.auraInstanceID, dispelCurve)
+				if col then
+					local sc = dispelScratch
+					sc.r, sc.g, sc.b = col:GetRGB()
+					return true, sc.r, sc.g, sc.b
+				end
+			end
+			-- Fallback (API fehlt): generische Magic-Farbe als „dispellbar"-Hinweis.
+			local r, g, b = dispelCol(d, "Magic")
+			return true, r, g, b
+		end
+	end
+	return false
 end
 
 local function makeBar(parent, tex, level)
@@ -324,6 +383,20 @@ local function CreateUnitFrame(i)
 	f.htext:SetFont(STANDARD_TEXT_FONT, 16, "OUTLINE")
 	f.htext:SetPoint("CENTER")
 
+	-- Dispel-Overlay (Modus "overlay"): farbiger Rand + leichte Füllung in Dispel-Farbe.
+	-- Weiße Texturen -> Farbe per SetVertexColor (verträgt secret-Werte).
+	f.dFill = f.overlay:CreateTexture(nil, "ARTWORK", nil, 1)
+	f.dFill:SetColorTexture(1, 1, 1, 1); f.dFill:SetAllPoints(f.health); f.dFill:Hide()
+	local function dedge()
+		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
+		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t
+	end
+	f.dT, f.dB, f.dL, f.dR = dedge(), dedge(), dedge(), dedge()
+	f.dT:SetPoint("TOPLEFT"); f.dT:SetPoint("TOPRIGHT"); f.dT:SetHeight(2)
+	f.dB:SetPoint("BOTTOMLEFT"); f.dB:SetPoint("BOTTOMRIGHT"); f.dB:SetHeight(2)
+	f.dL:SetPoint("TOPLEFT"); f.dL:SetPoint("BOTTOMLEFT"); f.dL:SetWidth(2)
+	f.dR:SetPoint("TOPRIGHT"); f.dR:SetPoint("BOTTOMRIGHT"); f.dR:SetWidth(2)
+
 	local function edge()
 		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
 		t:SetColorTexture(0.83, 0.64, 0.31, 1); t:Hide(); return t
@@ -341,19 +414,34 @@ function Raidframes:SetHighlight(f, on)
 	f.eT:SetShown(on); f.eB:SetShown(on); f.eL:SetShown(on); f.eR:SetShown(on)
 end
 
+-- Dispel-Overlay setzen (Modus "overlay"): Rand + Füllung in Dispel-Farbe ein/aus.
+-- r,g,b dürfen secret sein -> nur an SetVertexColor (C++) geben.
+function Raidframes:SetDispelOverlay(f, on, r, g, b, alpha)
+	if on then
+		f.dFill:SetVertexColor(r, g, b, alpha or 0.3); f.dFill:Show()
+		f.dT:SetVertexColor(r, g, b, 1); f.dT:Show()
+		f.dB:SetVertexColor(r, g, b, 1); f.dB:Show()
+		f.dL:SetVertexColor(r, g, b, 1); f.dL:Show()
+		f.dR:SetVertexColor(r, g, b, 1); f.dR:Show()
+	else
+		f.dFill:Hide(); f.dT:Hide(); f.dB:Hide(); f.dL:Hide(); f.dR:Hide()
+	end
+end
+
 function Raidframes:ApplyConfig(f)
 	local d = db()
-	f:SetSize(d.width, d.height)
+	local L = layoutCtx()
+	f:SetSize(L.width, L.height)
 	f.health:SetStatusBarTexture(FetchTexture(d.healthTexture))
 	-- Segment-Bars auf Lebensgröße halten (Anker liefern Höhe/Position)
-	f.predictBar:SetSize(d.width, d.height)
-	f.shieldBar:SetSize(d.width, d.height)
-	f.healAbsorbBar:SetSize(d.width, d.height)
+	f.predictBar:SetSize(L.width, L.height)
+	f.shieldBar:SetSize(L.width, L.height)
+	f.healAbsorbBar:SetSize(L.width, L.height)
 
 	-- Streifen-Overlays horizontal in FESTER Pixelgröße kacheln: TexCoord-Breite =
 	-- Frame-Breite / Texturbreite -> Streifenbreite bleibt konstant, egal wie breit der
 	-- Schild/Absorb (kein Stauchen, nahtloser Übergang). Vertikal 0..1 = volle Höhe einmal.
-	local tx = d.width / STRIPE_TEX_W
+	local tx = L.width / STRIPE_TEX_W
 	f.shieldStripe:SetTexCoord(0, tx, 0, 1)
 	f.backfillStripe:SetTexCoord(0, tx, 0, 1)
 	f.healStripe:SetTexCoord(0, tx, 0, 1)
@@ -364,9 +452,9 @@ function Raidframes:ApplyConfig(f)
 		elseif t == "Lumen Soft" then ns.Style:SetDepth(f.overlay, 0.55)
 		else ns.Style:SetDepth(f.overlay, 0) end
 	end
-	f.name:SetShown(d.showName)
-	applyText(f.name, f, d.namePoint, d.nameX, d.nameY, d.nameSize, d.nameColor)
-	applyText(f.htext, f, d.healthTextPoint, d.healthTextX, d.healthTextY, d.healthTextSize, d.healthTextColor)
+	f.name:SetShown(L.showName)
+	applyText(f.name, f, L.namePoint, L.nameX, L.nameY, L.nameSize, L.nameColor, L.nameOutline)
+	applyText(f.htext, f, L.healthTextPoint, L.healthTextX, L.healthTextY, L.healthTextSize, L.healthTextColor, L.healthTextOutline)
 	f.eT:ClearAllPoints(); f.eT:SetPoint("TOPLEFT"); f.eT:SetPoint("TOPRIGHT"); f.eT:SetHeight(2)
 	f.eB:ClearAllPoints(); f.eB:SetPoint("BOTTOMLEFT"); f.eB:SetPoint("BOTTOMRIGHT"); f.eB:SetHeight(2)
 	f.eL:ClearAllPoints(); f.eL:SetPoint("TOPLEFT"); f.eL:SetPoint("BOTTOMLEFT"); f.eL:SetWidth(2)
@@ -406,12 +494,19 @@ function Raidframes:RenderLive(f)
 	setSegments(f, maxH, UnitHealth(u), incoming, absorb, healAbs)
 
 	local _, class = UnitClass(u)
-	local dt = d.dispelRecolor and self:GetDispelType(u) or nil
-	f.health:SetStatusBarColor(fillRGB(d, class, dt))
+	local hasDispel, dr, dg, dbb
+	if d.dispelEnabled then hasDispel, dr, dg, dbb = self:GetDispel(u, d) end
+	if hasDispel and d.dispelMode == "recolor" then
+		f.health:SetStatusBarColor(dr, dg, dbb)
+	else
+		f.health:SetStatusBarColor(fillRGB(d, class))
+	end
+	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
-	if d.showName then f.name:SetText(UnitName(u) or "") end
+	local L = layoutCtx()
+	if L.showName then f.name:SetText(UnitName(u) or "") end
 
-	local t = d.healthTextType
+	local t = L.healthTextType
 	if t == "Keine" then
 		f.htext:SetText("")
 	elseif t == "Prozent" and _G.UnitHealthPercent then
@@ -435,10 +530,23 @@ function Raidframes:RenderFake(f)
 	local healAbsorb = (fk.healAbsorb or 0) * FAKE_MAX
 	setSegments(f, FAKE_MAX, hp * FAKE_MAX, incoming, absorb, healAbsorb)
 
-	f.health:SetStatusBarColor(fillRGB(d, fk.class, fk.dispel))
-	if d.showName then f.name:SetText(fk.name) end
+	-- Testmodus: kein echtes Aura-Objekt -> Typ direkt auf konfigurierte Farbe mappen.
+	local hasDispel, dr, dg, dbb = false
+	if d.dispelEnabled and fk.dispel and (d.dispelShowAll or playerDispels[fk.dispel]) then
+		dr, dg, dbb = dispelCol(d, fk.dispel)
+		hasDispel = true
+	end
+	if hasDispel and d.dispelMode == "recolor" then
+		f.health:SetStatusBarColor(dr, dg, dbb)
+	else
+		f.health:SetStatusBarColor(fillRGB(d, fk.class))
+	end
+	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
-	local t = d.healthTextType
+	local L = layoutCtx()
+	if L.showName then f.name:SetText(fk.name) end
+
+	local t = L.healthTextType
 	if t == "Keine" then f.htext:SetText("")
 	elseif t == "Prozent" then f.htext:SetText(floor(hp * 100) .. "%")
 	else f.htext:SetText(AbbrevNum(floor(hp * FAKE_MAX))) end
@@ -451,11 +559,14 @@ end
 
 function Raidframes:UpdateLayout()
 	if not container then return end
+	dispelCurve = nil   -- Dispel-Farben könnten sich geändert haben -> Curve neu bauen lassen
 	local d = db()
-	local w, h, sp, perCol = d.width, d.height, d.spacing, max(1, d.unitsPerColumn)
+	local L = layoutCtx()
+	local w, h, sp = L.width, L.height, L.spacing
+	local horizontal = (L.orientation == "horizontal")
 
 	container:ClearAllPoints()
-	container:SetPoint(d.point or "CENTER", UIParent, d.point or "CENTER", d.x or 0, d.y or 0)
+	container:SetPoint(L.point or "CENTER", UIParent, L.point or "CENTER", L.x or 0, L.y or 0)
 
 	local testMode = d.testMode
 	local list = testMode and GetFakeList(d.testSize or 5) or BuildLiveUnits()
@@ -465,9 +576,13 @@ function Raidframes:UpdateLayout()
 	for i = 1, n do
 		local f = frames[i] or CreateUnitFrame(i)
 		if testMode then f.fake = list[i]; f.unit = nil else f.unit = list[i]; f.fake = nil; unitToFrame[f.unit] = f end
-		local idx = i - 1
-		local col = floor(idx / perCol)
-		local row = idx % perCol
+		local idx   = i - 1
+		local group = floor(idx / GROUP_SIZE)   -- welche 5er-Gruppe
+		local slot  = idx % GROUP_SIZE          -- Position innerhalb der Gruppe
+		-- vertical (Standard): Mitglieder untereinander (slot=Zeile), Gruppen nebeneinander (group=Spalte).
+		-- horizontal: Mitglieder nebeneinander (slot=Spalte), Gruppen untereinander (group=Zeile).
+		local col, row
+		if horizontal then col, row = slot, group else col, row = group, slot end
 		f:ClearAllPoints()
 		f:SetPoint("TOPLEFT", container, "TOPLEFT", col * (w + sp), -row * (h + sp))
 		self:ApplyConfig(f)
@@ -477,8 +592,10 @@ function Raidframes:UpdateLayout()
 		frames[i]:Hide(); frames[i].unit = nil; frames[i].fake = nil
 	end
 
-	local cols = max(1, ceil(n / perCol))
-	local rows = max(1, min(n, perCol))
+	local groups  = max(1, ceil(n / GROUP_SIZE))   -- Anzahl 5er-Gruppen
+	local inGroup = max(1, min(n, GROUP_SIZE))      -- belegte Plätze pro Gruppe
+	local cols, rows
+	if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
 	container:SetSize(max(1, cols * (w + sp) - sp), max(1, rows * (h + sp) - sp))
 end
 
@@ -521,7 +638,8 @@ function Raidframes:Setup()
 
 	if ns.EditMode then
 		ns.EditMode:Register(container, "Raidframes", function(p, x, y)
-			local d = db(); d.point, d.x, d.y = p, x, y
+			-- Position in den AKTIVEN Kontext (raid/party) speichern.
+			local L = layoutCtx(); L.point, L.x, L.y = p, x, y
 		end)
 	end
 end

@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.1**, Interface **120005** (Retail-Patch 12.0.7).
+> Stand: Addon-Version **0.9.5**, Interface **120005** (Retail-Patch 12.0.7).
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -63,6 +63,21 @@ Weitere Prinzipien:
 * **Zentrale Profile** in einem „Allgemein"/Profile-Tab (NICHT pro Modul verstreut): an einem Ort wird alles gespeichert. Läuft über **AceDB** (`LumenDB`).
 * **Export (Konzept, noch zu bauen):** EIN Textcode für alles (Prinzip wie WeakAuras/ElvUI), zum Kopieren/Verschicken — via `AceSerializer` + `LibDeflate`.
 * **Import — granular (Konzept, noch zu bauen):** Dialog mit **Häkchen pro Modul** — nur Gewähltes wird eingemischt, abgewählte Module bleiben beim Empfänger unverändert (z.B. „will nur deine Unit Frames, nicht die Raidframes"). Dazu eine separate Ja/Nein-Frage „**Layout-Positionen mitimportieren**" (aus → die aktuellen Positionen des Empfängers bleiben). Damit der granulare Import geht, werden die Settings im Export **pro Modul getrennt** abgelegt; **Layout-Positionen liegen nochmal getrennt**.
+
+### 4.1 Strikte UI-Benennungskonvention (Anti-Bloat & Hierarchie-Klarheit)
+Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garantieren, gilt für alle Module (Raidframes, Unit Frames, Nameplates) eine strikte Trennung der Begriffe über die UI-Ebenen hinweg. Es dürfen niemals identische oder redundante Begriffe auf unterschiedlichen Ebenen verwendet werden.
+
+* **Linke Navigationsebene (Der Haupt-Baum in AceConfig):**
+    * Der suite-weite Einstellungsbereich für globale Optionen heißt zwingend **`Global`** (NICHT *General* oder *Allgemein*). Dies signalisiert dem Nutzer, dass Änderungen hier das gesamte Addon über alle Module hinweg betreffen.
+* **Rechte Navigationsebene (Die Tabs innerhalb eines Moduls):**
+    * Der erste Tab eines jeden Moduls heißt zwingend **`Base`** (NICHT *Basic*, *Core* oder *Base Settings*). Hier liegen alle grundlegenden, funktionalen und optischen Fundamente des jeweiligen Moduls (z.B. Farben, Texturen, Dispel-Filter).
+    * Das Wort „Settings" ist auf Tabs absolut tabu (Redundanz-Vermeidung).
+    * Auf den `Base`-Tab folgen kontext- oder layoutspezifische Tabs, die ebenfalls maximal kurz gehalten werden.
+
+**Skalierungs-Muster für zukünftige Module (Zwingend einzuhalten):**
+* **Modul Raidframes:** `Base` | `Raid` | `Group`
+* **Modul Nameplates:** `Base` | `Enemy` | `Friendly`
+* **Modul Unit Frames:** `Base` | `Player` | `Target` | `Focus`
 
 ---
 
@@ -175,7 +190,7 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
 | `Style.lua` | **Zentrales** Balken-Stilmodul (bewusst zentral/wiederverwendbar für spätere Unit Frames/Target/Focus). Hält `Style.barTexture` (lumen-gradient) und `Style.barTextureSoft`. `Style:ApplyBar(statusbar, overlayParent)` setzt die Gradient-Textur und legt Licht-/Schatten-Tiefen-Overlays an. `Style:SetDepth(overlayParent, strength)` regelt die Tiefen-Deckkraft (1.0 Standard, 0.55 Soft, 0 aus). |
 | `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Test- und Live-Pfad geteilt. Details unten. |
-| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): „Allgemein" (Edit-Mode-Schalter, Positionen zurücksetzen), „Profile" (AceDBOptions), „Raidframes" (Größen, Lebensbalken-Textur/Klassenfarbe/Füllfarbe, Heilvorhersage, Dispel-Umfärbung, Name-Text, HP-Text Keine/Aktuell/Prozent, Test). Registriert via `RegisterOptionsTable("Lumen", options)`. |
+| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** (Edit-Mode-Schalter, Positionen zurücksetzen), **`Profile`** (AceDBOptions), **`Raidframes`**. Der Raidframes-Knoten nutzt `childGroups="tab"` → Tabs **`Base`** (Aktiviert, Lebensbalken-Textur/Klassenfarbe/Füllfarbe, Heilvorhersage, Dispel, Name-/HP-Text inkl. Outline, Test) · **`Raid`** und **`Group`** (je Breite/Höhe/Abstand/Ausrichtung; eigene Position **und eigene Name-/HP-Text-Einstellungen**). Benennung gemäß §4.1. `Raid`/`Group` lesen/schreiben in `rf().raid`/`rf().party`. |
 | `GameMenu.lua` | Fügt im ESC-Menü einen „Lumen"-Button hinzu — über Blizzards eigene `GameMenuFrame:AddButton`-API (per `InitButtons`-Hook), damit es konfliktfrei neben EllesmereUI sitzt. Öffnet die Config; respektiert `InCombatLockdown`. |
 | `Libs/` | Ace3-Bibliotheken (siehe §6). |
 | `Textures/` | TGA-Texturen (uncompressed RGBA, **ohne Endung referenziert**). Wichtig: `lumen-gradient` / `lumen-gradient-soft` (Balken), `lumen-light` / `lumen-shadow` (Tiefe), `shield-combined` (Schild = Füllung+Streifen in einer Textur), `healabsorb-combined` (Heilabsorb = Füllung+Kreuze). Zusätzlich Einzel-/Altbestände: `shield-fill`, `shield-overlay`, `shield-overshield`, `absorb-fill`, `raidframeabsorboverlay`, `absorb-overabsorb` (Overschild-Kante derzeit ungenutzt, für späteres Re-Enable behalten). |
@@ -199,13 +214,17 @@ local defaults = {
         raidframes = {
             enabled        = true,
 
-            -- Größe / Layout
-            width          = 114,
-            height         = 60,
-            spacing        = 6,
-            unitsPerColumn = 5,
+            -- Layout + Position PRO KONTEXT (siehe Tabs Base/Raid/Group). Gruppengröße
+            -- fest 5. orientation: "vertical"=Mitglieder untereinander/Gruppen nebeneinander
+            -- (Standard) | "horizontal"=umgekehrt. raid=Schlachtzug, party=5er/Dungeon.
+            -- Migration kopiert alte flache Werte einmalig in raid+party (Core.migrateLayout).
+            -- Enthält außerdem die Name-/HP-Text-Felder PRO KONTEXT (showName, nameSize,
+            -- namePoint/X/Y, nameColor, nameOutline, healthTextType/Size/Point/X/Y/Color/Outline),
+            -- da Frames je Kontext unterschiedlich groß sind. Migration (Core.migrateLayout, v2).
+            raid  = { width=114, height=60, ..., point="CENTER", x=0, y=-120, showName=true, ... },
+            party = { width=114, height=60, ..., point="CENTER", x=0, y=-120, showName=true, ... },
 
-            -- Lebensbalken
+            -- Lebensbalken (geteilt)
             healthTexture  = "Lumen Gradient",   -- "Lumen Gradient" | "Lumen Soft" | "Blizzard" | "Classic Raid" | LSM-Texturen
             useClassColor  = true,
             fillColor      = { r = 0.20, g = 0.60, b = 0.30 },
@@ -232,13 +251,14 @@ local defaults = {
             healthTextY     = 0,
             healthTextColor = { r = 1, g = 1, b = 1 },
 
-            -- Dispel
-            dispelRecolor = true,
+            -- Dispel (secret-sicher: Blizzard-Filter + Color-Curve, funktioniert im Kampf)
+            dispelEnabled = true,
+            dispelMode    = "recolor",   -- "recolor" (Balken einfärben) | "overlay" (Rand+Overlay, Klassenfarbe bleibt)
+            dispelShowAll = false,        -- false = nur eigene dispellbare; true = alle
+            dispelAlpha   = 0.30,         -- Overlay-Deckkraft (nur "overlay")
+            dispelColors  = { Magic=..., Curse=..., Disease=..., Poison=... },  -- pro Typ, {r,g,b}
 
-            -- Position (Verschieben über globalen Edit-Modus)
-            point = "CENTER",
-            x     = 0,
-            y     = -120,
+            -- (Position liegt jetzt pro Kontext in raid/party oben — kein flaches point/x/y mehr.)
 
             -- Test / Beispielgruppe
             testMode = false,
@@ -361,7 +381,7 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 * **Frames anklickbar / targetbar / Click-to-Cast machen.** Aktuell sind die Unit-Frames reine **Anzeige** (`CreateFrame("Frame", …)`), keine sicheren Unit-Buttons. Für echtes Heilen müssen sie auf einen **Secure-Unit-Button / SecureGroupHeader** umgestellt werden (geschützte Attribute, Click-to-Cast, korrektes `unit`-Attribut), inklusive sauberer Behandlung von `InCombatLockdown` (Secure-Frames dürfen im Kampf nicht umgebaut werden — Layout/Roster-Änderungen müssen außerhalb des Kampfes bzw. über sichere Header passieren). Das ist die größte Architektur-Weiche und sollte **vor** dem OK mit Florian abgestimmt werden. Referenz dafür: wie EllesmereUI seine Raid-Buttons als Secure-Header aufbaut.
 
 **Bekannte, akzeptierte Grenzen (für den MVP bewusst so):**
-* **Dispel-Umfärbung** funktioniert nur außer Kampf / im Test (`dispelName` ist im Kampf secret; der Code ist per `pcall` abgesichert und wirft keinen Fehler, färbt im Kampf aber nicht um).
+* **Dispel-Anzeige** funktioniert jetzt **auch im Kampf** (secret-sicher): Erkennung über Blizzards Filter `"HARMFUL|RAID_PLAYER_DISPELLABLE"` (bzw. `"HARMFUL"` + `dispelName ~= nil` für „alle"), Farbe typ-genau über `C_UnitAuras.GetAuraDispelTypeColor` + Color-Curve (`C_CurveUtil`). Zwei Modi: `recolor` (Balken einfärben) und `overlay` (Rand + Füllung, Klassenfarbe bleibt). Fallback auf generische Magic-Farbe, falls die Curve-API fehlt.
 * **Kein weiches Interpolieren** der Balken — sie springen pro Event (secret-Werte lassen sich in Lua nicht interpolieren).
 * **Overschild-Kantenfunke** (wie EllesmereUIs Spark) ist nicht umgesetzt — nur der Backfill. Kann später ergänzt werden (secret-sicherer „overshield"-Bool über `GetDamageAbsorbs` 2. Rückgabe mit `MissingHealth`-Clamp).
 * **Streifen-Tiling**: aktuell skalieren die Streifen in Schild/Heilabsorb mit dem Balken (Textur in der StatusBar) statt nativ zu kacheln — bewusst erst nach Live-Bestätigung feinzuschleifen.
