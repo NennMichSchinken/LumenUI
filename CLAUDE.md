@@ -141,6 +141,13 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * Profil-/Export-/Import-Konzept (Architektur steht, Code für Export/Import folgt).
 * Gradient-Balkenstil bestätigt (zwei Varianten: „Lumen Gradient" kräftig = Default, „Lumen Soft" dezent).
 * **Overschild-Backfill** umgesetzt (v0.9.1).
+* **Secret-sicheres Render live bestätigt** (Schild/Overschild/Heilabsorb/Heilvorhersage) — v0.9.1.
+* **Schild/Heilabsorb-Texturen** final: Blizzard-Texturen (`blizzard-shield`/`blizzard-absorb`) per **manuellem TexCoord-Tiling** (kein `SetHorizTile`) + Clip-Frames an die Absorb-Füllung. Naht/Stauchung gelöst — v0.9.2/.3. (Details + Sackgassen: Memory `lumen-absorb-rendering`.)
+* **Layout:** feste 5er-Gruppen + Ausrichtung Vertikal/Horizontal (statt freiem „pro Spalte"-Slider) — v0.9.2.
+* **Text-Outline** (Keine/Outline/Dick) für Name & HP — v0.9.3.
+* **Dispel im Kampf zuverlässig** (Blizzard-Filter + `GetAuraDispelTypeColor`+Curve), Modi recolor/overlay, Farbe pro Typ — v0.9.3.
+* **Settings-Restruktur** live: linker Knoten **`Global`**, Raidframes-Tabs **`Base | Raid | Group`** (Konvention §4.1). Layout, **Position UND Name-/HP-Text getrennt pro Kontext** (raid/party) inkl. einmaliger Profil-Migration — v0.9.4/.5.
+* **Git:** läuft über GitHub (`NennMichSchinken/Lumen`); PR #1 (Addon+Absorbs) und PR #2 (Kontexte/Dispel/Layout/Text) gemergt. Aktueller `main`-Stand = **v0.9.5**.
 
 **Offen:**
 * **Akzentfarbe final** festlegen: aktuell im Code `#D4A34F`, ursprünglich vorgeschlagen `#c9a86a` (siehe §3).
@@ -149,10 +156,10 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * Familien-Verbindung zu einem evtl. zweiten Projekt bewusst NICHT über den Produktnamen (falls später gewünscht: gemeinsames Macher-/Studio-Label).
 
 **Nächste Schritte (konkret, in Reihenfolge):**
-1. **Live-Verifikation** des aktuellen Render-Stands durch Florians Screenshots (Testmodus + echter Kampf) — siehe „Baustelle" in §10. Eventuelle Render-Fehler fixen.
-2. **Frames anklickbar/targetbar/Click-to-Cast** machen (Secure-Header) — der nächste große Schritt zur echten Nutzbarkeit (siehe §10).
-3. Export/Import bauen (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter).
-4. Danach Feinschliff (abgerundete Ecken als Toggle, Streifen-Tiling, native Edit-Mode-Vollregistrierung) und erstes Release.
+1. **Frames anklickbar/targetbar/Click-to-Cast** (Secure-Unit-Buttons/SecureGroupHeader) — der nächste **große** Schritt zur echten Nutzbarkeit. **Architektur-Weiche: vorher Plan mit Florian abstimmen** (geschützte Frames, `InCombatLockdown`, Roster nur außer Kampf umbauen). Referenz: EllesmereUIs Secure-Header. Erst danach baubar: die **Mouseover-/Klick-Bindings-Seite** (eigene Seite, wo Nutzer Spells zuordnen).
+2. Export/Import bauen (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter).
+3. Kleinere MVP-Features: Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung.
+4. Feinschliff (abgerundete Ecken als Toggle, Overschild-Kantenfunke, native Edit-Mode-Vollregistrierung) → erstes Release (BigWigs Packager, Tag/Release als Restore-Punkt).
 
 ---
 
@@ -178,13 +185,13 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 ---
 
-## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.1)
+## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.5)
 
 ### 10.1 Dateien im Addon-Ordner `Lumen/`
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120005`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.1`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Options.lua`, `GameMenu.lua`. |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120005`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.5`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Options.lua`, `GameMenu.lua`. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
@@ -366,25 +373,27 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 ### 10.4 Was bereits fehlerfrei funktioniert (von Florian bestätigt)
 
 * Addon lädt ohne Fehler; `/lumen`, `/lu` und ESC-Menü-Button („Lumen") öffnen die Optionen, konfliktfrei neben EllesmereUI.
-* Klassenfarben; Dispel-Umfärbung (im Testmodus / außer Kampf); Größen-Slider; Profile.
-* Testmodus 5/20/40; Verschieben (manueller Schalter + nativer WoW-Edit-Mode); Name-Text-Optionen; HP-Text (Keine/Aktuell/Prozent).
-* Gradient-Stil (Standard + Soft); Schilde und Heilabsorb **im Testmodus** scharf und korrekt skaliert; Heilvorhersage im Testmodus sichtbar.
+* **Secret-sicheres Render LIVE bestätigt:** Schild (frei + Overschild bei vollem Leben), Heilabsorb (von rechts), Heilvorhersage — auch im Kampf korrekt; Forward↔Backfill nahtlos. Texturen über manuelles TexCoord-Tiling + Clip-Frames (keine Naht/Stauchung mehr).
+* **Dispel im Kampf** zuverlässig (Blizzard-Filter + `GetAuraDispelTypeColor`+Curve); Modi recolor/overlay; Farbe pro Typ.
+* Klassenfarben; Profile; Größen; **Ausrichtung Vertikal/Horizontal** bei festen 5er-Gruppen.
+* Testmodus 5/20/40; Verschieben (manueller Schalter + nativer WoW-Edit-Mode), **getrennte Position pro Kontext**.
+* **Name-/HP-Text pro Kontext** (Raid/Group) inkl. Outline-Option (Keine/Outline/Dick).
+* Options-Struktur: linker Baum **`Global` / Raidframes / Profile**; Raidframes-Tabs **`Base | Raid | Group`**.
 
-### 10.5 Wo die Arbeit gerade abbricht — die exakte Baustelle für Claude Code
+### 10.5 Aktueller Stand & nächster Schritt für Claude Code
 
-**Stand:** v0.9.1 ist gebaut und gepackt. Der **große secret-sichere Render-Umbau** (StatusBars + Calculator + Dual-Clip) inkl. **Overschild-Backfill** ist fertig im Code — aber **im echten Kampf noch UNBESTÄTIGT**. Es gibt aktuell keine bekannten Fehler, aber Florians Live-Screenshots stehen aus.
+**Stand:** **v0.9.5**, in `main` gemergt (PR #1 + #2). Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur (getrennte Layouts/Positionen/Texte pro Kontext) sind **gebaut und von Florian live bestätigt**. Keine bekannten offenen Fehler.
 
-**Unmittelbar offen (Priorität 1 — Verifikation):**
-* Florians Feedback einholen (Testmodus + echter Kampf) anhand der Checkliste: Sind Schild (frei + Overschild bei vollem Leben), Heilabsorb (von rechts) und Heilvorhersage **live** korrekt? Sitzt der Übergang Forward↔Backfill nahtlos, wenn Leben sinkt/steigt? Falls Render-Fehler: zuerst am Dual-Clip/Anker-Setup ansetzen, Referenz `EllesmereUIRaidFrames.lua`.
+**Nächster großer Baustein (Priorität 1 — der eigentliche nächste Code-Schritt):**
+* **Frames anklickbar / targetbar / Click-to-Cast machen.** Aktuell sind die Unit-Frames reine **Anzeige** (`CreateFrame("Frame", …)`), keine sicheren Unit-Buttons. Für echtes Heilen müssen sie auf **Secure-Unit-Button / SecureGroupHeader** umgestellt werden (geschützte Attribute, Click-to-Cast, korrektes `unit`-Attribut), inkl. sauberer `InCombatLockdown`-Behandlung (Secure-Frames im Kampf nicht umbaubar — Layout/Roster nur außer Kampf bzw. über sichere Header). **Größte Architektur-Weiche → vorher Plan mit Florian abstimmen.** Referenz: EllesmereUIs Raid-Buttons als Secure-Header. Erst danach baubar: die **Mouseover-/Klick-Bindings-Seite** (eigene Seite, Spells zuordnen).
 
-**Nächster großer Baustein (Priorität 2 — der eigentliche nächste Code-Schritt):**
-* **Frames anklickbar / targetbar / Click-to-Cast machen.** Aktuell sind die Unit-Frames reine **Anzeige** (`CreateFrame("Frame", …)`), keine sicheren Unit-Buttons. Für echtes Heilen müssen sie auf einen **Secure-Unit-Button / SecureGroupHeader** umgestellt werden (geschützte Attribute, Click-to-Cast, korrektes `unit`-Attribut), inklusive sauberer Behandlung von `InCombatLockdown` (Secure-Frames dürfen im Kampf nicht umgebaut werden — Layout/Roster-Änderungen müssen außerhalb des Kampfes bzw. über sichere Header passieren). Das ist die größte Architektur-Weiche und sollte **vor** dem OK mit Florian abgestimmt werden. Referenz dafür: wie EllesmereUI seine Raid-Buttons als Secure-Header aufbaut.
+**Danach (Reihenfolge siehe §8):** Export/Import · Sortierung nach Rolle/Gruppe · HoT-Platzierung · Aggro-Warnung · Feinschliff (abgerundete Ecken, Overschild-Funke) → erstes Release.
 
 **Bekannte, akzeptierte Grenzen (für den MVP bewusst so):**
 * **Dispel-Anzeige** funktioniert jetzt **auch im Kampf** (secret-sicher): Erkennung über Blizzards Filter `"HARMFUL|RAID_PLAYER_DISPELLABLE"` (bzw. `"HARMFUL"` + `dispelName ~= nil` für „alle"), Farbe typ-genau über `C_UnitAuras.GetAuraDispelTypeColor` + Color-Curve (`C_CurveUtil`). Zwei Modi: `recolor` (Balken einfärben) und `overlay` (Rand + Füllung, Klassenfarbe bleibt). Fallback auf generische Magic-Farbe, falls die Curve-API fehlt.
 * **Kein weiches Interpolieren** der Balken — sie springen pro Event (secret-Werte lassen sich in Lua nicht interpolieren).
 * **Overschild-Kantenfunke** (wie EllesmereUIs Spark) ist nicht umgesetzt — nur der Backfill. Kann später ergänzt werden (secret-sicherer „overshield"-Bool über `GetDamageAbsorbs` 2. Rückgabe mit `MissingHealth`-Clamp).
-* **Streifen-Tiling**: aktuell skalieren die Streifen in Schild/Heilabsorb mit dem Balken (Textur in der StatusBar) statt nativ zu kacheln — bewusst erst nach Live-Bestätigung feinzuschleifen.
+* **Streifen-Tiling: GELÖST** — Schild/Heilabsorb kacheln jetzt in fester Pixelgröße (manuelles TexCoord-Tiling, Texturen über das Frame gespannt + Clip-Frames an die Absorb-Füllung). `SetHorizTile` auf StatusBar-Füllungen funktioniert NICHT (streckt) — nicht erneut versuchen (Memory `lumen-absorb-rendering`).
 
 **Spätere Bausteine (nach Priorität 1–2):** abgerundete Ecken (Toggle + Stärke, via Mask-Textur), volle native Edit-Mode-Registrierung, Heilabsorb-Überlaufkante wieder aktivieren, Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung, Export/Import (granular, `AceSerializer`+`LibDeflate`), eigene gerunte Suite-Shell-Optik, dann Modul 2 (Unit Frames).
 
