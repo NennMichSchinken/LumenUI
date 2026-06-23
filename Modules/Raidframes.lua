@@ -124,14 +124,30 @@ local FAKE = {
 
 local GROUP_SIZE = 5   -- feste Gruppengröße: Raid-Gruppen & Dungeon-Gruppe sind immer 5 (nie gemischt)
 
--- Aura-Indikatoren (Phase 1): Kategorien-Registry. Erweiterbar (fremde HoTs, Defensives,
--- Debuffs, CDs folgen in Phase 2). filter = Blizzard-Aura-Filter für den Live-Scan
--- (secret-sicher; "PLAYER" liefert nur selbst gewirkte Auren -> eigene HoTs).
-local AURA_CATS = {
-	{ key = "hotsOwn", filter = "HELPFUL|PLAYER" },
+-- Fake-Icon-Texturen für den Testmodus (Vorschau ohne echte Auren), je Kategorie passend.
+local FAKE_HOTS      = { 136081, 136085, 236153, 135953, 134914 }
+local FAKE_DEFENSIVE = {
+	"Interface\\Icons\\Spell_Holy_PowerWordShield",
+	"Interface\\Icons\\Spell_Holy_SealOfSacrifice",
+	"Interface\\Icons\\Spell_Nature_SkinofEarth",
 }
--- Fake-HoT-Icon-Texturen für den Testmodus (Vorschau ohne echte Auren).
-local FAKE_HOTS = { 136081, 136085, 236153, 135953, 134914 }
+local FAKE_DEBUFF = {
+	"Interface\\Icons\\Spell_Shadow_CurseOfSargeras",
+	"Interface\\Icons\\Ability_Creature_Poison_03",
+	"Interface\\Icons\\Spell_Nature_NullifyDisease",
+}
+
+-- Aura-Indikatoren: Kategorien-Registry. filter = Blizzard-Aura-Filter für GetAuraDataByIndex
+-- (secret-sicher). subExclude/subInclude verfeinern secret-sicher über IsAuraFilteredOutByInstanceID:
+--   subExclude -> nur Auren, die dieser Unterfilter AUSschließt (z.B. "nicht von mir" = fremd).
+--   subInclude -> nur Auren, die dieser Unterfilter EINschließt (z.B. externe Defensives).
+-- "PLAYER" = selbst gewirkt, "EXTERNAL_DEFENSIVE" = Blizzards kuratierte externe Defensiven.
+local AURA_CATS = {
+	{ key = "hotsOwn",    filter = "HELPFUL|PLAYER",                                fake = FAKE_HOTS },
+	{ key = "hotsOther",  filter = "HELPFUL", subExclude = "HELPFUL|PLAYER",        fake = FAKE_HOTS },
+	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", fake = FAKE_DEFENSIVE },
+	{ key = "debuffs",    filter = "HARMFUL",                                       fake = FAKE_DEBUFF },
+}
 
 local frames = {}            -- Nicht-Secure-Pool für Preview/Test
 local container
@@ -704,27 +720,40 @@ function Raidframes:RenderAurasLive(f)
 		local holder = f.auraHolders and f.auraHolders[c.key]
 		if cat and cat.enabled and holder then
 			local maxN = cat.maxIcons or 5
+			local fn   = C_UnitAuras.IsAuraFilteredOutByInstanceID
 			local shown, i = 0, 1
 			while shown < maxN do
 				local aura = C_UnitAuras.GetAuraDataByIndex(u, i, c.filter)
 				if not aura then break end
 				i = i + 1
-				shown = shown + 1
-				local ic = holder.icons[shown]
-				if ic then
-					local tex = aura.icon
-					if tex ~= nil and not issecretvalue(tex) then ic.tex:SetTexture(tex)
-					else ic.tex:SetTexture(136243) end   -- Fallback (Icon secret/fehlt)
-					if cat.showSwipe and ic.cd then
-						local iid = aura.auraInstanceID
-						local durObj = iid and C_UnitAuras.GetAuraDuration and C_UnitAuras.GetAuraDuration(u, iid)
-						if durObj and ic.cd.SetCooldownFromDurationObject then
-							pcall(ic.cd.SetCooldownFromDurationObject, ic.cd, durObj)
-						else
-							ic.cd:Clear()
-						end
+				local iid = aura.auraInstanceID
+				-- Sub-Filter secret-sicher anwenden (nur Bool-Rückgabe, kein secret-Lesen).
+				local accept = true
+				if c.subExclude or c.subInclude then
+					if iid and fn then
+						local out = fn(u, iid, c.subExclude or c.subInclude)
+						accept = (c.subExclude and out == true) or (not c.subExclude and out == false)
+					else
+						accept = false
 					end
-					ic:Show()
+				end
+				if accept then
+					shown = shown + 1
+					local ic = holder.icons[shown]
+					if ic then
+						local tex = aura.icon
+						if tex ~= nil and not issecretvalue(tex) then ic.tex:SetTexture(tex)
+						else ic.tex:SetTexture(136243) end   -- Fallback (Icon secret/fehlt)
+						if cat.showSwipe and ic.cd then
+							local durObj = iid and C_UnitAuras.GetAuraDuration and C_UnitAuras.GetAuraDuration(u, iid)
+							if durObj and ic.cd.SetCooldownFromDurationObject then
+								pcall(ic.cd.SetCooldownFromDurationObject, ic.cd, durObj)
+							else
+								ic.cd:Clear()
+							end
+						end
+						ic:Show()
+					end
 				end
 			end
 			positionAuraIcons(holder, shown)
@@ -742,10 +771,11 @@ function Raidframes:RenderAurasFake(f)
 		local holder = f.auraHolders and f.auraHolders[c.key]
 		if cat and cat.enabled and holder then
 			local n = min(cat.maxIcons or 5, 3)
+			local fakeTex = c.fake or FAKE_HOTS
 			for k = 1, n do
 				local ic = holder.icons[k]
 				if ic then
-					ic.tex:SetTexture(FAKE_HOTS[((k - 1) % #FAKE_HOTS) + 1])
+					ic.tex:SetTexture(fakeTex[((k - 1) % #fakeTex) + 1])
 					if cat.showSwipe and ic.cd then
 						ic.cd:SetCooldown(GetTime() - k * 1.5, 6 + k * 4)
 					elseif ic.cd then
