@@ -30,6 +30,8 @@ local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
 local strfind, format = string.find, string.format
 local pcall = pcall
+local GetTime = GetTime
+local issecretvalue = issecretvalue or function() return false end
 
 local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
 local AbbrevNum = _G.AbbreviateNumbersAlt or _G.AbbreviateNumbers or tostring
@@ -38,6 +40,7 @@ local T = "Interface\\AddOns\\Lumen\\Textures\\"
 local SHIELD_OVL_TEX = T .. "blizzard-shield"      -- 256x40, deckend, Diagonalstreifen + Schattierung
 local HEALABS_TEX    = T .. "blizzard-absorb.png"  -- 256x128, halbtransparent, Heilabsorb-Muster
 local STRIPE_TEX_W   = 256                          -- Texturbreite beider Streifentexturen (für TexCoord-Tiling)
+local HEALABS_TEX_H  = 128                           -- blizzard-absorb: 256x128 (vertikal kachelbar, Zweierpotenz)
 
 local CLASS_DISPELS = {
 	PRIEST  = { Magic = true, Disease = true },
@@ -120,6 +123,15 @@ local FAKE = {
 }
 
 local GROUP_SIZE = 5   -- feste Gruppengröße: Raid-Gruppen & Dungeon-Gruppe sind immer 5 (nie gemischt)
+
+-- Aura-Indikatoren (Phase 1): Kategorien-Registry. Erweiterbar (fremde HoTs, Defensives,
+-- Debuffs, CDs folgen in Phase 2). filter = Blizzard-Aura-Filter für den Live-Scan
+-- (secret-sicher; "PLAYER" liefert nur selbst gewirkte Auren -> eigene HoTs).
+local AURA_CATS = {
+	{ key = "hotsOwn", filter = "HELPFUL|PLAYER" },
+}
+-- Fake-HoT-Icon-Texturen für den Testmodus (Vorschau ohne echte Auren).
+local FAKE_HOTS = { 136081, 136085, 236153, 135953, 134914 }
 
 local frames = {}            -- Nicht-Secure-Pool für Preview/Test
 local container
@@ -268,13 +280,124 @@ end
 --  * clipParent ist ein Clip-Frame, das an die Absorb-FÜLLUNG verankert ist und damit
 --    secret-sicher dem SetValue folgt (wie missClip/curClip der Lebensfüllung folgen) ->
 --    der Streifen erscheint NUR über dem tatsächlichen Absorb-Anteil.
-local function makeStripe(clipParent, spanFrame, stripeTex)
+-- vTile=true -> auch VERTIKAL in fester Pixelgröße kacheln (nur für Zweierpotenz-Höhen wie
+-- die 128px-Healabsorb-Textur sauber). vTile=false -> vertikal CLAMP (Schild: 256x40, NICHT
+-- Zweierpotenz -> REPEAT zeigte eine Naht; CLAMP streckt die Diagonale, fällt aber nicht auf).
+-- Den TexCoord-Faktor (Frame-Größe / Texturgröße) setzt ApplyConfig.
+local function makeStripe(clipParent, spanFrame, stripeTex, vTile)
 	local s = clipParent:CreateTexture(nil, "ARTWORK", nil, 2)
-	-- Horizontal kacheln (REPEAT, 256px = Power-of-2), vertikal voll zeigen (CLAMP ->
-	-- verträgt auch Nicht-Power-of-2-Höhe wie 40px; zeigt die Schattierung einmal).
-	s:SetTexture(stripeTex, "REPEAT", "CLAMP")
+	s:SetTexture(stripeTex, "REPEAT", vTile and "REPEAT" or "CLAMP")
 	s:SetAllPoints(spanFrame)
 	return s
+end
+
+-- ----- Aura-Indikatoren (Phase 1): Icon-Pool, Anker, Auto-Fit-Größe -----
+-- Welcher Kontext bestimmt die explizite Icon-Größe (Auto-Fit aus)? raid vs party.
+local function isRaidContext()
+	local d = db()
+	if d.testMode then return d.testSize ~= 5 end
+	return IsInRaid()
+end
+-- Icon-Größe einer Kategorie: Auto-Fit -> aus der Frame-Höhe abgeleitet (skaliert also
+-- automatisch zwischen Raid/Gruppe mit), sonst explizit pro Kontext.
+local function auraIconSize(cat, L)
+	if not cat.autoFit then
+		return isRaidContext() and (cat.sizeRaid or 16) or (cat.sizeParty or 22)
+	end
+	-- Auto-Fit: ~30% der Frame-Höhe, ABER so gedeckelt, dass die volle Reihe/Spalte in
+	-- den Frame passt (kein Überlauf über den Rand bei schmalen/kurzen Frames):
+	-- horizontales Wachstum an der Breite deckeln, vertikales an der Höhe.
+	local h, w = L.height or 60, L.width or 114
+	local n  = max(1, cat.maxIcons or 5)
+	local sp = cat.spacing or 0
+	local size = h * 0.30
+	local grow = cat.grow or "RIGHT"
+	if grow == "UP" or grow == "DOWN" then
+		size = min(size, (h - sp * (n - 1)) / n)
+	else
+		size = min(size, (w - sp * (n - 1)) / n)
+	end
+	return max(8, min(48, floor(size)))
+end
+-- Kleiner Versatz nach innen, damit Icons nicht auf der Frame-Kante kleben.
+local function auraInset(point)
+	local I, x, y = 1, 0, 0
+	if strfind(point, "LEFT") then x = I elseif strfind(point, "RIGHT") then x = -I end
+	if strfind(point, "TOP") then y = -I elseif strfind(point, "BOTTOM") then y = I end
+	return x, y
+end
+-- Positioniert die SICHTBAREN Icons (count Stück) entlang der Wachstumsrichtung. Liegt der
+-- Anker auf der Wachstums-Achse mittig (z.B. „Unten"/„Mitte"), wird die Reihe ZENTRIERT —
+-- und zwar anhand der tatsächlichen Anzahl, also auch bei wechselnder HoT-Zahl mittig.
+-- Läuft beim Rendern (count ist erst dann bekannt).
+local function positionAuraIcons(holder, count)
+	if count < 1 then return end
+	local anchor = holder._anchor or "BOTTOMLEFT"
+	local grow   = holder._grow or "RIGHT"
+	local step   = (holder._size or 16) + (holder._spacing or 0)
+	local dirX, dirY = 0, 0
+	if grow == "RIGHT" then dirX = 1 elseif grow == "LEFT" then dirX = -1
+	elseif grow == "UP" then dirY = 1 elseif grow == "DOWN" then dirY = -1 end
+	local horiz = (dirX ~= 0)
+	local centerX = horiz and not (strfind(anchor, "LEFT") or strfind(anchor, "RIGHT"))
+	local centerY = (not horiz) and not (strfind(anchor, "TOP") or strfind(anchor, "BOTTOM"))
+	local ix, iy = auraInset(anchor)
+	local sx = centerX and (-dirX * (count - 1) * step / 2) or 0
+	local sy = centerY and (-dirY * (count - 1) * step / 2) or 0
+	for i = 1, count do
+		local ic = holder.icons[i]
+		if ic then
+			ic:ClearAllPoints()
+			ic:SetPoint(anchor, holder, anchor, ix + sx + (i - 1) * dirX * step, iy + sy + (i - 1) * dirY * step)
+		end
+	end
+end
+local function makeAuraIcon(holder)
+	local ic = CreateFrame("Frame", nil, holder)
+	ic.bg = ic:CreateTexture(nil, "BACKGROUND")
+	ic.bg:SetAllPoints()
+	ic.bg:SetColorTexture(0, 0, 0, 1)            -- 1px schwarzer Rahmen
+	ic.tex = ic:CreateTexture(nil, "ARTWORK")
+	ic.tex:SetPoint("TOPLEFT", 1, -1)
+	ic.tex:SetPoint("BOTTOMRIGHT", -1, 1)
+	ic.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)   -- Icon-Standardrand wegschneiden
+	ic.cd = CreateFrame("Cooldown", nil, ic, "CooldownFrameTemplate")
+	ic.cd:SetAllPoints(ic.tex)
+	ic.cd:SetDrawEdge(false)
+	ic.cd:SetHideCountdownNumbers(true)
+	ic:Hide()
+	return ic
+end
+-- Einen Kategorie-Block layouten: Holder + Icon-Pool an Anker/Größe/Wachstumsrichtung
+-- positionieren. Befüllt (Textur/Swipe/Show) wird erst beim Rendern. NUR im Layout-Pfad
+-- aufrufen (erzeugt ggf. Frames -> out-of-combat).
+local function layoutAuraCat(f, key, cat, size)
+	local holder = f.auraHolders[key]
+	if not (cat and cat.enabled) then
+		if holder then holder:Hide() end
+		return
+	end
+	if not holder then
+		holder = CreateFrame("Frame", nil, f.overlay)
+		holder:SetAllPoints(f)
+		holder.icons = {}
+		f.auraHolders[key] = holder
+	end
+	holder:Show()
+	-- Layout-Parameter für die render-zeitige Positionierung (positionAuraIcons) merken.
+	holder._anchor  = cat.anchor or "BOTTOMLEFT"
+	holder._grow    = cat.grow or "RIGHT"
+	holder._size    = size
+	holder._spacing = cat.spacing or 0
+	local maxN = cat.maxIcons or 5
+	for i = 1, maxN do
+		local ic = holder.icons[i] or makeAuraIcon(holder)
+		holder.icons[i] = ic
+		ic:SetSize(size, size)
+		if cat.showSwipe then ic.cd:Show() else ic.cd:Hide() end
+		ic:Hide()
+	end
+	for i = maxN + 1, #holder.icons do holder.icons[i]:Hide() end
 end
 
 -- Dekoriert einen beliebigen Host (Nicht-Secure-Frame für Preview ODER Secure-Button
@@ -361,13 +484,15 @@ local function Decorate(f)
 	f.healAbsClip:SetClipsChildren(true)
 	f.healAbsClip:SetPoint("TOPLEFT", f.healAbsorbBar:GetStatusBarTexture(), "TOPLEFT", 0, 0)
 	f.healAbsClip:SetPoint("BOTTOMRIGHT", f.healAbsorbBar, "BOTTOMRIGHT", 0, 0)
-	f.healStripe = makeStripe(f.healAbsClip, f.health, HEALABS_TEX)
+	f.healStripe = makeStripe(f.healAbsClip, f.health, HEALABS_TEX, true)
 
 	-- ----- Overlay (Tiefe, Texte, Maus-Rand) -----
 	f.overlay = CreateFrame("Frame", nil, f)
 	f.overlay:SetAllPoints()
 	f.overlay:SetFrameLevel(base + 6)
 	if ns.Style then ns.Style:ApplyBar(f.health, f.overlay) end
+
+	f.auraHolders = {}   -- [catKey] = Holder-Frame mit Icon-Pool (lazy in ApplyConfig)
 
 	f.name = f.overlay:CreateFontString(nil, "OVERLAY")
 	f.name:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
@@ -438,13 +563,14 @@ function Raidframes:ApplyConfig(f)
 	f.shieldBar:SetSize(L.width, L.height)
 	f.healAbsorbBar:SetSize(L.width, L.height)
 
-	-- Streifen-Overlays horizontal in FESTER Pixelgröße kacheln: TexCoord-Breite =
-	-- Frame-Breite / Texturbreite -> Streifenbreite bleibt konstant, egal wie breit der
-	-- Schild/Absorb (kein Stauchen, nahtloser Übergang). Vertikal 0..1 = volle Höhe einmal.
-	local tx = L.width / STRIPE_TEX_W
-	f.shieldStripe:SetTexCoord(0, tx, 0, 1)
-	f.backfillStripe:SetTexCoord(0, tx, 0, 1)
-	f.healStripe:SetTexCoord(0, tx, 0, 1)
+	-- Streifen-Overlays horizontal in FESTER Pixelgröße kacheln (Frame-Breite / Texturbreite).
+	-- Schild vertikal voll (0..1, CLAMP) wie bisher — die 40px-Textur ist keine Zweierpotenz,
+	-- vertikales REPEAT zeigte eine Naht. Healabsorb (128px, Zweierpotenz) auch vertikal in
+	-- fester Pixelgröße -> X-Muster wird nicht mehr gestreckt.
+	local txW = L.width / STRIPE_TEX_W
+	f.shieldStripe:SetTexCoord(0, txW, 0, 1)
+	f.backfillStripe:SetTexCoord(0, txW, 0, 1)
+	f.healStripe:SetTexCoord(0, txW, 0, L.height / HEALABS_TEX_H)
 
 	if ns.Style then
 		local t = d.healthTexture
@@ -459,6 +585,15 @@ function Raidframes:ApplyConfig(f)
 	f.eB:ClearAllPoints(); f.eB:SetPoint("BOTTOMLEFT"); f.eB:SetPoint("BOTTOMRIGHT"); f.eB:SetHeight(2)
 	f.eL:ClearAllPoints(); f.eL:SetPoint("TOPLEFT"); f.eL:SetPoint("BOTTOMLEFT"); f.eL:SetWidth(2)
 	f.eR:ClearAllPoints(); f.eR:SetPoint("TOPRIGHT"); f.eR:SetPoint("BOTTOMRIGHT"); f.eR:SetWidth(2)
+
+	-- Aura-Indikatoren layouten. Auto-Fit zieht die Icon-Größe aus L.height.
+	if d.auras then
+		for _, c in ipairs(AURA_CATS) do
+			local cat  = d.auras[c.key]
+			local size = (cat and auraIconSize(cat, L)) or 16
+			layoutAuraCat(f, c.key, cat, size)
+		end
+	end
 end
 
 -- Alle Bars teilen die Skala 0..maxH. Werte dürfen secret sein; 0 -> unsichtbar.
@@ -518,6 +653,8 @@ function Raidframes:RenderLive(f)
 		local ok, str = pcall(AbbrevNum, UnitHealth(u))
 		f.htext:SetText(ok and str or "")
 	end
+
+	self:RenderAurasLive(f)
 end
 
 -- TESTMODUS — Fake-Zahlen, identischer StatusBar-/Clip-Pfad
@@ -552,6 +689,75 @@ function Raidframes:RenderFake(f)
 	if t == "Keine" then f.htext:SetText("")
 	elseif t == "Prozent" then f.htext:SetText(floor(hp * 100) .. "%")
 	else f.htext:SetText(AbbrevNum(floor(hp * FAKE_MAX))) end
+
+	self:RenderAurasFake(f)
+end
+
+-- Aura-Icons befüllen — LIVE (secret-sicher: Filter-Scan, Swipe via Duration-Objekt).
+-- Holder/Icons sind im Layout-Pfad vorab erzeugt; hier nur Textur/Swipe/Show setzen.
+function Raidframes:RenderAurasLive(f)
+	local u = f.unit
+	local A = db().auras
+	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
+	for _, c in ipairs(AURA_CATS) do
+		local cat    = A[c.key]
+		local holder = f.auraHolders and f.auraHolders[c.key]
+		if cat and cat.enabled and holder then
+			local maxN = cat.maxIcons or 5
+			local shown, i = 0, 1
+			while shown < maxN do
+				local aura = C_UnitAuras.GetAuraDataByIndex(u, i, c.filter)
+				if not aura then break end
+				i = i + 1
+				shown = shown + 1
+				local ic = holder.icons[shown]
+				if ic then
+					local tex = aura.icon
+					if tex ~= nil and not issecretvalue(tex) then ic.tex:SetTexture(tex)
+					else ic.tex:SetTexture(136243) end   -- Fallback (Icon secret/fehlt)
+					if cat.showSwipe and ic.cd then
+						local iid = aura.auraInstanceID
+						local durObj = iid and C_UnitAuras.GetAuraDuration and C_UnitAuras.GetAuraDuration(u, iid)
+						if durObj and ic.cd.SetCooldownFromDurationObject then
+							pcall(ic.cd.SetCooldownFromDurationObject, ic.cd, durObj)
+						else
+							ic.cd:Clear()
+						end
+					end
+					ic:Show()
+				end
+			end
+			positionAuraIcons(holder, shown)
+			for j = shown + 1, #holder.icons do holder.icons[j]:Hide() end
+		end
+	end
+end
+
+-- Aura-Icons befüllen — TESTMODUS (Fake-HoTs mit Beispiel-Swipe; läuft out-of-combat).
+function Raidframes:RenderAurasFake(f)
+	local A = db().auras
+	if not A then return end
+	for _, c in ipairs(AURA_CATS) do
+		local cat    = A[c.key]
+		local holder = f.auraHolders and f.auraHolders[c.key]
+		if cat and cat.enabled and holder then
+			local n = min(cat.maxIcons or 5, 3)
+			for k = 1, n do
+				local ic = holder.icons[k]
+				if ic then
+					ic.tex:SetTexture(FAKE_HOTS[((k - 1) % #FAKE_HOTS) + 1])
+					if cat.showSwipe and ic.cd then
+						ic.cd:SetCooldown(GetTime() - k * 1.5, 6 + k * 4)
+					elseif ic.cd then
+						ic.cd:Clear()
+					end
+					ic:Show()
+				end
+			end
+			positionAuraIcons(holder, n)
+			for k = n + 1, #holder.icons do holder.icons[k]:Hide() end
+		end
+	end
 end
 
 function Raidframes:UpdateUnit(f)
