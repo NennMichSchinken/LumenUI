@@ -1,3 +1,2 @@
-# luacheck-Binary — lokales Werkzeug, gehört nicht ins Repo/Package.
-/tools/luacheck.exe
-/tools/luacheck32.exe
+# Lokales Dev-Werkzeug (luacheck-Binary + Runner) — gehört nicht ins Addon-Repo/Package.
+/tools/
