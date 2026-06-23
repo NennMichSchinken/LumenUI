@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.5**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
+> Stand: Addon-Version **0.9.6**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -34,7 +34,7 @@ Kernidee ist **Anti-Bloat**: nur das, was praktisch jeder ernsthafte M+/Raid-Spi
 * **Commit-Stil:** kleine, thematisch saubere Commits; Nachricht knapp und sachlich (Englisch ist ok), z.B. `raidframes: add overshield backfill bar`. Kein Marketing, keine Romane.
 * **Versionierung:** `## Version:` in der `.toc` bei jedem ausgelieferten Stand hochziehen (SemVer-artig, aktuell 0.9.x im Vor-Release).
 * **Releases/Packaging:** Standard ist der **BigWigs Packager** (GitHub Action: Release-Tag → gepacktes Zip → Upload zu CurseForge/Wago). Zuverlässige Baseline bleibt der manuelle Zip-Upload. Die `Libs/` werden mitgepackt (oder via `.pkgmeta`/externals gezogen — beim Einrichten der Action entscheiden).
-* **Vor jedem Commit/Build:** alle `.lua` syntaktisch prüfen. (Im bisherigen Workflow lief das über `luaparser` in Python; im Terminal genügt `luac -p` bzw. ein Linter wie `luacheck`.)
+* **Vor jedem Commit/Build:** alle `.lua` syntaktisch prüfen. **Eingerichtet:** `luacheck` (v1.2.0, Standalone-Binary unter `tools/luacheck.exe`, via `.gitignore` aus dem Repo gehalten) mit projektweiter `.luacheckrc` (WoW-/Ace3-Globals whitelisted, `Libs/`+`tools/` ausgeschlossen). Aufruf: `tools\luacheck.exe .` oder das Helfer-Skript `powershell tools\check.ps1`.
 * **Interface-Nummer** in der `.toc` ändert sich pro Patch — beim Packaging prüfen (aktuell `120007`, Patch 12.0.7).
 
 ---
@@ -147,7 +147,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Text-Outline** (Keine/Outline/Dick) für Name & HP — v0.9.3.
 * **Dispel im Kampf zuverlässig** (Blizzard-Filter + `GetAuraDispelTypeColor`+Curve), Modi recolor/overlay, Farbe pro Typ — v0.9.3.
 * **Settings-Restruktur** live: linker Knoten **`Global`**, Raidframes-Tabs **`Base | Raid | Group`** (Konvention §4.1). Layout, **Position UND Name-/HP-Text getrennt pro Kontext** (raid/party) inkl. einmaliger Profil-Migration — v0.9.4/.5.
-* **Git:** läuft über GitHub (`NennMichSchinken/Lumen`); PR #1 (Addon+Absorbs) und PR #2 (Kontexte/Dispel/Layout/Text) gemergt. Aktueller `main`-Stand = **v0.9.5**.
+* **Git:** läuft über GitHub (`NennMichSchinken/Lumen`); PR #1 (Addon+Absorbs) und PR #2 (Kontexte/Dispel/Layout/Text) gemergt. **v0.9.6** = Click-to-Cast Phase 1 (Secure-Header) + luacheck-Setup.
 
 **Offen:**
 * **Akzentfarbe final** festlegen: aktuell im Code `#D4A34F`, ursprünglich vorgeschlagen `#c9a86a` (siehe §3).
@@ -164,10 +164,11 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 > 5. **Gegencheck:** kein wörtlich kopierter EllesmereUI-Code im Release (Adaption ist fein; 1:1-Kopie ohne Lizenzblick nicht). README ist bereits sauber (kein EllesmereUI).
 
 **Nächste Schritte (konkret, in Reihenfolge):**
-1. **Frames anklickbar/targetbar/Click-to-Cast** (Secure-Unit-Buttons/SecureGroupHeader) — der nächste **große** Schritt zur echten Nutzbarkeit. **Architektur-Weiche: vorher Plan mit Florian abstimmen** (geschützte Frames, `InCombatLockdown`, Roster nur außer Kampf umbauen). Referenz: EllesmereUIs Secure-Header. Erst danach baubar: die **Mouseover-/Klick-Bindings-Seite** (eigene Seite, wo Nutzer Spells zuordnen).
-2. Export/Import bauen (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter).
-3. Kleinere MVP-Features: Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung.
-4. Feinschliff (abgerundete Ecken als Toggle, Overschild-Kantenfunke, native Edit-Mode-Vollregistrierung) → erstes Release (BigWigs Packager, Tag/Release als Restore-Punkt).
+1. ~~Frames anklickbar/targetbar/Click-to-Cast~~ **✓ Phase 1 erledigt (v0.9.6, live bestätigt):** Frames laufen auf `SecureGroupHeader`/`SecureUnitButtonTemplate`; Linksklick=Ziel, Rechtsklick=WoW-Menü (12.0.7-Secure-Proxy), klick-/targetbar auch im Kampf. Architektur-Details siehe §10.3/§10.5.
+2. **Click-Cast Phase 2 — volle Bindings-Seite** (Spells auf Maustasten/Modifier zuordnen, per-Spec, Dispel/External/Rez-Presets, Hovercast). Andockpunkt liegt schon im Code (`ns.CC_RegisterButton`-Naht je Button). Referenz: EllesmereUIs `EUI_RaidFrames_ClickCast.lua` + `EllesmereUI_Kick.lua` (Secure-Proxys).
+3. Export/Import bauen (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter).
+4. Kleinere MVP-Features: Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung.
+5. Feinschliff (abgerundete Ecken als Toggle, Overschild-Kantenfunke, native Edit-Mode-Vollregistrierung, EditMode-Grabfläche im Live-Header) → erstes Release (BigWigs Packager, Tag/Release als Restore-Punkt).
 
 ---
 
@@ -195,18 +196,18 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 ---
 
-## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.5)
+## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.6)
 
 ### 10.1 Dateien im Addon-Ordner `Lumen/`
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.5`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Options.lua`, `GameMenu.lua`. |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.6`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Options.lua`, `GameMenu.lua`. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
 | `Style.lua` | **Zentrales** Balken-Stilmodul (bewusst zentral/wiederverwendbar für spätere Unit Frames/Target/Focus). Hält `Style.barTexture` (lumen-gradient) und `Style.barTextureSoft`. `Style:ApplyBar(statusbar, overlayParent)` setzt die Gradient-Textur und legt Licht-/Schatten-Tiefen-Overlays an. `Style:SetDepth(overlayParent, strength)` regelt die Tiefen-Deckkraft (1.0 Standard, 0.55 Soft, 0 aus). |
-| `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Test- und Live-Pfad geteilt. Details unten. |
+| `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Render in `Decorate(host)` faktorisiert: **Live** = Secure-Buttons über `SecureGroupHeader` (klick-/targetbar, Phase 1), **Test** = Nicht-Secure-Preview-Pool. Details unten (§10.5). |
 | `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** (Edit-Mode-Schalter, Positionen zurücksetzen), **`Profile`** (AceDBOptions), **`Raidframes`**. Der Raidframes-Knoten nutzt `childGroups="tab"` → Tabs **`Base`** (Aktiviert, Lebensbalken-Textur/Klassenfarbe/Füllfarbe, Heilvorhersage, Dispel, Name-/HP-Text inkl. Outline, Test) · **`Raid`** und **`Group`** (je Breite/Höhe/Abstand/Ausrichtung; eigene Position **und eigene Name-/HP-Text-Einstellungen**). Benennung gemäß §4.1. `Raid`/`Group` lesen/schreiben in `rf().raid`/`rf().party`. |
 | `GameMenu.lua` | Fügt im ESC-Menü einen „Lumen"-Button hinzu — über Blizzards eigene `GameMenuFrame:AddButton`-API (per `InitButtons`-Hook), damit es konfliktfrei neben EllesmereUI sitzt. Öffnet die Config; respektiert `InCombatLockdown`. |
 | `Libs/` | Ace3-Bibliotheken (siehe §6). |
@@ -336,7 +337,9 @@ Module hängen sich über die Datei-Upvalue `ns` ein (`ns.Raidframes`, `ns.Style
 
 ### 10.3 Raidframes-Render-Architektur (das Herzstück, secret-sicher)
 
-Pro Einheit existiert **ein** `Frame` mit dieser Schichtung (Frame-Level relativ zur Erzeugungs-Basis `base`):
+> **Seit v0.9.6** sitzt dieser Stack über `Decorate(host)` auf zwei Host-Typen: dem **Secure-Button** (Live, vom `SecureGroupHeader`) und dem **Nicht-Secure-Preview-Frame** (Test). Die folgende Schichtung gilt für beide identisch — nur Show/Hide steuert bei Secure-Buttons der Header (siehe §10.5).
+
+Pro Einheit dekoriert `Decorate(host)` den Host mit dieser Schichtung (Frame-Level relativ zur Erzeugungs-Basis `base`):
 
 * `f.bg` — dunkler Hintergrund (`#1c1c1c` artig).
 * `f.health` (StatusBar, `base+2`) — der **Lebensbalken** (Gradient-Textur, getönt per Klassen-/Dispel-/Füllfarbe). Seine **Fülltextur** (`GetStatusBarTexture()`) steuert die Anker aller Clips.
@@ -392,12 +395,20 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 
 ### 10.5 Aktueller Stand & nächster Schritt für Claude Code
 
-**Stand:** **v0.9.5**, in `main` gemergt (PR #1 + #2). Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur (getrennte Layouts/Positionen/Texte pro Kontext) sind **gebaut und von Florian live bestätigt**. Keine bekannten offenen Fehler.
+**Stand:** **v0.9.6**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt (v0.9.5, PR #1+#2). **Neu in v0.9.6 (live bestätigt):** Click-to-Cast **Phase 1** — die Frames sind echte **Secure-Unit-Buttons** über einen `SecureGroupHeader` (klick-/targetbar, Links=Ziel, Rechts=WoW-Menü inkl. Fokus auch im Kampf). Dazu `luacheck` als Pre-Commit-Linter eingerichtet (§2). Keine bekannten offenen Fehler.
+
+**Architektur Phase 1 (Ist-Zustand, `Modules/Raidframes.lua`):**
+* Render-Stack faktorisiert in **`Decorate(host)`** — dekoriert sowohl Nicht-Secure-Preview-Frames (Test) als auch Secure-Buttons (Live), ein gemeinsamer Render-Code.
+* **Live** = `SecureGroupHeaderTemplate` (`LumenRaidHeader`, `template=SecureUnitButtonTemplate`): Blizzard verwaltet Roster/Sortierung/In-Kampf. Funktionen `buildHeader`/`styleSecureButton`/`attachSecureMenu`/`applyHeaderLayout`/`configureSecureButtons`/`LayoutLive`. Orientierung↔Header-Attribute (`point`/`columnAnchorPoint`/`unitsPerColumn=5`/`maxColumns=8`). Routing via `OnAttributeChanged(unit)` → `unitToButton`.
+* **Klick:** `type1="target"` (+`*type1`); Rechtsklick-Menü über versteckten `SecureActionButton`-Proxy (`*type2="click"`+`*clickbutton2`, `useparent-unit`) — 12.0.7-sicher (sonst Taint bei „Fokus setzen"). Muster aus EllesmereUI `EllesmereUI_Kick.lua`.
+* **In-Kampf-Disziplin:** `secureLayoutDirty`-Flag + `PLAYER_REGEN_ENABLED`-Flush; Header/Buttons werden im Kampf nicht umgebaut. Sortierung Phase-1 = `INDEX`.
+* **Test/Preview** = bisheriger Nicht-Secure-Pool (`LayoutPreview`/`HidePreview`), nur bei `testMode`. **Zukunfts-Naht** `ns.CC_RegisterButton(button)` je Button für Phase 2.
+* Bekannte Mini-Grenze: EditMode-Grabfläche im Live-Modus deckt evtl. nicht den ganzen Header (Container behält feste Größe) — Feinschliff später.
 
 **Nächster großer Baustein (Priorität 1 — der eigentliche nächste Code-Schritt):**
-* **Frames anklickbar / targetbar / Click-to-Cast machen.** Aktuell sind die Unit-Frames reine **Anzeige** (`CreateFrame("Frame", …)`), keine sicheren Unit-Buttons. Für echtes Heilen müssen sie auf **Secure-Unit-Button / SecureGroupHeader** umgestellt werden (geschützte Attribute, Click-to-Cast, korrektes `unit`-Attribut), inkl. sauberer `InCombatLockdown`-Behandlung (Secure-Frames im Kampf nicht umbaubar — Layout/Roster nur außer Kampf bzw. über sichere Header). **Größte Architektur-Weiche → vorher Plan mit Florian abstimmen.** Referenz: EllesmereUIs Raid-Buttons als Secure-Header. Erst danach baubar: die **Mouseover-/Klick-Bindings-Seite** (eigene Seite, Spells zuordnen).
+* **Click-Cast Phase 2 — volle Bindings-Seite.** Eigene Seite zum Zuordnen von Spells auf Maustasten/Modifier (per-Spec), inkl. Dispel-/External-/Rez-Presets und Hovercast-Makros. Die Engine dockt an die vorhandene `ns.CC_RegisterButton`-Naht an. Referenz: EllesmereUIs `EUI_RaidFrames_ClickCast.lua` + `EllesmereUI_Kick.lua`.
 
-**Danach (Reihenfolge siehe §8):** Export/Import · Sortierung nach Rolle/Gruppe · HoT-Platzierung · Aggro-Warnung · Feinschliff (abgerundete Ecken, Overschild-Funke) → erstes Release.
+**Danach (Reihenfolge siehe §8):** Export/Import · Sortierung nach Rolle/Gruppe · HoT-Platzierung · Aggro-Warnung · Feinschliff (abgerundete Ecken, Overschild-Funke, Live-EditMode-Grabfläche) → erstes Release.
 
 **Bekannte, akzeptierte Grenzen (für den MVP bewusst so):**
 * **Dispel-Anzeige** funktioniert jetzt **auch im Kampf** (secret-sicher): Erkennung über Blizzards Filter `"HARMFUL|RAID_PLAYER_DISPELLABLE"` (bzw. `"HARMFUL"` + `dispelName ~= nil` für „alle"), Farbe typ-genau über `C_UnitAuras.GetAuraDispelTypeColor` + Color-Curve (`C_CurveUtil`). Zwei Modi: `recolor` (Balken einfärben) und `overlay` (Rand + Füllung, Klassenfarbe bleibt). Fallback auf generische Magic-Farbe, falls die Curve-API fehlt.
