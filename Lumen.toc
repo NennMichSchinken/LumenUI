@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 120007
 ## Title: Lumen
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## Author: NennMichSchinken
