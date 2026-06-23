@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.9**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
+> Stand: Addon-Version **0.9.10**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -118,7 +118,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Heilvorhersage** (eingehende Heilung rechts vom Leben).
 * **Heilabsorb** (frisst von rechts ins gefüllte Leben).
 * **Dispellbare Debuffs** hervorgehoben — gefiltert nach der eigenen Klasse (Magie/Fluch/Gift/Krankheit). (Aktuell als Umfärbung des Lebensbalkens; siehe Grenzen in §10.)
-* **HoT-Platzierung** als flexibles Aura-Indikator-System (`Auras`-Tab). *(Phase 1 gebaut + live bestätigt — v0.9.9: eigene HoTs, 9 Anker, Auto-Zentrierung, Auto-Fit, Testmodus-Vorschau; siehe §10.8. Phase 2 offen: exakte Whitelist per Signatur + weitere Kategorien.)*
+* **HoT-Platzierung** als flexibles Aura-Indikator-System (`Auras`-Tab). *(Gebaut: v0.9.9 eigene HoTs (live bestätigt), v0.9.10 vier Kategorien — eigene/fremde HoTs, Defensives & Externe, Debuffs (Testmodus bestätigt, Live offen). 9 Anker, Auto-Zentrierung, Auto-Fit; siehe §10.8. Phase 2 offen: exakte Whitelist per Signatur.)*
 * **Mouseover-Indikator** (Goldrand am anvisierten/Mouseover-Frame) — vorhanden.
 * **Aggro-Warnung.** *(Noch nicht implementiert — geplant.)*
 * **Party + Raid**, Anordnung sortierbar (nach Rolle/Gruppe). *(Aktuell einfache Rohrein-/Spalten-Anordnung; Sortierung nach Rolle/Gruppe steht noch aus.)*
@@ -151,7 +151,8 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Click-Cast Phase 2 live bestätigt — v0.9.7:** eigenes Modul `Modules/ClickCast.lua` + eigener Options-Knoten **`Click-Cast`**. Klick-Bindings (Maustaste + optionaler Modifier-Schalter Shift/Strg/Alt) und **Hovercast** (Taste auf `@mouseover` via globalem Secure-Button + `SecureHandlerStateTemplate`-Driver). Typen Ziel/Menü/Spell/Dispel/Rez, **pro Spec** (Spec-Auswahl-Dropdown im Panel, entkoppelt von der Live-Spec; folgt automatisch der aktiven Spec). Spell-Liste mit Icon, Suche + Filter „nur hilfreiche Zauber" (Default an). Settings-Baum jetzt: **`Global` (Tabs Base|Profile) · `Click-Cast` · `Raidframes`**. Details §10.6.
   * **Wichtige Gotcha (live geklärt):** Funktioniert SHIFT-Klick nicht, obwohl Strg/Alt gehen → meist WoWs **Selbstzauber-/Fokus-Zauber-Taste = Shift** (Optionen→Kampf) oder eine harte Tastenbelegung. Kein Lumen-Bug.
 * **Export/Import live bestätigt — v0.9.8:** eigenes Modul `Modules/Share.lua`, UI unten im `Global → Profile`-Tab (Profil-Verwaltung + Teilen bewusst an einem Ort). EIN Code via `AceSerializer`+`LibDeflate`, granular pro Modul (Häkchen) + getrennter Schalter „Layout-Positionen mitimportieren". Sparse Export + Merge-auf-Defaults beim Import (robust gegen AceDB-Lazy-Defaults + versions-tolerant). Details §10.7. **Offen:** echter Transfer-Test an Zweitchar/Freund (Florian testet später, meldet Feedback). Gleicher Patch: Click-Cast-Spec-Dropdown füllt sich jetzt auch beim allerersten Öffnen (war vor dem Login blank).
-* **Aura-Indikatoren / `Auras`-Tab live bestätigt — v0.9.9 (Phase 1 von 2):** flexibles Icon-System als neuer Raidframes-Tab (`Base | Raid | Group | Auras`), Vorbild EllesmereUIs Aura-Tab, kuratiert. Phase 1 = eigene HoTs: 9 Anker + Wachstumsrichtung, **Auto-Zentrierung** bei mittigen Ankern (anhand echter Icon-Zahl), **Auto-Fit** (Größe aus Frame-Höhe, gedeckelt an Breite/Höhe → kein Überlauf), Cooldown-Swipe (secret-sicher via Duration-Objekt), **Testmodus-Vorschau** (Florians Anforderung). Erkennung über `HELPFUL|PLAYER`-Filter (zeigt Phase 1 ALLE eigenen Hilfsauren). Gleicher Patch: Healabsorb-Overlay kachelt jetzt auch vertikal in fester Pixelgröße (kein Strecken auf hohen Frames); Schild bleibt vertikal geclampt (256×40 = keine Zweierpotenz → vertikales REPEAT zeigte eine Naht). Details §10.8. **Phase 2 offen:** exakte HoT-Whitelist per Spec-Signatur (Kampf-Präzision) + weitere Kategorien (fremde HoTs / Defensives / Debuffs / CDs).
+* **Aura-Indikatoren / `Auras`-Tab live bestätigt — v0.9.9 (Phase 1 von 2):** flexibles Icon-System als neuer Raidframes-Tab (`Base | Raid | Group | Auras`), Vorbild EllesmereUIs Aura-Tab, kuratiert. Phase 1 = eigene HoTs: 9 Anker + Wachstumsrichtung, **Auto-Zentrierung** bei mittigen Ankern (anhand echter Icon-Zahl), **Auto-Fit** (Größe aus Frame-Höhe, gedeckelt an Breite/Höhe → kein Überlauf), Cooldown-Swipe (secret-sicher via Duration-Objekt), **Testmodus-Vorschau** (Florians Anforderung). Erkennung über `HELPFUL|PLAYER`-Filter (zeigt Phase 1 ALLE eigenen Hilfsauren). Gleicher Patch: Healabsorb-Overlay kachelt jetzt auch vertikal in fester Pixelgröße (kein Strecken auf hohen Frames); Schild bleibt vertikal geclampt (256×40 = keine Zweierpotenz → vertikales REPEAT zeigte eine Naht). Details §10.8.
+* **Auras-Tab: vier Kategorien — v0.9.10 (Testmodus bestätigt, Live offen):** `hotsOwn` (HELPFUL|PLAYER), `hotsOther` (fremd, via `subExclude`), `defensives` (`EXTERNAL_DEFENSIVE`), `debuffs` (HARMFUL). Vier inline-Options-Blöcke aus einem Builder. **Offen:** Live-Test (v.a. ob der `EXTERNAL_DEFENSIVE`-Filter greift). **Phase 2 offen:** exakte HoT-Whitelist per Spec-Signatur (Kampf-Präzision).
 
 **Offen:**
 * **Akzentfarbe final** festlegen: aktuell im Code `#D4A34F`, ursprünglich vorgeschlagen `#c9a86a` (siehe §3).
@@ -200,13 +201,13 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 ---
 
-## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.9)
+## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.10)
 
 ### 10.1 Dateien im Addon-Ordner `Lumen/`
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.9`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Modules\Share.lua`, `Options.lua`, `GameMenu.lua`. |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.10`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Modules\Share.lua`, `Options.lua`, `GameMenu.lua`. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions → **AceSerializer** → **LibDeflate**). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
@@ -284,12 +285,14 @@ local defaults = {
 
             -- (Position liegt jetzt pro Kontext in raid/party oben — kein flaches point/x/y mehr.)
 
-            -- Aura-Indikatoren (v0.9.9; Phase 1: eigene HoTs). Layout geteilt über raid/party,
+            -- Aura-Indikatoren (v0.9.10; 4 Kategorien). Layout geteilt über raid/party,
             -- nur die Größe ist kontextabhängig (autoFit aus L.height + Breiten/Höhen-Deckel).
+            -- Default: nur hotsOwn an, Rest aus + an verschiedene Ecken vorbelegt.
             auras = {
-                hotsOwn = { enabled=true, anchor="BOTTOMLEFT", grow="RIGHT", spacing=2,
-                            maxIcons=5, autoFit=true, sizeRaid=16, sizeParty=22,
-                            showSwipe=true, hideTooltips=false },  -- Details §10.8
+                hotsOwn    = { enabled=true,  anchor="BOTTOMLEFT",  grow="RIGHT", ... },
+                hotsOther  = { enabled=false, anchor="TOPLEFT",     grow="RIGHT", ... },
+                defensives = { enabled=false, anchor="TOPRIGHT",    grow="LEFT",  ... },
+                debuffs    = { enabled=false, anchor="BOTTOMRIGHT", grow="LEFT",  ... },  -- Details §10.8
             },
 
             -- Test / Beispielgruppe
@@ -411,7 +414,7 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 
 ### 10.5 Aktueller Stand & nächster Schritt für Claude Code
 
-**Stand:** **v0.9.9**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt. **v0.9.6:** Click-to-Cast **Phase 1** (Secure-Unit-Buttons über `SecureGroupHeader`, Links=Ziel/Rechts=Menü, auch im Kampf) + `luacheck`. **v0.9.7 (live bestätigt):** Click-to-Cast **Phase 2** — eigenes Modul + Options-Knoten, Klick- und Hovercast-Bindings pro Spec (§10.6). **v0.9.8 (live bestätigt):** Export/Import (`Modules/Share.lua`, §10.7) + Spec-Dropdown-Blank-Fix. **v0.9.9 (live bestätigt):** Aura-Indikatoren / `Auras`-Tab Phase 1 (eigene HoTs; §10.8) + Healabsorb-Overlay-Tiling-Fix. Keine bekannten offenen Fehler. **Nächster Schritt: HoT-Phase 2 (Signatur-Whitelist) / weitere Aura-Kategorien, restliche MVP-Features (Sortierung/Aggro) und/oder Suite-Shell-Design** (siehe §8, Punkt 4).
+**Stand:** **v0.9.9**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt. **v0.9.6:** Click-to-Cast **Phase 1** (Secure-Unit-Buttons über `SecureGroupHeader`, Links=Ziel/Rechts=Menü, auch im Kampf) + `luacheck`. **v0.9.7 (live bestätigt):** Click-to-Cast **Phase 2** — eigenes Modul + Options-Knoten, Klick- und Hovercast-Bindings pro Spec (§10.6). **v0.9.8 (live bestätigt):** Export/Import (`Modules/Share.lua`, §10.7) + Spec-Dropdown-Blank-Fix. **v0.9.9 (live bestätigt):** Aura-Indikatoren / `Auras`-Tab eigene HoTs (§10.8) + Healabsorb-Overlay-Tiling-Fix. **v0.9.10 (Testmodus bestätigt, Live offen):** vier Aura-Kategorien (eigene/fremde HoTs, Defensives & Externe, Debuffs). Keine bekannten offenen Fehler; offen = Live-Test der neuen Kategorien (v.a. Defensives-Filter). **Nächster Schritt: HoT-Phase 2 (Signatur-Whitelist), restliche MVP-Features (Sortierung/Aggro) und/oder Suite-Shell-Design** (siehe §8, Punkt 4).
 
 **Architektur Phase 1 (Ist-Zustand, `Modules/Raidframes.lua`):**
 * Render-Stack faktorisiert in **`Decorate(host)`** — dekoriert sowohl Nicht-Secure-Preview-Frames (Test) als auch Secure-Buttons (Live), ein gemeinsamer Render-Code.
@@ -471,26 +474,31 @@ Ein Textcode fürs ganze Setup (Prinzip WeakAuras/ElvUI), granular pro Modul + g
 
 **API:** `Share:Export()`, `Share:Decode(str)` (→ payload | nil,err), `Share:Import(payload, selected, withLayout)`, `Share:GetModules()`, `Share:Encode(payload)`. Options-UI-Flow wie Click-Cast: Multiline-`input` dekodiert im `set` (committet beim Wegklicken/Okay), Häkchen/Schalter/Knopf sind statische Args mit dynamischem `hidden`/`get`/`set` auf Closure-State, Live-Update via `AceConfigRegistry:NotifyChange("Lumen")`.
 
-### 10.8 Aura-Indikatoren / „Auras"-Tab (Raidframes) — Ist-Zustand (v0.9.9, live bestätigt)
+### 10.8 Aura-Indikatoren / „Auras"-Tab (Raidframes) — Ist-Zustand (v0.9.10)
 
-**Phase 1 von 2.** Flexibles Icon-Indikator-System als neuer Raidframes-Tab **`Auras`** (Tab-Leiste jetzt `Base | Raid | Group | Auras`). Vorbild EllesmereUIs Aura-Tab, **kuratiert** (Anti-Bloat). HoTs sind eine Kategorie im selben System (kein separater HoT-Editor wie bei Ellesmere). Florians Designwunsch: pro **Anker-Position** wählt man, welche Kategorie dort erscheint.
+Flexibles Icon-Indikator-System als Raidframes-Tab **`Auras`** (Tab-Leiste `Base | Raid | Group | Auras`). Vorbild EllesmereUIs Aura-Tab, **kuratiert** (Anti-Bloat). Pro **Kategorie** wählt man Anker-Position, Wachstum und Größe. **v0.9.9** = Grundgerüst + eigene HoTs (live bestätigt); **v0.9.10** = vier Kategorien (Testmodus bestätigt, **Live noch offen** — Florian testet später, v.a. „Defensives & Externe").
 
-**Datenmodell:** `db.profile.raidframes.auras = { [catKey] = {...} }`. Phase 1 hat eine Kategorie `hotsOwn`. Felder: `enabled, anchor` (einer der 9 WoW-Punkte `TOPLEFT…BOTTOMRIGHT`), `grow` (`RIGHT|LEFT|UP|DOWN`), `spacing, maxIcons, autoFit, sizeRaid, sizeParty, showSwipe, hideTooltips`. **Layout (Anker/Wachstum/Toggles) ist über raid/party GETEILT — nur die Größe ist kontextabhängig.**
+**Datenmodell:** `db.profile.raidframes.auras = { [catKey] = {...} }`. Vier Kategorien: `hotsOwn`, `hotsOther`, `defensives`, `debuffs`. Felder je Kategorie: `enabled, anchor` (einer der 9 WoW-Punkte `TOPLEFT…BOTTOMRIGHT`), `grow` (`RIGHT|LEFT|UP|DOWN`), `spacing, maxIcons, autoFit, sizeRaid, sizeParty, showSwipe, hideTooltips`. **Layout (Anker/Wachstum/Toggles) ist über raid/party GETEILT — nur die Größe ist kontextabhängig.** Default: nur `hotsOwn` an, Rest aus + an verschiedene Ecken vorbelegt (kollisionsfrei beim Anschalten).
 
-**Render (`Modules/Raidframes.lua`):** Kategorien-Registry `AURA_CATS = { {key, filter} }` (filter = Blizzard-Aura-Filter). Icon-Pool je Frame in `Decorate` (`f.auraHolders[catKey]` = Holder mit `.icons`-Pool; jedes Icon = Frame + ARTWORK-Textur + `CooldownFrameTemplate`). `layoutAuraCat` (in `ApplyConfig`, nur OOC) erzeugt/größt den Pool und merkt Anker/Wachstum/Größe am Holder. **Positioniert wird render-zeitig** über `positionAuraIcons` — es kennt erst dann die echte Icon-Zahl → **Auto-Zentrierung** bei mittigen Ankern (Unten/Oben/Mitte/Links/Rechts) anhand der tatsächlichen Anzahl. `RenderAurasLive` scannt `C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL|PLAYER")` (secret-sicher; „PLAYER" = selbst gewirkt → eigene HoTs), Swipe via `cd:SetCooldownFromDurationObject(C_UnitAuras.GetAuraDuration(u, iid))` (das EINZIGE Cooldown-Setter, der secret verträgt; Icon-/iid-Felder mit `issecretvalue` geguardet). `RenderAurasFake` speist Fake-HoT-Texturen für den **Testmodus** (Florians Anforderung: solange es keine Live-Vorschau in den Settings gibt, MUSS der Testmodus die Auren zeigen). Beide laufen im selben `Decorate`-Pfad → Test = Live.
+**Render (`Modules/Raidframes.lua`):** Kategorien-Registry `AURA_CATS = { {key, filter, subExclude?, subInclude?, fake} }`:
+* `hotsOwn` — `filter="HELPFUL|PLAYER"` (selbst gewirkt).
+* `hotsOther` — `filter="HELPFUL"`, `subExclude="HELPFUL|PLAYER"` (nur Auren, die der PLAYER-Unterfilter AUSschließt = fremd).
+* `defensives` — `filter="HELPFUL"`, `subInclude="HELPFUL|EXTERNAL_DEFENSIVE"` (nur Auren, die dieser Unterfilter EINschließt = externe Defensiven).
+* `debuffs` — `filter="HARMFUL"`.
 
-**Größe — Auto-Fit (Default):** `auraIconSize` leitet die Icon-Größe aus der Frame-Höhe (~30%) ab UND deckelt sie an der Frame-Breite (horizontales Wachstum) bzw. -Höhe (vertikales) → die volle Reihe/Spalte passt immer in den Frame, **kein Überlauf** über den Rand. Auto-Fit aus → explizite `sizeRaid`/`sizeParty`.
+`RenderAurasLive` scannt `C_UnitAuras.GetAuraDataByIndex(u, i, c.filter)` und wendet `subExclude`/`subInclude` secret-sicher über `C_UnitAuras.IsAuraFilteredOutByInstanceID(u, iid, …)` an (nur Bool-Rückgabe, kein secret-Lesen). Swipe via `cd:SetCooldownFromDurationObject(C_UnitAuras.GetAuraDuration(u, iid))` (das EINZIGE Cooldown-Setter, der secret verträgt; Icon-/iid-Felder mit `issecretvalue` geguardet). Icon-Pool je Frame in `Decorate` (`f.auraHolders[catKey]`); `layoutAuraCat` (in `ApplyConfig`, OOC) erzeugt/größt den Pool, **positioniert wird render-zeitig** via `positionAuraIcons` (kennt erst dann die echte Icon-Zahl → **Auto-Zentrierung** bei mittigen Ankern). `RenderAurasFake` speist je Kategorie passende Fake-Texturen (`FAKE_HOTS`/`FAKE_DEFENSIVE`/`FAKE_DEBUFF`) für den **Testmodus** (Florians Anforderung, solange keine Live-Vorschau existiert). Test- + Live-Pfad teilen `Decorate`.
 
-**Options (`Auras`-Tab):** Get/Set-Closure `auraGetSet("hotsOwn")` auf `rf().auras[catKey]`. Regler: Anzeigen, Position (`POINTS`), Wachstumsrichtung (`GROW`), Abstand, Max. Icons, Cooldown-Swipe, Auto-Fit + (wenn aus) Größe Raid/Gruppe. Neue Kategorien später: in `AURA_CATS` (Render) + eigener Get/Set + Tab-Block ergänzen.
+**Größe — Auto-Fit (Default):** `auraIconSize` leitet die Icon-Größe aus der Frame-Höhe (~30%) ab UND deckelt sie an der Frame-Breite (horizontales Wachstum) bzw. -Höhe (vertikales) → die volle Reihe/Spalte passt immer rein, **kein Überlauf**. Auto-Fit aus → explizite `sizeRaid`/`sizeParty`.
 
-**Phase-1-Grenzen (bewusst so, mit Florian abgestimmt):**
-* Live zeigt **ALLE eigenen Hilfsauren** (nicht nur HoTs) — Dauerbuffs können mitlaufen. Exakte Whitelist kommt in **Phase 2**.
+**Options (`Auras`-Tab):** vier inline-Kategorie-Blöcke aus einem Builder `auraCatGroup(catKey,label,order)` (je eigener `auraGetSet(catKey)`-Closure, identische Regler), iteriert über `AURA_TAB_CATS`. Regler: Anzeigen, Position (`POINTS`), Wachstumsrichtung (`GROW`), Abstand, Max. Icons, Cooldown-Swipe, Auto-Fit + (wenn aus) Größe Raid/Gruppe. **Neue Kategorie:** Eintrag in `AURA_CATS` (Render, Raidframes.lua) + `AURA_TAB_CATS` (Options) + Default in Core.lua — fertig.
+
+**Bewusste Grenzen (mit Florian abgestimmt):**
+* `hotsOwn`/`hotsOther` zeigen ALLE (eigenen/fremden) Hilfsauren — Dauerbuffs (Raidbuffs) können mitlaufen. Exakte HoT-Whitelist kommt in **Phase 2**. `defensives` ist über `EXTERNAL_DEFENSIVE` schon kuratiert; `debuffs` zeigt alle Debuffs (maxIcons deckelt).
 * `hideTooltips` liegt im Profil, greift erst, wenn Icons mouseover-interaktiv sind (Phase 2).
-* **Keine eigene „Mitte"-Wachstumsrichtung** — symmetrisches Wachstum springt (einmal links/rechts) → bewusst verworfen; mittige Anker zentrieren bereits.
+* **Keine eigene „Mitte"-Wachstumsrichtung** — symmetrisches Wachstum springt → verworfen; mittige Anker zentrieren bereits.
+* **Live-Unsicherheit:** Der `EXTERNAL_DEFENSIVE`-Filter (Defensives) ist der beste Stand aus EllesmereUI, aber live ungetestet — falls die Kategorie live leer bleibt, Filter-Token justieren.
 
-**Phase 2 (offen, nächster Schritt):**
-* **Exakte HoT-Whitelist per Spec-Signatur.** Im Kampf ist `aura.spellId` secret → nicht per ID filterbar. Lösung = Filter-Fingerprint pro Spec (mehrere `IsAuraFilteredOutByInstanceID`-Checks → Signatur; außer Kampf `Signatur↔SpellID` lernen, im Kampf über die Signatur erkennen). Muster: EllesmereUI `EUI_RaidFrames_BuffManager.lua` (`specSignatures`, `BM_IdentifySecretAura`, `MatchSecretAura`).
-* **Weitere Kategorien** im selben System: fremde HoTs, Defensives & Externe, Debuffs, CDs.
+**Phase 2 (offen, nächster Schritt):** **Exakte HoT-Whitelist per Spec-Signatur.** Im Kampf ist `aura.spellId` secret → nicht per ID filterbar. Lösung = Filter-Fingerprint pro Spec (mehrere `IsAuraFilteredOutByInstanceID`-Checks → Signatur; außer Kampf `Signatur↔SpellID` lernen, im Kampf über die Signatur erkennen). Muster: EllesmereUI `EUI_RaidFrames_BuffManager.lua` (`specSignatures`, `BM_IdentifySecretAura`, `MatchSecretAura`). Optional: „CDs"-Kategorie (braucht Whitelist), `hideTooltips` aktiv (mouseover-interaktive Icons).
 
 ---
 

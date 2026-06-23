@@ -84,8 +84,46 @@ function ns.SetupOptions()
 		end
 		return get, set
 	end
-	local getHotOwn, setHotOwn = auraGetSet("hotsOwn")
-	local function hotOwnAutoFit() local t = rf().auras and rf().auras.hotsOwn; return t and t.autoFit end
+	-- Kategorien im Auras-Tab (Reihenfolge + Label). Filter/Render liegen in Raidframes.lua.
+	local AURA_TAB_CATS = {
+		{ key = "hotsOwn",    label = "Eigene HoTs" },
+		{ key = "hotsOther",  label = "Fremde HoTs / Buffs" },
+		{ key = "defensives", label = "Defensives & Externe" },
+		{ key = "debuffs",    label = "Debuffs" },
+	}
+	-- Ein Kategorie-Block (inline-group mit eigenem Get/Set). Regler je Kategorie identisch.
+	local function auraCatGroup(catKey, label, order)
+		local get, set = auraGetSet(catKey)
+		local function isAutoFit() local t = rf().auras and rf().auras[catKey]; return t and t.autoFit end
+		return {
+			type = "group", inline = true, order = order, name = label,
+			get = get, set = set,
+			args = {
+				enabled   = { type = "toggle", order = 1, width = "full", name = "Anzeigen" },
+				anchor    = { type = "select", order = 2, name = "Position (Anker)", values = POINTS },
+				grow      = { type = "select", order = 3, name = "Wachstumsrichtung", values = GROW },
+				spacing   = { type = "range",  order = 4, name = "Abstand", min = 0, max = 20, step = 1 },
+				maxIcons  = { type = "range",  order = 5, name = "Max. Icons", min = 1, max = 8, step = 1 },
+				showSwipe = { type = "toggle", order = 6, name = "Cooldown-Swipe" },
+				autoFit   = {
+					type = "toggle", order = 7, width = "full", name = "Auto-Fit (Größe aus Frame-Höhe)",
+					desc = "An: Icon-Größe automatisch aus der Frame-Höhe (gedeckelt an Breite/Höhe). Aus: feste Größen für Raid/Gruppe.",
+				},
+				sizeRaid  = { type = "range", order = 8, name = "Größe (Raid)",   min = 8, max = 48, step = 1, disabled = isAutoFit },
+				sizeParty = { type = "range", order = 9, name = "Größe (Gruppe)", min = 8, max = 48, step = 1, disabled = isAutoFit },
+			},
+		}
+	end
+	local aurasArgs = {
+		intro = {
+			type = "description", order = 0,
+			name = "Aura-Indikatoren am Frame: eigene/fremde HoTs, Defensives & Externe, Debuffs. " ..
+			       "Jede Kategorie hat eigenen Anker, Wachstum und Größe. Im |cffD4A34FTestmodus|r (Tab Base) zur Vorschau sichtbar.\n",
+		},
+	}
+	for i, cat in ipairs(AURA_TAB_CATS) do
+		aurasArgs[cat.key] = auraCatGroup(cat.key, cat.label, i * 10)
+	end
 
 	-- Layout- + Text-Optionen (Raid- und Group-Tab identisch; Text pro Kontext, da Frames
 	-- unterschiedlich groß sind). colGet/colSet binden die Farb-Picker an den Kontext.
@@ -519,32 +557,7 @@ function ns.SetupOptions()
 				},
 				auras = {
 					type = "group", name = "Auras", order = 4,
-					get = getHotOwn, set = setHotOwn,
-					args = {
-						intro = {
-							type = "description", order = 0,
-							name = "HoTs & Auren als Icon-Indikatoren am Frame. Phase 1: deine eigenen HoTs. " ..
-							       "Im |cffD4A34FTestmodus|r (Tab Base) zur Vorschau sichtbar, solange es keine Live-Vorschau gibt.\n",
-						},
-						hotHead   = { type = "header", order = 10, name = "Eigene HoTs" },
-						enabled   = { type = "toggle", order = 11, width = "full", name = "Anzeigen" },
-						anchor    = { type = "select", order = 12, name = "Position (Anker)", values = POINTS },
-						grow      = { type = "select", order = 13, name = "Wachstumsrichtung", values = GROW },
-						spacing   = { type = "range",  order = 14, name = "Abstand", min = 0, max = 20, step = 1 },
-						maxIcons  = { type = "range",  order = 15, name = "Max. Icons", min = 1, max = 8, step = 1 },
-
-						dispHead  = { type = "header", order = 20, name = "Darstellung" },
-						showSwipe = { type = "toggle", order = 21, name = "Cooldown-Swipe anzeigen" },
-
-						sizeHead  = { type = "header", order = 30, name = "Größe" },
-						autoFit   = {
-							type = "toggle", order = 31, width = "full",
-							name = "Auto-Fit — Icons skalieren mit der Frame-Höhe (Raid kleiner, Gruppe größer)",
-							desc = "An: die Icon-Größe wird automatisch aus der Frame-Höhe abgeleitet. Aus: zwei feste Größen für Raid und Gruppe.",
-						},
-						sizeRaid  = { type = "range", order = 32, name = "Größe (Raid)",   min = 8, max = 48, step = 1, disabled = hotOwnAutoFit },
-						sizeParty = { type = "range", order = 33, name = "Größe (Gruppe)", min = 8, max = 48, step = 1, disabled = hotOwnAutoFit },
-					},
+					args = aurasArgs,
 				},
 				},
 			},
