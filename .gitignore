@@ -1,0 +1,3 @@
+# luacheck-Binary — lokales Werkzeug, gehört nicht ins Repo/Package.
+/tools/luacheck.exe
+/tools/luacheck32.exe
