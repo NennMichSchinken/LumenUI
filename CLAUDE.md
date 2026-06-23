@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.5**, Interface **120005** (Retail-Patch 12.0.7).
+> Stand: Addon-Version **0.9.5**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -35,7 +35,7 @@ Kernidee ist **Anti-Bloat**: nur das, was praktisch jeder ernsthafte M+/Raid-Spi
 * **Versionierung:** `## Version:` in der `.toc` bei jedem ausgelieferten Stand hochziehen (SemVer-artig, aktuell 0.9.x im Vor-Release).
 * **Releases/Packaging:** Standard ist der **BigWigs Packager** (GitHub Action: Release-Tag → gepacktes Zip → Upload zu CurseForge/Wago). Zuverlässige Baseline bleibt der manuelle Zip-Upload. Die `Libs/` werden mitgepackt (oder via `.pkgmeta`/externals gezogen — beim Einrichten der Action entscheiden).
 * **Vor jedem Commit/Build:** alle `.lua` syntaktisch prüfen. (Im bisherigen Workflow lief das über `luaparser` in Python; im Terminal genügt `luac -p` bzw. ein Linter wie `luacheck`.)
-* **Interface-Nummer** in der `.toc` ändert sich pro Patch — beim Packaging prüfen (aktuell `120005`).
+* **Interface-Nummer** in der `.toc` ändert sich pro Patch — beim Packaging prüfen (aktuell `120007`, Patch 12.0.7).
 
 ---
 
@@ -183,6 +183,8 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 *Konkrete, bereits genutzte Referenzdateien in diesem Repo:* `EllesmereUIRaidFrames/EllesmereUIRaidFrames.lua` (das Dual-Clip-Absorb-System, der HealPrediction-Calculator, Heilabsorb-Reverse-Fill — die Basis unseres aktuellen Render-Codes), `EllesmereUI.lua` (ESC-Menü-Button-Integration), `EllesmereUINameplates/*` (Calculator-Nutzung auf Nameplates für später).
 
+**Zweite Referenzquelle — WoW-Addon-Dev-Guide (12.0.5):** Lokal geklont unter `E:\Github\WoWAddonDevGuide` (Repo: `Amadeus-/WoWAddonDevGuide`, Branch `master`). Eine aus den WoW-Quelldateien generierte Wissensdatenbank. **Achtung Stand:** Der Guide ist auf **12.0.5**, der Live-Patch ist seit 16.06.2026 **12.0.7** (Interface 120007) — also **eine Minor-Version hinterher**. Für unsere Themen (Secret-Values, Ace3, Render) sind die Patterns weiterhin gültig, aber bei brandneuen 12.0.6/12.0.7-API-Details lieber gegen das Warcraft-Wiki (`Patch_12.0.7/API_changes`) gegenprüfen und per `git -C E:\Github\WoWAddonDevGuide pull` aktualisieren, sobald der Guide nachzieht. Nutze sie als API-/Pattern-Nachschlagewerk, wenn die WoW-API hakt oder du eine 12.0-Secret-/Taint-Frage klären musst (EllesmereUI bleibt die Benchmark für *konkreten Render-Code*; dieser Guide ist die Benchmark für *API-Korrektheit*). Wichtigste Dateien für uns: `12a_Secret_Safe_APIs.md` (komplette Secret-Values-Referenz — unser Kernthema), `09a_Ace3_Library_Guide.md` (unser Stack), `03_UI_Framework.md` und Blizzards `SecureTemplates.lua`-Verweise (relevant für den nächsten großen Schritt: Click-to-Cast/Secure-Buttons), `12_API_Migration_Guide.md`. Beim Lesen die Blöcke zwischen `<!-- CLAUDE_SKIP_START -->` und `<!-- CLAUDE_SKIP_END -->` überspringen (menschen-orientiert). Das mitgelieferte `/wow`-Command + `WoWAddon-Expert`-Agent-Setup (Ordner „Claude AI Commands (optional)") nutzen wir bewusst **nicht** — unser direkter Workflow mit dieser CLAUDE.md als Single Source of Truth ersetzt den Coordinator/Worker-Umweg (Anti-Bloat). Bei Bedarf später per `git -C E:\Github\WoWAddonDevGuide pull` aktualisieren.
+
 ---
 
 ## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.5)
@@ -191,7 +193,7 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120005`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.5`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Options.lua`, `GameMenu.lua`. |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.5`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Options.lua`, `GameMenu.lua`. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
