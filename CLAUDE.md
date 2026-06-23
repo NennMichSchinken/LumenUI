@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.8**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
+> Stand: Addon-Version **0.9.9**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -118,7 +118,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Heilvorhersage** (eingehende Heilung rechts vom Leben).
 * **Heilabsorb** (frisst von rechts ins gefüllte Leben).
 * **Dispellbare Debuffs** hervorgehoben — gefiltert nach der eigenen Klasse (Magie/Fluch/Gift/Krankheit). (Aktuell als Umfärbung des Lebensbalkens; siehe Grenzen in §10.)
-* **HoT-Platzierung** konfigurierbar gedacht: eigene HoTs an fester Stelle, fremde getrennt. *(Noch nicht implementiert — geplantes Feature.)*
+* **HoT-Platzierung** als flexibles Aura-Indikator-System (`Auras`-Tab). *(Phase 1 gebaut + live bestätigt — v0.9.9: eigene HoTs, 9 Anker, Auto-Zentrierung, Auto-Fit, Testmodus-Vorschau; siehe §10.8. Phase 2 offen: exakte Whitelist per Signatur + weitere Kategorien.)*
 * **Mouseover-Indikator** (Goldrand am anvisierten/Mouseover-Frame) — vorhanden.
 * **Aggro-Warnung.** *(Noch nicht implementiert — geplant.)*
 * **Party + Raid**, Anordnung sortierbar (nach Rolle/Gruppe). *(Aktuell einfache Rohrein-/Spalten-Anordnung; Sortierung nach Rolle/Gruppe steht noch aus.)*
@@ -151,6 +151,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Click-Cast Phase 2 live bestätigt — v0.9.7:** eigenes Modul `Modules/ClickCast.lua` + eigener Options-Knoten **`Click-Cast`**. Klick-Bindings (Maustaste + optionaler Modifier-Schalter Shift/Strg/Alt) und **Hovercast** (Taste auf `@mouseover` via globalem Secure-Button + `SecureHandlerStateTemplate`-Driver). Typen Ziel/Menü/Spell/Dispel/Rez, **pro Spec** (Spec-Auswahl-Dropdown im Panel, entkoppelt von der Live-Spec; folgt automatisch der aktiven Spec). Spell-Liste mit Icon, Suche + Filter „nur hilfreiche Zauber" (Default an). Settings-Baum jetzt: **`Global` (Tabs Base|Profile) · `Click-Cast` · `Raidframes`**. Details §10.6.
   * **Wichtige Gotcha (live geklärt):** Funktioniert SHIFT-Klick nicht, obwohl Strg/Alt gehen → meist WoWs **Selbstzauber-/Fokus-Zauber-Taste = Shift** (Optionen→Kampf) oder eine harte Tastenbelegung. Kein Lumen-Bug.
 * **Export/Import live bestätigt — v0.9.8:** eigenes Modul `Modules/Share.lua`, UI unten im `Global → Profile`-Tab (Profil-Verwaltung + Teilen bewusst an einem Ort). EIN Code via `AceSerializer`+`LibDeflate`, granular pro Modul (Häkchen) + getrennter Schalter „Layout-Positionen mitimportieren". Sparse Export + Merge-auf-Defaults beim Import (robust gegen AceDB-Lazy-Defaults + versions-tolerant). Details §10.7. **Offen:** echter Transfer-Test an Zweitchar/Freund (Florian testet später, meldet Feedback). Gleicher Patch: Click-Cast-Spec-Dropdown füllt sich jetzt auch beim allerersten Öffnen (war vor dem Login blank).
+* **Aura-Indikatoren / `Auras`-Tab live bestätigt — v0.9.9 (Phase 1 von 2):** flexibles Icon-System als neuer Raidframes-Tab (`Base | Raid | Group | Auras`), Vorbild EllesmereUIs Aura-Tab, kuratiert. Phase 1 = eigene HoTs: 9 Anker + Wachstumsrichtung, **Auto-Zentrierung** bei mittigen Ankern (anhand echter Icon-Zahl), **Auto-Fit** (Größe aus Frame-Höhe, gedeckelt an Breite/Höhe → kein Überlauf), Cooldown-Swipe (secret-sicher via Duration-Objekt), **Testmodus-Vorschau** (Florians Anforderung). Erkennung über `HELPFUL|PLAYER`-Filter (zeigt Phase 1 ALLE eigenen Hilfsauren). Gleicher Patch: Healabsorb-Overlay kachelt jetzt auch vertikal in fester Pixelgröße (kein Strecken auf hohen Frames); Schild bleibt vertikal geclampt (256×40 = keine Zweierpotenz → vertikales REPEAT zeigte eine Naht). Details §10.8. **Phase 2 offen:** exakte HoT-Whitelist per Spec-Signatur (Kampf-Präzision) + weitere Kategorien (fremde HoTs / Defensives / Debuffs / CDs).
 
 **Offen:**
 * **Akzentfarbe final** festlegen: aktuell im Code `#D4A34F`, ursprünglich vorgeschlagen `#c9a86a` (siehe §3).
@@ -170,7 +171,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 1. ~~Frames anklickbar/targetbar/Click-to-Cast~~ **✓ Phase 1 erledigt (v0.9.6, live bestätigt):** Frames laufen auf `SecureGroupHeader`/`SecureUnitButtonTemplate`; Linksklick=Ziel, Rechtsklick=WoW-Menü (12.0.7-Secure-Proxy), klick-/targetbar auch im Kampf. Architektur-Details siehe §10.3/§10.5.
 2. ~~**Click-Cast Phase 2 — volle Bindings-Seite**~~ **✓ erledigt (v0.9.7, live bestätigt):** Klick + Hovercast, per-Spec, Typen Ziel/Menü/Spell/Dispel/Rez. Siehe §10.6. **Offen/später (in eigener Suite-Shell):** echte Typeahead-Spell-Suche (AceConfig kann nur Suchfeld-filtert-Dropdown bei Enter, kein Live-Combobox); optional Item-/Makro-/Smart-Rez-Bindings; Mount-/Vehicle-Guard auf Hovercast.
 3. ~~Export/Import bauen~~ **✓ erledigt (v0.9.8, live bestätigt):** EIN Code via `AceSerializer`+`LibDeflate`, granular pro Modul + getrennter Layout-Schalter; UI im `Global → Profile`-Tab. Modul `Modules/Share.lua`. Siehe §10.7. **Offen:** echter Transfer-Test an Zweitchar/Freund.
-4. **← HIER GEHT ES WEITER.** Kleinere MVP-Features: Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung. *(Alternativ/parallel: Start der eigenen Suite-Shell-Optik — Florian hat ein Click-Cast-Mockup als Zielbild gemacht. Empfehlung: erst die kleinen MVP-Lücken fertig, dann die Shell als ein fokussierter Design-Block, weil die Shell ein fertiges Funktions-Zielbild braucht.)*
+4. **HoT-Platzierung Phase 1 ✓ erledigt (v0.9.9, live bestätigt):** Aura-Indikator-System (`Auras`-Tab), eigene HoTs — siehe §10.8. **← HIER GEHT ES WEITER:** restliche kleine MVP-Features (Sortierung nach Rolle/Gruppe · Aggro-Warnung) **und HoT-Phase 2** (exakte Whitelist per Signatur + weitere Aura-Kategorien). Konzept Sortierung/Aggro mit Florian schon vorbesprochen: Sortierung = **Kategorie-Prioritätsliste** (secure-konform; freies Drag&Drop erst in der Shell); Aggro = **Rand + Overlay + „Aggro"-Text** (Vollmodus) bzw. nur Rand (schlank), Idee 2-stufig gelb/rot. *(Alternativ/parallel: Start der eigenen Suite-Shell-Optik — Florian hat ein Click-Cast-Mockup als Zielbild. Empfehlung: erst die kleinen MVP-Lücken, dann die Shell als fokussierter Design-Block.)*
 5. Feinschliff (abgerundete Ecken als Toggle, Overschild-Kantenfunke, native Edit-Mode-Vollregistrierung, EditMode-Grabfläche im Live-Header) → erstes Release (BigWigs Packager, Tag/Release als Restore-Punkt).
 
 ---
@@ -199,21 +200,21 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 ---
 
-## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.8)
+## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.9)
 
 ### 10.1 Dateien im Addon-Ordner `Lumen/`
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.8`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Modules\Share.lua`, `Options.lua`, `GameMenu.lua`. |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.9`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Modules\Share.lua`, `Options.lua`, `GameMenu.lua`. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions → **AceSerializer** → **LibDeflate**). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
 | `Style.lua` | **Zentrales** Balken-Stilmodul (bewusst zentral/wiederverwendbar für spätere Unit Frames/Target/Focus). Hält `Style.barTexture` (lumen-gradient) und `Style.barTextureSoft`. `Style:ApplyBar(statusbar, overlayParent)` setzt die Gradient-Textur und legt Licht-/Schatten-Tiefen-Overlays an. `Style:SetDepth(overlayParent, strength)` regelt die Tiefen-Deckkraft (1.0 Standard, 0.55 Soft, 0 aus). |
-| `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Render in `Decorate(host)` faktorisiert: **Live** = Secure-Buttons über `SecureGroupHeader` (klick-/targetbar, Phase 1), **Test** = Nicht-Secure-Preview-Pool. Default-Klicks (Links=Ziel, Rechts=Menü-Proxy) als `ns.RF_ApplyDefaultClicks`/`ns.RF_GetMenuProxy` exponiert (ClickCast stellt sie bei „deaktiviert" wieder her). Details unten (§10.5). |
+| `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Render in `Decorate(host)` faktorisiert: **Live** = Secure-Buttons über `SecureGroupHeader` (klick-/targetbar, Phase 1), **Test** = Nicht-Secure-Preview-Pool. Default-Klicks (Links=Ziel, Rechts=Menü-Proxy) als `ns.RF_ApplyDefaultClicks`/`ns.RF_GetMenuProxy` exponiert (ClickCast stellt sie bei „deaktiviert" wieder her). **Seit v0.9.9:** Aura-Indikator-System (Icon-Pool je Frame, `AURA_CATS`-Registry, `layoutAuraCat`/`positionAuraIcons`/`RenderAurasLive`/`RenderAurasFake`) — Details §10.8. Details unten (§10.5). |
 | `Modules/ClickCast.lua` | **Click-Cast (Phase 2).** Setzt pro Secure-Button die Klick-Attribute (Maustaste+Modifier → `type/spell/macrotext`, OOC, kampf-aufgeschoben) und betreibt **Hovercast** über einen globalen Secure-Button (`LumenCCHover`) + `SecureHandlerStateTemplate`-Driver (`[@mouseover,exists]` routet Tasten via `SetBindingClick`). Spell/Dispel/Rez laufen IMMER über `@mouseover`-Makros (ein Pfad für Klick UND Hover); Ziel/Menü über die `click`-Proxys. Bindings **pro Spec** in `db.profile.clickCast.specs[specID]`. API u.a. `ns.CC_RegisterButton` (Naht), `CC:ApplyBindings`, `CC:GetBindings/AddBinding/RemoveBinding(specID,…)`, `CC:GetClassSpells/GetSpecList/KeyParts/BuildKey`. Details §10.6. |
 | `Modules/Share.lua` | **Export/Import (v0.9.8).** Codec `AceSerializer:Serialize → LibDeflate:CompressDeflate → EncodeForPrint` (und zurück; Decode strippt Whitespace, prüft `addon=="Lumen"`). Payload `{ v=1, addon, modules={raidframes,clickCast}, layout={raidframes={raid,party = {point,x,y}}} }`. Modul-Registry `MODULES` (`{key,label}`) → Options baut Import-Häkchen dynamisch via `Share:GetModules()`. `Share:Export()` (sparse — nur abweichende Werte, da AceDB Defaults lazy hält), `Share:Decode(str)`, `Share:Import(payload, selected, withLayout)` (merged auf frische `ns.Defaults`-Kopie → füllt fehlende Felder; Positionen nur bei `withLayout`, sonst eigene behalten; danach `Lumen:RefreshAll()`). Details §10.7. |
-| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** · **`Click-Cast`** · **`Raidframes`**. **`Global`** ist `childGroups="tab"` → Tabs **`Base`** (Edit-Mode-Schalter, Positionen zurücksetzen) und **`Profile`** (AceDBOptions + unten der Export/Import-Bereich aus `ns.Share`: Export-Knopf+Textbox, Import-Textbox mit dynamischen Modul-Häkchen + Layout-Schalter + „Import ausführen" mit Bestätigung). **`Click-Cast`** = dynamische, in-place neu gebaute Binding-Zeilen (`rebuildCC`+`AceConfigRegistry:NotifyChange`): Aktiviert-Toggle, Spec-Auswahl, „nur hilfreiche Zauber"-Filter, je Zeile (inline-group) Maustaste/Modifier bzw. `keybinding`, Aktion, Spell (Suche+Icon), OOC, Freund/Feind (Hovercast). **`Raidframes`** `childGroups="tab"` → **`Base`** · **`Raid`** · **`Group`** (`rf().raid`/`rf().party`). Benennung §4.1. |
+| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** · **`Click-Cast`** · **`Raidframes`**. **`Global`** ist `childGroups="tab"` → Tabs **`Base`** (Edit-Mode-Schalter, Positionen zurücksetzen) und **`Profile`** (AceDBOptions + unten der Export/Import-Bereich aus `ns.Share`: Export-Knopf+Textbox, Import-Textbox mit dynamischen Modul-Häkchen + Layout-Schalter + „Import ausführen" mit Bestätigung). **`Click-Cast`** = dynamische, in-place neu gebaute Binding-Zeilen (`rebuildCC`+`AceConfigRegistry:NotifyChange`): Aktiviert-Toggle, Spec-Auswahl, „nur hilfreiche Zauber"-Filter, je Zeile (inline-group) Maustaste/Modifier bzw. `keybinding`, Aktion, Spell (Suche+Icon), OOC, Freund/Feind (Hovercast). **`Raidframes`** `childGroups="tab"` → **`Base`** · **`Raid`** · **`Group`** · **`Auras`** (`rf().raid`/`rf().party`; `Auras` über `auraGetSet("hotsOwn")` auf `rf().auras[catKey]`, §10.8). Benennung §4.1. |
 | `GameMenu.lua` | Fügt im ESC-Menü einen „Lumen"-Button hinzu — über Blizzards eigene `GameMenuFrame:AddButton`-API (per `InitButtons`-Hook), damit es konfliktfrei neben EllesmereUI sitzt. Öffnet die Config; respektiert `InCombatLockdown`. |
 | `Libs/` | Ace3-Bibliotheken (siehe §6). |
 | `Textures/` | TGA-Texturen (uncompressed RGBA, **ohne Endung referenziert**). Wichtig: `lumen-gradient` / `lumen-gradient-soft` (Balken), `lumen-light` / `lumen-shadow` (Tiefe), `shield-combined` (Schild = Füllung+Streifen in einer Textur), `healabsorb-combined` (Heilabsorb = Füllung+Kreuze). Zusätzlich Einzel-/Altbestände: `shield-fill`, `shield-overlay`, `shield-overshield`, `absorb-fill`, `raidframeabsorboverlay`, `absorb-overabsorb` (Overschild-Kante derzeit ungenutzt, für späteres Re-Enable behalten). |
@@ -282,6 +283,14 @@ local defaults = {
             dispelColors  = { Magic=..., Curse=..., Disease=..., Poison=... },  -- pro Typ, {r,g,b}
 
             -- (Position liegt jetzt pro Kontext in raid/party oben — kein flaches point/x/y mehr.)
+
+            -- Aura-Indikatoren (v0.9.9; Phase 1: eigene HoTs). Layout geteilt über raid/party,
+            -- nur die Größe ist kontextabhängig (autoFit aus L.height + Breiten/Höhen-Deckel).
+            auras = {
+                hotsOwn = { enabled=true, anchor="BOTTOMLEFT", grow="RIGHT", spacing=2,
+                            maxIcons=5, autoFit=true, sizeRaid=16, sizeParty=22,
+                            showSwipe=true, hideTooltips=false },  -- Details §10.8
+            },
 
             -- Test / Beispielgruppe
             testMode = false,
@@ -402,7 +411,7 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 
 ### 10.5 Aktueller Stand & nächster Schritt für Claude Code
 
-**Stand:** **v0.9.8**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt. **v0.9.6:** Click-to-Cast **Phase 1** (Secure-Unit-Buttons über `SecureGroupHeader`, Links=Ziel/Rechts=Menü, auch im Kampf) + `luacheck`. **v0.9.7 (live bestätigt):** Click-to-Cast **Phase 2** — eigenes Modul + Options-Knoten, Klick- und Hovercast-Bindings pro Spec (§10.6). **v0.9.8 (live bestätigt):** Export/Import (`Modules/Share.lua`, §10.7) + Spec-Dropdown-Blank-Fix. Keine bekannten offenen Fehler. **Nächster Schritt: kleinere MVP-Features (Sortierung/HoT/Aggro) und/oder Suite-Shell-Design** (siehe §8, Punkt 4).
+**Stand:** **v0.9.9**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt. **v0.9.6:** Click-to-Cast **Phase 1** (Secure-Unit-Buttons über `SecureGroupHeader`, Links=Ziel/Rechts=Menü, auch im Kampf) + `luacheck`. **v0.9.7 (live bestätigt):** Click-to-Cast **Phase 2** — eigenes Modul + Options-Knoten, Klick- und Hovercast-Bindings pro Spec (§10.6). **v0.9.8 (live bestätigt):** Export/Import (`Modules/Share.lua`, §10.7) + Spec-Dropdown-Blank-Fix. **v0.9.9 (live bestätigt):** Aura-Indikatoren / `Auras`-Tab Phase 1 (eigene HoTs; §10.8) + Healabsorb-Overlay-Tiling-Fix. Keine bekannten offenen Fehler. **Nächster Schritt: HoT-Phase 2 (Signatur-Whitelist) / weitere Aura-Kategorien, restliche MVP-Features (Sortierung/Aggro) und/oder Suite-Shell-Design** (siehe §8, Punkt 4).
 
 **Architektur Phase 1 (Ist-Zustand, `Modules/Raidframes.lua`):**
 * Render-Stack faktorisiert in **`Decorate(host)`** — dekoriert sowohl Nicht-Secure-Preview-Frames (Test) als auch Secure-Buttons (Live), ein gemeinsamer Render-Code.
@@ -422,7 +431,7 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 * **Dispel-Anzeige** funktioniert jetzt **auch im Kampf** (secret-sicher): Erkennung über Blizzards Filter `"HARMFUL|RAID_PLAYER_DISPELLABLE"` (bzw. `"HARMFUL"` + `dispelName ~= nil` für „alle"), Farbe typ-genau über `C_UnitAuras.GetAuraDispelTypeColor` + Color-Curve (`C_CurveUtil`). Zwei Modi: `recolor` (Balken einfärben) und `overlay` (Rand + Füllung, Klassenfarbe bleibt). Fallback auf generische Magic-Farbe, falls die Curve-API fehlt.
 * **Kein weiches Interpolieren** der Balken — sie springen pro Event (secret-Werte lassen sich in Lua nicht interpolieren).
 * **Overschild-Kantenfunke** (wie EllesmereUIs Spark) ist nicht umgesetzt — nur der Backfill. Kann später ergänzt werden (secret-sicherer „overshield"-Bool über `GetDamageAbsorbs` 2. Rückgabe mit `MissingHealth`-Clamp).
-* **Streifen-Tiling: GELÖST** — Schild/Heilabsorb kacheln jetzt in fester Pixelgröße (manuelles TexCoord-Tiling, Texturen über das Frame gespannt + Clip-Frames an die Absorb-Füllung). `SetHorizTile` auf StatusBar-Füllungen funktioniert NICHT (streckt) — nicht erneut versuchen (Memory `lumen-absorb-rendering`).
+* **Streifen-Tiling: GELÖST** — Schild/Heilabsorb kacheln in fester Pixelgröße (manuelles TexCoord-Tiling, Texturen über das Frame gespannt + Clip-Frames an die Absorb-Füllung). `SetHorizTile` auf StatusBar-Füllungen funktioniert NICHT (streckt) — nicht erneut versuchen. **v0.9.9:** Healabsorb (256×128, Zweierpotenz) kachelt jetzt auch **vertikal** in fester Pixelgröße (`REPEAT/REPEAT`, TexCoord `h/128`) → kein Strecken des X-Musters auf hohen Frames; Schild (256×40, KEINE Zweierpotenz) bleibt vertikal `CLAMP`, weil vertikales `REPEAT` dort eine Naht zeigte (Memory `lumen-absorb-rendering`).
 
 **Spätere Bausteine (nach Priorität 1–2):** abgerundete Ecken (Toggle + Stärke, via Mask-Textur), volle native Edit-Mode-Registrierung, Heilabsorb-Überlaufkante wieder aktivieren, Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung, Export/Import (granular, `AceSerializer`+`LibDeflate`), eigene gerunte Suite-Shell-Optik, dann Modul 2 (Unit Frames).
 
@@ -461,6 +470,27 @@ Ein Textcode fürs ganze Setup (Prinzip WeakAuras/ElvUI), granular pro Modul + g
 2. **Sparse Export + Merge-auf-Defaults beim Import.** AceDB hält UNVERÄNDERTE Werte nur in der Defaults-Metatable, `pairs()` sieht sie nicht → Export ist bewusst sparse (nur Abweichungen). Import darf daher NICHT `p[mod] = incoming` setzen (Lücken → nil-Reads), sondern: `merged = deepcopy(ns.Defaults.profile[mod])` (Core.lua exponiert `ns.Defaults`), dann `deepmerge(merged, incoming)`. Füllt fehlende Felder mit Lumen-Standards, ist dadurch versions-tolerant. Ausgewählte Module so ersetzt, abgewählte unangetastet; danach `Lumen:RefreshAll()`.
 
 **API:** `Share:Export()`, `Share:Decode(str)` (→ payload | nil,err), `Share:Import(payload, selected, withLayout)`, `Share:GetModules()`, `Share:Encode(payload)`. Options-UI-Flow wie Click-Cast: Multiline-`input` dekodiert im `set` (committet beim Wegklicken/Okay), Häkchen/Schalter/Knopf sind statische Args mit dynamischem `hidden`/`get`/`set` auf Closure-State, Live-Update via `AceConfigRegistry:NotifyChange("Lumen")`.
+
+### 10.8 Aura-Indikatoren / „Auras"-Tab (Raidframes) — Ist-Zustand (v0.9.9, live bestätigt)
+
+**Phase 1 von 2.** Flexibles Icon-Indikator-System als neuer Raidframes-Tab **`Auras`** (Tab-Leiste jetzt `Base | Raid | Group | Auras`). Vorbild EllesmereUIs Aura-Tab, **kuratiert** (Anti-Bloat). HoTs sind eine Kategorie im selben System (kein separater HoT-Editor wie bei Ellesmere). Florians Designwunsch: pro **Anker-Position** wählt man, welche Kategorie dort erscheint.
+
+**Datenmodell:** `db.profile.raidframes.auras = { [catKey] = {...} }`. Phase 1 hat eine Kategorie `hotsOwn`. Felder: `enabled, anchor` (einer der 9 WoW-Punkte `TOPLEFT…BOTTOMRIGHT`), `grow` (`RIGHT|LEFT|UP|DOWN`), `spacing, maxIcons, autoFit, sizeRaid, sizeParty, showSwipe, hideTooltips`. **Layout (Anker/Wachstum/Toggles) ist über raid/party GETEILT — nur die Größe ist kontextabhängig.**
+
+**Render (`Modules/Raidframes.lua`):** Kategorien-Registry `AURA_CATS = { {key, filter} }` (filter = Blizzard-Aura-Filter). Icon-Pool je Frame in `Decorate` (`f.auraHolders[catKey]` = Holder mit `.icons`-Pool; jedes Icon = Frame + ARTWORK-Textur + `CooldownFrameTemplate`). `layoutAuraCat` (in `ApplyConfig`, nur OOC) erzeugt/größt den Pool und merkt Anker/Wachstum/Größe am Holder. **Positioniert wird render-zeitig** über `positionAuraIcons` — es kennt erst dann die echte Icon-Zahl → **Auto-Zentrierung** bei mittigen Ankern (Unten/Oben/Mitte/Links/Rechts) anhand der tatsächlichen Anzahl. `RenderAurasLive` scannt `C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL|PLAYER")` (secret-sicher; „PLAYER" = selbst gewirkt → eigene HoTs), Swipe via `cd:SetCooldownFromDurationObject(C_UnitAuras.GetAuraDuration(u, iid))` (das EINZIGE Cooldown-Setter, der secret verträgt; Icon-/iid-Felder mit `issecretvalue` geguardet). `RenderAurasFake` speist Fake-HoT-Texturen für den **Testmodus** (Florians Anforderung: solange es keine Live-Vorschau in den Settings gibt, MUSS der Testmodus die Auren zeigen). Beide laufen im selben `Decorate`-Pfad → Test = Live.
+
+**Größe — Auto-Fit (Default):** `auraIconSize` leitet die Icon-Größe aus der Frame-Höhe (~30%) ab UND deckelt sie an der Frame-Breite (horizontales Wachstum) bzw. -Höhe (vertikales) → die volle Reihe/Spalte passt immer in den Frame, **kein Überlauf** über den Rand. Auto-Fit aus → explizite `sizeRaid`/`sizeParty`.
+
+**Options (`Auras`-Tab):** Get/Set-Closure `auraGetSet("hotsOwn")` auf `rf().auras[catKey]`. Regler: Anzeigen, Position (`POINTS`), Wachstumsrichtung (`GROW`), Abstand, Max. Icons, Cooldown-Swipe, Auto-Fit + (wenn aus) Größe Raid/Gruppe. Neue Kategorien später: in `AURA_CATS` (Render) + eigener Get/Set + Tab-Block ergänzen.
+
+**Phase-1-Grenzen (bewusst so, mit Florian abgestimmt):**
+* Live zeigt **ALLE eigenen Hilfsauren** (nicht nur HoTs) — Dauerbuffs können mitlaufen. Exakte Whitelist kommt in **Phase 2**.
+* `hideTooltips` liegt im Profil, greift erst, wenn Icons mouseover-interaktiv sind (Phase 2).
+* **Keine eigene „Mitte"-Wachstumsrichtung** — symmetrisches Wachstum springt (einmal links/rechts) → bewusst verworfen; mittige Anker zentrieren bereits.
+
+**Phase 2 (offen, nächster Schritt):**
+* **Exakte HoT-Whitelist per Spec-Signatur.** Im Kampf ist `aura.spellId` secret → nicht per ID filterbar. Lösung = Filter-Fingerprint pro Spec (mehrere `IsAuraFilteredOutByInstanceID`-Checks → Signatur; außer Kampf `Signatur↔SpellID` lernen, im Kampf über die Signatur erkennen). Muster: EllesmereUI `EUI_RaidFrames_BuffManager.lua` (`specSignatures`, `BM_IdentifySecretAura`, `MatchSecretAura`).
+* **Weitere Kategorien** im selben System: fremde HoTs, Defensives & Externe, Debuffs, CDs.
 
 ---
 
