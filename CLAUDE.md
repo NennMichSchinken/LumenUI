@@ -155,6 +155,14 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * Reihenfolge/Feinschnitt der Module nach den Raidframes (Grobplan steht: Unit Frames → Nameplates → QoL).
 * Familien-Verbindung zu einem evtl. zweiten Projekt bewusst NICHT über den Produktnamen (falls später gewünscht: gemeinsames Macher-/Studio-Label).
 
+**Release-Hygiene — ABZUARBEITEN kurz vor dem Public-Gehen (Repo ist aktuell privat):**
+> Hintergrund: EllesmereUI dient Lumen ausschließlich als **Lern-/Performance-Benchmark**. Es wird **nichts 1:1 kopiert** — alle Muster sind eigenständig adaptiert/neu geschrieben (Florian + KI). Es besteht daher **keine Attributionspflicht**. Die folgenden Schritte sind reine **Wahrnehmungs-Hygiene** fürs Portfolio: nach außen soll nichts mehr auf EllesmereUI verweisen, damit es bei flüchtigem Lesen nicht „abgekupfert" wirkt. Vor dem Release einmal gebündelt abarbeiten:
+> 1. **EllesmereUI-Verweise aus dem ausgelieferten Code entfernen** — aktuell 4 Kommentare: `EditMode.lua:7`, `GameMenu.lua:7`, `Modules/Raidframes.lua:4` und `:6`. Generisch umformulieren („secret-sicheres 12.0-Vorgehen") statt Namedrop.
+> 2. **`CLAUDE.md` aus dem öffentlichen Repo nehmen:** `git rm --cached CLAUDE.md` + Eintrag in `.gitignore`. Datei bleibt lokal liegen und wird von Claude Code weiter geladen — nur nicht mehr im Repo.
+> 3. **Backup der `CLAUDE.md`:** in ein **separates privates Repo** spiegeln (Vision-Doku bleibt versioniert/abgesichert, ohne im Public-Addon-Repo zu liegen).
+> 4. **Optional Git-Historie putzen** (`git filter-repo`), falls auch alte Commits keine `CLAUDE.md`/EllesmereUI-Spur enthalten sollen — sonst genügt das Untracken, weil das Repo bis dahin privat war.
+> 5. **Gegencheck:** kein wörtlich kopierter EllesmereUI-Code im Release (Adaption ist fein; 1:1-Kopie ohne Lizenzblick nicht). README ist bereits sauber (kein EllesmereUI).
+
 **Nächste Schritte (konkret, in Reihenfolge):**
 1. **Frames anklickbar/targetbar/Click-to-Cast** (Secure-Unit-Buttons/SecureGroupHeader) — der nächste **große** Schritt zur echten Nutzbarkeit. **Architektur-Weiche: vorher Plan mit Florian abstimmen** (geschützte Frames, `InCombatLockdown`, Roster nur außer Kampf umbauen). Referenz: EllesmereUIs Secure-Header. Erst danach baubar: die **Mouseover-/Klick-Bindings-Seite** (eigene Seite, wo Nutzer Spells zuordnen).
 2. Export/Import bauen (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter).
