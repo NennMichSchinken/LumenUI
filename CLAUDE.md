@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.6**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
+> Stand: Addon-Version **0.9.7**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -148,6 +148,8 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Dispel im Kampf zuverlässig** (Blizzard-Filter + `GetAuraDispelTypeColor`+Curve), Modi recolor/overlay, Farbe pro Typ — v0.9.3.
 * **Settings-Restruktur** live: linker Knoten **`Global`**, Raidframes-Tabs **`Base | Raid | Group`** (Konvention §4.1). Layout, **Position UND Name-/HP-Text getrennt pro Kontext** (raid/party) inkl. einmaliger Profil-Migration — v0.9.4/.5.
 * **Git:** läuft über GitHub (`NennMichSchinken/Lumen`); PR #1 (Addon+Absorbs) und PR #2 (Kontexte/Dispel/Layout/Text) gemergt. **v0.9.6** = Click-to-Cast Phase 1 (Secure-Header) + luacheck-Setup.
+* **Click-Cast Phase 2 live bestätigt — v0.9.7:** eigenes Modul `Modules/ClickCast.lua` + eigener Options-Knoten **`Click-Cast`**. Klick-Bindings (Maustaste + optionaler Modifier-Schalter Shift/Strg/Alt) und **Hovercast** (Taste auf `@mouseover` via globalem Secure-Button + `SecureHandlerStateTemplate`-Driver). Typen Ziel/Menü/Spell/Dispel/Rez, **pro Spec** (Spec-Auswahl-Dropdown im Panel, entkoppelt von der Live-Spec; folgt automatisch der aktiven Spec). Spell-Liste mit Icon, Suche + Filter „nur hilfreiche Zauber" (Default an). Settings-Baum jetzt: **`Global` (Tabs Base|Profile) · `Click-Cast` · `Raidframes`**. Details §10.6.
+  * **Wichtige Gotcha (live geklärt):** Funktioniert SHIFT-Klick nicht, obwohl Strg/Alt gehen → meist WoWs **Selbstzauber-/Fokus-Zauber-Taste = Shift** (Optionen→Kampf) oder eine harte Tastenbelegung. Kein Lumen-Bug.
 
 **Offen:**
 * **Akzentfarbe final** festlegen: aktuell im Code `#D4A34F`, ursprünglich vorgeschlagen `#c9a86a` (siehe §3).
@@ -165,7 +167,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 
 **Nächste Schritte (konkret, in Reihenfolge):**
 1. ~~Frames anklickbar/targetbar/Click-to-Cast~~ **✓ Phase 1 erledigt (v0.9.6, live bestätigt):** Frames laufen auf `SecureGroupHeader`/`SecureUnitButtonTemplate`; Linksklick=Ziel, Rechtsklick=WoW-Menü (12.0.7-Secure-Proxy), klick-/targetbar auch im Kampf. Architektur-Details siehe §10.3/§10.5.
-2. **Click-Cast Phase 2 — volle Bindings-Seite** (Spells auf Maustasten/Modifier zuordnen, per-Spec, Dispel/External/Rez-Presets, Hovercast). Andockpunkt liegt schon im Code (`ns.CC_RegisterButton`-Naht je Button). Referenz: EllesmereUIs `EUI_RaidFrames_ClickCast.lua` + `EllesmereUI_Kick.lua` (Secure-Proxys).
+2. ~~**Click-Cast Phase 2 — volle Bindings-Seite**~~ **✓ erledigt (v0.9.7, live bestätigt):** Klick + Hovercast, per-Spec, Typen Ziel/Menü/Spell/Dispel/Rez. Siehe §10.6. **Offen/später (in eigener Suite-Shell):** echte Typeahead-Spell-Suche (AceConfig kann nur Suchfeld-filtert-Dropdown bei Enter, kein Live-Combobox); optional Item-/Makro-/Smart-Rez-Bindings; Mount-/Vehicle-Guard auf Hovercast.
 3. Export/Import bauen (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter).
 4. Kleinere MVP-Features: Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung.
 5. Feinschliff (abgerundete Ecken als Toggle, Overschild-Kantenfunke, native Edit-Mode-Vollregistrierung, EditMode-Grabfläche im Live-Header) → erstes Release (BigWigs Packager, Tag/Release als Restore-Punkt).
@@ -202,13 +204,14 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.6`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Options.lua`, `GameMenu.lua`. |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.7`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Options.lua`, `GameMenu.lua`. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
 | `Style.lua` | **Zentrales** Balken-Stilmodul (bewusst zentral/wiederverwendbar für spätere Unit Frames/Target/Focus). Hält `Style.barTexture` (lumen-gradient) und `Style.barTextureSoft`. `Style:ApplyBar(statusbar, overlayParent)` setzt die Gradient-Textur und legt Licht-/Schatten-Tiefen-Overlays an. `Style:SetDepth(overlayParent, strength)` regelt die Tiefen-Deckkraft (1.0 Standard, 0.55 Soft, 0 aus). |
-| `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Render in `Decorate(host)` faktorisiert: **Live** = Secure-Buttons über `SecureGroupHeader` (klick-/targetbar, Phase 1), **Test** = Nicht-Secure-Preview-Pool. Details unten (§10.5). |
-| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** (Edit-Mode-Schalter, Positionen zurücksetzen), **`Profile`** (AceDBOptions), **`Raidframes`**. Der Raidframes-Knoten nutzt `childGroups="tab"` → Tabs **`Base`** (Aktiviert, Lebensbalken-Textur/Klassenfarbe/Füllfarbe, Heilvorhersage, Dispel, Name-/HP-Text inkl. Outline, Test) · **`Raid`** und **`Group`** (je Breite/Höhe/Abstand/Ausrichtung; eigene Position **und eigene Name-/HP-Text-Einstellungen**). Benennung gemäß §4.1. `Raid`/`Group` lesen/schreiben in `rf().raid`/`rf().party`. |
+| `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Render in `Decorate(host)` faktorisiert: **Live** = Secure-Buttons über `SecureGroupHeader` (klick-/targetbar, Phase 1), **Test** = Nicht-Secure-Preview-Pool. Default-Klicks (Links=Ziel, Rechts=Menü-Proxy) als `ns.RF_ApplyDefaultClicks`/`ns.RF_GetMenuProxy` exponiert (ClickCast stellt sie bei „deaktiviert" wieder her). Details unten (§10.5). |
+| `Modules/ClickCast.lua` | **Click-Cast (Phase 2).** Setzt pro Secure-Button die Klick-Attribute (Maustaste+Modifier → `type/spell/macrotext`, OOC, kampf-aufgeschoben) und betreibt **Hovercast** über einen globalen Secure-Button (`LumenCCHover`) + `SecureHandlerStateTemplate`-Driver (`[@mouseover,exists]` routet Tasten via `SetBindingClick`). Spell/Dispel/Rez laufen IMMER über `@mouseover`-Makros (ein Pfad für Klick UND Hover); Ziel/Menü über die `click`-Proxys. Bindings **pro Spec** in `db.profile.clickCast.specs[specID]`. API u.a. `ns.CC_RegisterButton` (Naht), `CC:ApplyBindings`, `CC:GetBindings/AddBinding/RemoveBinding(specID,…)`, `CC:GetClassSpells/GetSpecList/KeyParts/BuildKey`. Details §10.6. |
+| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** · **`Click-Cast`** · **`Raidframes`**. **`Global`** ist `childGroups="tab"` → Tabs **`Base`** (Edit-Mode-Schalter, Positionen zurücksetzen) und **`Profile`** (AceDBOptions). **`Click-Cast`** = dynamische, in-place neu gebaute Binding-Zeilen (`rebuildCC`+`AceConfigRegistry:NotifyChange`): Aktiviert-Toggle, Spec-Auswahl, „nur hilfreiche Zauber"-Filter, je Zeile (inline-group) Maustaste/Modifier bzw. `keybinding`, Aktion, Spell (Suche+Icon), OOC, Freund/Feind (Hovercast). **`Raidframes`** `childGroups="tab"` → **`Base`** · **`Raid`** · **`Group`** (`rf().raid`/`rf().party`). Benennung §4.1. |
 | `GameMenu.lua` | Fügt im ESC-Menü einen „Lumen"-Button hinzu — über Blizzards eigene `GameMenuFrame:AddButton`-API (per `InitButtons`-Hook), damit es konfliktfrei neben EllesmereUI sitzt. Öffnet die Config; respektiert `InCombatLockdown`. |
 | `Libs/` | Ace3-Bibliotheken (siehe §6). |
 | `Textures/` | TGA-Texturen (uncompressed RGBA, **ohne Endung referenziert**). Wichtig: `lumen-gradient` / `lumen-gradient-soft` (Balken), `lumen-light` / `lumen-shadow` (Tiefe), `shield-combined` (Schild = Füllung+Streifen in einer Textur), `healabsorb-combined` (Heilabsorb = Füllung+Kreuze). Zusätzlich Einzel-/Altbestände: `shield-fill`, `shield-overlay`, `shield-overshield`, `absorb-fill`, `raidframeabsorboverlay`, `absorb-overabsorb` (Overschild-Kante derzeit ungenutzt, für späteres Re-Enable behalten). |
@@ -391,24 +394,25 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 * Klassenfarben; Profile; Größen; **Ausrichtung Vertikal/Horizontal** bei festen 5er-Gruppen.
 * Testmodus 5/20/40; Verschieben (manueller Schalter + nativer WoW-Edit-Mode), **getrennte Position pro Kontext**.
 * **Name-/HP-Text pro Kontext** (Raid/Group) inkl. Outline-Option (Keine/Outline/Dick).
-* Options-Struktur: linker Baum **`Global` / Raidframes / Profile**; Raidframes-Tabs **`Base | Raid | Group`**.
+* Options-Struktur: linker Baum **`Global` (Tabs Base|Profile) / `Click-Cast` / `Raidframes`**; Raidframes-Tabs **`Base | Raid | Group`**.
+* **Click-Cast (v0.9.7):** Klick-Bindings + Hovercast, per-Spec, Spell-Suche+Icon+Hilfreich-Filter, Spec-Auswahl folgt der aktiven Spec (§10.6).
 
 ### 10.5 Aktueller Stand & nächster Schritt für Claude Code
 
-**Stand:** **v0.9.6**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt (v0.9.5, PR #1+#2). **Neu in v0.9.6 (live bestätigt):** Click-to-Cast **Phase 1** — die Frames sind echte **Secure-Unit-Buttons** über einen `SecureGroupHeader` (klick-/targetbar, Links=Ziel, Rechts=WoW-Menü inkl. Fokus auch im Kampf). Dazu `luacheck` als Pre-Commit-Linter eingerichtet (§2). Keine bekannten offenen Fehler.
+**Stand:** **v0.9.7**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt. **v0.9.6:** Click-to-Cast **Phase 1** (Secure-Unit-Buttons über `SecureGroupHeader`, Links=Ziel/Rechts=Menü, auch im Kampf) + `luacheck`. **v0.9.7 (live bestätigt):** Click-to-Cast **Phase 2** — eigenes Modul + Options-Knoten, Klick- und Hovercast-Bindings pro Spec (§10.6). Keine bekannten offenen Fehler. **Nächster großer Schritt: Export/Import** (siehe §8).
 
 **Architektur Phase 1 (Ist-Zustand, `Modules/Raidframes.lua`):**
 * Render-Stack faktorisiert in **`Decorate(host)`** — dekoriert sowohl Nicht-Secure-Preview-Frames (Test) als auch Secure-Buttons (Live), ein gemeinsamer Render-Code.
-* **Live** = `SecureGroupHeaderTemplate` (`LumenRaidHeader`, `template=SecureUnitButtonTemplate`): Blizzard verwaltet Roster/Sortierung/In-Kampf. Funktionen `buildHeader`/`styleSecureButton`/`attachSecureMenu`/`applyHeaderLayout`/`configureSecureButtons`/`LayoutLive`. Orientierung↔Header-Attribute (`point`/`columnAnchorPoint`/`unitsPerColumn=5`/`maxColumns=8`). Routing via `OnAttributeChanged(unit)` → `unitToButton`.
+* **Live** = `SecureGroupHeaderTemplate` (`LumenRaidHeader`, `template=SecureUnitButtonTemplate`): Blizzard verwaltet Roster/Sortierung/In-Kampf. Funktionen `buildHeader`/`styleSecureButton`/`applyDefaultClicks`(+`getMenuProxy`)/`applyHeaderLayout`/`configureSecureButtons`/`LayoutLive`. Orientierung↔Header-Attribute (`point`/`columnAnchorPoint`/`unitsPerColumn=5`/`maxColumns=8`). Routing via `OnAttributeChanged(unit)` → `unitToButton`.
 * **Klick:** `type1="target"` (+`*type1`); Rechtsklick-Menü über versteckten `SecureActionButton`-Proxy (`*type2="click"`+`*clickbutton2`, `useparent-unit`) — 12.0.7-sicher (sonst Taint bei „Fokus setzen"). Muster aus EllesmereUI `EllesmereUI_Kick.lua`.
 * **In-Kampf-Disziplin:** `secureLayoutDirty`-Flag + `PLAYER_REGEN_ENABLED`-Flush; Header/Buttons werden im Kampf nicht umgebaut. Sortierung Phase-1 = `INDEX`.
 * **Test/Preview** = bisheriger Nicht-Secure-Pool (`LayoutPreview`/`HidePreview`), nur bei `testMode`. **Zukunfts-Naht** `ns.CC_RegisterButton(button)` je Button für Phase 2.
 * Bekannte Mini-Grenze: EditMode-Grabfläche im Live-Modus deckt evtl. nicht den ganzen Header (Container behält feste Größe) — Feinschliff später.
 
 **Nächster großer Baustein (Priorität 1 — der eigentliche nächste Code-Schritt):**
-* **Click-Cast Phase 2 — volle Bindings-Seite.** Eigene Seite zum Zuordnen von Spells auf Maustasten/Modifier (per-Spec), inkl. Dispel-/External-/Rez-Presets und Hovercast-Makros. Die Engine dockt an die vorhandene `ns.CC_RegisterButton`-Naht an. Referenz: EllesmereUIs `EUI_RaidFrames_ClickCast.lua` + `EllesmereUI_Kick.lua`.
+* **Export/Import** (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter; Konzept §4). Beide Libs sind noch NICHT eingebunden.
 
-**Danach (Reihenfolge siehe §8):** Export/Import · Sortierung nach Rolle/Gruppe · HoT-Platzierung · Aggro-Warnung · Feinschliff (abgerundete Ecken, Overschild-Funke, Live-EditMode-Grabfläche) → erstes Release.
+**Danach (Reihenfolge siehe §8):** Sortierung nach Rolle/Gruppe · HoT-Platzierung · Aggro-Warnung · Click-Cast-Politur (echte Typeahead-Suche in der Suite-Shell, Item/Makro/Smart-Rez, Hovercast-Mount-Guard) · Feinschliff (abgerundete Ecken, Overschild-Funke, Live-EditMode-Grabfläche) → erstes Release.
 
 **Bekannte, akzeptierte Grenzen (für den MVP bewusst so):**
 * **Dispel-Anzeige** funktioniert jetzt **auch im Kampf** (secret-sicher): Erkennung über Blizzards Filter `"HARMFUL|RAID_PLAYER_DISPELLABLE"` (bzw. `"HARMFUL"` + `dispelName ~= nil` für „alle"), Farbe typ-genau über `C_UnitAuras.GetAuraDispelTypeColor` + Color-Curve (`C_CurveUtil`). Zwei Modi: `recolor` (Balken einfärben) und `overlay` (Rand + Füllung, Klassenfarbe bleibt). Fallback auf generische Magic-Farbe, falls die Curve-API fehlt.
@@ -417,6 +421,22 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 * **Streifen-Tiling: GELÖST** — Schild/Heilabsorb kacheln jetzt in fester Pixelgröße (manuelles TexCoord-Tiling, Texturen über das Frame gespannt + Clip-Frames an die Absorb-Füllung). `SetHorizTile` auf StatusBar-Füllungen funktioniert NICHT (streckt) — nicht erneut versuchen (Memory `lumen-absorb-rendering`).
 
 **Spätere Bausteine (nach Priorität 1–2):** abgerundete Ecken (Toggle + Stärke, via Mask-Textur), volle native Edit-Mode-Registrierung, Heilabsorb-Überlaufkante wieder aktivieren, Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung, Export/Import (granular, `AceSerializer`+`LibDeflate`), eigene gerunte Suite-Shell-Optik, dann Modul 2 (Unit Frames).
+
+### 10.6 Click-Cast (Phase 2, `Modules/ClickCast.lua`) — Ist-Zustand (v0.9.7, live bestätigt)
+
+**Datenmodell:** `db.profile.clickCast = { enabled, helpfulOnly, specs = { [specID] = { binding, … } } }`. Eine Binding: `{ key, type, enabled, oocOnly, hovercast, spell, spellID, hoverFriendly, hoverEnemy }`. `type` ∈ `target|menu|spell|dispel|rez`. Klick- und Hovercast-Bindings liegen in DERSELBEN Liste, getrennt über `binding.hovercast`. Eine frisch betretene Spec wird einmalig mit `BUTTON1=target`, `BUTTON2=menu` vorbelegt (entspricht Phase-1-Verhalten).
+
+**Kernidee (taint-/secret-sicher):** Spell/Dispel/Rez laufen IMMER als `@mouseover`-Makro — beim Klick liegt die Maus über der Unit, beim Hover sowieso → EIN Resolver (`resolveBinding`) für beide Pfade. `target`/`menu` sind in 12.0.7 gegatet → über die UN-gated `click`-Action an versteckte `SecureActionButton`-Proxys geroutet (`getProxy`/Raidframes' Menü-Proxy). Bindings werden NUR außer Kampf geschrieben; im Kampf via `applyDirty` + `PLAYER_REGEN_ENABLED` nachgeholt.
+
+**Klick-Pfad:** `ns.CC_RegisterButton(button)` (Naht aus `styleSecureButton`) sammelt die Secure-Buttons. `applyToButton` → bei aktiviert `applyEnabled` (Wildcards neutralisieren, ungebundene Tasten auf inert `none`, dann je aktiver Maus-Binding `applyClick` mit `[mod]type/spell/macrotext`-Attributen + Proxys); bei deaktiviert `ns.RF_ApplyDefaultClicks` (Phase-1 zurück). Gesetzte Attributnamen werden je Button in `_ccApplied` getrackt und vor jedem Rebuild gecleart.
+
+**Hovercast-Pfad:** globaler `SecureActionButton` `LumenCCHover` (Attribute `type-/macrotext-/unit-<suffix>`) + `SecureHandlerStateTemplate`-Driver `LumenCCDriver`. State-Driver `[@mouseover,exists] 1; 0`: auf „1" routet `hover_set` (gebaut aus `SetBindingClick(true, key, "LumenCCHover", suffix)`) die Tasten auf den Hover-Button; auf „0" `self:ClearBindings()`. Dadurch wirkt die Taste nur beim Hovern, sonst normal. (Mini-Latenz beim Ankommen akzeptiert; Mount-/Vehicle-Guard noch offen.)
+
+**Events:** eigenes Frame in ClickCast auf `PLAYER_ENTERING_WORLD`/`PLAYER_SPECIALIZATION_CHANGED`/`SPELLS_CHANGED` → `ApplyBindings`; `PLAYER_REGEN_ENABLED` → aufgeschobenes Apply. `Core.RefreshAll` ruft `ApplyBindings` bei Profilwechsel.
+
+**Options (`Click-Cast`-Knoten):** dynamisch via `rebuildCC` (wipe + refill `ccArgs` in place) + `AceConfigRegistry:NotifyChange("Lumen")`. Maustaste (Dropdown 5 Tasten) + Modifier (Schalter→Shift/Strg/Alt) ODER `keybinding` (Hover). `CC:KeyParts/BuildKey` kodieren beides in `binding.key` (`"SHIFT-BUTTON1"`). Spell-Dropdown mit Icon + Suchfeld (filtert bei Enter) + Filter „nur hilfreiche Zauber" (`C_SpellBook.IsSpellBookItem{Helpful,Harmful}`, Default an). Spec-Auswahl-Dropdown entkoppelt von der Live-Spec; ein eigener `PLAYER_SPECIALIZATION_CHANGED`-Watcher in Options stellt es auf die aktive Spec. **AceConfig-Grenze:** kein Live-Typeahead (Input committet erst bei Enter, Dropdown nicht tippbar) → echtes Combobox-Suchfeld erst mit der eigenen Suite-Shell.
+
+**Gotcha (live geklärt):** SHIFT-Klick scheint nicht zu casten, Strg/Alt schon → fast immer WoWs **Selbstzauber-/Fokus-Zauber-Taste = Shift** (Optionen→Kampf) oder harte Tastenbelegung. Code behandelt alle Modifier identisch — kein Lumen-Bug.
 
 ---
 
