@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.7**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
+> Stand: Addon-Version **0.9.8**, Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026).
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -61,8 +61,8 @@ Weitere Prinzipien:
 
 * **Suite-Shell:** EINE Einstellungsseite. Links eine kuratierte Modulliste (Baum, z.B. Gruppen „Kern"/„QoL"), rechts die Einstellungen des gewählten Moduls. Perspektivisch eine **Live-Vorschau**, die zeigt, was sich ändert. Erweiterbar — Module kommen nach und nach dazu, ohne die Liste aufzublähen. (Aktuell als AceConfig-Baum umgesetzt; eine eigene gerunte „Shell"-Optik ist späteres Thema.)
 * **Zentrale Profile** in einem „Allgemein"/Profile-Tab (NICHT pro Modul verstreut): an einem Ort wird alles gespeichert. Läuft über **AceDB** (`LumenDB`).
-* **Export (Konzept, noch zu bauen):** EIN Textcode für alles (Prinzip wie WeakAuras/ElvUI), zum Kopieren/Verschicken — via `AceSerializer` + `LibDeflate`.
-* **Import — granular (Konzept, noch zu bauen):** Dialog mit **Häkchen pro Modul** — nur Gewähltes wird eingemischt, abgewählte Module bleiben beim Empfänger unverändert (z.B. „will nur deine Unit Frames, nicht die Raidframes"). Dazu eine separate Ja/Nein-Frage „**Layout-Positionen mitimportieren**" (aus → die aktuellen Positionen des Empfängers bleiben). Damit der granulare Import geht, werden die Settings im Export **pro Modul getrennt** abgelegt; **Layout-Positionen liegen nochmal getrennt**.
+* **Export (gebaut — v0.9.8, live bestätigt):** EIN Textcode für alles (Prinzip wie WeakAuras/ElvUI), zum Kopieren/Verschicken — via `AceSerializer` + `LibDeflate`. Umgesetzt in `Modules/Share.lua`; UI unten im `Global → Profile`-Tab. Details §10.7.
+* **Import — granular (gebaut — v0.9.8, live bestätigt):** Dialog mit **Häkchen pro Modul** — nur Gewähltes wird eingemischt, abgewählte Module bleiben beim Empfänger unverändert (z.B. „will nur deine Unit Frames, nicht die Raidframes"). Dazu eine separate Ja/Nein-Frage „**Layout-Positionen mitimportieren**" (aus → die aktuellen Positionen des Empfängers bleiben). Damit der granulare Import geht, werden die Settings im Export **pro Modul getrennt** abgelegt; **Layout-Positionen liegen nochmal getrennt**. (Umsetzung: sparse Export + Merge-auf-Defaults beim Import; siehe §10.7.)
 
 ### 4.1 Strikte UI-Benennungskonvention (Anti-Bloat & Hierarchie-Klarheit)
 Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garantieren, gilt für alle Module (Raidframes, Unit Frames, Nameplates) eine strikte Trennung der Begriffe über die UI-Ebenen hinweg. Es dürfen niemals identische oder redundante Begriffe auf unterschiedlichen Ebenen verwendet werden.
@@ -100,7 +100,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
   * `AceAddon-3.0`, `AceConsole-3.0` (Slash-Commands), `AceEvent-3.0` (Events), `AceTimer-3.0`
   * `AceDB-3.0` (SavedVariables + Profile), `AceDBOptions-3.0`
   * `AceGUI-3.0`, `AceConfig-3.0` / `AceConfigDialog-3.0` (Options-Baum)
-  * **Noch NICHT eingebunden, aber für Export/Import vorgesehen:** `LibDeflate` + `AceSerializer-3.0`. Für externe Schriften/Texturen optional `LibSharedMedia-3.0` (wird, falls vorhanden, via `LibStub(...,true)` genutzt; nicht zwingend gebündelt).
+  * **Eingebunden (v0.9.8) für Export/Import:** `AceSerializer-3.0` (in `Libs/AceSerializer-3.0/`) + `LibDeflate` (1.0.2, Single-File `Libs/LibDeflate/LibDeflate.lua`, via `<Script>` in `embeds.xml`; beide registrieren über LibStub). Für externe Schriften/Texturen optional `LibSharedMedia-3.0` (wird, falls vorhanden, via `LibStub(...,true)` genutzt; nicht zwingend gebündelt).
 * **Einbindung der Libs:** über `embeds.xml` (lädt die Lib-XMLs in korrekter Reihenfolge), das in der `.toc` zuerst geladen wird.
 * **Addon-Struktur im WoW-Verzeichnis:**
   `World of Warcraft/_retail_/Interface/AddOns/Lumen/`
@@ -138,7 +138,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * Name = **Lumen** („a focused UI suite", Marke pur).
 * **Ace3** als Basis.
 * **Raidframes als MVP**.
-* Profil-/Export-/Import-Konzept (Architektur steht, Code für Export/Import folgt).
+* Profil-/Export-/Import-Konzept (Architektur steht; **Export/Import gebaut + live bestätigt — v0.9.8**, siehe §10.7).
 * Gradient-Balkenstil bestätigt (zwei Varianten: „Lumen Gradient" kräftig = Default, „Lumen Soft" dezent).
 * **Overschild-Backfill** umgesetzt (v0.9.1).
 * **Secret-sicheres Render live bestätigt** (Schild/Overschild/Heilabsorb/Heilvorhersage) — v0.9.1.
@@ -150,6 +150,7 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Git:** läuft über GitHub (`NennMichSchinken/Lumen`); PR #1 (Addon+Absorbs) und PR #2 (Kontexte/Dispel/Layout/Text) gemergt. **v0.9.6** = Click-to-Cast Phase 1 (Secure-Header) + luacheck-Setup.
 * **Click-Cast Phase 2 live bestätigt — v0.9.7:** eigenes Modul `Modules/ClickCast.lua` + eigener Options-Knoten **`Click-Cast`**. Klick-Bindings (Maustaste + optionaler Modifier-Schalter Shift/Strg/Alt) und **Hovercast** (Taste auf `@mouseover` via globalem Secure-Button + `SecureHandlerStateTemplate`-Driver). Typen Ziel/Menü/Spell/Dispel/Rez, **pro Spec** (Spec-Auswahl-Dropdown im Panel, entkoppelt von der Live-Spec; folgt automatisch der aktiven Spec). Spell-Liste mit Icon, Suche + Filter „nur hilfreiche Zauber" (Default an). Settings-Baum jetzt: **`Global` (Tabs Base|Profile) · `Click-Cast` · `Raidframes`**. Details §10.6.
   * **Wichtige Gotcha (live geklärt):** Funktioniert SHIFT-Klick nicht, obwohl Strg/Alt gehen → meist WoWs **Selbstzauber-/Fokus-Zauber-Taste = Shift** (Optionen→Kampf) oder eine harte Tastenbelegung. Kein Lumen-Bug.
+* **Export/Import live bestätigt — v0.9.8:** eigenes Modul `Modules/Share.lua`, UI unten im `Global → Profile`-Tab (Profil-Verwaltung + Teilen bewusst an einem Ort). EIN Code via `AceSerializer`+`LibDeflate`, granular pro Modul (Häkchen) + getrennter Schalter „Layout-Positionen mitimportieren". Sparse Export + Merge-auf-Defaults beim Import (robust gegen AceDB-Lazy-Defaults + versions-tolerant). Details §10.7. **Offen:** echter Transfer-Test an Zweitchar/Freund (Florian testet später, meldet Feedback). Gleicher Patch: Click-Cast-Spec-Dropdown füllt sich jetzt auch beim allerersten Öffnen (war vor dem Login blank).
 
 **Offen:**
 * **Akzentfarbe final** festlegen: aktuell im Code `#D4A34F`, ursprünglich vorgeschlagen `#c9a86a` (siehe §3).
@@ -168,8 +169,8 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 **Nächste Schritte (konkret, in Reihenfolge):**
 1. ~~Frames anklickbar/targetbar/Click-to-Cast~~ **✓ Phase 1 erledigt (v0.9.6, live bestätigt):** Frames laufen auf `SecureGroupHeader`/`SecureUnitButtonTemplate`; Linksklick=Ziel, Rechtsklick=WoW-Menü (12.0.7-Secure-Proxy), klick-/targetbar auch im Kampf. Architektur-Details siehe §10.3/§10.5.
 2. ~~**Click-Cast Phase 2 — volle Bindings-Seite**~~ **✓ erledigt (v0.9.7, live bestätigt):** Klick + Hovercast, per-Spec, Typen Ziel/Menü/Spell/Dispel/Rez. Siehe §10.6. **Offen/später (in eigener Suite-Shell):** echte Typeahead-Spell-Suche (AceConfig kann nur Suchfeld-filtert-Dropdown bei Enter, kein Live-Combobox); optional Item-/Makro-/Smart-Rez-Bindings; Mount-/Vehicle-Guard auf Hovercast.
-3. Export/Import bauen (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter).
-4. Kleinere MVP-Features: Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung.
+3. ~~Export/Import bauen~~ **✓ erledigt (v0.9.8, live bestätigt):** EIN Code via `AceSerializer`+`LibDeflate`, granular pro Modul + getrennter Layout-Schalter; UI im `Global → Profile`-Tab. Modul `Modules/Share.lua`. Siehe §10.7. **Offen:** echter Transfer-Test an Zweitchar/Freund.
+4. **← HIER GEHT ES WEITER.** Kleinere MVP-Features: Sortierung nach Rolle/Gruppe, HoT-Platzierung, Aggro-Warnung. *(Alternativ/parallel: Start der eigenen Suite-Shell-Optik — Florian hat ein Click-Cast-Mockup als Zielbild gemacht. Empfehlung: erst die kleinen MVP-Lücken fertig, dann die Shell als ein fokussierter Design-Block, weil die Shell ein fertiges Funktions-Zielbild braucht.)*
 5. Feinschliff (abgerundete Ecken als Toggle, Overschild-Kantenfunke, native Edit-Mode-Vollregistrierung, EditMode-Grabfläche im Live-Header) → erstes Release (BigWigs Packager, Tag/Release als Restore-Punkt).
 
 ---
@@ -198,20 +199,21 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 ---
 
-## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.6)
+## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.8)
 
 ### 10.1 Dateien im Addon-Ordner `Lumen/`
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.7`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Options.lua`, `GameMenu.lua`. |
-| `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions). |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.8`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Modules\Share.lua`, `Options.lua`, `GameMenu.lua`. |
+| `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions → **AceSerializer** → **LibDeflate**). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
 | `Style.lua` | **Zentrales** Balken-Stilmodul (bewusst zentral/wiederverwendbar für spätere Unit Frames/Target/Focus). Hält `Style.barTexture` (lumen-gradient) und `Style.barTextureSoft`. `Style:ApplyBar(statusbar, overlayParent)` setzt die Gradient-Textur und legt Licht-/Schatten-Tiefen-Overlays an. `Style:SetDepth(overlayParent, strength)` regelt die Tiefen-Deckkraft (1.0 Standard, 0.55 Soft, 0 aus). |
 | `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Rendering von Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames. Event-getrieben. Render in `Decorate(host)` faktorisiert: **Live** = Secure-Buttons über `SecureGroupHeader` (klick-/targetbar, Phase 1), **Test** = Nicht-Secure-Preview-Pool. Default-Klicks (Links=Ziel, Rechts=Menü-Proxy) als `ns.RF_ApplyDefaultClicks`/`ns.RF_GetMenuProxy` exponiert (ClickCast stellt sie bei „deaktiviert" wieder her). Details unten (§10.5). |
 | `Modules/ClickCast.lua` | **Click-Cast (Phase 2).** Setzt pro Secure-Button die Klick-Attribute (Maustaste+Modifier → `type/spell/macrotext`, OOC, kampf-aufgeschoben) und betreibt **Hovercast** über einen globalen Secure-Button (`LumenCCHover`) + `SecureHandlerStateTemplate`-Driver (`[@mouseover,exists]` routet Tasten via `SetBindingClick`). Spell/Dispel/Rez laufen IMMER über `@mouseover`-Makros (ein Pfad für Klick UND Hover); Ziel/Menü über die `click`-Proxys. Bindings **pro Spec** in `db.profile.clickCast.specs[specID]`. API u.a. `ns.CC_RegisterButton` (Naht), `CC:ApplyBindings`, `CC:GetBindings/AddBinding/RemoveBinding(specID,…)`, `CC:GetClassSpells/GetSpecList/KeyParts/BuildKey`. Details §10.6. |
-| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** · **`Click-Cast`** · **`Raidframes`**. **`Global`** ist `childGroups="tab"` → Tabs **`Base`** (Edit-Mode-Schalter, Positionen zurücksetzen) und **`Profile`** (AceDBOptions). **`Click-Cast`** = dynamische, in-place neu gebaute Binding-Zeilen (`rebuildCC`+`AceConfigRegistry:NotifyChange`): Aktiviert-Toggle, Spec-Auswahl, „nur hilfreiche Zauber"-Filter, je Zeile (inline-group) Maustaste/Modifier bzw. `keybinding`, Aktion, Spell (Suche+Icon), OOC, Freund/Feind (Hovercast). **`Raidframes`** `childGroups="tab"` → **`Base`** · **`Raid`** · **`Group`** (`rf().raid`/`rf().party`). Benennung §4.1. |
+| `Modules/Share.lua` | **Export/Import (v0.9.8).** Codec `AceSerializer:Serialize → LibDeflate:CompressDeflate → EncodeForPrint` (und zurück; Decode strippt Whitespace, prüft `addon=="Lumen"`). Payload `{ v=1, addon, modules={raidframes,clickCast}, layout={raidframes={raid,party = {point,x,y}}} }`. Modul-Registry `MODULES` (`{key,label}`) → Options baut Import-Häkchen dynamisch via `Share:GetModules()`. `Share:Export()` (sparse — nur abweichende Werte, da AceDB Defaults lazy hält), `Share:Decode(str)`, `Share:Import(payload, selected, withLayout)` (merged auf frische `ns.Defaults`-Kopie → füllt fehlende Felder; Positionen nur bei `withLayout`, sonst eigene behalten; danach `Lumen:RefreshAll()`). Details §10.7. |
+| `Options.lua` | AceConfig-Optionsbaum (`childGroups="tree"`): linker Baum = **`Global`** · **`Click-Cast`** · **`Raidframes`**. **`Global`** ist `childGroups="tab"` → Tabs **`Base`** (Edit-Mode-Schalter, Positionen zurücksetzen) und **`Profile`** (AceDBOptions + unten der Export/Import-Bereich aus `ns.Share`: Export-Knopf+Textbox, Import-Textbox mit dynamischen Modul-Häkchen + Layout-Schalter + „Import ausführen" mit Bestätigung). **`Click-Cast`** = dynamische, in-place neu gebaute Binding-Zeilen (`rebuildCC`+`AceConfigRegistry:NotifyChange`): Aktiviert-Toggle, Spec-Auswahl, „nur hilfreiche Zauber"-Filter, je Zeile (inline-group) Maustaste/Modifier bzw. `keybinding`, Aktion, Spell (Suche+Icon), OOC, Freund/Feind (Hovercast). **`Raidframes`** `childGroups="tab"` → **`Base`** · **`Raid`** · **`Group`** (`rf().raid`/`rf().party`). Benennung §4.1. |
 | `GameMenu.lua` | Fügt im ESC-Menü einen „Lumen"-Button hinzu — über Blizzards eigene `GameMenuFrame:AddButton`-API (per `InitButtons`-Hook), damit es konfliktfrei neben EllesmereUI sitzt. Öffnet die Config; respektiert `InCombatLockdown`. |
 | `Libs/` | Ace3-Bibliotheken (siehe §6). |
 | `Textures/` | TGA-Texturen (uncompressed RGBA, **ohne Endung referenziert**). Wichtig: `lumen-gradient` / `lumen-gradient-soft` (Balken), `lumen-light` / `lumen-shadow` (Tiefe), `shield-combined` (Schild = Füllung+Streifen in einer Textur), `healabsorb-combined` (Heilabsorb = Füllung+Kreuze). Zusätzlich Einzel-/Altbestände: `shield-fill`, `shield-overlay`, `shield-overshield`, `absorb-fill`, `raidframeabsorboverlay`, `absorb-overabsorb` (Overschild-Kante derzeit ungenutzt, für späteres Re-Enable behalten). |
@@ -395,11 +397,12 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 * Testmodus 5/20/40; Verschieben (manueller Schalter + nativer WoW-Edit-Mode), **getrennte Position pro Kontext**.
 * **Name-/HP-Text pro Kontext** (Raid/Group) inkl. Outline-Option (Keine/Outline/Dick).
 * Options-Struktur: linker Baum **`Global` (Tabs Base|Profile) / `Click-Cast` / `Raidframes`**; Raidframes-Tabs **`Base | Raid | Group`**.
-* **Click-Cast (v0.9.7):** Klick-Bindings + Hovercast, per-Spec, Spell-Suche+Icon+Hilfreich-Filter, Spec-Auswahl folgt der aktiven Spec (§10.6).
+* **Click-Cast (v0.9.7):** Klick-Bindings + Hovercast, per-Spec, Spell-Suche+Icon+Hilfreich-Filter, Spec-Auswahl folgt der aktiven Spec (§10.6); Spec-Dropdown füllt sich seit v0.9.8 auch beim ersten Öffnen (vor dem Login).
+* **Export/Import (v0.9.8):** EIN Code, granular pro Modul + Layout-Schalter, im `Global → Profile`-Tab (§10.7).
 
 ### 10.5 Aktueller Stand & nächster Schritt für Claude Code
 
-**Stand:** **v0.9.7**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt. **v0.9.6:** Click-to-Cast **Phase 1** (Secure-Unit-Buttons über `SecureGroupHeader`, Links=Ziel/Rechts=Menü, auch im Kampf) + `luacheck`. **v0.9.7 (live bestätigt):** Click-to-Cast **Phase 2** — eigenes Modul + Options-Knoten, Klick- und Hovercast-Bindings pro Spec (§10.6). Keine bekannten offenen Fehler. **Nächster großer Schritt: Export/Import** (siehe §8).
+**Stand:** **v0.9.8**. Render, Dispel, Layout/Ausrichtung, Text/Outline und die Base/Raid/Group-Tab-Struktur sind gebaut + live bestätigt. **v0.9.6:** Click-to-Cast **Phase 1** (Secure-Unit-Buttons über `SecureGroupHeader`, Links=Ziel/Rechts=Menü, auch im Kampf) + `luacheck`. **v0.9.7 (live bestätigt):** Click-to-Cast **Phase 2** — eigenes Modul + Options-Knoten, Klick- und Hovercast-Bindings pro Spec (§10.6). **v0.9.8 (live bestätigt):** Export/Import (`Modules/Share.lua`, §10.7) + Spec-Dropdown-Blank-Fix. Keine bekannten offenen Fehler. **Nächster Schritt: kleinere MVP-Features (Sortierung/HoT/Aggro) und/oder Suite-Shell-Design** (siehe §8, Punkt 4).
 
 **Architektur Phase 1 (Ist-Zustand, `Modules/Raidframes.lua`):**
 * Render-Stack faktorisiert in **`Decorate(host)`** — dekoriert sowohl Nicht-Secure-Preview-Frames (Test) als auch Secure-Buttons (Live), ein gemeinsamer Render-Code.
@@ -409,10 +412,11 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 * **Test/Preview** = bisheriger Nicht-Secure-Pool (`LayoutPreview`/`HidePreview`), nur bei `testMode`. **Zukunfts-Naht** `ns.CC_RegisterButton(button)` je Button für Phase 2.
 * Bekannte Mini-Grenze: EditMode-Grabfläche im Live-Modus deckt evtl. nicht den ganzen Header (Container behält feste Größe) — Feinschliff später.
 
-**Nächster großer Baustein (Priorität 1 — der eigentliche nächste Code-Schritt):**
-* **Export/Import** (`AceSerializer` + `LibDeflate`, granular pro Modul + Layout-Schalter; Konzept §4). Beide Libs sind noch NICHT eingebunden.
+**Nächster großer Baustein (Priorität 1):**
+* ~~Export/Import~~ **✓ erledigt (v0.9.8, live bestätigt)** — `AceSerializer`+`LibDeflate` jetzt eingebunden, Modul `Modules/Share.lua`, Details §10.7.
+* **← HIER GEHT ES WEITER:** kleinere MVP-Features (Sortierung nach Rolle/Gruppe · HoT-Platzierung · Aggro-Warnung) und/oder Start der eigenen **Suite-Shell-Optik** (Florian hat ein Click-Cast-**Mockup** als Zielbild — beim Wiedereinstieg danach fragen). Empfehlung steht in §8/Nächste Schritte Punkt 4: erst die kleinen MVP-Lücken (machen die Raidframes wirklich fertig), dann die Shell als ein fokussierter Design-Block.
 
-**Danach (Reihenfolge siehe §8):** Sortierung nach Rolle/Gruppe · HoT-Platzierung · Aggro-Warnung · Click-Cast-Politur (echte Typeahead-Suche in der Suite-Shell, Item/Makro/Smart-Rez, Hovercast-Mount-Guard) · Feinschliff (abgerundete Ecken, Overschild-Funke, Live-EditMode-Grabfläche) → erstes Release.
+**Danach (Reihenfolge siehe §8):** Click-Cast-Politur (echte Typeahead-Suche in der Suite-Shell, Item/Makro/Smart-Rez, Hovercast-Mount-Guard) · Feinschliff (abgerundete Ecken, Overschild-Funke, Live-EditMode-Grabfläche) → erstes Release.
 
 **Bekannte, akzeptierte Grenzen (für den MVP bewusst so):**
 * **Dispel-Anzeige** funktioniert jetzt **auch im Kampf** (secret-sicher): Erkennung über Blizzards Filter `"HARMFUL|RAID_PLAYER_DISPELLABLE"` (bzw. `"HARMFUL"` + `dispelName ~= nil` für „alle"), Farbe typ-genau über `C_UnitAuras.GetAuraDispelTypeColor` + Color-Curve (`C_CurveUtil`). Zwei Modi: `recolor` (Balken einfärben) und `overlay` (Rand + Füllung, Klassenfarbe bleibt). Fallback auf generische Magic-Farbe, falls die Curve-API fehlt.
@@ -437,6 +441,26 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 **Options (`Click-Cast`-Knoten):** dynamisch via `rebuildCC` (wipe + refill `ccArgs` in place) + `AceConfigRegistry:NotifyChange("Lumen")`. Maustaste (Dropdown 5 Tasten) + Modifier (Schalter→Shift/Strg/Alt) ODER `keybinding` (Hover). `CC:KeyParts/BuildKey` kodieren beides in `binding.key` (`"SHIFT-BUTTON1"`). Spell-Dropdown mit Icon + Suchfeld (filtert bei Enter) + Filter „nur hilfreiche Zauber" (`C_SpellBook.IsSpellBookItem{Helpful,Harmful}`, Default an). Spec-Auswahl-Dropdown entkoppelt von der Live-Spec; ein eigener `PLAYER_SPECIALIZATION_CHANGED`-Watcher in Options stellt es auf die aktive Spec. **AceConfig-Grenze:** kein Live-Typeahead (Input committet erst bei Enter, Dropdown nicht tippbar) → echtes Combobox-Suchfeld erst mit der eigenen Suite-Shell.
 
 **Gotcha (live geklärt):** SHIFT-Klick scheint nicht zu casten, Strg/Alt schon → fast immer WoWs **Selbstzauber-/Fokus-Zauber-Taste = Shift** (Optionen→Kampf) oder harte Tastenbelegung. Code behandelt alle Modifier identisch — kein Lumen-Bug.
+
+---
+
+### 10.7 Export/Import (`Modules/Share.lua`) — Ist-Zustand (v0.9.8, live bestätigt)
+
+Ein Textcode fürs ganze Setup (Prinzip WeakAuras/ElvUI), granular pro Modul + getrennter Layout-Schalter. UI **unten im `Global → Profile`-Tab** (Profil-Verwaltung + Teilen bewusst an einem Ort — Florians Entscheidung). Punkte 1–6 der Test-Checkliste live bestätigt; **offen: echter Transfer an Zweitchar/Freund** (testet Florian später).
+
+**Libs (neu eingebunden):** `Libs/AceSerializer-3.0/` (aus Ace3) + `Libs/LibDeflate/LibDeflate.lua` (SafeteeWoW 1.0.2, Single-File via `<Script>` in `embeds.xml`). Beide via LibStub (`LibStub("LibDeflate")` / `LibStub("AceSerializer-3.0")`). Lagen vorher NICHT lokal — aus offiziellen Quellen geholt.
+
+**Codec-Pipeline:** `AceSerializer:Serialize` → `LibDeflate:CompressDeflate` → `LibDeflate:EncodeForPrint` (Decode invers; strippt Whitespace, prüft `payload.addon=="Lumen"` + `payload.modules`).
+
+**Payload-Form:** `{ v=1, addon="Lumen", modules={ raidframes=…, clickCast=… }, layout={ raidframes={ raid={point,x,y}, party={point,x,y} } } }`. Modul-Registry `MODULES` (`{key,label}`) in Share.lua — neue Module dort eintragen; Options baut die Import-Häkchen dynamisch aus `Share:GetModules()`.
+
+**Zwei nicht-offensichtliche Architektur-Entscheidungen (wichtig für künftige Arbeit):**
+
+1. **Layout getrennt halten.** Positionen (`point/x/y`) liegen bei Lumen verschränkt in `raidframes.raid`/`.party` (mit Größe/Text). Export zieht sie per `extractLayout`/`stripLayout` in den eigenen `layout`-Block → der Schalter „Layout-Positionen mitimportieren" wirkt unabhängig. Import: `withLayout` an → Absender-Positionen; aus → eigene aktuelle Positionen bleiben (`keepPos`-Snapshot vor dem Ersetzen).
+
+2. **Sparse Export + Merge-auf-Defaults beim Import.** AceDB hält UNVERÄNDERTE Werte nur in der Defaults-Metatable, `pairs()` sieht sie nicht → Export ist bewusst sparse (nur Abweichungen). Import darf daher NICHT `p[mod] = incoming` setzen (Lücken → nil-Reads), sondern: `merged = deepcopy(ns.Defaults.profile[mod])` (Core.lua exponiert `ns.Defaults`), dann `deepmerge(merged, incoming)`. Füllt fehlende Felder mit Lumen-Standards, ist dadurch versions-tolerant. Ausgewählte Module so ersetzt, abgewählte unangetastet; danach `Lumen:RefreshAll()`.
+
+**API:** `Share:Export()`, `Share:Decode(str)` (→ payload | nil,err), `Share:Import(payload, selected, withLayout)`, `Share:GetModules()`, `Share:Encode(payload)`. Options-UI-Flow wie Click-Cast: Multiline-`input` dekodiert im `set` (committet beim Wegklicken/Okay), Häkchen/Schalter/Knopf sind statische Args mit dynamischem `hidden`/`get`/`set` auf Closure-State, Live-Update via `AceConfigRegistry:NotifyChange("Lumen")`.
 
 ---
 
