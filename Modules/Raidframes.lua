@@ -18,15 +18,15 @@ local Raidframes = {}
 ns.Raidframes = Raidframes
 
 local CreateFrame, UIParent = CreateFrame, UIParent
+local InCombatLockdown = InCombatLockdown
 local UnitExists, UnitHealth, UnitHealthMax = UnitExists, UnitHealth, UnitHealthMax
 local UnitName, UnitClass = UnitName, UnitClass
 local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
 local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
 local UnitGetIncomingHeals = UnitGetIncomingHeals
 local UnitGetDetailedHealPrediction = UnitGetDetailedHealPrediction
-local IsInRaid, IsInGroup, GetNumGroupMembers = IsInRaid, IsInGroup, GetNumGroupMembers
+local IsInRaid = IsInRaid
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
-local AuraUtil = AuraUtil
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
 local strfind, format = string.find, string.format
 local pcall = pcall
@@ -58,7 +58,6 @@ local DISPEL_DEFAULTS = {
 }
 -- Blizzard-Dispel-Typ-Enum-Indizes (für die Color-Curve): 1 Magic, 2 Curse, 3 Disease, 4 Poison.
 local C_UnitAuras = C_UnitAuras
-local issecretvalue = issecretvalue
 
 local TEXTURES = {
 	["Lumen Gradient"] = (ns.Style and ns.Style.barTexture) or (T .. "lumen-gradient"),
@@ -122,10 +121,12 @@ local FAKE = {
 
 local GROUP_SIZE = 5   -- feste Gruppengröße: Raid-Gruppen & Dungeon-Gruppe sind immer 5 (nie gemischt)
 
-local frames = {}
+local frames = {}            -- Nicht-Secure-Pool für Preview/Test
 local container
+local header                 -- SecureGroupHeader (Live-Pfad)
+local secureLayoutDirty = false   -- Layout im Kampf aufgeschoben? -> bei PLAYER_REGEN_ENABLED nachholen
 local playerDispels = {}
-local unitToFrame = {}
+local unitToButton = {}      -- Live-Routing: Unit -> Secure-Button (Preview/Test routet nicht)
 
 local function db() return ns.Lumen.db.profile.raidframes end
 
@@ -205,18 +206,6 @@ local function applyText(fs, frame, point, x, y, size, color, outline)
 	if color then fs:SetTextColor(color.r or 1, color.g or 1, color.b or 1) end
 end
 
-local function BuildLiveUnits()
-	local u = {}
-	if IsInRaid() then
-		for i = 1, GetNumGroupMembers() do u[#u + 1] = "raid" .. i end
-	elseif IsInGroup() then
-		u[#u + 1] = "player"
-		for i = 1, GetNumGroupMembers() - 1 do u[#u + 1] = "party" .. i end
-	else
-		u[#u + 1] = "player"
-	end
-	return u
-end
 local function GetFakeList(size)
 	local list = {}
 	for i = 1, size do list[i] = FAKE[((i - 1) % #FAKE) + 1] end
@@ -288,8 +277,12 @@ local function makeStripe(clipParent, spanFrame, stripeTex)
 	return s
 end
 
-local function CreateUnitFrame(i)
-	local f = CreateFrame("Frame", "LumenUnit" .. i, container)
+-- Dekoriert einen beliebigen Host (Nicht-Secure-Frame für Preview ODER Secure-Button
+-- für Live) mit dem kompletten Render-Stack (bg, Leben, Clips, Schilde, Heilabsorb,
+-- Overlay, Texte, Dispel-/Maus-Ränder). Erzeugt den Host NICHT und setzt KEINE
+-- Maus-/Klick-Scripts — das ist host-spezifisch (Preview: SetScript; Secure: HookScript).
+-- So teilen sich Live- und Test-Pfad genau einen Render-Code.
+local function Decorate(f)
 	local base = f:GetFrameLevel()
 
 	f.bg = f:CreateTexture(nil, "BACKGROUND")
@@ -402,6 +395,13 @@ local function CreateUnitFrame(i)
 		t:SetColorTexture(0.83, 0.64, 0.31, 1); t:Hide(); return t
 	end
 	f.eT, f.eB, f.eL, f.eR = edge(), edge(), edge(), edge()
+end
+
+-- Preview-/Test-Host: gewöhnlicher (Nicht-Secure-)Frame, mit direkten Maus-Scripts.
+-- Der Live-Pfad nutzt stattdessen Secure-Buttons (siehe Header-Setup) und HookScript.
+local function CreateUnitFrame(i)
+	local f = CreateFrame("Frame", "LumenUnit" .. i, container)
+	Decorate(f)
 	f:EnableMouse(true)
 	f:SetScript("OnEnter", function(self) Raidframes:SetHighlight(self, true) end)
 	f:SetScript("OnLeave", function(self) Raidframes:SetHighlight(self, false) end)
@@ -473,8 +473,10 @@ end
 -- LIVE — secret-sicher (Calculator nur für maxHealth, Rohwerte an die Bars)
 function Raidframes:RenderLive(f)
 	local u = f.unit
-	if not u or not UnitExists(u) then f:Hide(); return end
-	f:Show()
+	-- Secure-Buttons NIE selbst Show/Hide (im Kampf verboten) -> der Header steuert ihre
+	-- Sichtbarkeit. Nur die Nicht-Secure-Preview-Frames blenden wir selbst aus/ein.
+	if not u or not UnitExists(u) then if not f._secure then f:Hide() end return end
+	if not f._secure then f:Show() end
 	local d = db()
 
 	local maxH
@@ -557,10 +559,11 @@ function Raidframes:UpdateUnit(f)
 	return self:RenderLive(f)
 end
 
-function Raidframes:UpdateLayout()
-	if not container then return end
-	dispelCurve = nil   -- Dispel-Farben könnten sich geändert haben -> Curve neu bauen lassen
-	local d = db()
+-- ===========================================================================
+--  PREVIEW / TEST  (Nicht-Secure-Frame-Pool, Fake-Daten) — eigenes SetPoint-Gitter.
+--  Bleibt erhalten, damit Florians Screenshot-Schleife voll funktioniert.
+-- ===========================================================================
+function Raidframes:LayoutPreview(d)
 	local L = layoutCtx()
 	local w, h, sp = L.width, L.height, L.spacing
 	local horizontal = (L.orientation == "horizontal")
@@ -568,14 +571,12 @@ function Raidframes:UpdateLayout()
 	container:ClearAllPoints()
 	container:SetPoint(L.point or "CENTER", UIParent, L.point or "CENTER", L.x or 0, L.y or 0)
 
-	local testMode = d.testMode
-	local list = testMode and GetFakeList(d.testSize or 5) or BuildLiveUnits()
+	local list = GetFakeList(d.testSize or 5)
 	local n = #list
-	wipe(unitToFrame)
 
 	for i = 1, n do
 		local f = frames[i] or CreateUnitFrame(i)
-		if testMode then f.fake = list[i]; f.unit = nil else f.unit = list[i]; f.fake = nil; unitToFrame[f.unit] = f end
+		f.fake = list[i]; f.unit = nil
 		local idx   = i - 1
 		local group = floor(idx / GROUP_SIZE)   -- welche 5er-Gruppe
 		local slot  = idx % GROUP_SIZE          -- Position innerhalb der Gruppe
@@ -599,6 +600,180 @@ function Raidframes:UpdateLayout()
 	container:SetSize(max(1, cols * (w + sp) - sp), max(1, rows * (h + sp) - sp))
 end
 
+function Raidframes:HidePreview()
+	for i = 1, #frames do
+		frames[i]:Hide(); frames[i].unit = nil; frames[i].fake = nil
+	end
+end
+
+-- ===========================================================================
+--  LIVE  (SecureGroupHeader + SecureUnitButtons) — klickbar/targetbar (Phase 1).
+-- ===========================================================================
+
+-- Secure Rechtsklick-Menü (12.0.7): ein "togglemenu" direkt auf dem Unit-Button wird
+-- gated (stumm verworfen ohne passende ClickBinding); aus Insecure-Lua öffnen TAINTET
+-- das Menü (geschützte Einträge wie "Fokus setzen" werfen ADDON_ACTION_FORBIDDEN).
+-- Lösung (Muster aus EllesmereUI): Rechtsklick über die UN-gated "click"-Action an einen
+-- versteckten SecureActionButton-Proxy routen, der selbst "togglemenu" sicher ausführt.
+-- "useparent-unit" -> der Proxy holt die Unit vom Eltern-Button (header-verwaltet).
+local function attachSecureMenu(button)
+	local proxy = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
+	proxy:SetSize(1, 1); proxy:SetAlpha(0); proxy:EnableMouse(false)
+	proxy:RegisterForClicks("AnyUp")
+	proxy:SetAttribute("type", "togglemenu")
+	for i = 1, 5 do proxy:SetAttribute("type" .. i, "togglemenu") end  -- per Button-Suffix aufgelöst
+	proxy:SetAttribute("useparent-unit", true)
+	proxy:SetAttribute("useOnKeyDown", false)
+	button:SetAttribute("type2", nil)
+	button:SetAttribute("*type2", "click")
+	button:SetAttribute("*clickbutton2", proxy)
+end
+
+-- Einen vom Header erzeugten Secure-Button einmalig mit unserem Render-Stack + Klick-
+-- Verhalten ausstatten. NUR außer Kampf aufrufen (Attribute setzen ist geschützt).
+local function styleSecureButton(button)
+	if button._lumenSecured then return end
+	button._lumenSecured = true
+	button._secure = true
+	Decorate(button)
+	-- Klick: Links=Ziel (unmodifiziert hat eine Default-ClickBinding), Rechts=Menü via Proxy.
+	button:EnableMouse(true)
+	button:RegisterForClicks("AnyUp")
+	button:SetAttribute("type1", "target")
+	button:SetAttribute("*type1", "target")
+	attachSecureMenu(button)
+	-- Maus-Highlight: HookScript (NICHT SetScript) -> die sicheren Header-Handler bleiben intakt.
+	button:HookScript("OnEnter", function(self) Raidframes:SetHighlight(self, true) end)
+	button:HookScript("OnLeave", function(self) Raidframes:SetHighlight(self, false) end)
+	-- (Neu-)Zuweisung der Unit: zuverlässiges Per-Button-Signal -> Routing-Map + sofortiger Repaint.
+	button:HookScript("OnAttributeChanged", function(self, name)
+		if name ~= "unit" then return end
+		local u = self:GetAttribute("unit")
+		if u and UnitExists(u) then
+			self.unit = u; self.fake = nil
+			unitToButton[u] = self
+			Raidframes:RenderLive(self)
+		else
+			self.unit = nil
+		end
+	end)
+	-- Naht für späteres volles Click-Cast (Phase 2): hier dockt die Bindings-Engine an.
+	if ns.CC_RegisterButton then ns.CC_RegisterButton(button) end
+end
+
+-- Header-Layout-Attribute aus dem aktiven Kontext (Orientierung + Abstand). NUR außer Kampf.
+local function applyHeaderLayout()
+	if not header then return end
+	local L = layoutCtx()
+	local sp = L.spacing or 2
+	local horizontal = (L.orientation == "horizontal")
+	-- Innerhalb der 5er-Gruppe wachsen die Mitglieder; perpendicular wachsen die Gruppen.
+	local point, xOff, yOff, colAnchor
+	if horizontal then
+		point, xOff, yOff, colAnchor = "LEFT", sp, 0, "TOP"   -- Mitglieder nach rechts, Gruppen nach unten
+	else
+		point, xOff, yOff, colAnchor = "TOP", 0, -sp, "LEFT"  -- Mitglieder nach unten, Gruppen nach rechts
+	end
+	header:SetAttribute("point", point)
+	header:SetAttribute("xOffset", xOff)
+	header:SetAttribute("yOffset", yOff)
+	header:SetAttribute("columnAnchorPoint", colAnchor)
+	header:SetAttribute("columnSpacing", sp)
+	header:SetAttribute("unitsPerColumn", GROUP_SIZE)
+	header:SetAttribute("maxColumns", 8)
+
+	container:ClearAllPoints()
+	container:SetPoint(L.point or "CENTER", UIParent, L.point or "CENTER", L.x or 0, L.y or 0)
+	header:ClearAllPoints()
+	header:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+end
+
+-- Größe/Textur/Text auf alle (vorab erzeugten) Buttons anwenden + belegte rendern. NUR außer Kampf.
+local function configureSecureButtons()
+	if not header then return end
+	for i = 1, 40 do
+		local btn = header[i]
+		if btn then
+			Raidframes:ApplyConfig(btn)   -- setzt u.a. SetSize -> im Kampf verboten, hier OOC sicher
+			-- Unit live vom Attribut lesen: Zuweisungen, die beim allerersten Header-Show
+			-- VOR dem Anhängen der OnAttributeChanged-Hooks passierten, sonst erst beim
+			-- nächsten Event sichtbar. Map + btn.unit hier nachziehen.
+			local u = btn.unit or btn:GetAttribute("unit")
+			if u and UnitExists(u) then
+				btn.unit = u; unitToButton[u] = btn
+				Raidframes:RenderLive(btn)
+			end
+		end
+	end
+end
+
+-- Header einmalig bauen + 40 Buttons vorab erzeugen (startingIndex-Trick) und dekorieren.
+local function buildHeader()
+	if header then return end
+	local L = layoutCtx()
+	local bw, bh = L.width or 114, L.height or 60
+	header = CreateFrame("Frame", "LumenRaidHeader", container, "SecureGroupHeaderTemplate")
+	header:SetAttribute("template", "SecureUnitButtonTemplate")
+	header:SetAttribute("templateType", "Button")
+	-- initialConfigFunction läuft im Restricted-Env beim Button-Erzeugen -> nur Größe setzen.
+	header:SetAttribute("initialConfigFunction", ([[
+		self:SetWidth(%d)
+		self:SetHeight(%d)
+	]]):format(bw, bh))
+	header:SetAttribute("showRaid", true)
+	header:SetAttribute("showParty", true)
+	header:SetAttribute("showPlayer", true)
+	header:SetAttribute("showSolo", true)   -- solo sieht man den eigenen Frame (gut zum Live-Testen)
+	header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
+	header:SetAttribute("sortMethod", "INDEX")
+	applyHeaderLayout()
+
+	header:SetAttribute("startingIndex", -39)
+	header:Show()
+	header:SetAttribute("startingIndex", 1)
+	for i = 1, 40 do
+		local btn = header[i]
+		if btn then styleSecureButton(btn) end
+	end
+end
+
+function Raidframes:LayoutLive()
+	if InCombatLockdown() then secureLayoutDirty = true; return end
+	if not header then buildHeader() end
+	applyHeaderLayout()
+	-- Buttongröße geändert (z.B. Kontextwechsel Raid<->Party)? Dann den Header zur
+	-- Neuanordnung zwingen (Hide/Show) -> sonst rechnet er mit der alten Größe weiter.
+	local L = layoutCtx()
+	local sizeChanged = (header._appliedW ~= L.width or header._appliedH ~= L.height)
+	header._appliedW, header._appliedH = L.width, L.height
+	configureSecureButtons()   -- ApplyConfig setzt u.a. die Buttongröße
+	if sizeChanged and header:IsShown() then
+		header:Hide(); header:Show()
+	else
+		header:Show()
+	end
+end
+
+function Raidframes:HideHeader()
+	if not header then return end
+	if InCombatLockdown() then secureLayoutDirty = true; return end
+	header:Hide()
+end
+
+-- Dispatcher: Test -> Preview-Frames, sonst -> Secure-Header. Immer nur eine Seite sichtbar.
+function Raidframes:UpdateLayout()
+	if not container then return end
+	dispelCurve = nil   -- Dispel-Farben könnten sich geändert haben -> Curve neu bauen lassen
+	local d = db()
+	if d.testMode then
+		self:HideHeader()
+		self:LayoutPreview(d)
+	else
+		self:HidePreview()
+		self:LayoutLive()
+	end
+end
+
 local UNIT_EVENTS = {
 	"UNIT_HEALTH", "UNIT_MAXHEALTH",
 	"UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
@@ -611,8 +786,8 @@ local function isUnitEvent(e)
 end
 local function OnUnitEvent(unit)
 	if db().testMode then return end
-	local f = unitToFrame[unit]
-	if f and f:IsShown() then Raidframes:UpdateUnit(f) end
+	local f = unitToButton[unit]
+	if f and f:IsShown() then Raidframes:RenderLive(f) end
 end
 
 function Raidframes:Setup()
@@ -623,10 +798,16 @@ function Raidframes:Setup()
 	container:RegisterEvent("PLAYER_ENTERING_WORLD")
 	container:RegisterEvent("GROUP_ROSTER_UPDATE")
 	container:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	container:RegisterEvent("PLAYER_REGEN_ENABLED")   -- Kampfende -> aufgeschobenes Layout nachholen
 	for _, ev in ipairs(UNIT_EVENTS) do container:RegisterEvent(ev) end
 	container:SetScript("OnEvent", function(_, event, unit)
 		if isUnitEvent(event) then
 			OnUnitEvent(unit)
+		elseif event == "PLAYER_REGEN_ENABLED" then
+			if secureLayoutDirty then
+				secureLayoutDirty = false
+				Raidframes:UpdateLayout()
+			end
 		else
 			local _, class = UnitClass("player")
 			playerDispels = CLASS_DISPELS[class] or {}
@@ -651,5 +832,9 @@ function Raidframes:Enable()
 end
 function Raidframes:Disable()
 	if not container then return end
+	-- Container ist Elternframe des Secure-Headers -> Hide im Kampf wäre an geschützten
+	-- Kindern verboten. Im Kampf aufschieben (greift bei RefreshAll/Regen erneut).
+	if InCombatLockdown() then secureLayoutDirty = true; return end
+	if header then header:Hide() end
 	container:Hide()
 end
