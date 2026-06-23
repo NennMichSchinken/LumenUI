@@ -349,6 +349,14 @@ function ns.SetupOptions()
 		rebuildCC(); ccRefresh()
 	end)
 
+	-- ===== Share (Export / Import) — Zustand für den Profile-Tab =================
+	local shareExport   = ""     -- zuletzt erzeugter Export-Code
+	local shareImportRaw = ""    -- eingefügter Text
+	local importPayload  = nil   -- dekodierter Code (oder nil)
+	local importErr      = nil   -- Fehlertext (oder nil)
+	local importSel      = {}    -- [modKey] = bool (was übernommen wird)
+	local importLayout   = false -- Layout-Positionen mitimportieren?
+
 	local options = {
 		type = "group", name = "Lumen", childGroups = "tree",
 		args = {
@@ -492,6 +500,102 @@ function ns.SetupOptions()
 	profiles.order = 2
 	profiles.name = "Profile"
 	options.args.general.args.profile = profiles
+
+	-- ----- Share (Export / Import) unten in den Profile-Tab ---------------------
+	local function Share() return ns.Share end
+	local pa = profiles.args
+
+	pa.shareHeader = { type = "header", order = 100, name = "Teilen — Export / Import" }
+	pa.shareDesc = {
+		type = "description", order = 101,
+		name = "Exportiere dein komplettes Lumen-Setup als Code oder übernimm den Code von jemand anderem — granular pro Modul.\n",
+	}
+
+	-- Export
+	pa.exportBtn = {
+		type = "execute", order = 110, name = "Export-Code erzeugen",
+		func = function()
+			shareExport = (Share() and Share():Export()) or ""
+			ccRefresh()
+		end,
+	}
+	pa.exportBox = {
+		type = "input", order = 111, multiline = 6, width = "full",
+		name = "Export-Code  |cff888888(Feld anklicken, Strg+A, Strg+C)|r",
+		hidden = function() return shareExport == "" end,
+		get = function() return shareExport end,
+		set = function() end,   -- nur lesen
+	}
+
+	-- Import
+	pa.importBox = {
+		type = "input", order = 120, multiline = 6, width = "full",
+		name = "Import-Code hier einfügen",
+		get = function() return shareImportRaw end,
+		set = function(_, v)
+			shareImportRaw = v or ""
+			importPayload, importErr = nil, nil
+			wipe(importSel)
+			importLayout = false
+			if Share() and shareImportRaw:gsub("%s+", "") ~= "" then
+				local p, err = Share():Decode(shareImportRaw)
+				if p then
+					importPayload = p
+					for k in pairs(p.modules) do importSel[k] = true end
+				else
+					importErr = err or "ungültig"
+				end
+			end
+			ccRefresh()
+		end,
+	}
+	pa.importStatus = {
+		type = "description", order = 121,
+		hidden = function() return not (importErr or importPayload) end,
+		name = function()
+			if importErr then return "|cffff5555Code ungültig: " .. importErr .. "|r" end
+			return "|cff66dd66Code erkannt.|r Wähle, was übernommen werden soll:"
+		end,
+	}
+	-- Modul-Häkchen (dynamisch aus der Modulliste; nur sichtbar, wenn im Code enthalten).
+	if Share() then
+		local o = 122
+		for _, m in ipairs(Share():GetModules()) do
+			local key = m.key
+			pa["imp_" .. key] = {
+				type = "toggle", order = o, name = m.label,
+				hidden = function() return not (importPayload and importPayload.modules[key]) end,
+				get = function() return importSel[key] end,
+				set = function(_, v) importSel[key] = v end,
+			}
+			o = o + 1
+		end
+	end
+	pa.impLayout = {
+		type = "toggle", order = 140, width = "full",
+		name = "Layout-Positionen mitimportieren",
+		desc = "An = die Frame-Positionen des Absenders übernehmen. Aus = deine aktuellen Positionen bleiben.",
+		hidden = function()
+			return not (importPayload and importPayload.layout and next(importPayload.layout) ~= nil)
+		end,
+		get = function() return importLayout end,
+		set = function(_, v) importLayout = v end,
+	}
+	pa.importBtn = {
+		type = "execute", order = 141, name = "Import ausführen",
+		hidden = function() return not importPayload end,
+		confirm = true,
+		confirmText = "Die ausgewählten Module überschreiben deine aktuellen Einstellungen. Fortfahren?",
+		func = function()
+			if Share() and importPayload then
+				local ok = Share():Import(importPayload, importSel, importLayout)
+				if ok then L:Print("Import übernommen.") end
+			end
+			shareImportRaw, importPayload, importErr = "", nil, nil
+			wipe(importSel)
+			ccRefresh()
+		end,
+	}
 
 	LibStub("AceConfig-3.0"):RegisterOptionsTable("Lumen", options)
 	LibStub("AceConfigDialog-3.0"):SetDefaultSize("Lumen", 640, 560)

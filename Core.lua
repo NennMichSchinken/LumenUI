@@ -78,6 +78,10 @@ local defaults = {
 	},
 }
 
+-- Defaults für andere Module sichtbar machen (Share/Import merged darauf, damit fehlende
+-- Felder eines importierten Codes sauber mit Lumen-Standards aufgefüllt werden).
+ns.Defaults = defaults
+
 -- Name-/HP-Text-Felder, die pro Kontext (raid/party) liegen (für die Migration).
 local TEXT_FIELDS = {
 	"showName", "nameSize", "namePoint", "nameX", "nameY", "nameColor", "nameOutline",
