@@ -16,6 +16,10 @@ local OUTLINES = {
 	thick   = "Dicker Outline",
 }
 
+local GROW = {
+	RIGHT = "Nach rechts", LEFT = "Nach links", UP = "Nach oben", DOWN = "Nach unten",
+}
+
 function ns.SetupOptions()
 	local L = ns.Lumen
 
@@ -68,6 +72,20 @@ function ns.SetupOptions()
 	end
 	local raidColGet, raidColSet   = ctxColorGetSet("raid")
 	local groupColGet, groupColSet = ctxColorGetSet("party")
+
+	-- Aura-Kategorie-Get/Set (Werte liegen in rf().auras[<catKey>][key]).
+	local function auraGetSet(catKey)
+		local function get(info) local t = (rf().auras and rf().auras[catKey]) or {}; return t[info[#info]] end
+		local function set(info, val)
+			rf().auras = rf().auras or {}
+			rf().auras[catKey] = rf().auras[catKey] or {}
+			rf().auras[catKey][info[#info]] = val
+			if ns.Raidframes then ns.Raidframes:UpdateLayout() end
+		end
+		return get, set
+	end
+	local getHotOwn, setHotOwn = auraGetSet("hotsOwn")
+	local function hotOwnAutoFit() local t = rf().auras and rf().auras.hotsOwn; return t and t.autoFit end
 
 	-- Layout- + Text-Optionen (Raid- und Group-Tab identisch; Text pro Kontext, da Frames
 	-- unterschiedlich groß sind). colGet/colSet binden die Farb-Picker an den Kontext.
@@ -498,6 +516,35 @@ function ns.SetupOptions()
 					type = "group", name = "Group", order = 3,
 					get = getGroup, set = setGroup,
 					args = layoutArgs(groupColGet, groupColSet),
+				},
+				auras = {
+					type = "group", name = "Auras", order = 4,
+					get = getHotOwn, set = setHotOwn,
+					args = {
+						intro = {
+							type = "description", order = 0,
+							name = "HoTs & Auren als Icon-Indikatoren am Frame. Phase 1: deine eigenen HoTs. " ..
+							       "Im |cffD4A34FTestmodus|r (Tab Base) zur Vorschau sichtbar, solange es keine Live-Vorschau gibt.\n",
+						},
+						hotHead   = { type = "header", order = 10, name = "Eigene HoTs" },
+						enabled   = { type = "toggle", order = 11, width = "full", name = "Anzeigen" },
+						anchor    = { type = "select", order = 12, name = "Position (Anker)", values = POINTS },
+						grow      = { type = "select", order = 13, name = "Wachstumsrichtung", values = GROW },
+						spacing   = { type = "range",  order = 14, name = "Abstand", min = 0, max = 20, step = 1 },
+						maxIcons  = { type = "range",  order = 15, name = "Max. Icons", min = 1, max = 8, step = 1 },
+
+						dispHead  = { type = "header", order = 20, name = "Darstellung" },
+						showSwipe = { type = "toggle", order = 21, name = "Cooldown-Swipe anzeigen" },
+
+						sizeHead  = { type = "header", order = 30, name = "Größe" },
+						autoFit   = {
+							type = "toggle", order = 31, width = "full",
+							name = "Auto-Fit — Icons skalieren mit der Frame-Höhe (Raid kleiner, Gruppe größer)",
+							desc = "An: die Icon-Größe wird automatisch aus der Frame-Höhe abgeleitet. Aus: zwei feste Größen für Raid und Gruppe.",
+						},
+						sizeRaid  = { type = "range", order = 32, name = "Größe (Raid)",   min = 8, max = 48, step = 1, disabled = hotOwnAutoFit },
+						sizeParty = { type = "range", order = 33, name = "Größe (Gruppe)", min = 8, max = 48, step = 1, disabled = hotOwnAutoFit },
+					},
 				},
 				},
 			},

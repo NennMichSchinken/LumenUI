@@ -30,7 +30,7 @@ read_globals = {
     -- Farben / Auren / Zahlen
     "RAID_CLASS_COLORS", "AuraUtil",
     "AbbreviateNumbers", "AbbreviateNumbersAlt",
-    "CreateColor", "Mixin",
+    "CreateColor", "Mixin", "GetTime",
     -- Namespaces
     "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum",
     "C_Spell", "C_SpellBook",

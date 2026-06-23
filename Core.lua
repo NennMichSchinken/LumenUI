@@ -63,6 +63,26 @@ local defaults = {
 				healthTextType = "Aktuell", healthTextSize = 16, healthTextPoint = "CENTER",
 				healthTextX = 0, healthTextY = 0, healthTextColor = { r = 1, g = 1, b = 1 }, healthTextOutline = "outline",
 			},
+
+			-- Aura-Indikatoren (Icon-System; Phase 1: eigene HoTs). Das Layout (Anker,
+			-- Wachstumsrichtung, Whitelist, Toggles) ist über raid/party GETEILT — nur die
+			-- Icon-Größe ist kontextabhängig: autoFit leitet sie aus der Frame-Höhe ab,
+			-- sonst greifen die expliziten sizeRaid/sizeParty. anchor = einer der 9
+			-- WoW-Punkte (TOPLEFT…BOTTOMRIGHT); grow = RIGHT|LEFT|UP|DOWN.
+			auras = {
+				hotsOwn = {
+					enabled      = true,
+					anchor       = "BOTTOMLEFT",
+					grow         = "RIGHT",
+					spacing      = 2,
+					maxIcons     = 5,
+					autoFit      = true,
+					sizeRaid     = 16,
+					sizeParty    = 22,
+					showSwipe    = true,
+					hideTooltips = false,   -- greift erst, sobald Icons mouseover-interaktiv sind (Phase 2)
+				},
+			},
 		},
 
 		-- Click-Cast (cross-cutting: gilt für alle Unit-Buttons, perspektivisch auch
