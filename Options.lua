@@ -294,7 +294,12 @@ function ns.SetupOptions()
 				if CC() then for _, s in ipairs(CC():GetSpecList()) do t[#t + 1] = s.id end end
 				return t
 			end,
-			get = function() return selectedSpec end,
+			-- Lazy auflösen: beim Bau in OnInitialize ist GetSpecialization() oft noch
+			-- nil (vor dem Login). Beim ersten Anzeigen in-world steht sie -> nachziehen.
+			get = function()
+				if not selectedSpec and CC() then selectedSpec = CC():CurrentSpecID() end
+				return selectedSpec
+			end,
 			set = function(_, v) selectedSpec = v; rebuildCC(); ccRefresh() end,
 		}
 		ccArgs.specInfo = {
@@ -342,8 +347,12 @@ function ns.SetupOptions()
 
 	-- QoL: bei Spec-Wechsel im Spiel die bearbeitete Spec automatisch auf die jetzt
 	-- aktive umstellen (manuelle Auswahl im Dropdown gilt bis zum nächsten Wechsel).
+	-- PLAYER_LOGIN/ENTERING_WORLD: erste Auflösung, sobald die Spec-API verfügbar ist
+	-- (rebuildCC lief in OnInitialize noch vor dem Login -> selectedSpec war nil/blank).
 	local specWatcher = CreateFrame("Frame")
 	specWatcher:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	specWatcher:RegisterEvent("PLAYER_LOGIN")
+	specWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 	specWatcher:SetScript("OnEvent", function()
 		if CC() then selectedSpec = CC():CurrentSpecID() end
 		rebuildCC(); ccRefresh()
