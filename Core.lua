@@ -64,6 +64,17 @@ local defaults = {
 				healthTextX = 0, healthTextY = 0, healthTextColor = { r = 1, g = 1, b = 1 }, healthTextOutline = "outline",
 			},
 		},
+
+		-- Click-Cast (cross-cutting: gilt für alle Unit-Buttons, perspektivisch auch
+		-- Unit Frames/Nameplates). Bindings liegen PRO SPEC (Healer wechseln Specs).
+		-- Eine frisch betretene Spec wird mit Links=Ziel/Rechts=Menü vorbelegt (siehe
+		-- ClickCast.getSpec). Maus-Klick- UND Hovercast-Bindings in EINER Liste,
+		-- getrennt über das Feld binding.hovercast.
+		clickCast = {
+			enabled     = false,
+			helpfulOnly = true,   -- Spell-Auswahl auf hilfreiche (auf Freunde wirkbare) Zauber beschränken
+			specs       = {},     -- [specID] = { { key=, type=, ... }, ... }
+		},
 	},
 }
 
@@ -153,6 +164,8 @@ function Lumen:RefreshAll()
 	else
 		ns.Raidframes:Disable()
 	end
+	-- Profilwechsel: Click-Cast-Bindings neu anwenden (Bindings sind profilgebunden).
+	if ns.ClickCast then ns.ClickCast:ApplyBindings() end
 end
 
 function Lumen:OpenConfig()

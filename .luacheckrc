@@ -33,6 +33,12 @@ read_globals = {
     "CreateColor", "Mixin",
     -- Namespaces
     "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum",
+    "C_Spell", "C_SpellBook",
+    -- Spec / Secure-Bindings (Click-Cast)
+    "GetSpecialization", "GetSpecializationInfo", "GetNumSpecializations",
+    "RegisterStateDriver", "UnregisterStateDriver",
+    "RegisterAttributeDriver", "UnregisterAttributeDriver",
+    "SetOverrideBindingClick", "ClearOverrideBindings",
     -- Ace3
     "LibStub",
 }

@@ -616,18 +616,33 @@ end
 -- Lösung (Muster aus EllesmereUI): Rechtsklick über die UN-gated "click"-Action an einen
 -- versteckten SecureActionButton-Proxy routen, der selbst "togglemenu" sicher ausführt.
 -- "useparent-unit" -> der Proxy holt die Unit vom Eltern-Button (header-verwaltet).
-local function attachSecureMenu(button)
-	local proxy = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
-	proxy:SetSize(1, 1); proxy:SetAlpha(0); proxy:EnableMouse(false)
-	proxy:RegisterForClicks("AnyUp")
-	proxy:SetAttribute("type", "togglemenu")
-	for i = 1, 5 do proxy:SetAttribute("type" .. i, "togglemenu") end  -- per Button-Suffix aufgelöst
-	proxy:SetAttribute("useparent-unit", true)
-	proxy:SetAttribute("useOnKeyDown", false)
+local function getMenuProxy(button)
+	local proxy = button._lumenMenuProxy
+	if not proxy then
+		proxy = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
+		proxy:SetSize(1, 1); proxy:SetAlpha(0); proxy:EnableMouse(false)
+		proxy:RegisterForClicks("AnyUp")
+		proxy:SetAttribute("type", "togglemenu")
+		for i = 1, 5 do proxy:SetAttribute("type" .. i, "togglemenu") end  -- per Button-Suffix aufgelöst
+		proxy:SetAttribute("useparent-unit", true)
+		proxy:SetAttribute("useOnKeyDown", false)
+		button._lumenMenuProxy = proxy
+	end
+	return proxy
+end
+ns.RF_GetMenuProxy = getMenuProxy
+
+-- Phase-1-Defaultklicks: Links=Ziel, Rechts=WoW-Menü (über Proxy). Wird beim Erstellen
+-- gesetzt UND von ClickCast wiederhergestellt, wenn der Nutzer Click-Cast deaktiviert.
+-- NUR außer Kampf aufrufen (Attribute setzen ist geschützt).
+local function applyDefaultClicks(button)
+	button:SetAttribute("type1", "target")
+	button:SetAttribute("*type1", "target")
 	button:SetAttribute("type2", nil)
 	button:SetAttribute("*type2", "click")
-	button:SetAttribute("*clickbutton2", proxy)
+	button:SetAttribute("*clickbutton2", getMenuProxy(button))
 end
+ns.RF_ApplyDefaultClicks = applyDefaultClicks
 
 -- Einen vom Header erzeugten Secure-Button einmalig mit unserem Render-Stack + Klick-
 -- Verhalten ausstatten. NUR außer Kampf aufrufen (Attribute setzen ist geschützt).
@@ -639,9 +654,7 @@ local function styleSecureButton(button)
 	-- Klick: Links=Ziel (unmodifiziert hat eine Default-ClickBinding), Rechts=Menü via Proxy.
 	button:EnableMouse(true)
 	button:RegisterForClicks("AnyUp")
-	button:SetAttribute("type1", "target")
-	button:SetAttribute("*type1", "target")
-	attachSecureMenu(button)
+	applyDefaultClicks(button)
 	-- Maus-Highlight: HookScript (NICHT SetScript) -> die sicheren Header-Handler bleiben intakt.
 	button:HookScript("OnEnter", function(self) Raidframes:SetHighlight(self, true) end)
 	button:HookScript("OnLeave", function(self) Raidframes:SetHighlight(self, false) end)

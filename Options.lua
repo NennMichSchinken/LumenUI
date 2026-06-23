@@ -118,6 +118,237 @@ function ns.SetupOptions()
 		}
 	end
 
+	-- ===== Click-Cast: dynamische Binding-Zeilen =================================
+	local AceRegistry = LibStub("AceConfigRegistry-3.0", true)
+	local function ccRefresh() if AceRegistry then AceRegistry:NotifyChange("Lumen") end end
+	local function CC() return ns.ClickCast end
+	local function ccApply() if CC() then CC():ApplyBindings() end end
+	local rebuildCC   -- vorwärts deklariert (buildRow.remove ruft es vor der Definition)
+
+	local selectedSpec        -- welche Spec bearbeitet wird (entkoppelt von der Live-Spec)
+	local allSpells = {}      -- volle Spell-Liste der Klasse (mit Icon), je Rebuild frisch
+	local searchText = {}     -- [binding] = Suchtext (transient, nicht im Profil gespeichert)
+
+	local function refreshSpellList()
+		wipe(allSpells)
+		if not CC() then return end
+		for _, s in ipairs(CC():GetClassSpells()) do allSpells[#allSpells + 1] = s end
+	end
+	local function iconText(icon, name)
+		if icon then return "|T" .. icon .. ":16:16:0:0|t " .. (name or "") end
+		return name or ""
+	end
+	local function helpfulOnly() return L.db.profile.clickCast.helpfulOnly end
+	-- Trifft ein Spell den Filter (Hilfreich-Toggle + Suchtext)?
+	local function spellMatches(s, q)
+		if helpfulOnly() and not s.friendly then return false end
+		return q == "" or s.name:lower():find(q, 1, true) ~= nil
+	end
+
+	local function bindingIndex(b)
+		if not CC() then return nil end
+		for i, x in ipairs(CC():GetBindings(selectedSpec)) do if x == b then return i end end
+	end
+	local function actionLabel(b)
+		if b.type == "spell" then return b.spell or "|cff888888Spell wählen…|r" end
+		return (CC() and CC().BINDING_TYPES[b.type]) or b.type or "?"
+	end
+	local function rowName(b)
+		local k = CC() and CC():FormatKey(b.key) or (b.key or "—")
+		return k .. "  |cffD4A34F→|r  " .. actionLabel(b)
+	end
+
+	local ccArgs = {}   -- in-place gehaltene args des Click-Cast-Knotens
+
+	local function buildRow(b, isHover, order)
+		local a = {}
+		if isHover then
+			-- Hovercast = Tastatur -> keybinding-Widget (drücke Taste).
+			a.key = {
+				type = "keybinding", order = 1, name = "Taste", width = 1.0,
+				get = function() return b.key end,
+				set = function(_, v) b.key = v; ccApply(); ccRefresh() end,
+			}
+		else
+			-- Klick = Maustaste (Dropdown) + optionaler Modifier (Schalter + Auswahl).
+			a.mousebtn = {
+				type = "select", order = 1, name = "Maustaste", width = 1.0,
+				values = CC().MOUSE_BUTTON_VALUES, sorting = CC().MOUSE_BUTTON_SORTING,
+				get = function() local _, btn = CC():KeyParts(b.key); return (btn ~= "" and btn) or "BUTTON1" end,
+				set = function(_, v) local mod = CC():KeyParts(b.key); b.key = CC():BuildKey(mod, v); ccApply(); ccRefresh() end,
+			}
+			a.usemod = {
+				type = "toggle", order = 1.1, name = "Modifier", width = 0.6,
+				desc = "Zusatztaste (Shift/Strg/Alt) verlangen.",
+				get = function() local mod = CC():KeyParts(b.key); return mod ~= "" end,
+				set = function(_, v)
+					local _, btn = CC():KeyParts(b.key)
+					b.key = CC():BuildKey(v and "SHIFT" or "", (btn ~= "" and btn) or "BUTTON1")
+					ccApply(); ccRefresh()
+				end,
+			}
+			a.mod = {
+				type = "select", order = 1.2, name = "", width = 0.7,
+				values = CC().MOD_VALUES, sorting = CC().MOD_SORTING,
+				hidden = function() local mod = CC():KeyParts(b.key); return mod == "" end,
+				get = function() local mod = CC():KeyParts(b.key); return (mod ~= "" and mod) or "SHIFT" end,
+				set = function(_, v) local _, btn = CC():KeyParts(b.key); b.key = CC():BuildKey(v, (btn ~= "" and btn) or "BUTTON1"); ccApply(); ccRefresh() end,
+			}
+		end
+		a.btype = {
+			type = "select", order = 2, name = "Aktion", width = 0.9,
+			values = CC().BINDING_TYPES,
+			get = function() return b.type end,
+			set = function(_, v) b.type = v; ccApply(); ccRefresh() end,
+		}
+		-- Spell-Suche (filtert das Dropdown) — nur bei Aktion „Spell".
+		a.spellSearch = {
+			type = "input", order = 2.9, name = "Spell suchen", width = 1.0,
+			hidden = function() return b.type ~= "spell" end,
+			get = function() return searchText[b] or "" end,
+			set = function(_, v) searchText[b] = v; ccRefresh() end,
+		}
+		a.spell = {
+			type = "select", order = 3, name = "Spell", width = 1.4,
+			hidden = function() return b.type ~= "spell" end,
+			values = function()
+				local q = (searchText[b] or ""):lower()
+				local t = {}
+				for _, s in ipairs(allSpells) do
+					if spellMatches(s, q) then t[s.id] = iconText(s.icon, s.name) end
+				end
+				if b.spellID and not t[b.spellID] then t[b.spellID] = iconText(nil, b.spell) end
+				return t
+			end,
+			sorting = function()
+				local q = (searchText[b] or ""):lower()
+				local t = {}
+				local selPresent = false
+				for _, s in ipairs(allSpells) do
+					if spellMatches(s, q) then
+						if s.id == b.spellID then selPresent = true end
+						t[#t + 1] = s.id
+					end
+				end
+				if b.spellID and not selPresent then table.insert(t, 1, b.spellID) end
+				return t
+			end,
+			get = function() return b.spellID end,
+			set = function(_, v)
+				b.spellID = v
+				for _, s in ipairs(allSpells) do if s.id == v then b.spell = s.name; break end end
+				ccApply(); ccRefresh()
+			end,
+		}
+		a.ooc = {
+			type = "toggle", order = 4, name = "Nur OOC", width = 0.6,
+			desc = "Nur außerhalb des Kampfes auslösen.",
+			hidden = function() return b.type == "target" or b.type == "menu" end,
+			get = function() return b.oocOnly end,
+			set = function(_, v) b.oocOnly = v; ccApply() end,
+		}
+		if isHover then
+			a.friendly = {
+				type = "toggle", order = 5, name = "Freund", width = 0.6,
+				hidden = function() return b.type ~= "spell" end,
+				get = function() return b.hoverFriendly end,
+				set = function(_, v) b.hoverFriendly = v; ccApply() end,
+			}
+			a.enemy = {
+				type = "toggle", order = 6, name = "Feind", width = 0.6,
+				hidden = function() return b.type ~= "spell" end,
+				get = function() return b.hoverEnemy end,
+				set = function(_, v) b.hoverEnemy = v; ccApply() end,
+			}
+		end
+		a.remove = {
+			type = "execute", order = 7, name = "Entfernen", width = 0.7,
+			func = function() local i = bindingIndex(b); if i and CC() then CC():RemoveBinding(selectedSpec, i) end; rebuildCC(); ccRefresh() end,
+		}
+		return { type = "group", inline = true, order = order, name = function() return rowName(b) end, args = a }
+	end
+
+	rebuildCC = function()
+		wipe(ccArgs)
+		refreshSpellList()
+		if selectedSpec == nil and CC() then selectedSpec = CC():CurrentSpecID() end
+		local cc = L.db.profile.clickCast
+		ccArgs.enabled = {
+			type = "toggle", order = 1, width = "full", name = "Click-Cast aktiviert",
+			desc = "Übernimmt die Klicks auf die Raidframe-Buttons. Aus = WoW-Standard (Links=Ziel, Rechts=Menü).",
+			get = function() return cc.enabled end,
+			set = function(_, v) cc.enabled = v; ccApply(); rebuildCC(); ccRefresh() end,
+		}
+		-- Spec-Auswahl: entkoppelt von der Live-Spec, damit man jede Spec hier bearbeiten kann.
+		ccArgs.specSel = {
+			type = "select", order = 3, name = "Spec (bearbeiten)", width = "double",
+			desc = "Wähle, welche Spec du hier bearbeitest. Im Spiel gelten automatisch die Bindings deiner aktiven Spec.",
+			disabled = function() return not cc.enabled end,
+			values = function()
+				local t = {}
+				if CC() then for _, s in ipairs(CC():GetSpecList()) do t[s.id] = iconText(s.icon, s.name) end end
+				return t
+			end,
+			sorting = function()
+				local t = {}
+				if CC() then for _, s in ipairs(CC():GetSpecList()) do t[#t + 1] = s.id end end
+				return t
+			end,
+			get = function() return selectedSpec end,
+			set = function(_, v) selectedSpec = v; rebuildCC(); ccRefresh() end,
+		}
+		ccArgs.specInfo = {
+			type = "description", order = 4,
+			name = function()
+				return "|cff888888Aktive Spec im Spiel: |r|cffD4A34F" .. (CC() and CC():CurrentSpecName() or "?") .. "|r"
+			end,
+		}
+		if not cc.enabled then return end
+
+		ccArgs.helpfulOnly = {
+			type = "toggle", order = 5, width = "full",
+			name = "Nur hilfreiche Zauber zur Auswahl anzeigen",
+			desc = "Beschränkt die Spell-Liste auf Zauber, die du auf dich/Verbündete wirken kannst (Heils, Schilde, Dispels, Rez …). Aus = alle Zauber.",
+			get = function() return cc.helpfulOnly end,
+			set = function(_, v) cc.helpfulOnly = v; ccRefresh() end,
+		}
+
+		local bindings = CC() and CC():GetBindings(selectedSpec) or {}
+		ccArgs.clickHead = { type = "header", order = 10, name = "Klick auf Frame" }
+		local o = 11
+		for _, b in ipairs(bindings) do
+			if not b.hovercast then ccArgs["row" .. o] = buildRow(b, false, o); o = o + 1 end
+		end
+		ccArgs.addClick = {
+			type = "execute", order = 400, name = "Klick-Binding hinzufügen",
+			func = function() if CC() then CC():AddBinding(selectedSpec, { key = "BUTTON3", type = "spell" }) end; rebuildCC(); ccRefresh() end,
+		}
+
+		ccArgs.hoverHead = { type = "header", order = 500, name = "Hovercast (Mouseover)" }
+		ccArgs.hoverInfo = {
+			type = "description", order = 501,
+			name = "|cff888888Taste drücken, während die Maus über einer Unit schwebt — der Spell geht auf die gehoverte Unit, ohne Klick. Die Taste wirkt nur beim Hovern; sonst macht sie ihr normales Ding.|r",
+		}
+		o = 510
+		for _, b in ipairs(bindings) do
+			if b.hovercast then ccArgs["row" .. o] = buildRow(b, true, o); o = o + 1 end
+		end
+		ccArgs.addHover = {
+			type = "execute", order = 900, name = "Hovercast-Taste hinzufügen",
+			func = function() if CC() then CC():AddBinding(selectedSpec, { hovercast = true, type = "spell", hoverFriendly = true }) end; rebuildCC(); ccRefresh() end,
+		}
+	end
+	rebuildCC()
+
+	-- QoL: bei Spec-Wechsel im Spiel die bearbeitete Spec automatisch auf die jetzt
+	-- aktive umstellen (manuelle Auswahl im Dropdown gilt bis zum nächsten Wechsel).
+	local specWatcher = CreateFrame("Frame")
+	specWatcher:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	specWatcher:SetScript("OnEvent", function()
+		if CC() then selectedSpec = CC():CurrentSpecID() end
+		rebuildCC(); ccRefresh()
+	end)
+
 	local options = {
 		type = "group", name = "Lumen", childGroups = "tree",
 		args = {
@@ -126,43 +357,55 @@ function ns.SetupOptions()
 				name = "|cffD4A34FLumen|r — a focused UI suite\n",
 			},
 
-			-- ---- Global (suite-weit) ---------------------------------------
+			-- ---- Global (suite-weit; Tabs: Base | Profile) -----------------
 			general = {
-				type = "group", name = "Global", order = 1,
+				type = "group", name = "Global", order = 1, childGroups = "tab",
 				args = {
-					about = {
-						type = "description", order = 1,
-						name = "Zentrale Profile liegen unter |cffD4A34FProfile|r. " ..
-						       "Export/Import (granular pro Modul) folgt später.\n",
+					base = {
+						type = "group", name = "Base", order = 1,
+						args = {
+							about = {
+								type = "description", order = 1,
+								name = "Zentrale Profile liegen im Tab |cffD4A34FProfile|r. " ..
+								       "Export/Import (granular pro Modul) folgt später.\n",
+							},
+							moveHead = { type = "header", order = 5, name = "Verschieben (Edit-Modus)" },
+							editMode = {
+								type = "toggle", order = 6, width = "full",
+								name = "Rahmen entsperren — zeigt alle beweglichen Lumen-Elemente",
+								get = function() return ns.EditMode and ns.EditMode:IsActive() end,
+								set = function(_, v) if ns.EditMode then ns.EditMode:Toggle(v) end end,
+							},
+							resetPos = {
+								type = "execute", order = 7, name = "Positionen zurücksetzen",
+								func = function()
+									local d = rf()
+									for _, ctx in ipairs({ "raid", "party" }) do
+										local t = d[ctx]
+										if t then t.point, t.x, t.y = "CENTER", 0, -120 end
+									end
+									if ns.Raidframes then ns.Raidframes:UpdateLayout() end
+								end,
+							},
+							moveInfo = {
+								type = "description", order = 8,
+								name = "|cff888888Funktioniert auch über WoWs eigenen Edit-Modus: Lumen-Rahmen werden dort beweglich angezeigt.|r",
+							},
+						},
 					},
-					moveHead = { type = "header", order = 5, name = "Verschieben (Edit-Modus)" },
-					editMode = {
-						type = "toggle", order = 6, width = "full",
-						name = "Rahmen entsperren — zeigt alle beweglichen Lumen-Elemente",
-						get = function() return ns.EditMode and ns.EditMode:IsActive() end,
-						set = function(_, v) if ns.EditMode then ns.EditMode:Toggle(v) end end,
-					},
-					resetPos = {
-						type = "execute", order = 7, name = "Positionen zurücksetzen",
-						func = function()
-							local d = rf()
-							for _, ctx in ipairs({ "raid", "party" }) do
-								local t = d[ctx]
-								if t then t.point, t.x, t.y = "CENTER", 0, -120 end
-							end
-							if ns.Raidframes then ns.Raidframes:UpdateLayout() end
-						end,
-					},
-					moveInfo = {
-						type = "description", order = 8,
-						name = "|cff888888Funktioniert auch über WoWs eigenen Edit-Modus: Lumen-Rahmen werden dort beweglich angezeigt.|r",
-					},
+					-- profile-Tab wird unten nach dem Bau der AceDBOptions eingehängt.
 				},
+			},
+
+			-- ---- Click-Cast (eigener Knoten; dynamische Binding-Zeilen) -----
+			clickcast = {
+				type = "group", name = "Click-Cast", order = 2,
+				args = ccArgs,
 			},
 
 			-- ---- Raidframes (Tabs: Base | Raid | Group) --------------------
 			raidframes = {
-				type = "group", name = "Raidframes", order = 10, childGroups = "tab",
+				type = "group", name = "Raidframes", order = 3, childGroups = "tab",
 				args = {
 				base = {
 					type = "group", name = "Base", order = 1,
@@ -244,11 +487,12 @@ function ns.SetupOptions()
 		},
 	}
 
+	-- Profile sind globale Einstellungen -> als Tab IN den Global-Knoten.
 	local profiles = LibStub("AceDBOptions-3.0"):GetOptionsTable(L.db)
 	profiles.order = 2
 	profiles.name = "Profile"
-	options.args.profiles = profiles
+	options.args.general.args.profile = profiles
 
 	LibStub("AceConfig-3.0"):RegisterOptionsTable("Lumen", options)
-	LibStub("AceConfigDialog-3.0"):SetDefaultSize("Lumen", 600, 520)
+	LibStub("AceConfigDialog-3.0"):SetDefaultSize("Lumen", 640, 560)
 end
