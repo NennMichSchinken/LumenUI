@@ -19,7 +19,7 @@ read_globals = {
     -- Frames / Core
     "CreateFrame", "UIParent", "InCombatLockdown",
     "STANDARD_TEXT_FONT", "GameFontNormal",
-    "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame",
+    "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip",
     -- Einheiten / Leben
     "UnitExists", "UnitName", "UnitClass",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",
@@ -33,7 +33,7 @@ read_globals = {
     "CreateColor", "Mixin", "GetTime",
     -- Namespaces
     "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum",
-    "C_Spell", "C_SpellBook",
+    "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents",
     -- Spec / Secure-Bindings (Click-Cast)
     "GetSpecialization", "GetSpecializationInfo", "GetNumSpecializations",
     "RegisterStateDriver", "UnregisterStateDriver",
