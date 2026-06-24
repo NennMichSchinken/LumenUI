@@ -965,8 +965,10 @@ function Raidframes:RenderLive(f)
 	if t == "Keine" then
 		f.htext:SetText("")
 	elseif t == "Prozent" and _G.UnitHealthPercent then
+		-- UnitHealthPercent liefert ohne ScaleTo100-Kurve eine 0..1-Fraktion (nicht secret)
+		-- -> *100, sonst zeigt volles Leben "1%".
 		local ok, p = pcall(UnitHealthPercent, u, true)
-		f.htext:SetText(ok and p and format("%d%%", p) or "")
+		f.htext:SetText(ok and p and format("%d%%", p * 100) or "")
 	else
 		local ok, str = pcall(AbbrevNum, UnitHealth(u))
 		f.htext:SetText(ok and str or "")
@@ -1048,7 +1050,7 @@ function Raidframes:RenderAurasLive(f)
 				-- Whitelist: welche Spells diese Kategorie zeigt. sid auch fuer das secret-freie Icon.
 				--  * whitelistOr (Defensives, B3): Filter-Treffer (externe Def) ODER eigene "def"-
 				--    Whitelist; eigene Auren vorab via isFromPlayerOrPlayerPet (12.0.5, nicht secret).
-				--  * sonst (HoTs, B2): Whitelist begrenzt den Filter; nicht aufloesbar -> Fallback auf Filter.
+				--  * sonst (HoTs, B2): nur positiver Whitelist-Treffer zeigt (kein Filter-Fallback).
 				local sid, accept
 				if c.whitelist then
 					if c.whitelistOr then
@@ -1065,9 +1067,12 @@ function Raidframes:RenderAurasLive(f)
 						-- Talent-HoTs ohne PLAYER-Quell-Flag) -> Eigenheit hier separat prüfen.
 						accept = false
 					else
+						-- HoTs (whitelist, kein Or): NUR zeigen, wenn die Aura positiv auf einen
+						-- Whitelist-Spell aufgelöst wird. KEIN subPass-Fallback mehr — sonst rutschen
+						-- im Kampf nicht auflösbare Eigenbuffs (Toys/Trinkets/Allgemeinbuffs, die
+						-- Blizzard im Buffrahmen führt) durch, weil der Filter jetzt "HELPFUL" ist.
 						sid = resolveSpellId(u, aura, spec)
-						if wl and sid then accept = subPass and (wlType(wl, sid) == c.whitelist)
-						else accept = subPass end
+						accept = (sid ~= nil and subPass and wlType(wl, sid) == c.whitelist) or false
 					end
 				else
 					accept = subPass
