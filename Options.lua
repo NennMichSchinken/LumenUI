@@ -80,14 +80,15 @@ function ns.SetupOptions()
 			rf().auras = rf().auras or {}
 			rf().auras[catKey] = rf().auras[catKey] or {}
 			rf().auras[catKey][info[#info]] = val
-			if ns.Raidframes then ns.Raidframes:UpdateLayout() end
+			-- Aura-Optionen brauchen kein Header-Relayout -> leichter, kampf-sicherer
+			-- Refresh (greift sofort, auch im Kampf; UpdateLayout würde im Kampf abbrechen).
+			if ns.Raidframes then ns.Raidframes:RefreshAuras() end
 		end
 		return get, set
 	end
 	-- Kategorien im Auras-Tab (Reihenfolge + Label). Filter/Render liegen in Raidframes.lua.
 	local AURA_TAB_CATS = {
-		{ key = "hotsOwn",    label = "Eigene HoTs" },
-		{ key = "hotsOther",  label = "Fremde HoTs / Buffs" },
+		{ key = "hotsOwn",    label = "HoTs" },
 		{ key = "defensives", label = "Defensives & Externe" },
 		{ key = "debuffs",    label = "Debuffs" },
 	}
@@ -100,6 +101,12 @@ function ns.SetupOptions()
 			get = get, set = set,
 			args = {
 				enabled   = { type = "toggle", order = 1, width = "full", name = "Anzeigen" },
+				filterMode = {
+					type = "select", order = 1.5, name = "Filter",
+					desc = "Welche Debuffs gezeigt werden. Raid-relevant = Blizzards Standard-Auswahl.",
+					values = { raid = "Raid-relevant (Blizzard)", all = "Alle", dispellable = "Nur dispellbar" },
+					hidden = function() return catKey ~= "debuffs" end,
+				},
 				anchor    = { type = "select", order = 2, name = "Position (Anker)", values = POINTS },
 				grow      = { type = "select", order = 3, name = "Wachstumsrichtung", values = GROW },
 				spacing   = { type = "range",  order = 4, name = "Abstand", min = 0, max = 20, step = 1 },
