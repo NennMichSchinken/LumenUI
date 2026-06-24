@@ -102,6 +102,14 @@ local defaults = {
 			specs       = {},     -- [specID] = { { key=, type=, ... }, ... }
 		},
 	},
+
+	-- Global (charakter-übergreifend, nicht profilgebunden): zur Laufzeit gelernte
+	-- Aura-Signaturen pro Spec. Map [specID] = { ["1:0:1:0"] = spellID }. Wird außer
+	-- Kampf passiv gefüllt (spellId dann lesbar) und persistiert -> im Kampf können wir
+	-- secret-Auren über ihre Signatur identifizieren (Aura-Whitelist Phase 2). Siehe §10.8.
+	global = {
+		auraSigs = {},
+	},
 }
 
 -- Defaults für andere Module sichtbar machen (Share/Import merged darauf, damit fehlende

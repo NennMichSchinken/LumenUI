@@ -142,12 +142,69 @@ local FAKE_DEBUFF = {
 --   subExclude -> nur Auren, die dieser Unterfilter AUSschließt (z.B. "nicht von mir" = fremd).
 --   subInclude -> nur Auren, die dieser Unterfilter EINschließt (z.B. externe Defensives).
 -- "PLAYER" = selbst gewirkt, "EXTERNAL_DEFENSIVE" = Blizzards kuratierte externe Defensiven.
+-- Stufe A (v0.9.11): der "RAID"-Filter = nur im Schlachtzug relevante Hilfsauren
+-- (HoTs/Schilde) -> Essen/Flask/Allgemeinbuffs fallen raus. Secret-sicher und auch für
+-- fremde Auren nutzbar (Stufe B = exakte Signatur-Whitelist nur für EIGENE HoTs).
 local AURA_CATS = {
-	{ key = "hotsOwn",    filter = "HELPFUL|PLAYER",                                fake = FAKE_HOTS },
-	{ key = "hotsOther",  filter = "HELPFUL", subExclude = "HELPFUL|PLAYER",        fake = FAKE_HOTS },
+	{ key = "hotsOwn",    filter = "HELPFUL|PLAYER|RAID",                           fake = FAKE_HOTS },
+	{ key = "hotsOther",  filter = "HELPFUL|RAID", subExclude = "HELPFUL|PLAYER",   fake = FAKE_HOTS },
 	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", fake = FAKE_DEFENSIVE },
 	{ key = "debuffs",    filter = "HARMFUL",                                       fake = FAKE_DEBUFF },
 }
+
+-- ---- Aura-Signatur-Lernen (Phase 2 / Stufe B1) ------------------------------
+-- 4-Filter-Fingerprint (RAID, RAID_IN_COMBAT, EXTERNAL_DEFENSIVE, RAID_PLAYER_DISPELLABLE;
+-- alle PLAYER|HELPFUL) -> identifiziert NUR selbst gewirkte Auren. Wir LERNEN die Zuordnung
+-- Signatur->SpellID selbst (außer Kampf, spellId lesbar) und persistieren in
+-- db.global.auraSigs[specID] -> im Kampf (spellId secret) per Signatur nachschlagen.
+local GetSpecialization     = GetSpecialization
+local GetSpecializationInfo = GetSpecializationInfo
+local function currentSpecID()
+	local idx = GetSpecialization and GetSpecialization()
+	if not idx then return 0 end
+	local id = GetSpecializationInfo and GetSpecializationInfo(idx)
+	return id or 0
+end
+local function auraSig(u, iid)
+	local fn = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
+	if not (fn and iid) then return nil end
+	local r   = not fn(u, iid, "PLAYER|HELPFUL|RAID")
+	local ric = not fn(u, iid, "PLAYER|HELPFUL|RAID_IN_COMBAT")
+	if not r and not ric then return nil end   -- kein getrackter Heiler-Buff -> uninteressant
+	local ext = not fn(u, iid, "PLAYER|HELPFUL|EXTERNAL_DEFENSIVE")
+	local dsp = not fn(u, iid, "PLAYER|HELPFUL|RAID_PLAYER_DISPELLABLE")
+	return (r and "1" or "0") .. ":" .. (ric and "1" or "0") .. ":" .. (ext and "1" or "0") .. ":" .. (dsp and "1" or "0")
+end
+-- Bereits gefingerprintete Aura-Instanzen -> jede Instanz nur EINMAL berechnen. Hält die
+-- OOC-Steady-State-Kosten faktisch bei einem reinen Aura-Scan. Bei Spec-Wechsel geleert.
+local learnedIID = {}
+-- Passiv lernen: NUR außer Kampf (im Kampf null Kosten -> früher Early-Out), die eigenen
+-- Auren auf u scannen, neue Signatur->SpellID merken. Aufruf einmal je UNIT_AURA der Unit.
+local function learnUnitSigs(u)
+	if InCombatLockdown() then return end           -- Hot-Path im Kampf: ein einziger Check
+	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex and ns.Lumen and ns.Lumen.db) then return end
+	local g = ns.Lumen.db.global
+	local store = g and g.auraSigs
+	if not store then return end
+	local spec = currentSpecID()
+	if spec == 0 then return end
+	local s = store[spec]; if not s then s = {}; store[spec] = s end
+	local i = 1
+	while i <= 40 do
+		local aura = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL|PLAYER")
+		if not aura then break end
+		i = i + 1
+		local iid = aura.auraInstanceID
+		if iid and not issecretvalue(iid) and not learnedIID[iid] then
+			learnedIID[iid] = true                  -- nur neue Instanzen fingerprinten
+			local sid = aura.spellId
+			if sid and not issecretvalue(sid) then
+				local sig = auraSig(u, iid)
+				if sig and not s[sig] then s[sig] = sid end
+			end
+		end
+	end
+end
 
 local frames = {}            -- Nicht-Secure-Pool für Preview/Test
 local container
@@ -715,6 +772,7 @@ function Raidframes:RenderAurasLive(f)
 	local u = f.unit
 	local A = db().auras
 	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
+	learnUnitSigs(u)   -- passives Signatur-Lernen (außer Kampf; Groundwork für die Whitelist)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
@@ -1058,6 +1116,8 @@ function Raidframes:Setup()
 				Raidframes:UpdateLayout()
 			end
 		else
+			-- Spec-Wechsel: Signaturen sind spec-scoped -> Skip-Cache leeren (neu lernen).
+			if event == "PLAYER_SPECIALIZATION_CHANGED" then wipe(learnedIID) end
 			local _, class = UnitClass("player")
 			playerDispels = CLASS_DISPELS[class] or {}
 			Raidframes:UpdateLayout()
