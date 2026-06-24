@@ -146,7 +146,7 @@ local FAKE_DEBUFF = {
 -- (HoTs/Schilde) -> Essen/Flask/Allgemeinbuffs fallen raus. Secret-sicher und auch für
 -- fremde Auren nutzbar (Stufe B = exakte Signatur-Whitelist nur für EIGENE HoTs).
 local AURA_CATS = {
-	{ key = "hotsOwn",    filter = "HELPFUL|PLAYER|RAID", whitelist = "hot",        fake = FAKE_HOTS },
+	{ key = "hotsOwn",    filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
 	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
 	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
@@ -349,13 +349,84 @@ local function whitelistFor(spec)
 	ensure(DEF_CLASS[SPEC_CLASS[spec]], "def")   -- klassenweite Defensiven
 	return s
 end
+
+-- ---------------------------------------------------------------------------
+--  Whitelist-Editor (B4, Options-Tab "Tracking") — öffentliche API.
+--  Arbeitet auf db().auras.whitelist[specID] (spellID -> "hot"|"def"); seedt die
+--  Spec lazy über whitelistFor. Reine OOC-Bedienfunktionen (kein Hot-Path).
+-- ---------------------------------------------------------------------------
+-- Einträge eines Typs ("hot"|"def") einer Spec als {id,name,icon}, alphabetisch.
+function Raidframes:WhitelistEntries(specID, typ)
+	local out = {}
+	if not specID or specID == 0 then return out end
+	local s = whitelistFor(specID); if not s then return out end
+	for sid, t in pairs(s) do
+		if t == typ then
+			local name = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)) or ("Spell " .. sid)
+			local icon = (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)) or 136243
+			out[#out + 1] = { id = sid, name = name, icon = icon }
+		end
+	end
+	table.sort(out, function(a, b) return a.name < b.name end)
+	return out
+end
+-- Roh-Map {spellID = "hot"|"def"} einer Spec (für die Picker-Dedupe: schon getrackte
+-- Spells aus dem Auswahl-Dropdown ausblenden). Seedt die Spec lazy.
+function Raidframes:WhitelistMap(specID)
+	if not specID or specID == 0 then return {} end
+	return whitelistFor(specID) or {}
+end
+-- Spell in die Whitelist aufnehmen.
+function Raidframes:AddWhitelist(specID, spellID, typ)
+	if not specID or specID == 0 or not spellID then return end
+	local s = whitelistFor(specID); if not s then return end
+	s[spellID] = typ
+	self:RefreshAuras()
+end
+-- Spell entfernen. Der seeded-Marker bleibt absichtlich gesetzt -> ein per Default
+-- geseedeter Spell kommt NICHT von allein zurück (bewusste Entfernung bleibt bestehen).
+function Raidframes:RemoveWhitelist(specID, spellID)
+	if not specID or specID == 0 or not spellID then return end
+	local A = db().auras; if not A or not A.whitelist then return end
+	local s = A.whitelist[specID]; if not s then return end
+	s[spellID] = nil
+	self:RefreshAuras()
+end
+-- Auf die kuratierten Defaults dieses Typs zurücksetzen: erst alle Einträge des Typs
+-- raus (auch vom Nutzer hinzugefügte), dann die Defaults DIREKT wieder eintragen und
+-- als geseedet markieren. Unbedingt (kein Seed-Guard) -> bringt ALLE Defaults zurück.
+function Raidframes:ResetWhitelist(specID, typ)
+	if not specID or specID == 0 then return end
+	local A = db().auras; if not A then return end
+	A.whitelist = A.whitelist or {}; A.whitelistSeeded = A.whitelistSeeded or {}
+	local s  = A.whitelist[specID];       if not s  then s  = {}; A.whitelist[specID]       = s end
+	local ss = A.whitelistSeeded[specID]; if not ss then ss = {}; A.whitelistSeeded[specID] = ss end
+	for sid, t in pairs(s) do if t == typ then s[sid] = nil end end
+	local function restore(list)
+		if not list then return end
+		for _, sid in ipairs(list) do s[sid] = typ; ss[sid] = true end
+	end
+	if typ == "hot" then
+		restore(HOT_DEFAULTS[specID])
+	else
+		restore(DEF_DEFAULTS[specID])
+		restore(DEF_CLASS[SPEC_CLASS[specID]])
+	end
+	self:RefreshAuras()
+end
 -- SpellID einer Aura ermitteln — secret-sicher:
 --   * außer Kampf ist aura.spellId direkt lesbar.
 --   * im Kampf ist sie secret -> über die (außer Kampf gelernte) Signatur nachschlagen.
 -- Rückgabe nil = (noch) nicht auflösbar (z.B. im Kampf vor dem ersten OOC-Lernen).
+-- Manche Auren werden mit einer ANDEREN spellId angewendet als der getrackten
+-- (Cast-ID != Aura-ID). Hier auf die in der Whitelist geführte Haupt-ID mappen.
+-- (Muster + Earth-Shield-Beispiel an EllesmereUI orientiert.)
+local PRIMARY_BY_ALT = {
+	[383648] = 974,   -- Earth Shield (alternative Aura-ID -> Haupt-ID)
+}
 local function resolveSpellId(u, aura, spec)
 	local sid = aura.spellId
-	if sid ~= nil and not issecretvalue(sid) then return sid end
+	if sid ~= nil and not issecretvalue(sid) then return PRIMARY_BY_ALT[sid] or sid end
 	local iid = aura.auraInstanceID
 	if not iid or issecretvalue(iid) then return nil end
 	local sig = auraSig(u, iid)
@@ -364,6 +435,19 @@ local function resolveSpellId(u, aura, spec)
 	local store = g and g.auraSigs
 	local s = store and store[spec]
 	return s and s[sig] or nil
+end
+
+-- Whitelist-Typ einer spellId: direkt ODER über den Basis-Zauber (GetBaseSpell), damit
+-- talent-/rang-modifizierte Override-IDs auf den getrackten Basis-Spell matchen.
+local function wlType(wl, sid)
+	if not (wl and sid) then return nil end
+	local t = wl[sid]
+	if t then return t end
+	if C_Spell and C_Spell.GetBaseSpell then
+		local base = C_Spell.GetBaseSpell(sid)
+		if base and base ~= sid then return wl[base] end
+	end
+	return nil
 end
 
 -- Icon einer Aura setzen. aura.icon ist im Kampf secret (12.0), aber StatusBar/Texture-
@@ -972,13 +1056,17 @@ function Raidframes:RenderAurasLive(f)
 							accept = true
 						elseif aura.isFromPlayerOrPlayerPet then
 							sid = resolveSpellId(u, aura, spec)
-							accept = (wl and sid and wl[sid] == c.whitelist) or false
+							accept = (wlType(wl, sid) == c.whitelist) or false
 						else
 							accept = false
 						end
+					elseif c.ownOnly and not aura.isFromPlayerOrPlayerPet then
+						-- HoTs: nur eigene. Filter ist jetzt "HELPFUL" (zeigt auch Proc-/
+						-- Talent-HoTs ohne PLAYER-Quell-Flag) -> Eigenheit hier separat prüfen.
+						accept = false
 					else
 						sid = resolveSpellId(u, aura, spec)
-						if wl and sid then accept = subPass and (wl[sid] == c.whitelist)
+						if wl and sid then accept = subPass and (wlType(wl, sid) == c.whitelist)
 						else accept = subPass end
 					end
 				else

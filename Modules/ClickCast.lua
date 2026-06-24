@@ -486,6 +486,52 @@ function CC:GetClassSpells()
 	return out
 end
 
+-- Auren-Quelle für den Tracking-/Whitelist-Picker (B4): castbare Zauberbuch-Spells
+-- (über GetClassSpells) PLUS nur die TATSÄCHLICH GEWÄHLTEN Talente des aktiven
+-- Talentbaums (declutter — nicht der ganze Baum). So sind Talent-Auren wie
+-- "Verschmelzung" auswählbar, ohne die Liste mit ungewählten Talenten zu überladen.
+-- Dedupe über spellId. Limit: C_Traits liefert nur die AKTIVE Spec -> beim Bearbeiten
+-- anderer Specs steht nur das Zauberbuch zur Verfügung (kuratierte Defaults decken die ab).
+function CC:GetAuraSpells()
+	local out, seen = {}, {}
+	local function add(sid, name, icon)
+		if not sid or seen[sid] then return end
+		name = name or spellName(sid); if not name then return end
+		seen[sid] = true
+		icon = icon or (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid))
+		out[#out + 1] = { id = sid, name = name, icon = icon }
+	end
+	-- 1. Castbare Zauberbuch-Spells (wie Click-Cast, ohne Passive)
+	for _, s in ipairs(self:GetClassSpells()) do add(s.id, s.name, s.icon) end
+	-- 2. Nur GEWÄHLTE Talente des aktiven Configs (Talent-Auren inkl. passiver Buffs)
+	if C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_Traits then
+		local cfg   = C_ClassTalents.GetActiveConfigID()
+		local cinfo = cfg and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(cfg)
+		local function fromEntry(eid)
+			local entry = eid and C_Traits.GetEntryInfo(cfg, eid)
+			local def   = entry and entry.definitionID and C_Traits.GetDefinitionInfo(entry.definitionID)
+			if def and def.spellID then add(def.spellID) end
+		end
+		if cinfo and cinfo.treeIDs then
+			for _, treeID in ipairs(cinfo.treeIDs) do
+				local nodes = C_Traits.GetTreeNodes and C_Traits.GetTreeNodes(treeID)
+				if nodes then
+					for _, nodeID in ipairs(nodes) do
+						local node = C_Traits.GetNodeInfo(cfg, nodeID)
+						if node and (node.activeRank or 0) > 0 then   -- nur tatsächlich gewählte
+							local entryID = node.activeEntry and node.activeEntry.entryID
+							if entryID then fromEntry(entryID)
+							elseif node.entryIDs then for _, e in ipairs(node.entryIDs) do fromEntry(e) end end
+						end
+					end
+				end
+			end
+		end
+	end
+	sort(out, function(a, b) return a.name < b.name end)
+	return out
+end
+
 -- CRUD auf einer bestimmten Spec (Options gibt die bearbeitete Spec mit).
 function CC:AddBinding(specID, binding)
 	local list = getSpec(true, specID); if not list then return end

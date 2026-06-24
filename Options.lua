@@ -20,6 +20,68 @@ local GROW = {
 	RIGHT = "Nach rechts", LEFT = "Nach links", UP = "Nach oben", DOWN = "Nach unten",
 }
 
+-- Eigenes AceGUI-Dropdown-Item: verhält sich wie "Dropdown-Item-Toggle", zeigt aber beim
+-- Hovern den echten Spell-Tooltip (Item-Wert = spellID). Für den langen Tracking-Picker,
+-- damit man Spells nicht nur an Icon+Name erkennen muss. Per itemControl am select gesetzt.
+do
+	local AceGUI = LibStub("AceGUI-3.0", true)
+	local IBLib  = LibStub("AceGUI-3.0-DropDown-ItemBase", true)
+	if AceGUI and IBLib then
+		local ItemBase     = IBLib.GetItemBase()
+		local widgetType   = "LumenSpellDropdownItem"
+		local widgetVersion = 1
+
+		local function UpdateToggle(self)
+			if self.value then self.check:Show() else self.check:Hide() end
+		end
+		local function OnRelease(self) ItemBase.OnRelease(self); self.value = nil end
+		local function Frame_OnClick(this)
+			local self = this.obj
+			if self.disabled then return end
+			self.value = not self.value
+			UpdateToggle(self)
+			self:Fire("OnValueChanged", self.value)
+		end
+		local function SetValue(self, value) self.value = value; UpdateToggle(self) end
+		local function GetValue(self) return self.value end
+
+		-- userdata.value = der Key (= spellID), vom Dropdown bei AddListItem gesetzt.
+		local function ShowTip(this)
+			local self = this.obj
+			local sid = self.userdata and self.userdata.value
+			if sid and GameTooltip then
+				GameTooltip:SetOwner(self.frame, "ANCHOR_RIGHT")
+				if pcall(GameTooltip.SetSpellByID, GameTooltip, sid) then
+					GameTooltip:Show()
+					-- Das Pullout hebt sich selbst auf TOOLTIP-Strata (AceGUI fixstrata) -> gleiche
+					-- Strata reicht nicht; innerhalb der Strata per höherem Frame-Level drüber heben.
+					GameTooltip:SetFrameStrata("TOOLTIP")
+					GameTooltip:SetFrameLevel((self.frame:GetFrameLevel() or 0) + 50)
+				else
+					GameTooltip:Hide()
+				end
+			end
+		end
+		local function HideTip() if GameTooltip then GameTooltip:Hide() end end
+
+		local function Constructor()
+			local self = ItemBase.Create(widgetType)
+			self.frame:SetScript("OnClick", Frame_OnClick)
+			self.SetValue  = SetValue
+			self.GetValue  = GetValue
+			self.OnRelease = OnRelease
+			-- HookScript: lässt ItemBases OnEnter (Fire + Pullout-Submenu-Handling) intakt
+			-- und ergänzt nur den Tooltip.
+			self.frame:HookScript("OnEnter", ShowTip)
+			self.frame:HookScript("OnLeave", HideTip)
+			AceGUI:RegisterAsWidget(self)
+			return self
+		end
+
+		AceGUI:RegisterWidgetType(widgetType, Constructor, widgetVersion + ItemBase.version)
+	end
+end
+
 function ns.SetupOptions()
 	local L = ns.Lumen
 
@@ -408,6 +470,120 @@ function ns.SetupOptions()
 	end
 	rebuildCC()
 
+	-- ===== Tracking: Whitelist-Editor (B4) ======================================
+	-- Pro Spec festlegen, welche Spells als Aura-Icons getrackt werden (HoTs + eigene
+	-- Defensiven). Wie Click-Cast: Spec-Dropdown folgt der aktiven Spec, ist aber
+	-- umschaltbar. Spell-Quelle = CC():GetAuraSpells() (Zauberbuch INKL. Passive +
+	-- Talentbaum), damit auch Talent-Auren wie "Verschmelzung" auswählbar sind.
+	local function RF() return ns.Raidframes end
+	local function trkRefresh() if AceRegistry then AceRegistry:NotifyChange("Lumen") end end
+	local trkSpec               -- bearbeitete Spec (entkoppelt von der Live-Spec)
+	local trkSearch  = {}       -- [typ] = Suchtext (transient)
+	local trkPick    = {}       -- [typ] = im Add-Dropdown gewählte spellID (transient)
+	local trkSpells  = {}       -- Auren-Spell-Quelle (Zauberbuch+Passive+Talente), je Rebuild frisch
+	local trackArgs  = {}
+	local rebuildTrack
+
+	local function refreshTrkSpells()
+		wipe(trkSpells)
+		if not CC() then return end
+		for _, s in ipairs(CC():GetAuraSpells()) do trkSpells[#trkSpells + 1] = s end
+	end
+
+	-- Nur diese zwei Kategorien bekommen einen Editor (Debuffs laufen über Filtermodi).
+	local TRACK_CATS = {
+		{ typ = "hot", label = "HoTs",                 desc = "Eigene Heilung über Zeit als Icon am Frame." },
+		{ typ = "def", label = "Defensives & Externe", desc = "Eigene Defensiven. Externe Schutzzauber anderer zeigt Lumen ohnehin automatisch." },
+	}
+
+	-- Ein Editor-Block je Typ: Liste (Icon+Name+Entfernen) + Suche/Dropdown/Hinzufügen + Reset.
+	local function trackCatArgs(cat, baseOrder)
+		local a = {}
+		a[cat.typ .. "Head"] = { type = "header", order = baseOrder, name = cat.label }
+		a[cat.typ .. "Desc"] = { type = "description", order = baseOrder + 0.1, name = "|cff888888" .. cat.desc .. "|r" }
+		local entries = (RF() and RF():WhitelistEntries(trkSpec, cat.typ)) or {}
+		if #entries == 0 then
+			a[cat.typ .. "Empty"] = { type = "description", order = baseOrder + 0.2, name = "|cff666666(keine Spells)|r" }
+		end
+		for i, e in ipairs(entries) do
+			a[cat.typ .. "row" .. i] = {
+				type = "execute", order = baseOrder + 0.2 + i * 0.001, width = "full",
+				name = iconText(e.icon, e.name) .. "   |cffD4A34F✕ Entfernen|r",
+				func = function() if RF() then RF():RemoveWhitelist(trkSpec, e.id) end; rebuildTrack(); trkRefresh() end,
+			}
+		end
+		a[cat.typ .. "search"] = {
+			type = "input", order = baseOrder + 5, name = "Spell suchen", width = 1.0,
+			get = function() return trkSearch[cat.typ] or "" end,
+			set = function(_, v) trkSearch[cat.typ] = v; trkRefresh() end,
+		}
+		-- schon getrackte Spells (beide Kategorien) aus dem Dropdown ausblenden — keine Doppelten.
+		local function pickMatch(s, q, tracked)
+			if tracked[s.id] then return false end
+			return q == "" or s.name:lower():find(q, 1, true) ~= nil
+		end
+		a[cat.typ .. "pick"] = {
+			type = "select", order = baseOrder + 6, name = "Spell", width = 1.4,
+			itemControl = "LumenSpellDropdownItem",   -- Spell-Tooltip beim Hovern im Dropdown
+			values = function()
+				local q = (trkSearch[cat.typ] or ""):lower()
+				local tracked = (RF() and RF():WhitelistMap(trkSpec)) or {}
+				local t = {}
+				for _, s in ipairs(trkSpells) do if pickMatch(s, q, tracked) then t[s.id] = iconText(s.icon, s.name) end end
+				return t
+			end,
+			sorting = function()
+				local q = (trkSearch[cat.typ] or ""):lower()
+				local tracked = (RF() and RF():WhitelistMap(trkSpec)) or {}
+				local t = {}
+				for _, s in ipairs(trkSpells) do if pickMatch(s, q, tracked) then t[#t + 1] = s.id end end
+				return t
+			end,
+			get = function() return trkPick[cat.typ] end,
+			set = function(_, v) trkPick[cat.typ] = v end,
+		}
+		a[cat.typ .. "add"] = {
+			type = "execute", order = baseOrder + 7, name = "Hinzufügen", width = 0.7,
+			disabled = function() return not trkPick[cat.typ] end,
+			func = function()
+				if RF() and trkPick[cat.typ] then RF():AddWhitelist(trkSpec, trkPick[cat.typ], cat.typ) end
+				trkPick[cat.typ] = nil
+				rebuildTrack(); trkRefresh()
+			end,
+		}
+		a[cat.typ .. "reset"] = {
+			type = "execute", order = baseOrder + 8, name = "Standard wiederherstellen", width = 1.3,
+			confirm = true, confirmText = "Diese Liste auf Lumens kuratierten Standard zurücksetzen?",
+			func = function() if RF() then RF():ResetWhitelist(trkSpec, cat.typ) end; rebuildTrack(); trkRefresh() end,
+		}
+		return a
+	end
+
+	rebuildTrack = function()
+		wipe(trackArgs)
+		refreshTrkSpells()
+		-- Tracking ist immer an die AKTIVE Spec gebunden (Talente/Zauberbuch nur dafür
+		-- auslesbar) -> kein Spec-Switcher (anders als Click-Cast, das talent-unabhängig ist).
+		trkSpec = (CC() and CC():CurrentSpecID()) or trkSpec
+		trackArgs.intro = {
+			type = "description", order = 0,
+			name = "Welche Spells als Aura-Icons getrackt werden — Anzeige & Position regelt der Tab |cffD4A34FAuras|r.\n" ..
+			       "Bearbeitet wird automatisch deine |cffD4A34Faktive Spec|r (Talente anderer Specs kann WoW nicht auslesen; deren Defaults greifen automatisch, sobald du sie spielst).\n",
+		}
+		trackArgs.specInfo = {
+			type = "description", order = 1,
+			name = function()
+				return "|cff888888Aktive Spec: |r|cffD4A34F" .. (CC() and CC():CurrentSpecName() or "?") .. "|r"
+			end,
+		}
+		local o = 10
+		for _, cat in ipairs(TRACK_CATS) do
+			for k, v in pairs(trackCatArgs(cat, o)) do trackArgs[k] = v end
+			o = o + 10
+		end
+	end
+	rebuildTrack()
+
 	-- QoL: bei Spec-Wechsel im Spiel die bearbeitete Spec automatisch auf die jetzt
 	-- aktive umstellen (manuelle Auswahl im Dropdown gilt bis zum nächsten Wechsel).
 	-- PLAYER_LOGIN/ENTERING_WORLD: erste Auflösung, sobald die Spec-API verfügbar ist
@@ -417,8 +593,8 @@ function ns.SetupOptions()
 	specWatcher:RegisterEvent("PLAYER_LOGIN")
 	specWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 	specWatcher:SetScript("OnEvent", function()
-		if CC() then selectedSpec = CC():CurrentSpecID() end
-		rebuildCC(); ccRefresh()
+		if CC() then selectedSpec = CC():CurrentSpecID(); trkSpec = CC():CurrentSpecID() end
+		rebuildCC(); rebuildTrack(); ccRefresh()
 	end)
 
 	-- ===== Share (Export / Import) — Zustand für den Profile-Tab =================
@@ -565,6 +741,10 @@ function ns.SetupOptions()
 				auras = {
 					type = "group", name = "Auras", order = 4,
 					args = aurasArgs,
+				},
+				tracking = {
+					type = "group", name = "Tracking", order = 5,
+					args = trackArgs,
 				},
 				},
 			},
