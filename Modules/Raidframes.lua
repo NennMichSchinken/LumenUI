@@ -146,11 +146,23 @@ local FAKE_DEBUFF = {
 -- (HoTs/Schilde) -> Essen/Flask/Allgemeinbuffs fallen raus. Secret-sicher und auch für
 -- fremde Auren nutzbar (Stufe B = exakte Signatur-Whitelist nur für EIGENE HoTs).
 local AURA_CATS = {
-	{ key = "hotsOwn",    filter = "HELPFUL|PLAYER|RAID",                           fake = FAKE_HOTS },
-	{ key = "hotsOther",  filter = "HELPFUL|RAID", subExclude = "HELPFUL|PLAYER",   fake = FAKE_HOTS },
-	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", fake = FAKE_DEFENSIVE },
-	{ key = "debuffs",    filter = "HARMFUL",                                       fake = FAKE_DEBUFF },
+	{ key = "hotsOwn",    filter = "HELPFUL|PLAYER|RAID", whitelist = "hot",        fake = FAKE_HOTS },
+	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
+	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
+-- Debuff-Filter-Modi (Blizzard-Standard): "raid" = Blizzards kuratierte raid-relevante
+-- Debuffs (HARMFUL|RAID bzw. RAID_IN_COMBAT), "dispellable" = nur selbst dispellbare,
+-- "all" = alle. Secret-sicher über IsAuraFilteredOutByInstanceID (nur Bool).
+local function debuffModeAccept(u, iid, mode, fn)
+	if mode == "none" then return false end
+	if mode == "all" then return true end
+	if not (fn and iid) then return true end   -- kann nicht filtern -> lieber zeigen
+	if mode == "dispellable" then
+		return not fn(u, iid, "HARMFUL|RAID_PLAYER_DISPELLABLE")
+	end
+	-- "raid" (Default, Blizzard-relevant) + Fallback
+	return (not fn(u, iid, "HARMFUL|RAID")) or (not fn(u, iid, "HARMFUL|RAID_IN_COMBAT"))
+end
 
 -- ---- Aura-Signatur-Lernen (Phase 2 / Stufe B1) ------------------------------
 -- 4-Filter-Fingerprint (RAID, RAID_IN_COMBAT, EXTERNAL_DEFENSIVE, RAID_PLAYER_DISPELLABLE;
@@ -170,9 +182,12 @@ local function auraSig(u, iid)
 	if not (fn and iid) then return nil end
 	local r   = not fn(u, iid, "PLAYER|HELPFUL|RAID")
 	local ric = not fn(u, iid, "PLAYER|HELPFUL|RAID_IN_COMBAT")
-	if not r and not ric then return nil end   -- kein getrackter Heiler-Buff -> uninteressant
 	local ext = not fn(u, iid, "PLAYER|HELPFUL|EXTERNAL_DEFENSIVE")
 	local dsp = not fn(u, iid, "PLAYER|HELPFUL|RAID_PLAYER_DISPELLABLE")
+	-- Nichts Distinktives (Essen/Flask/Allgemeinbuffs passieren keinen der vier Filter) -> raus.
+	-- (B3: ext/dsp wandern VOR den Early-Out, damit auch eigene Defensiven, die zwar nicht
+	-- RAID, aber EXTERNAL_DEFENSIVE/dispellbar sind, lernbar werden.)
+	if not (r or ric or ext or dsp) then return nil end
 	return (r and "1" or "0") .. ":" .. (ric and "1" or "0") .. ":" .. (ext and "1" or "0") .. ":" .. (dsp and "1" or "0")
 end
 -- Bereits gefingerprintete Aura-Instanzen -> jede Instanz nur EINMAL berechnen. Hält die
@@ -206,6 +221,95 @@ local function learnUnitSigs(u)
 	end
 end
 
+-- ---- HoT-/Defensiv-Whitelist (Phase 2 / Stufe B2+B3) -----------------------
+-- Kuratierte Standard-Spells je Heiler-Spec (spellID), an EllesmereUIs Liste als
+-- Benchmark ausgerichtet (eigenständig nachgebaut). Werden lazy in
+-- db.profile.raidframes.auras.whitelist[specID] geseedet (HoTs Typ "hot",
+-- Defensiven Typ "def"). Im Whitelist-Editor (B4) pro Spec anpassbar.
+local HOT_DEFAULTS = {
+	[105]  = { 774, 8936, 33763, 155777, 48438, 439530 },          -- Resto Druid: Rejuv, Regrowth, Lifebloom, Germination, Wild Growth, Symbiotic Blooms
+	[256]  = { 17, 194384, 1253593, 41635 },                       -- Disc Priest: PW:Shield, Atonement, Void Shield, PoM
+	[257]  = { 139, 77489, 41635 },                                -- Holy Priest: Renew, Echo of Light, PoM
+	[270]  = { 119611, 124682, 115175, 450769 },                   -- MW Monk: Renewing/Enveloping/Soothing Mist, Aspect of Harmony
+	[264]  = { 61295, 974, 382024, 207400, 444490 },               -- Resto Shaman: Riptide, Earth Shield, Earthliving, Ancestral Vigor, Hydrobubble
+	[65]   = { 156910, 156322, 53563, 1244893, 200025 },           -- Holy Pala: Beacon of Faith, Eternal Flame, Beacon of Light, Beacon of Savior, Beacon of Virtue
+	[1468] = { 364343, 366155, 367364, 355941, 376788, 363502, 373267 }, -- Pres Evoker: Echo, Reversion, Echo Reversion, Dream Breath, Echo Dream Breath, Dream Flight, Lifebind
+}
+-- specID -> classToken. Für die klassenweiten Defensiv-Defaults (DEF_CLASS) und
+-- B4-tauglich (unabhängig von der Live-Klasse).
+local SPEC_CLASS = {
+	[71]="WARRIOR",[72]="WARRIOR",[73]="WARRIOR",
+	[65]="PALADIN",[66]="PALADIN",[70]="PALADIN",
+	[253]="HUNTER",[254]="HUNTER",[255]="HUNTER",
+	[259]="ROGUE",[260]="ROGUE",[261]="ROGUE",
+	[256]="PRIEST",[257]="PRIEST",[258]="PRIEST",
+	[250]="DEATHKNIGHT",[251]="DEATHKNIGHT",[252]="DEATHKNIGHT",
+	[262]="SHAMAN",[263]="SHAMAN",[264]="SHAMAN",
+	[62]="MAGE",[63]="MAGE",[64]="MAGE",
+	[265]="WARLOCK",[266]="WARLOCK",[267]="WARLOCK",
+	[268]="MONK",[269]="MONK",[270]="MONK",
+	[102]="DRUID",[103]="DRUID",[104]="DRUID",[105]="DRUID",
+	[577]="DEMONHUNTER",[581]="DEMONHUNTER",
+	[1467]="EVOKER",[1468]="EVOKER",[1473]="EVOKER",
+}
+-- Defensiven (Typ "def"). Externe (auf andere gewirkt) -> über Signatur lernbar, Kampf-Icon
+-- sauber. Persönliche Selbst-CDs erscheinen nur auf dem EIGENEN Frame und (noch) nur außer
+-- Kampf, wenn sie KEINEN der vier Signatur-Filter passieren (spellId secret); zuverlässig
+-- für alle im Kampf käme später über Cast-Events (UNIT_SPELLCAST_SUCCEEDED). Gute Defaults
+-- out-of-the-box für JEDE Klasse/Spec (Anti-Bloat: nutzbar ohne Customizing), im B4-Editor
+-- pro Spec anpassbar. spellIds live geprüft/zu prüfen — fehlende/falsche melden -> hier fixen.
+-- DEF_CLASS = klassenweite Defensiven (alle Specs der Klasse), DEF_DEFAULTS = spec-spezifisch.
+local DEF_CLASS = {
+	WARRIOR     = { 97462, 23920 },                  -- Rallying Cry, Spell Reflection
+	PALADIN     = { 642, 498, 1022, 1044, 6940 },    -- Divine Shield, Divine Protection, Blessing of Protection/Freedom/Sacrifice
+	HUNTER      = { 186265, 264735 },                -- Aspect of the Turtle, Survival of the Fittest
+	ROGUE       = { 31224, 5277, 1966 },             -- Cloak of Shadows, Evasion, Feint
+	PRIEST      = { 19236 },                          -- Desperate Prayer
+	DEATHKNIGHT = { 48707, 48792, 51052 },           -- Anti-Magic Shell, Icebound Fortitude, Anti-Magic Zone
+	SHAMAN      = { 108271 },                          -- Astral Shift
+	MAGE        = { 45438, 342245 },                 -- Ice Block, Alter Time
+	WARLOCK     = { 104773, 108416 },                -- Unending Resolve, Dark Pact
+	MONK        = { 115203, 122278, 122783 },        -- Fortifying Brew, Dampen Harm, Diffuse Magic
+	DRUID       = { 22812 },                           -- Barkskin
+	DEMONHUNTER = { 196718 },                          -- Darkness
+	EVOKER      = { 363916, 374348 },                -- Obsidian Scales, Renewing Blaze
+}
+local DEF_DEFAULTS = {
+	-- Warrior
+	[71]   = { 118038 },                             -- Arms: Die by the Sword
+	[72]   = { 184364 },                             -- Fury: Enraged Regeneration
+	[73]   = { 871, 12975 },                         -- Prot: Shield Wall, Last Stand
+	-- Paladin (Class deckt Divine Shield/Protection, BoP, Freedom, Sacrifice)
+	[65]   = { 432502 },                             -- Holy: Holy Armaments
+	[66]   = { 31850, 86659, 204018 },               -- Prot: Ardent Defender, Guardian of Ancient Kings, Blessing of Spellwarding
+	[70]   = { 184662 },                             -- Ret: Shield of Vengeance
+	-- Priest
+	[256]  = { 33206, 81782, 10060 },                -- Disc: Pain Suppression, Power Word: Barrier, Power Infusion
+	[257]  = { 47788, 10060 },                       -- Holy: Guardian Spirit, Power Infusion
+	[258]  = { 47585 },                              -- Shadow: Dispersion
+	-- Death Knight
+	[250]  = { 55233, 49028, 48743, 194679 },        -- Blood: Vampiric Blood, Dancing Rune Weapon, Death Pact, Rune Tap
+	-- Shaman
+	[264]  = { 98008 },                              -- Resto: Spirit Link Totem
+	-- Mage (Class deckt Ice Block/Alter Time)
+	[62]   = { 235450 },                             -- Arcane: Prismatic Barrier
+	[63]   = { 235313 },                             -- Fire: Blazing Barrier
+	[64]   = { 11426 },                              -- Frost: Ice Barrier
+	-- Monk
+	[268]  = { 115176, 322507 },                     -- Brewmaster: Zen Meditation, Celestial Brew
+	[269]  = { 122470 },                             -- Windwalker: Touch of Karma
+	[270]  = { 116849, 443113 },                     -- Mistweaver: Life Cocoon, Strength of the Black Ox
+	-- Druid (Class deckt Barkskin)
+	[103]  = { 61336, 22842 },                       -- Feral: Survival Instincts, Frenzied Regeneration
+	[104]  = { 61336, 22842, 200851 },               -- Guardian: Survival Instincts, Frenzied Regeneration, Rage of the Sleeper
+	[105]  = { 102342 },                             -- Resto: Ironbark
+	-- Demon Hunter
+	[577]  = { 198589, 196555 },                     -- Havoc: Blur, Netherwalk
+	[581]  = { 187827, 204021 },                     -- Vengeance: Metamorphosis, Fiery Brand
+	-- Evoker (Class deckt Obsidian Scales/Renewing Blaze)
+	[1468] = { 357170, 363534 },                     -- Preservation: Time Dilation, Rewind
+}
+
 local frames = {}            -- Nicht-Secure-Pool für Preview/Test
 local container
 local header                 -- SecureGroupHeader (Live-Pfad)
@@ -214,6 +318,63 @@ local playerDispels = {}
 local unitToButton = {}      -- Live-Routing: Unit -> Secure-Button (Preview/Test routet nicht)
 
 local function db() return ns.Lumen.db.profile.raidframes end
+
+-- Whitelist der aktiven Spec holen; Defaults (HoT/Def) lazy einmischen.
+-- Liegt im Profil (teil-/resetbar). NICHT in den Core-Defaults -> der erste Schreib
+-- erzeugt eine echte profil-eigene Tabelle (kein Mutieren der geteilten Defaults).
+-- whitelistSeeded[spec][spellID]=true merkt sich bereits ANGEBOTENE Defaults: so kommen
+-- echte Neuzugänge (z.B. neue Def-Defaults in einem Update, oder ein altes B2-Profil mit
+-- nur HoTs) dazu, ohne vom Nutzer (B4) bewusst entfernte Spells wieder hinzuzufügen.
+local function whitelistFor(spec)
+	if spec == 0 then return nil end
+	local A = db().auras
+	if not A then return nil end
+	local wl = A.whitelist
+	if not wl then wl = {}; A.whitelist = wl end
+	local seeded = A.whitelistSeeded
+	if not seeded then seeded = {}; A.whitelistSeeded = seeded end
+	local s = wl[spec];      if not s  then s = {};  wl[spec] = s end
+	local ss = seeded[spec]; if not ss then ss = {}; seeded[spec] = ss end
+	local function ensure(list, typ)
+		if not list then return end
+		for _, sid in ipairs(list) do
+			if not ss[sid] then
+				ss[sid] = true
+				if s[sid] == nil then s[sid] = typ end
+			end
+		end
+	end
+	ensure(HOT_DEFAULTS[spec], "hot")
+	ensure(DEF_DEFAULTS[spec], "def")
+	ensure(DEF_CLASS[SPEC_CLASS[spec]], "def")   -- klassenweite Defensiven
+	return s
+end
+-- SpellID einer Aura ermitteln — secret-sicher:
+--   * außer Kampf ist aura.spellId direkt lesbar.
+--   * im Kampf ist sie secret -> über die (außer Kampf gelernte) Signatur nachschlagen.
+-- Rückgabe nil = (noch) nicht auflösbar (z.B. im Kampf vor dem ersten OOC-Lernen).
+local function resolveSpellId(u, aura, spec)
+	local sid = aura.spellId
+	if sid ~= nil and not issecretvalue(sid) then return sid end
+	local iid = aura.auraInstanceID
+	if not iid or issecretvalue(iid) then return nil end
+	local sig = auraSig(u, iid)
+	if not sig then return nil end
+	local g = ns.Lumen.db and ns.Lumen.db.global
+	local store = g and g.auraSigs
+	local s = store and store[spec]
+	return s and s[sig] or nil
+end
+
+-- Icon einer Aura setzen. aura.icon ist im Kampf secret (12.0), aber StatusBar/Texture-
+-- Setter nehmen secret-Werte NATIV an und rendern sie korrekt — bestätigtes Vorgehen
+-- (EllesmereUI: "texture may be SECRET: SetTexture accepts it natively"). Dadurch echte
+-- Icons auch im Kampf, für EIGENE wie FREMDE Auren (entscheidend für Debuffs). Nur wenn
+-- gar kein Icon vorliegt (nil) der Zahnrad-Fallback.
+local function applyAuraIcon(ic, aura)
+	local tex = aura.icon
+	if tex ~= nil then ic.tex:SetTexture(tex) else ic.tex:SetTexture(136243) end
+end
 
 -- Aktiver Layout-/Positions-Kontext: Schlachtzug (raid) vs. 5er-Gruppe/Dungeon (party).
 -- Im Testmodus nach Test-Größe (5 = party, sonst raid).
@@ -773,6 +934,8 @@ function Raidframes:RenderAurasLive(f)
 	local A = db().auras
 	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
 	learnUnitSigs(u)   -- passives Signatur-Lernen (außer Kampf; Groundwork für die Whitelist)
+	local spec = currentSpecID()
+	local wl   = whitelistFor(spec)   -- Whitelist der aktiven Spec (lazy geseedet)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
@@ -786,22 +949,46 @@ function Raidframes:RenderAurasLive(f)
 				i = i + 1
 				local iid = aura.auraInstanceID
 				-- Sub-Filter secret-sicher anwenden (nur Bool-Rückgabe, kein secret-Lesen).
-				local accept = true
+				local subPass = true
 				if c.subExclude or c.subInclude then
 					if iid and fn then
 						local out = fn(u, iid, c.subExclude or c.subInclude)
-						accept = (c.subExclude and out == true) or (not c.subExclude and out == false)
+						subPass = (c.subExclude and out == true) or (not c.subExclude and out == false)
 					else
-						accept = false
+						subPass = false
 					end
+				elseif c.harmfulModes then
+					-- Debuffs: Blizzard-Standard-Filter (Alle/Raid-relevant/Dispellbar).
+					subPass = debuffModeAccept(u, iid, cat.filterMode, fn)
+				end
+				-- Whitelist: welche Spells diese Kategorie zeigt. sid auch fuer das secret-freie Icon.
+				--  * whitelistOr (Defensives, B3): Filter-Treffer (externe Def) ODER eigene "def"-
+				--    Whitelist; eigene Auren vorab via isFromPlayerOrPlayerPet (12.0.5, nicht secret).
+				--  * sonst (HoTs, B2): Whitelist begrenzt den Filter; nicht aufloesbar -> Fallback auf Filter.
+				local sid, accept
+				if c.whitelist then
+					if c.whitelistOr then
+						if subPass then
+							accept = true
+						elseif aura.isFromPlayerOrPlayerPet then
+							sid = resolveSpellId(u, aura, spec)
+							accept = (wl and sid and wl[sid] == c.whitelist) or false
+						else
+							accept = false
+						end
+					else
+						sid = resolveSpellId(u, aura, spec)
+						if wl and sid then accept = subPass and (wl[sid] == c.whitelist)
+						else accept = subPass end
+					end
+				else
+					accept = subPass
 				end
 				if accept then
 					shown = shown + 1
 					local ic = holder.icons[shown]
 					if ic then
-						local tex = aura.icon
-						if tex ~= nil and not issecretvalue(tex) then ic.tex:SetTexture(tex)
-						else ic.tex:SetTexture(136243) end   -- Fallback (Icon secret/fehlt)
+						applyAuraIcon(ic, aura)
 						if cat.showSwipe and ic.cd then
 							local durObj = iid and C_UnitAuras.GetAuraDuration and C_UnitAuras.GetAuraDuration(u, iid)
 							if durObj and ic.cd.SetCooldownFromDurationObject then
@@ -1065,6 +1252,40 @@ function Raidframes:HideHeader()
 	if not header then return end
 	if InCombatLockdown() then secureLayoutDirty = true; return end
 	header:Hide()
+end
+
+-- Nur die Aura-Indikatoren neu layouten + rendern (Anker/Wachstum/Größe/Toggles).
+-- KAMPF-SICHER: Holder/Icons sind eigene, NICHT-geschützte Frames auf dem Overlay
+-- (kein Secure-Template, keine Button-Größe) -> SetPoint/SetSize/CreateFrame darauf
+-- sind auch im Kampf erlaubt. Deshalb hier KEIN InCombatLockdown-Defer wie in
+-- LayoutLive (das wegen des Secure-Headers abbricht) -> Aura-Einstellungen greifen
+-- sofort, auch auf der Zielpuppe im Kampf.
+function Raidframes:RefreshAuras()
+	if not container then return end
+	local d = db()
+	if not d.auras then return end
+	local L = layoutCtx()
+	local function relayout(f)
+		if not f.auraHolders then return end
+		for _, c in ipairs(AURA_CATS) do
+			local cat  = d.auras[c.key]
+			local size = (cat and auraIconSize(cat, L)) or 16
+			layoutAuraCat(f, c.key, cat, size)
+		end
+	end
+	if d.testMode then
+		for i = 1, #frames do
+			local f = frames[i]
+			if f and f:IsShown() then relayout(f); self:RenderAurasFake(f) end
+		end
+	elseif header then
+		for i = 1, 40 do
+			local b = header[i]
+			if b and b._lumenSecured and b.unit and UnitExists(b.unit) then
+				relayout(b); self:RenderAurasLive(b)
+			end
+		end
+	end
 end
 
 -- Dispatcher: Test -> Preview-Frames, sonst -> Secure-Header. Immer nur eine Seite sichtbar.

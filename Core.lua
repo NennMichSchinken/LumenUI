@@ -69,16 +69,16 @@ local defaults = {
 			-- Icon-Größe ist kontextabhängig: autoFit leitet sie aus der Frame-Höhe ab,
 			-- sonst greifen die expliziten sizeRaid/sizeParty. anchor = einer der 9
 			-- WoW-Punkte (TOPLEFT…BOTTOMRIGHT); grow = RIGHT|LEFT|UP|DOWN.
-			-- Vier Kategorien, je eigener Anker/Wachstum/Größe. Default: nur eigene HoTs an,
-			-- die übrigen aus + an verschiedene Ecken vorbelegt (kollidieren nicht beim Anschalten).
+			-- Drei Kategorien (HoTs/Defensives/Debuffs), je eigener Anker/Wachstum/Größe. Default:
+			-- nur HoTs an, die übrigen aus + an verschiedene Ecken vorbelegt (kollisionsfrei beim Anschalten).
+			-- Phase 2 (B2/B3): auras.whitelist[specID][spellID] = "hot"|"def" wird LAZY beim
+			-- ersten Betreten einer Spec aus HOT_DEFAULTS ("hot") + DEF_DEFAULTS ("def") geseedet
+			-- (Raidframes.lua, whitelistFor) — bewusst NICHT hier in den Defaults, damit der erste
+			-- Schreib eine echte profil-eigene Tabelle erzeugt (kein Mutieren der geteilten Defaults).
 			auras = {
 				hotsOwn = {
 					enabled = true,  anchor = "BOTTOMLEFT", grow = "RIGHT", spacing = 2, maxIcons = 5,
 					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
-				},
-				hotsOther = {
-					enabled = false, anchor = "TOPLEFT", grow = "RIGHT", spacing = 2, maxIcons = 4,
-					autoFit = true,  sizeRaid = 14, sizeParty = 20, showSwipe = true, hideTooltips = false,
 				},
 				defensives = {
 					enabled = false, anchor = "TOPRIGHT", grow = "LEFT", spacing = 2, maxIcons = 3,
@@ -87,6 +87,9 @@ local defaults = {
 				debuffs = {
 					enabled = false, anchor = "BOTTOMRIGHT", grow = "LEFT", spacing = 2, maxIcons = 4,
 					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
+					-- Blizzard-Standard-Filter: "raid" = nur raid-relevante Debuffs (wie Blizzards
+					-- Default), "all" = alle, "dispellable" = nur selbst dispellbare.
+					filterMode = "raid",
 				},
 			},
 		},
