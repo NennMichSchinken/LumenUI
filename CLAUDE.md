@@ -1,6 +1,6 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
-> Stand: Addon-Version **0.9.19** (Aura Phase 2 abgeschlossen — B2/B3 Whitelists + secret-Icons + Blizzard-Debuffs (3 Kategorien) **und B4 Whitelist-Editor live bestätigt**: eigener `Tracking`-Tab, Talent-/Zauberbuch-Quelle, Spell-Tooltips im Dropdown, Proc-/Talent-HoT-Fix. **Offen: nur noch Debuff-Live-Test** (Florian, braucht Gruppe). **Nächster Schritt: MVP-Reste — Sortierung nach Rolle/Gruppe · Aggro-Warnung** (oder Suite-Shell)). Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026). Tiefe Phase-2/B4-Details: Memory `lumen-aura-phase2-progress`.
+> Stand: Addon-Version **0.9.20** (Aura Phase 2 + B4 Whitelist-Editor live bestätigt — eigener `Tracking`-Tab, Talent-/Zauberbuch-Quelle, Spell-Tooltips, Proc-/Talent-HoT-Fix. **v0.9.20 = zwei Bugfixes (PR #15 gemergt, NOCH NICHT getestet — Florian testet morgen):** HP-Prozent zeigte bei vollem Leben „1%" (`UnitHealthPercent` ×100); HoT-Kategorie zeigte im Kampf nicht-whitelistete Eigenbuffs (Toys/Trinkets/Allgemeinbuffs) → HoTs nur noch bei positivem Whitelist-Treffer (kein Filter-Fallback). **Offen: Test der zwei Fixes + Debuff-Live-Test** (Florian, braucht Gruppe). **Nächster Schritt: MVP-Reste — Sortierung nach Rolle/Gruppe · Aggro-Warnung** (oder Suite-Shell)). Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026). Tiefe Phase-2/B4-Details: Memory `lumen-aura-phase2-progress`.
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -206,13 +206,13 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 ---
 
-## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.19)
+## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.20)
 
 ### 10.1 Dateien im Addon-Ordner `Lumen/`
 
 | Datei | Zweck (aktueller Stand) |
 |---|---|
-| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.19`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Modules\Share.lua`, `Options.lua`, `GameMenu.lua`. |
+| `Lumen.toc` | Deklariert Addon. `## Interface: 120007`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`, `## Version: 0.9.20`. Lädt in Reihenfolge: `embeds.xml`, `Core.lua`, `EditMode.lua`, `Style.lua`, `Modules\Raidframes.lua`, `Modules\ClickCast.lua`, `Modules\Share.lua`, `Options.lua`, `GameMenu.lua`. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (LibStub → CallbackHandler → AceAddon/Console/Event/Timer → AceDB → AceGUI → AceConfig → AceDBOptions → **AceSerializer** → **LibDeflate**). |
 | `Core.lua` | Erzeugt das Ace3-Addon, initialisiert AceDB (`LumenDB`) mit den Defaults, registriert `/lumen` und `/lu`, startet das Raidframes-Modul. Details unten. |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames. Manueller Schalter („Rahmen entsperren") **und** Hook in WoWs nativen Edit Mode (über `PLAYER_LOGIN`-Hook auf `EditModeManagerFrame` Enter/Exit). Gold-Overlays mit Label; speichert Position via Callback ins Profil. |
@@ -419,7 +419,7 @@ Event-getrieben: `container` registriert `UNIT_HEALTH/MAXHEALTH/ABSORB_AMOUNT_CH
 
 ### 10.5 Aktueller Stand & nächster Schritt für Claude Code
 
-**Stand:** **v0.9.19**. Render, Dispel, Layout/Ausrichtung, Text/Outline, Base/Raid/Group-Tabs, Click-Cast (v0.9.6/.7), Export/Import (v0.9.8) und Aura-Indikatoren Phase 1 (v0.9.9) — alles live bestätigt. **Aura Phase 2 (v0.9.11):** 3 Kategorien, B2/B3-Whitelists (alle Klassen/Specs + Signatur-Lernen `db.global.auraSigs`), secret-Icons, Blizzard-Debuffs. **B4 Whitelist-Editor (v0.9.12–.19, live bestätigt):** eigener `Tracking`-Tab. Editor nur HoTs+Def (Debuffs über Filtermodi), je Kategorie Liste (Icon+Name+Entfernen) + Suche/Dropdown/Hinzufügen + „Standard wiederherstellen". Spell-Quelle `CC:GetAuraSpells()` = castbares Zauberbuch + **nur gewählte Talente** (`C_Traits`, declutter → Talent-Auren wie „Verschmelzung" wählbar). Getrackte aus Dropdown ausgeblendet. **Immer aktive Spec** (kein Switcher — Talente nur aktiv lesbar; Defaults decken andere Specs). Custom AceGUI-Item `LumenSpellDropdownItem` → **Spell-Tooltip im Dropdown** (Strata TOOLTIP + Frame-Level übers Pullout). **Render-Fix:** `hotsOwn`-Filter von `HELPFUL|PLAYER|RAID` → `HELPFUL` + `ownOnly`-Gate (`isFromPlayerOrPlayerPet`) → Proc-/Talent-HoTs (kein PLAYER-Flag) erscheinen jetzt; `wlType` matcht zusätzlich über `GetBaseSpell` + `PRIMARY_BY_ALT`. **Reset-Fix:** schreibt Defaults direkt zurück. Volldetails: §10.8 + Memory `lumen-aura-phase2-progress`. **Offen:** nur noch Debuff-Live-Test (Florian, braucht Gruppe).
+**Stand:** **v0.9.19**. Render, Dispel, Layout/Ausrichtung, Text/Outline, Base/Raid/Group-Tabs, Click-Cast (v0.9.6/.7), Export/Import (v0.9.8) und Aura-Indikatoren Phase 1 (v0.9.9) — alles live bestätigt. **Aura Phase 2 (v0.9.11):** 3 Kategorien, B2/B3-Whitelists (alle Klassen/Specs + Signatur-Lernen `db.global.auraSigs`), secret-Icons, Blizzard-Debuffs. **B4 Whitelist-Editor (v0.9.12–.19, live bestätigt):** eigener `Tracking`-Tab. Editor nur HoTs+Def (Debuffs über Filtermodi), je Kategorie Liste (Icon+Name+Entfernen) + Suche/Dropdown/Hinzufügen + „Standard wiederherstellen". Spell-Quelle `CC:GetAuraSpells()` = castbares Zauberbuch + **nur gewählte Talente** (`C_Traits`, declutter → Talent-Auren wie „Verschmelzung" wählbar). Getrackte aus Dropdown ausgeblendet. **Immer aktive Spec** (kein Switcher — Talente nur aktiv lesbar; Defaults decken andere Specs). Custom AceGUI-Item `LumenSpellDropdownItem` → **Spell-Tooltip im Dropdown** (Strata TOOLTIP + Frame-Level übers Pullout). **Render-Fix:** `hotsOwn`-Filter von `HELPFUL|PLAYER|RAID` → `HELPFUL` + `ownOnly`-Gate (`isFromPlayerOrPlayerPet`) → Proc-/Talent-HoTs (kein PLAYER-Flag) erscheinen jetzt; `wlType` matcht zusätzlich über `GetBaseSpell` + `PRIMARY_BY_ALT`. **Reset-Fix:** schreibt Defaults direkt zurück. Volldetails: §10.8 + Memory `lumen-aura-phase2-progress`. **v0.9.20 — zwei Bugfixes (PR #15 gemergt, NOCH NICHT live getestet):** (1) HP-Prozent zeigte „1%" bei vollem Leben → `UnitHealthPercent` liefert ohne `ScaleTo100`-Kurve eine 0..1-Fraktion → ×100. (2) HoT-Kategorie zeigte im Kampf nicht-whitelistete Eigenbuffs (Toys/Trinkets/Allgemeinbuffs, die in Blizzards Buffrahmen landen): der `HELPFUL`-Filter + alter „im Zweifel zeigen"-Fallback ließ sie durch → HoT-Branch zeigt jetzt NUR bei positivem Whitelist-Treffer (kein subPass-Fallback). **Offen:** Test dieser zwei Fixes (Florian, morgen) + Debuff-Live-Test (braucht Gruppe).
 
 **Architektur Phase 1 (Ist-Zustand, `Modules/Raidframes.lua`):**
 * Render-Stack faktorisiert in **`Decorate(host)`** — dekoriert sowohl Nicht-Secure-Preview-Frames (Test) als auch Secure-Buttons (Live), ein gemeinsamer Render-Code.
@@ -479,7 +479,7 @@ Ein Textcode fürs ganze Setup (Prinzip WeakAuras/ElvUI), granular pro Modul + g
 
 **API:** `Share:Export()`, `Share:Decode(str)` (→ payload | nil,err), `Share:Import(payload, selected, withLayout)`, `Share:GetModules()`, `Share:Encode(payload)`. Options-UI-Flow wie Click-Cast: Multiline-`input` dekodiert im `set` (committet beim Wegklicken/Okay), Häkchen/Schalter/Knopf sind statische Args mit dynamischem `hidden`/`get`/`set` auf Closure-State, Live-Update via `AceConfigRegistry:NotifyChange("Lumen")`.
 
-### 10.8 Aura-Indikatoren / „Auras"+„Tracking"-Tabs (Raidframes) — Ist-Zustand (v0.9.19)
+### 10.8 Aura-Indikatoren / „Auras"+„Tracking"-Tabs (Raidframes) — Ist-Zustand (v0.9.20)
 
 Flexibles Icon-Indikator-System. Tab-Leiste jetzt **`Base | Raid | Group | Auras | Tracking`** (flach, kein Tab-in-Tab). `Auras` = Anzeige/Position pro Kategorie; `Tracking` = Whitelist-Editor (B4). Vorbild EllesmereUIs Aura-Tab, **kuratiert** (Anti-Bloat). **v0.9.9** = Grundgerüst + eigene HoTs (live). **v0.9.11** = Phase 2: Whitelist (B2/B3), secret-Icons, Blizzard-Debuffs, **3 Kategorien**. **v0.9.12–.19** = B4 Whitelist-Editor (live bestätigt, siehe unten). Debuff-Live-Test noch offen. Volle Detail-Historie: Memory `lumen-aura-phase2-progress`.
 
@@ -491,7 +491,7 @@ Flexibles Icon-Indikator-System. Tab-Leiste jetzt **`Base | Raid | Group | Auras
 * **Render-Fix (Punkt 4):** `hotsOwn`-Filter von `HELPFUL|PLAYER|RAID` → **`HELPFUL` + `ownOnly`** (eigene via `aura.isFromPlayerOrPlayerPet`). Proc-/Talent-HoTs tragen oft kein PLAYER-Quell-Flag → fielen vorher am Filter (Ellesmere scannt ebenfalls `HELPFUL`). Match zusätzlich über `wlType` = `wl[sid]` ODER `wl[GetBaseSpell(sid)]` ODER `PRIMARY_BY_ALT[sid]` (Override-/Alt-IDs, z.B. Earth Shield 383648→974).
 
 **3 Kategorien (Datenmodell `db.profile.raidframes.auras`):**
-* **`hotsOwn`** („HoTs", nur Heiler) — eigene HoTs. Filter **`HELPFUL` + `ownOnly`** (v0.9.13: vorher `HELPFUL|PLAYER|RAID` → Proc-/Talent-HoTs fielen raus), `whitelist="hot"`. Match über `wlType` (inkl. `GetBaseSpell`/`PRIMARY_BY_ALT`).
+* **`hotsOwn`** („HoTs", nur Heiler) — eigene HoTs. Filter **`HELPFUL` + `ownOnly`** (v0.9.13: vorher `HELPFUL|PLAYER|RAID` → Proc-/Talent-HoTs fielen raus), `whitelist="hot"`. Match über `wlType` (inkl. `GetBaseSpell`/`PRIMARY_BY_ALT`). **v0.9.20:** NUR positiver Whitelist-Treffer zeigt (kein subPass-Fallback) — sonst rutschten im Kampf nicht auflösbare Eigenbuffs (Toys/Trinkets/Allgemeinbuffs) durch.
 * **`defensives`** („Defensives & Externe", alle Klassen) — Filter `HELPFUL`, `subInclude="HELPFUL|EXTERNAL_DEFENSIVE"` **ODER** eigene `whitelist="def"` (`whitelistOr=true`).
 * **`debuffs`** — Filter `HARMFUL` + `harmfulModes=true` → Modus `filterMode` (`raid`=Blizzard-Default / `all` / `dispellable`), via `debuffModeAccept`.
 * Felder je Kategorie: `enabled, anchor` (9 Punkte), `grow`, `spacing, maxIcons, autoFit, sizeRaid, sizeParty, showSwipe, hideTooltips` (+ `filterMode` nur bei debuffs). **Layout über raid/party GETEILT, nur Größe kontextabhängig.** Default: nur `hotsOwn` an.
@@ -514,7 +514,7 @@ Flexibles Icon-Indikator-System. Tab-Leiste jetzt **`Base | Raid | Group | Auras
 * **Private Auras** (gesperrte Encounter-Auren, nur via `C_UnitAuras.AddPrivateAuraAnchor` anzeigbar) — mögliche spätere Ergänzung für Encounter-Debuffs.
 * `hideTooltips` greift erst bei mouseover-interaktiven Icons (später).
 
-**Nächster Schritt: MVP-Reste** — Sortierung nach Rolle/Gruppe + Aggro-Warnung (siehe §10.5/§8), oder Suite-Shell. **Noch offen aus Phase 2:** Debuff-Live-Test (Florian, braucht Gruppe). B4 ist erledigt (live bestätigt, v0.9.19).
+**Nächster Schritt: MVP-Reste** — Sortierung nach Rolle/Gruppe + Aggro-Warnung (siehe §10.5/§8), oder Suite-Shell. **Zuerst morgen:** die zwei v0.9.20-Bugfixes (HP-Prozent · HoT-Buff-Leak) live testen. **Noch offen aus Phase 2:** Debuff-Live-Test (Florian, braucht Gruppe). B4 ist erledigt (live bestätigt).
 
 ---
 
