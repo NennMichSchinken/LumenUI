@@ -132,17 +132,21 @@ function W.Slider(parent, o)
 	tt:SetAllPoints(thumb); UI.SetColor(tt, C.gold500)
 	UI.Border(thumb, { r = 0.10, g = 0.09, b = 0.08, a = 1 }, 2, "OVERLAY")
 
-	-- Wert-Box darunter (zentriert)
-	local box = CreateFrame("Frame", nil, f)
+	-- Wert-Box darunter (zentriert) — editierbare EditBox: anklicken, Zahl
+	-- eintippen, Enter bestätigt (auf Min/Max + Schrittweite geclampt), Esc verwirft.
+	local box = CreateFrame("EditBox", nil, f)
 	box:SetSize(M.valueBoxW, M.valueBoxH)
 	box:SetPoint("TOP", row, "BOTTOM", 0, -M.valueBoxGap)
 	UI.Fill(box, C.ink700)
-	UI.Border(box, L.soft, 1)
-	local valTxt = UI.FS(box, "value", C.textStrong)
-	valTxt:SetPoint("CENTER", box, "CENTER", 0, 0)
+	local boxEdges = UI.Border(box, L.soft, 1, "OVERLAY")
+	UI:SetFont(box, "value", C.textStrong)
+	box:SetJustifyH("CENTER")
+	box:SetAutoFocus(false)
+	box:SetTextInsets(6, 6, 0, 0)
 
 	local cur = (o.get and o.get()) or o.value or minV
 	local unit = o.unit or ""
+	local typing = false -- true während die EditBox fokussiert ist (kein Clobbern)
 
 	local function visual(v)
 		local ratio = (maxV > minV) and clamp((v - minV) / (maxV - minV), 0, 1) or 0
@@ -150,7 +154,7 @@ function W.Slider(parent, o)
 		fillbar:SetWidth(math.max(0.5, ratio * w))
 		thumb:ClearAllPoints()
 		thumb:SetPoint("CENTER", track, "LEFT", ratio * w, 0)
-		valTxt:SetText(v .. unit)
+		if not typing then box:SetText(v .. unit) end
 	end
 
 	local function valFromCursor()
@@ -172,6 +176,28 @@ function W.Slider(parent, o)
 		visual(v)
 		if o.set then o.set(v) end
 	end
+
+	-- EditBox: getippten Wert parsen (führende Zahl, auch negativ), runden,
+	-- clampen, übernehmen. Focus färbt den Rand kräftiger.
+	box:SetScript("OnEditFocusGained", function(self)
+		typing = true
+		for _, e in ipairs(boxEdges) do UI.SetColor(e, L.strong) end
+		self:HighlightText()
+	end)
+	box:SetScript("OnEditFocusLost", function(self)
+		typing = false
+		for _, e in ipairs(boxEdges) do UI.SetColor(e, L.soft) end
+		self:SetText(cur .. unit) -- auf den kanonischen Stand zurücksetzen
+	end)
+	box:SetScript("OnEnterPressed", function(self)
+		local num = tonumber((self:GetText():gsub("[^%-%d%.]", "")))
+		if num then
+			num = clamp(math.floor(num / step + 0.5) * step, minV, maxV)
+			commit(num)
+		end
+		self:ClearFocus()
+	end)
+	box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
 	local function onUpd() commit(valFromCursor()) end
 	track:SetScript("OnMouseDown", function(self)
@@ -272,15 +298,18 @@ function W.Select(parent, o)
 	-- Der Wash wird über Alpha gesteuert (NICHT Show/Hide — sonst kein Hover-
 	-- Feedback auf nicht-aktiven Zeilen).
 	local pad, rowH, gap = 6, 34, 2
+	-- Hover = warmer Braunton (inkTint), hebt sich dezent vom Menü-Grund (ink550)
+	-- ab — KEIN kräftiges Gold (Florian-Feedback). Gold bleibt nur als zarter
+	-- Marker auf der aktiven (gewählten) Zeile.
 	local function setItemState(item, st)
 		if st == "hover" then
-			item._wash:SetAlpha(0.18)
+			item._wash:SetColorTexture(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1)
 			item._txt:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
 		elseif st == "active" then
-			item._wash:SetAlpha(0.10)
+			item._wash:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, 0.10)
 			item._txt:SetTextColor(C.gold250.r, C.gold250.g, C.gold250.b)
 		else
-			item._wash:SetAlpha(0)
+			item._wash:SetColorTexture(0, 0, 0, 0)
 			item._txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
 		end
 	end
@@ -294,8 +323,7 @@ function W.Select(parent, o)
 		else item:SetPoint("TOP", menu, "TOP", 0, -pad) end
 		local wash = item:CreateTexture(nil, "BACKGROUND")
 		wash:SetAllPoints(item)
-		wash:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, 1)
-		wash:SetAlpha(0)
+		wash:SetColorTexture(0, 0, 0, 0)
 		local itxt = UI.FS(item, "selectText", C.textStrong)
 		itxt:SetPoint("LEFT", item, "LEFT", 10, 0)
 		itxt:SetText(op.label)
