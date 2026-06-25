@@ -104,29 +104,30 @@ end
 -- Beispiel-Roster (Testmodus)
 local FAKE_MAX = 600000
 local FAKE = {
-	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3 },
-	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25 },
-	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse" },
-	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison" },
-	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1 },
-	{ name = "Kaelura",    class = "PRIEST",  hp = 0.77, healAbsorb = 0.20 },
-	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic" },
-	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25 },
-	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, healAbsorb = 0.35 },
-	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, dispel = "Disease" },
-	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, absorb = 0.10 },
-	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, predict = 0.20 },
-	{ name = "Brightwing", class = "PALADIN", hp = 0.50, predict = 0.30 },
-	{ name = "Embertide",  class = "MAGE",    hp = 0.50, dispel = "Curse" },
-	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, healAbsorb = 0.30 },
-	{ name = "Solveig",    class = "PRIEST",  hp = 0.40, healAbsorb = 0.25 },
-	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, dispel = "Poison" },
-	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, absorb = 0.30 },
-	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, predict = 0.15 },
-	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15 },
+	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3, role = "HEALER" },
+	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25, role = "DAMAGER" },
+	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse", role = "DAMAGER" },
+	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison", role = "TANK" },
+	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1, role = "DAMAGER" },
+	{ name = "Kaelura",    class = "PRIEST",  hp = 0.77, healAbsorb = 0.20, role = "HEALER" },
+	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic", role = "DAMAGER" },
+	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25, role = "HEALER" },
+	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, healAbsorb = 0.35, role = "TANK" },
+	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, dispel = "Disease", role = "HEALER" },
+	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, absorb = 0.10, role = "DAMAGER" },
+	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, predict = 0.20, role = "TANK" },
+	{ name = "Brightwing", class = "PALADIN", hp = 0.50, predict = 0.30, role = "HEALER" },
+	{ name = "Embertide",  class = "MAGE",    hp = 0.50, dispel = "Curse", role = "DAMAGER" },
+	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, healAbsorb = 0.30, role = "DAMAGER" },
+	{ name = "Solveig",    class = "PRIEST",  hp = 0.40, healAbsorb = 0.25, role = "DAMAGER" },
+	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, dispel = "Poison", role = "DAMAGER" },
+	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, absorb = 0.30, role = "DAMAGER" },
+	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, predict = 0.15, role = "DAMAGER" },
+	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15, role = "DAMAGER" },
 }
 
 local GROUP_SIZE = 5   -- feste Gruppengröße: Raid-Gruppen & Dungeon-Gruppe sind immer 5 (nie gemischt)
+local DEFAULT_ROLE_ORDER = { "TANK", "HEALER", "DAMAGER" }   -- Fallback-Prioritätsliste
 
 -- Fake-Icon-Texturen für den Testmodus (Vorschau ohne echte Auren), je Kategorie passend.
 local FAKE_HOTS      = { 136081, 136085, 236153, 135953, 134914 }
@@ -558,6 +559,28 @@ end
 local function GetFakeList(size)
 	local list = {}
 	for i = 1, size do list[i] = FAKE[((i - 1) % #FAKE) + 1] end
+	-- Testmodus-Vorschau der Rollen-Sortierung: stabil nach der Prioritätsliste in Buckets
+	-- einsortieren (innerhalb einer Rolle bleibt die Reihenfolge erhalten). Live macht das
+	-- der SecureGroupHeader über groupBy=ASSIGNEDROLE — hier nur die Optik-Vorschau.
+	local d = db()
+	if d.sortMode == "role" and (size == 5 or d.sortApplyRaid) then
+		local order = d.sortRoleOrder or DEFAULT_ROLE_ORDER
+		local rank = {}
+		for i, r in ipairs(order) do rank[r] = i end
+		local buckets = {}
+		local n = #order + 1   -- letzter Bucket = ohne/unbekannte Rolle
+		for i = 1, n do buckets[i] = {} end
+		for i = 1, #list do
+			local b = buckets[rank[list[i].role] or n]
+			b[#b + 1] = list[i]
+		end
+		local out = {}
+		for rk = 1, n do
+			local b = buckets[rk]
+			for j = 1, #b do out[#out + 1] = b[j] end
+		end
+		list = out
+	end
 	return list
 end
 
@@ -1414,13 +1437,32 @@ function Raidframes:LayoutLive()
 	if InCombatLockdown() then secureLayoutDirty = true; return end
 	if not header then buildHeader() end
 	applyHeaderLayout()
-	-- Buttongröße geändert (z.B. Kontextwechsel Raid<->Party)? Dann den Header zur
-	-- Neuanordnung zwingen (Hide/Show) -> sonst rechnet er mit der alten Größe weiter.
+	-- Sortierung über Header-Attribute (secure-konform, EllesmereUI-Muster):
+	--  * "group" -> kein groupBy, sortMethod INDEX (Raid-Gruppen-/Roster-Reihenfolge).
+	--  * "role"  -> groupBy ASSIGNEDROLE, sortMethod NAME, groupingOrder = Prioritätsliste
+	--               + ",NONE" (sonst fielen Einheiten ohne zugewiesene Rolle raus).
+	local d = db()
+	-- Rollen-Sortierung gilt im Dungeon/Party immer; im Raid nur, wenn ausdrücklich
+	-- aktiviert (feste Raids baut man oft selbst nach Gruppe). isRaidContext() trennt das.
+	local byRole = (d.sortMode == "role") and (not isRaidContext() or d.sortApplyRaid)
+	local gb = byRole and "ASSIGNEDROLE" or nil
+	local sm = byRole and "NAME" or "INDEX"
+	local go = byRole and (table.concat(d.sortRoleOrder or DEFAULT_ROLE_ORDER, ",") .. ",NONE") or ""
+	local sortChanged = (header:GetAttribute("groupBy") ~= gb)
+		or (header:GetAttribute("sortMethod") ~= sm)
+		or (header:GetAttribute("groupingOrder") ~= go)
+	if sortChanged then
+		header:SetAttribute("groupBy", gb)
+		header:SetAttribute("sortMethod", sm)
+		header:SetAttribute("groupingOrder", go)
+	end
+	-- Buttongröße geändert (z.B. Kontextwechsel Raid<->Party) ODER Sortierung geändert?
+	-- Dann den Header zur Neuanordnung zwingen (Hide/Show) -> sonst rechnet er weiter.
 	local L = layoutCtx()
 	local sizeChanged = (header._appliedW ~= L.width or header._appliedH ~= L.height)
 	header._appliedW, header._appliedH = L.width, L.height
 	configureSecureButtons()   -- ApplyConfig setzt u.a. die Buttongröße
-	if sizeChanged and header:IsShown() then
+	if (sizeChanged or sortChanged) and header:IsShown() then
 		header:Hide(); header:Show()
 	else
 		header:Show()

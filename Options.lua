@@ -256,6 +256,16 @@ function ns.SetupOptions()
 	-- ===== Click-Cast: dynamische Binding-Zeilen =================================
 	local AceRegistry = LibStub("AceConfigRegistry-3.0", true)
 	local function ccRefresh() if AceRegistry then AceRegistry:NotifyChange("Lumen") end end
+
+	-- ===== Sortierung: Rollen-Prioritätsliste (Hoch/Runter) =====================
+	local ROLE_LABEL = { TANK = "Tank", HEALER = "Heiler", DAMAGER = "DPS" }
+	local function swapRole(i, j)
+		local o = rf().sortRoleOrder
+		if not (o and o[i] and o[j]) then return end
+		o[i], o[j] = o[j], o[i]
+		if ns.Raidframes then ns.Raidframes:UpdateLayout() end
+		if AceRegistry then AceRegistry:NotifyChange("Lumen") end
+	end
 	local function CC() return ns.ClickCast end
 	local function ccApply() if CC() then CC():ApplyBindings() end end
 	local rebuildCC   -- vorwärts deklariert (buildRow.remove ruft es vor der Definition)
@@ -795,6 +805,48 @@ function ns.SetupOptions()
 					aggroTextOutline = {
 						type = "select", order = 33.6, name = "Text-Umrandung", values = OUTLINES,
 						desc = AGGRO_TEXT_DESC, disabled = aggroTextDisabled,
+					},
+
+					sortHead = { type = "header", order = 40, name = "Sortierung" },
+					sortMode = {
+						type = "select", order = 40.1, name = "Sortieren nach",
+						values = { group = "Gruppe", role = "Rolle" },
+					},
+					sortApplyRaid = {
+						type = "toggle", order = 40.15, width = "full",
+						name = "Auch im Raid nach Rolle sortieren",
+						desc = "Aus: im Raid bleibt deine selbst gebaute Anordnung nach Gruppe. An: die Rollen-Sortierung gilt auch im Raid. (Dungeon/Party wird immer sortiert.)",
+						hidden = function() return rf().sortMode ~= "role" end,
+					},
+					sortRoleDesc = {
+						type = "description", order = 40.2,
+						name = "|cff888888Prioritätsliste — oben wird zuerst angezeigt:|r",
+						hidden = function() return rf().sortMode ~= "role" end,
+					},
+					sortSlot1 = {
+						type = "group", inline = true, order = 40.3,
+						name = function() return "1. " .. (ROLE_LABEL[rf().sortRoleOrder[1]] or "?") end,
+						hidden = function() return rf().sortMode ~= "role" end,
+						args = {
+							down = { type = "execute", order = 2, width = 0.8, name = "▼ Runter", func = function() swapRole(1, 2) end },
+						},
+					},
+					sortSlot2 = {
+						type = "group", inline = true, order = 40.4,
+						name = function() return "2. " .. (ROLE_LABEL[rf().sortRoleOrder[2]] or "?") end,
+						hidden = function() return rf().sortMode ~= "role" end,
+						args = {
+							up   = { type = "execute", order = 1, width = 0.8, name = "▲ Hoch",   func = function() swapRole(2, 1) end },
+							down = { type = "execute", order = 2, width = 0.8, name = "▼ Runter", func = function() swapRole(2, 3) end },
+						},
+					},
+					sortSlot3 = {
+						type = "group", inline = true, order = 40.5,
+						name = function() return "3. " .. (ROLE_LABEL[rf().sortRoleOrder[3]] or "?") end,
+						hidden = function() return rf().sortMode ~= "role" end,
+						args = {
+							up = { type = "execute", order = 1, width = 0.8, name = "▲ Hoch", func = function() swapRole(3, 2) end },
+						},
 					},
 
 					-- (Name-/HP-Text-Optionen liegen jetzt PRO KONTEXT in den Tabs Raid & Group.)
