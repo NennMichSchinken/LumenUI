@@ -14,12 +14,12 @@ local ADDON, ns = ...
 -- ===========================================================================
 
 local UI = ns.UI
-local C, L, S = UI.C, UI.line, UI.S
+local C, L, S, M = UI.C, UI.line, UI.S, UI.WIDGET
 
 local W = {}
 ns.W = W
 
-local CONTROL_H = S.controlH or 40
+local CONTROL_H = M.controlH
 
 -- ---------------------------------------------------------------------------
 --  Interne Helfer
@@ -51,17 +51,17 @@ end
 -- ---------------------------------------------------------------------------
 function W.SectionDivider(parent, text)
 	local f = CreateFrame("Frame", nil, parent)
-	f:SetHeight(36)
+	f:SetHeight(M.dividerH)
 	local head = UI.FS(f, "sectionHead", C.gold300)
 	head:SetText(text)
 	head:SetPoint("CENTER", f, "CENTER", 0, 0)
 
 	local lr = UI.GradientLine(f, "out", 0.45, 0.0)
-	lr:SetPoint("RIGHT", head, "LEFT", -16, 0)
+	lr:SetPoint("RIGHT", head, "LEFT", -M.dividerGap, 0)
 	lr:SetPoint("LEFT", f, "LEFT", 0, 0)
 	lr:SetPoint("TOP", head, "CENTER", 0, 0)
 	local rr = UI.GradientLine(f, "in", 0.45, 0.0)
-	rr:SetPoint("LEFT", head, "RIGHT", 16, 0)
+	rr:SetPoint("LEFT", head, "RIGHT", M.dividerGap, 0)
 	rr:SetPoint("RIGHT", f, "RIGHT", 0, 0)
 	rr:SetPoint("TOP", head, "CENTER", 0, 0)
 	f._head = head
@@ -78,7 +78,7 @@ local function fieldLabel(parent, text)
 	lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 	lbl:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
 	lbl:SetJustifyH("LEFT")
-	return lbl, -26 -- yOffset für das darunterliegende Control (16px-Label)
+	return lbl, -M.fieldGap -- yOffset für das darunterliegende Control
 end
 
 -- ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ end
 function W.Slider(parent, o)
 	local minV, maxV, step = o.min or 0, o.max or 100, o.step or 1
 	local f = CreateFrame("Frame", nil, parent)
-	f:SetHeight(86)
+	f:SetHeight(M.sliderH)
 	if o.width then f:SetWidth(o.width) end
 
 	local cap = UI.FS(f, "sliderCap", C.gold300)
@@ -98,44 +98,44 @@ function W.Slider(parent, o)
 
 	-- Track-Reihe: [min] —— track —— [max]
 	local row = CreateFrame("Frame", nil, f)
-	row:SetHeight(18)
-	row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -30)
-	row:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -30)
+	row:SetHeight(M.sliderTrackH)
+	row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -M.sliderCapGap)
+	row:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -M.sliderCapGap)
 
 	local minL = UI.FS(row, "ends", C.textMuted)
-	minL:SetText(tostring(minV)); minL:SetWidth(28); minL:SetJustifyH("RIGHT")
+	minL:SetText(tostring(minV)); minL:SetWidth(M.sliderEndW); minL:SetJustifyH("RIGHT")
 	minL:SetPoint("LEFT", row, "LEFT", 0, 0)
 	local maxL = UI.FS(row, "ends", C.textMuted)
-	maxL:SetText(tostring(maxV)); maxL:SetWidth(28); maxL:SetJustifyH("LEFT")
+	maxL:SetText(tostring(maxV)); maxL:SetWidth(M.sliderEndW); maxL:SetJustifyH("LEFT")
 	maxL:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 
 	local track = CreateFrame("Frame", nil, row)
-	track:SetHeight(18)
-	track:SetPoint("LEFT", minL, "RIGHT", 10, 0)
-	track:SetPoint("RIGHT", maxL, "LEFT", -10, 0)
+	track:SetHeight(M.sliderTrackH)
+	track:SetPoint("LEFT", minL, "RIGHT", M.sliderEndPad, 0)
+	track:SetPoint("RIGHT", maxL, "LEFT", -M.sliderEndPad, 0)
 	track:EnableMouse(true)
 
 	local bg = track:CreateTexture(nil, "ARTWORK")
-	bg:SetHeight(4)
+	bg:SetHeight(M.sliderBarH)
 	bg:SetPoint("LEFT", track, "LEFT", 0, 0)
 	bg:SetPoint("RIGHT", track, "RIGHT", 0, 0)
 	UI.SetColor(bg, C.ink700)
 
 	local fillbar = track:CreateTexture(nil, "ARTWORK", nil, 1)
-	fillbar:SetHeight(4)
+	fillbar:SetHeight(M.sliderBarH)
 	fillbar:SetPoint("LEFT", track, "LEFT", 0, 0)
 	UI.SetColor(fillbar, C.gold500)
 
 	local thumb = CreateFrame("Frame", nil, track)
-	thumb:SetSize(14, 14)
+	thumb:SetSize(M.sliderThumb, M.sliderThumb)
 	local tt = thumb:CreateTexture(nil, "OVERLAY")
 	tt:SetAllPoints(thumb); UI.SetColor(tt, C.gold500)
 	UI.Border(thumb, { r = 0.10, g = 0.09, b = 0.08, a = 1 }, 2, "OVERLAY")
 
 	-- Wert-Box darunter (zentriert)
 	local box = CreateFrame("Frame", nil, f)
-	box:SetSize(92, 28)
-	box:SetPoint("TOP", row, "BOTTOM", 0, -10)
+	box:SetSize(M.valueBoxW, M.valueBoxH)
+	box:SetPoint("TOP", row, "BOTTOM", 0, -M.valueBoxGap)
 	UI.Fill(box, C.ink700)
 	UI.Border(box, L.soft, 1)
 	local valTxt = UI.FS(box, "value", C.textStrong)
@@ -341,11 +341,11 @@ function W.Select(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Checkbox — 18px Gold-Füll-Toggle + Häkchen + Label, klickbare Zeile.
---  o = {label,get,set,value}. Höhe 20, Breite passt sich dem Label an.
+--  Checkbox — Gold-Füll-Toggle + Häkchen + Label, klickbare Zeile.
+--  o = {label,get,set,value}. Maße aus UI.WIDGET.
 -- ---------------------------------------------------------------------------
 function W.Checkbox(parent, o)
-	local BOX = 22
+	local BOX = M.checkBox
 	local b = CreateFrame("Button", nil, parent)
 	b:SetHeight(BOX)
 
@@ -356,30 +356,31 @@ function W.Checkbox(parent, o)
 	boxbg:SetAllPoints(box); boxbg:SetColorTexture(0, 0, 0, 0)
 	local edges = UI.Border(box, L.mid, 1, "OVERLAY")
 
-	-- Häkchen (zwei Linien) in Ink-auf-Gold. Dicker (3px) und auf die größere Box
-	-- skaliert -> weniger pixelig als die alte 2px/18px-Variante.
-	local t1 = box:CreateLine(nil, "OVERLAY"); t1:SetThickness(3)
-	local t2 = box:CreateLine(nil, "OVERLAY"); t2:SetThickness(3)
-	local function tickCol(c) t1:SetColorTexture(c.r, c.g, c.b, 1); t2:SetColorTexture(c.r, c.g, c.b, 1) end
-	tickCol(C.onGold)
-	t1:SetStartPoint("CENTER", box, -5, -1); t1:SetEndPoint("CENTER", box, -1, -5)
-	t2:SetStartPoint("CENTER", box, -1, -5); t2:SetEndPoint("CENTER", box, 6, 5)
+	-- Häkchen: Blizzards Check-Textur, entsättigt + ink-getönt -> sauberer als
+	-- selbstgezeichnete Linien (Florian-Feedback). Mittig, leicht über die Box
+	-- hinaus (transparenter Rand der Textur) für gute Proportion.
+	local check = box:CreateTexture(nil, "OVERLAY")
+	check:SetTexture([[Interface\Buttons\UI-CheckBox-Check]])
+	check:SetDesaturated(true)
+	check:SetVertexColor(C.onGold.r, C.onGold.g, C.onGold.b, 1)
+	check:SetSize(BOX + 8, BOX + 8)
+	check:SetPoint("CENTER", box, "CENTER", 0, 0)
 
 	local lbl = UI.FS(b, "checkLabel", C.textBody)
 	lbl:SetText(o.label or "")
-	lbl:SetPoint("LEFT", box, "RIGHT", 10, 0)
-	b:SetWidth(BOX + 10 + math.ceil(lbl:GetStringWidth()) + 2)
+	lbl:SetPoint("LEFT", box, "RIGHT", M.checkLabelGap, 0)
+	b:SetWidth(BOX + M.checkLabelGap + math.ceil(lbl:GetStringWidth()) + 2)
 
 	local val = (o.get and o.get()) or o.value or false
 	local function apply(on)
 		if on then
 			UI.SetColor(boxbg, C.gold500)
 			for _, e in ipairs(edges) do UI.SetColor(e, C.gold500) end
-			t1:Show(); t2:Show()
+			check:Show()
 		else
 			boxbg:SetColorTexture(0, 0, 0, 0)
 			for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
-			t1:Hide(); t2:Hide()
+			check:Hide()
 		end
 	end
 	apply(val)
@@ -427,7 +428,7 @@ function W.Button(parent, o)
 	local variant = o.variant or "primary"
 	local v = BTN_VARIANTS[variant]
 	local b = CreateFrame("Button", nil, parent)
-	b:SetHeight(38)
+	b:SetHeight(M.buttonH)
 
 	local bg = b:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints(b)
@@ -519,11 +520,11 @@ function W.GroupPanel(parent, o)
 
 	local title = UI.FS(g, "groupTitle", C.textHeading)
 	title:SetText(o.title or "")
-	title:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, -16)
+	title:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, M.groupTitleY)
 
 	-- Inhaltsbereich unter der Überschrift, mit Card-Padding.
 	local content = CreateFrame("Frame", nil, g)
-	content:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, -48)
+	content:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, M.groupContentY)
 	content:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", -S.cardPad, S.cardPad)
 
 	g._title, g._content = title, content
@@ -543,9 +544,9 @@ end
 -- ---------------------------------------------------------------------------
 function W.Row(parent, count, opts)
 	opts = opts or {}
-	local gap = opts.gap or 30
+	local gap = opts.gap or M.rowGap
 	local f = CreateFrame("Frame", nil, parent)
-	f:SetHeight(opts.height or 80)
+	f:SetHeight(opts.height or M.sliderH)
 	local cells = {}
 	for i = 1, count do
 		local cell = CreateFrame("Frame", nil, f)

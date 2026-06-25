@@ -95,17 +95,18 @@ UI.ROLE = {
 	body     = { UI.FONT.hankenReg,  14, "" },
 	label    = { UI.FONT.hankenMed,  14, "" },
 	tab      = { UI.FONT.hankenMed,  18, "" },
-	caption  = { UI.FONT.hankenReg,  13, "" },
+	caption  = { UI.FONT.hankenReg,  12, "" },
 	eyebrow  = { UI.FONT.hankenMed,  12, "" },
 	tagline  = { UI.FONT.hankenReg,  12, "" },
 
-	-- Widget-Toolkit (Phase 2) — kleine, control-nahe Rollen.
+	-- Widget-Toolkit (Phase 2) — kleine, control-nahe Rollen. Größen auf dem
+	-- 4er-Raster (12/16/20). Hier zentral ändern -> schlägt überall durch.
 	fieldLabel = { UI.FONT.hankenMed,  16, "" }, -- Gold-Label über einem Control (Dropdown etc.)
-	sectionHead= { UI.FONT.cinzelSemi, 24, "" }, -- SectionDivider / Tab-Überschrift
-	groupTitle = { UI.FONT.cinzelSemi, 15, "" }, -- GroupPanel-Titel / IconTile-Letter
+	sectionHead= { UI.FONT.cinzelSemi, 20, "" }, -- SectionDivider / Tab-Überschrift
+	groupTitle = { UI.FONT.cinzelSemi, 16, "" }, -- GroupPanel-Titel / IconTile-Letter
 	sliderCap  = { UI.FONT.cinzelSemi, 16, "" }, -- Slider-Beschriftung
-	value      = { UI.FONT.hankenMed,  16, "" }, -- Wert-Box
-	ends       = { UI.FONT.hankenMed,  14, "" }, -- Slider Min/Max-Zahlen (dicker + größer)
+	value      = { UI.FONT.hankenMed,  14, "" }, -- Wert-Box
+	ends       = { UI.FONT.hankenMed,  14, "" }, -- Slider Min/Max-Zahlen
 	selectText = { UI.FONT.hankenMed,  16, "" }, -- Dropdown-Header + -Zeilen
 	checkLabel = { UI.FONT.hankenMed,  14, "" }, -- Checkbox-Label
 	btn        = { UI.FONT.hankenSemi, 16, "" }, -- Button-Label
@@ -141,6 +142,43 @@ UI.S = {
 }
 UI.R = {
 	panel = 2, control = 8, popover = 9, card = 10, check = 4,
+}
+
+-- ---------------------------------------------------------------------------
+--  Widget-Maße — ALLE Dimensionen des Widget-Toolkits zentral. Hier ändern,
+--  dann zieht es überall nach (Shell/Widgets.lua liest nur daraus, keine
+--  Magic Numbers mehr im Widget-Code). Werte auf dem 4er-Raster halten.
+-- ---------------------------------------------------------------------------
+UI.WIDGET = {
+	controlH    = 40, -- Dropdown/Eingabe-Höhe
+	buttonH     = 40, -- Button-Höhe
+	fieldGap    = 26, -- vertikaler Abstand Label -> Control darunter
+
+	-- Checkbox
+	checkBox    = 22, -- Box-Kantenlänge
+	checkLabelGap = 10,
+
+	-- Slider
+	sliderH     = 86, -- Gesamthöhe (Label + Track-Reihe + Wert-Box)
+	sliderTrackH= 18, -- Höhe der klickbaren Track-Reihe
+	sliderBarH  = 4,  -- Dicke des Balkens
+	sliderThumb = 14, -- Knopf-Kantenlänge
+	sliderCapGap= 30, -- yOffset Label -> Track-Reihe
+	sliderEndW  = 28, -- Breite der Min/Max-Zahlenfelder
+	sliderEndPad= 10, -- Abstand Zahl <-> Track
+	valueBoxW   = 92, -- Wert-Box Breite
+	valueBoxH   = 28, -- Wert-Box Höhe
+	valueBoxGap = 10, -- yOffset Track-Reihe -> Wert-Box
+
+	-- GroupPanel
+	groupTitleY = -16, -- yOffset des Titels von der oberen Kante
+	groupContentY = -48, -- yOffset des Inhaltsbereichs
+
+	-- Section-Divider
+	dividerH    = 36, -- Höhe des Divider-Blocks
+	dividerGap  = 16, -- Abstand Text <-> Gold-Rule
+
+	rowGap      = 30, -- Spaltenabstand in W.Row (row3/row2)
 }
 
 -- Panel-Maße (Design 1500×1000). Auf dem Bildschirm via SetScale verkleinert.
