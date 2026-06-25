@@ -16,67 +16,10 @@ local Shell = {}
 ns.Shell = Shell
 
 -- ---------------------------------------------------------------------------
---  Kleine Bau-Helfer
+--  Kleine Bau-Helfer — die Primitive liegen jetzt zentral in Tokens (ns.UI),
+--  damit Shell-Chrome UND Widget-Toolkit dieselben nutzen (DRY).
 -- ---------------------------------------------------------------------------
-local function setColor(t, col) t:SetColorTexture(col.r, col.g, col.b, col.a or 1) end
-
--- Vollflächige Füll-Textur über parent.
-local function fill(parent, col, layer)
-	local t = parent:CreateTexture(nil, layer or "BACKGROUND")
-	t:SetAllPoints(parent)
-	setColor(t, col)
-	return t
-end
-
--- 1px-Hairline-Border (4 Kanten) um frame, Gold-at-opacity. Pixel-Snapping via
--- PixelUtil: rechnet die effektive Scale ein -> Linien liegen exakt auf dem
--- physischen Pixelraster und verschwinden NICHT bei skaliertem Panel (SetScale).
-local function border(frame, col, thick, layer)
-	thick = thick or 1
-	local edges = {}
-	local function mk()
-		local t = frame:CreateTexture(nil, layer or "BORDER")
-		setColor(t, col)
-		edges[#edges + 1] = t
-		return t
-	end
-	local top = mk();   PixelUtil.SetHeight(top, thick)
-	PixelUtil.SetPoint(top, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-	PixelUtil.SetPoint(top, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-	local bot = mk();   PixelUtil.SetHeight(bot, thick)
-	PixelUtil.SetPoint(bot, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-	PixelUtil.SetPoint(bot, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-	local left = mk();  PixelUtil.SetWidth(left, thick)
-	PixelUtil.SetPoint(left, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-	PixelUtil.SetPoint(left, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-	local right = mk(); PixelUtil.SetWidth(right, thick)
-	PixelUtil.SetPoint(right, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-	PixelUtil.SetPoint(right, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-	return edges
-end
-
--- FontString in einer Design-Rolle.
-local function FS(parent, role, col, layer)
-	local fs = parent:CreateFontString(nil, layer or "OVERLAY")
-	UI:SetFont(fs, role, col)
-	return fs
-end
-
--- Horizontale Gradient-Linie (1px) — Gold fadet aus. dir: "out"=Gold links→faint rechts.
-local function rule(parent, dir)
-	local t = parent:CreateTexture(nil, "ARTWORK")
-	t:SetHeight(1)
-	local strong = CreateColor(C.gold500.r, C.gold500.g, C.gold500.b, 0.50)
-	local faint  = CreateColor(C.gold500.r, C.gold500.g, C.gold500.b, 0.04)
-	if dir == "in" then
-		t:SetColorTexture(1, 1, 1, 1)
-		t:SetGradient("HORIZONTAL", faint, strong)
-	else
-		t:SetColorTexture(1, 1, 1, 1)
-		t:SetGradient("HORIZONTAL", strong, faint)
-	end
-	return t
-end
+local setColor, fill, border, FS = UI.SetColor, UI.Fill, UI.Border, UI.FS
 
 -- ---------------------------------------------------------------------------
 --  Rune-Ornament (concentric circles + rotated square + radiating ticks),
@@ -123,25 +66,6 @@ local function drawRune(parent, point, ox, oy, scaleF, alpha)
 		runeLine(holder, cx * 60 * s, cy * 60 * s, cx * 70 * s, cy * 70 * s, a)
 	end
 	return holder
-end
-
--- ---------------------------------------------------------------------------
---  Beveled Gold-Icon-Tile (Signatur-Element) — Gradient-Chip mit Cinzel-Letter.
--- ---------------------------------------------------------------------------
-local function iconTile(parent, size, letter)
-	local f = CreateFrame("Frame", nil, parent)
-	f:SetSize(size, size)
-	local bg = f:CreateTexture(nil, "BACKGROUND")
-	bg:SetAllPoints(f)
-	bg:SetColorTexture(1, 1, 1, 1)
-	bg:SetGradient("VERTICAL",
-		CreateColor(C.ink650.r, C.ink650.g, C.ink650.b, 1),
-		CreateColor(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1))
-	border(f, L.soft, 1)
-	local lt = FS(f, "section", C.gold300)
-	lt:SetPoint("CENTER", f, "CENTER", 0, 0)
-	lt:SetText(letter or "?")
-	return f
 end
 
 -- ---------------------------------------------------------------------------
@@ -461,9 +385,32 @@ function Shell:SelectTab(index)
 end
 
 -- ---------------------------------------------------------------------------
---  Dummy-Inhalt (Phase 1): zeigt Section-Divider, Card-Surface, Icon-Tile,
---  Text-Hierarchie — damit Florian den Look in-game bewerten kann.
+--  Widget-Galerie (Phase 2): zeigt das komplette Toolkit (Divider, Slider,
+--  Select, Checkbox, GroupPanel, Buttons, Card) live bedienbar — damit Florian
+--  Look UND Feel in-game beurteilen kann. Sandbox-Daten (noch nicht db-verdrahtet).
 -- ---------------------------------------------------------------------------
+local W = ns.W
+
+-- Sandbox-State, damit die Widgets interaktiv reagieren (kein db-Schreiben).
+local demo = {
+	breite = 114, hoehe = 60, abstand = 2,
+	ausrichtung = "vertical",
+	nameShow = true, nameColor = false, nameSize = 12,
+	outline = "none",
+	hotsOn = true,
+}
+local function g(k) return function() return demo[k] end end
+local function s(k) return function(v) demo[k] = v end end
+
+local ALIGN_OPTS = {
+	{ value = "vertical",   label = "Vertikal — Mitglieder untereinander" },
+	{ value = "horizontal", label = "Horizontal — Mitglieder nebeneinander" },
+}
+local OUTLINE_OPTS = {
+	{ value = "none", label = "Keine" }, { value = "thin", label = "Dünn" },
+	{ value = "thick", label = "Dick" }, { value = "mono", label = "Monochrom" },
+}
+
 function Shell:RenderDummy()
 	local content = self._content
 	if self._dummy then self._dummy:Hide(); self._dummy:SetParent(nil) end
@@ -474,45 +421,82 @@ function Shell:RenderDummy()
 	local secName = SECTIONS[self._section][1]
 	local tabName = SECTIONS[self._section][2][self._tab] or "?"
 
-	-- Section-Divider (Heading mit symmetrischen Gold-Rules)
-	local head = FS(d, "section", C.textHeading)
-	head:SetText(secName .. " · " .. tabName)
-	head:SetPoint("TOP", d, "TOP", 0, -4)
-	local lr = rule(d, "out")
-	lr:SetPoint("RIGHT", head, "LEFT", -14, 0)
-	lr:SetPoint("LEFT", d, "LEFT", 0, 0)
-	local rr = rule(d, "in")
-	rr:SetPoint("LEFT", head, "RIGHT", 14, 0)
-	rr:SetPoint("RIGHT", d, "RIGHT", 0, 0)
-	lr:SetPoint("TOP", head, "CENTER", 0, 0)
-	rr:SetPoint("TOP", head, "CENTER", 0, 0)
+	-- y-Cursor: stapelt Blöcke von oben nach unten in den Content-Bereich.
+	local y = -4
+	local function place(widget, h, dy)
+		widget:SetParent(d)
+		widget:ClearAllPoints()
+		widget:SetPoint("TOPLEFT", d, "TOPLEFT", 0, y)
+		widget:SetPoint("TOPRIGHT", d, "TOPRIGHT", 0, y)
+		if h then widget:SetHeight(h) end
+		y = y - (h or widget:GetHeight()) - (dy or 22)
+	end
 
-	-- Card-Surface mit Icon-Tile + Text
-	local card = CreateFrame("Frame", nil, d)
-	card:SetHeight(120)
-	card:SetPoint("TOPLEFT", d, "TOPLEFT", 0, -56)
-	card:SetPoint("TOPRIGHT", d, "TOPRIGHT", 0, -56)
-	fill(card, C.ink600, "BACKGROUND")
-	border(card, L.soft, 1)
+	-- 1) Section-Divider
+	place(W.SectionDivider(d, secName .. " · " .. tabName), 28, 24)
 
-	local tile = iconTile(card, 56, "L")
+	-- 2) Drei Slider nebeneinander (row3)
+	local sliderRow, cells = W.Row(d, 3, { height = 80 })
+	W.Slider(cells[1], { label = "Breite", min = 40, max = 240, value = demo.breite, unit = " px",
+		get = g("breite"), set = s("breite") }):SetAllPoints(cells[1])
+	W.Slider(cells[2], { label = "Höhe", min = 20, max = 160, value = demo.hoehe, unit = " px",
+		get = g("hoehe"), set = s("hoehe") }):SetAllPoints(cells[2])
+	W.Slider(cells[3], { label = "Abstand", min = 0, max = 30, value = demo.abstand, unit = " px",
+		get = g("abstand"), set = s("abstand") }):SetAllPoints(cells[3])
+	place(sliderRow, 80, 22)
+
+	-- 3) Zwei Dropdowns (Ausrichtung + Umrandung) als 2er-Reihe
+	local ddRow, ddCells = W.Row(d, 2, { height = 62 })
+	W.Select(ddCells[1], { label = "Ausrichtung", options = ALIGN_OPTS,
+		get = g("ausrichtung"), set = s("ausrichtung") }):SetAllPoints(ddCells[1])
+	W.Select(ddCells[2], { label = "Namens-Umrandung", options = OUTLINE_OPTS,
+		get = g("outline"), set = s("outline") }):SetAllPoints(ddCells[2])
+	place(ddRow, 62, 24)
+
+	-- 4) Checkbox-Reihe
+	local cbRow = CreateFrame("Frame", nil, d)
+	local cb1 = W.Checkbox(cbRow, { label = "Name anzeigen", get = g("nameShow"), set = s("nameShow") })
+	cb1:SetPoint("LEFT", cbRow, "LEFT", 0, 0)
+	local cb2 = W.Checkbox(cbRow, { label = "Namensfarbe", get = g("nameColor"), set = s("nameColor") })
+	cb2:SetPoint("LEFT", cb1, "RIGHT", 28, 0)
+	place(cbRow, 20, 26)
+
+	-- 5) GroupPanel mit Header-Right-Toggle + Inhalt
+	local panel, pc = W.GroupPanel(d, { title = "HoTs" })
+	panel._headerRightAnchor(W.Checkbox(panel, { label = "Anzeigen", get = g("hotsOn"), set = s("hotsOn") }))
+	local pcSlider = W.Slider(pc, { label = "Namensgröße", min = 6, max = 30, value = demo.nameSize,
+		get = g("nameSize"), set = s("nameSize") })
+	pcSlider:SetPoint("TOPLEFT", pc, "TOPLEFT", 0, 0)
+	pcSlider:SetWidth(320)
+	place(panel, 150, 24)
+
+	-- 6) Button-Reihe (primary / ghost / danger)
+	local btnRow = CreateFrame("Frame", nil, d)
+	local pb = W.Button(btnRow, { text = "Übernehmen", variant = "primary" })
+	pb:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
+	local gb = W.Button(btnRow, { text = "Standard", variant = "ghost" })
+	gb:SetPoint("LEFT", pb, "RIGHT", 12, 0)
+	local db = W.Button(btnRow, { text = "Zurücksetzen", variant = "danger" })
+	db:SetPoint("LEFT", gb, "RIGHT", 12, 0)
+	place(btnRow, 38, 22)
+
+	-- 7) Card mit IconTile + Text (Signatur-Surface)
+	local card = W.Card(d)
+	local tile = W.IconTile(card, { size = 52, letter = "L" })
 	tile:SetPoint("LEFT", card, "LEFT", S.cardPad, 0)
+	local ct = FS(card, "body", C.textBody)
+	ct:SetJustifyH("LEFT"); ct:SetWordWrap(true)
+	ct:SetPoint("LEFT", tile, "RIGHT", 16, 0)
+	ct:SetPoint("RIGHT", card, "RIGHT", -S.cardPad, 0)
+	ct:SetText("Toolkit-Bausteine: Slider, Select, Checkbox, Button, GroupPanel, "
+		.. "Card, IconTile — alle auf den Design-Tokens und pixel-gesnappten Borders.")
+	place(card, 92, 22)
 
-	local t1 = FS(card, "label", C.textStrong)
-	t1:SetText("Phase 1 — Optisches Gerüst")
-	t1:SetPoint("TOPLEFT", tile, "TOPRIGHT", 16, -2)
-
-	local t2 = FS(card, "body", C.textBody)
-	t2:SetWidth(700); t2:SetJustifyH("LEFT")
-	t2:SetText("Chrome, Schriften (Cinzel + Hanken Grotesk), Farben, Rune-Ecken und die "
-		.. "Signatur-Elemente stehen. Widgets (Slider/Select/Checkbox …) und die echten "
-		.. "Einstellungen folgen in Phase 2/3. Diese Seite läuft parallel zur AceConfig.")
-	t2:SetPoint("TOPLEFT", t1, "BOTTOMLEFT", 0, -8)
-
+	-- 8) Hinweis
 	local hint = FS(d, "caption", C.textFaint)
-	hint:SetText("Nav links und Tabs oben sind klickbar (rein optisch). "
+	hint:SetText("Phase 2 — Widget-Toolkit (live bedienbar, noch Sandbox-Daten). "
 		.. "/lumen öffnet weiterhin die klassische Konfiguration.")
-	hint:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -20)
+	hint:SetPoint("TOPLEFT", d, "TOPLEFT", 0, y)
 end
 
 -- ===========================================================================
