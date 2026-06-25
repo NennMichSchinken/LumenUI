@@ -2,7 +2,7 @@
 ## Title: Lumen
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## Author: NennMichSchinken
-## Version: 0.9.20
+## Version: 0.9.25
 ## SavedVariables: LumenDB
 ## X-Website: https://github.com/NennMichSchinken
 

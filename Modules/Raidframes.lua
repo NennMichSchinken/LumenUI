@@ -25,6 +25,8 @@ local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
 local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
 local UnitGetIncomingHeals = UnitGetIncomingHeals
 local UnitGetDetailedHealPrediction = UnitGetDetailedHealPrediction
+local UnitHealthPercent = UnitHealthPercent
+local CurveConstants = CurveConstants
 local IsInRaid = IsInRaid
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
@@ -232,7 +234,7 @@ local HOT_DEFAULTS = {
 	[257]  = { 139, 77489, 41635 },                                -- Holy Priest: Renew, Echo of Light, PoM
 	[270]  = { 119611, 124682, 115175, 450769 },                   -- MW Monk: Renewing/Enveloping/Soothing Mist, Aspect of Harmony
 	[264]  = { 61295, 974, 382024, 207400, 444490 },               -- Resto Shaman: Riptide, Earth Shield, Earthliving, Ancestral Vigor, Hydrobubble
-	[65]   = { 156910, 156322, 53563, 1244893, 200025 },           -- Holy Pala: Beacon of Faith, Eternal Flame, Beacon of Light, Beacon of Savior, Beacon of Virtue
+	[65]   = { 156910, 156322, 53563, 1244893, 200025, 431381 },   -- Holy Pala: Beacon of Faith, Eternal Flame, Beacon of Light, Beacon of Savior, Beacon of Virtue, Dawnlight
 	[1468] = { 364343, 366155, 367364, 355941, 376788, 363502, 373267 }, -- Pres Evoker: Echo, Reversion, Echo Reversion, Dream Breath, Echo Dream Breath, Dream Flight, Lifebind
 }
 -- specID -> classToken. Für die klassenweiten Defensiv-Defaults (DEF_CLASS) und
@@ -350,6 +352,20 @@ local function whitelistFor(spec)
 	return s
 end
 
+-- Talent -> Aura-Umschreibung (Tracking-Editor). Manche Talente werden im Dropdown
+-- mit ihrer TALENT-spellId angeboten (aus C_Traits), legen aber beim Proccen einen
+-- Buff mit einer ANDEREN Aura-spellId an -> die Talent-ID matcht dann nie eine Aura.
+-- Hier auf die echte Aura-ID mappen, damit "Hinzufügen" zuverlässig funktioniert.
+--  * 155675 (Talent "Verschmelzung"/Germination) -> 155777 (Aura "Verjüngung (Verschmelzung)")
+local TALENT_TO_AURA = {
+	[155675] = 155777,
+}
+-- Öffentlich: eine getrackte/angebotene spellId auf die tatsächlich auftauchende
+-- Aura-ID normalisieren (für Add + Dropdown-Dedupe in Options).
+function Raidframes:ResolveTrackId(spellID)
+	return (spellID and TALENT_TO_AURA[spellID]) or spellID
+end
+
 -- ---------------------------------------------------------------------------
 --  Whitelist-Editor (B4, Options-Tab "Tracking") — öffentliche API.
 --  Arbeitet auf db().auras.whitelist[specID] (spellID -> "hot"|"def"); seedt die
@@ -379,6 +395,7 @@ end
 -- Spell in die Whitelist aufnehmen.
 function Raidframes:AddWhitelist(specID, spellID, typ)
 	if not specID or specID == 0 or not spellID then return end
+	spellID = TALENT_TO_AURA[spellID] or spellID   -- Talent-ID -> echte Aura-ID
 	local s = whitelistFor(specID); if not s then return end
 	s[spellID] = typ
 	self:RefreshAuras()
@@ -964,11 +981,15 @@ function Raidframes:RenderLive(f)
 	local t = L.healthTextType
 	if t == "Keine" then
 		f.htext:SetText("")
-	elseif t == "Prozent" and _G.UnitHealthPercent then
-		-- UnitHealthPercent liefert ohne ScaleTo100-Kurve eine 0..1-Fraktion (nicht secret)
-		-- -> *100, sonst zeigt volles Leben "1%".
-		local ok, p = pcall(UnitHealthPercent, u, true)
-		f.htext:SetText(ok and p and format("%d%%", p * 100) or "")
+	elseif t == "Prozent" and UnitHealthPercent then
+		-- ScaleTo100-Kurve -> garantiert NICHT-secret 0..100 (EllesmereUI-Muster).
+		-- WICHTIG: Ohne Kurve liefert 12.0.7 einen Wert, der bei Arithmetik (p*100)
+		-- im Kampf wirft -> das riss bisher den restlichen RenderLive mit, inklusive
+		-- RenderAurasLive am Funktionsende -> ALLE Auren verschwanden. Mit Kurve ist p
+		-- bereits 0..100 und non-secret, format ist sicher (keine Arithmetik außen).
+		local curve = CurveConstants and CurveConstants.ScaleTo100
+		local ok, p = pcall(UnitHealthPercent, u, true, curve)
+		f.htext:SetText((ok and p) and format("%d%%", p) or "")
 	else
 		local ok, str = pcall(AbbrevNum, UnitHealth(u))
 		f.htext:SetText(ok and str or "")

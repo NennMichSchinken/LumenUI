@@ -322,14 +322,19 @@ local function applyClick(button, parsed, aType, macrotext)
 end
 
 -- Click-Cast übernimmt im aktivierten Zustand die volle Kontrolle: Wildcards
--- neutralisieren, ungebundene Links/Rechts auf inert "none" -> ein unbelegter
--- Klick macht nichts (Clique-Modell). Belegte Tasten überschreiben das danach.
+-- neutralisieren, modifizierte Klicks ohne Bindung machen nichts (Clique-Modell).
+-- Belegte Tasten überschreiben das danach.
+-- SICHERE DEFAULTS: Linksklick = "target" (natives Anvisieren), Rechtsklick = WoW-
+-- Einheitenmenü (über den geteilten Menü-Proxy, da "togglemenu" 12.0.7-gated ist).
+-- So bleibt die Standard-Belegung (Links=Ziel, Rechts=Menü) immer erhalten, BIS der
+-- Nutzer BUTTON1/BUTTON2 selbst belegt -> kein versehentliches Aussperren.
 local function applyEnabled(button)
 	button:SetAttribute("*type1", nil); rec(button, "*type1")
 	button:SetAttribute("*type2", nil); rec(button, "*type2")
 	button:SetAttribute("*clickbutton2", nil); rec(button, "*clickbutton2")
-	button:SetAttribute("type1", "none"); rec(button, "type1")
-	button:SetAttribute("type2", "none"); rec(button, "type2")
+	button:SetAttribute("type1", "target"); rec(button, "type1")
+	button:SetAttribute("type2", "click"); rec(button, "type2")
+	button:SetAttribute("clickbutton2", getProxy(button, "togglemenu")); rec(button, "clickbutton2")
 	for _, b in ipairs(activeList()) do
 		if not b.hovercast then
 			local p = parseKey(b.key)

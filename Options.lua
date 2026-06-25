@@ -519,7 +519,10 @@ function ns.SetupOptions()
 		}
 		-- schon getrackte Spells (beide Kategorien) aus dem Dropdown ausblenden — keine Doppelten.
 		local function pickMatch(s, q, tracked)
-			if tracked[s.id] then return false end
+			-- Talent-IDs auf die echte Aura-ID normalisieren, damit redundante Talent-
+			-- Einträge ausgeblendet werden, wenn die Aura bereits getrackt ist.
+			local rid = (RF() and RF().ResolveTrackId) and RF():ResolveTrackId(s.id) or s.id
+			if tracked[rid] then return false end
 			return q == "" or s.name:lower():find(q, 1, true) ~= nil
 		end
 		a[cat.typ .. "pick"] = {

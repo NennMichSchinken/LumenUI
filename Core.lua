@@ -183,6 +183,8 @@ function Lumen:OnInitialize()
 
 	self:RegisterChatCommand("lumen", "OpenConfig")
 	self:RegisterChatCommand("lu",    "OpenConfig")
+	self:RegisterChatCommand("lumendump", "DebugDumpAuras")
+	self:RegisterChatCommand("ldump",     "DebugDumpAuras")
 
 	self:Print("geladen. |cffD4A34F/lumen|r öffnet die Einstellungen.")
 end
@@ -211,4 +213,50 @@ end
 
 function Lumen:OpenConfig()
 	LibStub("AceConfigDialog-3.0"):Open("Lumen")
+end
+
+-- DEBUG: dumpt eigene Hilfsauren (Name + spellId) und die getrackte HoT-Whitelist.
+-- Zweck: Proc-/Talent-HoTs, deren BUFF-Aura eine andere spellId trägt als die im
+-- Tracking gespeicherte (Talent-)ID, sichtbar machen. AUSSER KAMPF ausführen
+-- (im Kampf ist aura.spellId secret). Temporäres Diagnose-Tool.
+function Lumen:DebugDumpAuras()
+	if InCombatLockdown() then
+		self:Print("Bitte AUSSERHALB des Kampfes ausführen (im Kampf sind die IDs gesperrt).")
+		return
+	end
+	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then
+		self:Print("C_UnitAuras nicht verfügbar.")
+		return
+	end
+	local specIndex = GetSpecialization and GetSpecialization()
+	local specID = specIndex and select(1, GetSpecializationInfo(specIndex))
+	local map = (ns.Raidframes and ns.Raidframes.WhitelistMap and specID)
+		and ns.Raidframes:WhitelistMap(specID) or {}
+
+	self:Print("=== getrackte HoTs (Spec " .. tostring(specID) .. ") ===")
+	local any = false
+	for sid, t in pairs(map) do
+		if t == "hot" then
+			any = true
+			local nm = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)) or "?"
+			self:Print(("  WL %d  %s"):format(sid, nm))
+		end
+	end
+	if not any then self:Print("  (keine)") end
+
+	local function dumpUnit(unit, label)
+		if not UnitExists(unit) then return end
+		self:Print(("=== Hilfsauren auf %s (%s) ==="):format(label, tostring(UnitName(unit))))
+		for i = 1, 60 do
+			local a = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
+			if not a then break end
+			local own = a.isFromPlayerOrPlayerPet and "EIGEN" or "fremd"
+			local sid = a.spellId
+			local tracked = (sid and map[sid] == "hot") and " <-- getrackt" or ""
+			self:Print(("  [%s] %s  id=%s%s"):format(own, tostring(a.name), tostring(sid), tracked))
+		end
+	end
+	dumpUnit("player", "DIR")
+	dumpUnit("target", "ZIEL")
+	self:Print("=== Ende. Bitte Screenshot schicken. ===")
 end
