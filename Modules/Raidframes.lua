@@ -1452,9 +1452,12 @@ function Raidframes:LayoutLive()
 		or (header:GetAttribute("sortMethod") ~= sm)
 		or (header:GetAttribute("groupingOrder") ~= go)
 	if sortChanged then
-		header:SetAttribute("groupBy", gb)
-		header:SetAttribute("sortMethod", sm)
+		-- REIHENFOLGE WICHTIG: groupingOrder MUSS vor groupBy stehen. Jedes SetAttribute
+		-- triggert sofort SecureGroupHeader_Update; setzt man groupBy zuerst, ist
+		-- groupingOrder dort noch nil -> Blizzard-Fehler. Deshalb groupBy zuletzt.
 		header:SetAttribute("groupingOrder", go)
+		header:SetAttribute("sortMethod", sm)
+		header:SetAttribute("groupBy", gb)
 	end
 	-- Buttongröße geändert (z.B. Kontextwechsel Raid<->Party) ODER Sortierung geändert?
 	-- Dann den Header zur Neuanordnung zwingen (Hide/Show) -> sonst rechnet er weiter.
