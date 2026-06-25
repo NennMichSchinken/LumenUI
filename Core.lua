@@ -238,7 +238,14 @@ function Lumen:RefreshAll()
 	if ns.ClickCast then ns.ClickCast:ApplyBindings() end
 end
 
-function Lumen:OpenConfig()
+function Lumen:OpenConfig(input)
+	-- /lumen shell  -> neue Suite-Shell (WIP, Phase 1)
+	-- /lumen        -> klassische AceConfig (parallel bestehen lassen)
+	local arg = input and input:lower():gsub("^%s+", ""):gsub("%s+$", "") or ""
+	if arg == "shell" then
+		if ns.Shell then ns.Shell:Toggle() end
+		return
+	end
 	LibStub("AceConfigDialog-3.0"):Open("Lumen")
 end
 
