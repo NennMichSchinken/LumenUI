@@ -58,6 +58,13 @@ local defaults = {
 			aggroTextY       = -2,
 			aggroTextOutline = "thick",            -- none | outline | thick
 
+			-- Sortierung (global, secure über SecureGroupHeader-Attribute). "group" = nach
+			-- Raid-Gruppe (Default, wie bisher), "role" = nach zugewiesener Rolle in der
+			-- frei umsortierbaren Prioritäts-Reihenfolge. Gilt für Raid UND Party gleich.
+			sortMode = "group",                    -- "group" | "role"
+			sortRoleOrder = { "TANK", "HEALER", "DAMAGER" },  -- Prioritätsliste (oben = zuerst)
+			sortApplyRaid = false,                 -- Rollen-Sortierung auch im Raid? (Dungeon/Party immer)
+
 			-- Test / Beispielgruppe (geteilt)
 			testMode = false,
 			testSize = 5,
