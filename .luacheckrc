@@ -21,7 +21,7 @@ read_globals = {
     "STANDARD_TEXT_FONT", "GameFontNormal",
     "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip",
     -- Einheiten / Leben
-    "UnitExists", "UnitName", "UnitClass",
+    "UnitExists", "UnitName", "UnitClass", "UnitThreatSituation", "UnitGroupRolesAssigned",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",
     "UnitGetTotalAbsorbs", "UnitGetTotalHealAbsorbs",
     "UnitGetIncomingHeals", "UnitGetDetailedHealPrediction",
