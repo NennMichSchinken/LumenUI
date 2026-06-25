@@ -84,6 +84,7 @@ UI.FONT = {
 	hankenReg    = FP .. "HankenGrotesk-Regular.ttf",
 	hankenMed    = FP .. "HankenGrotesk-Medium.ttf",
 	hankenSemi   = FP .. "HankenGrotesk-SemiBold.ttf",
+	hankenBold   = FP .. "HankenGrotesk-Bold.ttf",
 }
 
 -- Rollen → { Pfad, Größe, Flags }. Größen aus typography.css.
@@ -108,8 +109,8 @@ UI.ROLE = {
 	value      = { UI.FONT.hankenMed,  14, "" }, -- Wert-Box
 	ends       = { UI.FONT.hankenMed,  14, "" }, -- Slider Min/Max-Zahlen
 	selectText = { UI.FONT.hankenMed,  16, "" }, -- Dropdown-Header + -Zeilen
-	checkLabel = { UI.FONT.hankenMed,  14, "" }, -- Checkbox-Label
-	btn        = { UI.FONT.hankenSemi, 16, "" }, -- Button-Label
+	checkLabel = { UI.FONT.hankenMed,  16, "" }, -- Checkbox-Label
+	btn        = { UI.FONT.hankenSemi, 16, "" }, -- Button-Label (Schnitt je Variante, s. Widgets)
 }
 
 -- FontString auf eine Rolle setzen. Gibt das FontString zurück (chainbar).

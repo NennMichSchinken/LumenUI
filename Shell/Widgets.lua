@@ -189,6 +189,17 @@ function W.Slider(parent, o)
 		for _, e in ipairs(boxEdges) do UI.SetColor(e, L.soft) end
 		self:SetText(cur .. unit) -- auf den kanonischen Stand zurücksetzen
 	end)
+	-- Live-Clamp auf Max schon beim Tippen: 5555 springt sofort auf den Max-Wert,
+	-- nicht erst bei Enter (Florian-Feedback). userInput-Flag verhindert Rekursion
+	-- mit dem eigenen SetText; Min wird erst bei Enter geclampt (Zwischeneingaben).
+	box:SetScript("OnTextChanged", function(self, userInput)
+		if not userInput then return end
+		local num = tonumber((self:GetText():gsub("[^%-%d%.]", "")))
+		if num and num > maxV then
+			self:SetText(tostring(maxV))
+			self:SetCursorPosition(#tostring(maxV))
+		end
+	end)
 	box:SetScript("OnEnterPressed", function(self)
 		local num = tonumber((self:GetText():gsub("[^%-%d%.]", "")))
 		if num then
@@ -293,24 +304,22 @@ function W.Select(parent, o)
 	end
 	closer:SetScript("OnClick", closeMenu)
 
-	-- Menü-Zeilen einmalig bauen. Drei Zustände: hover (heller Gold-Wash + Gold-
-	-- Text), active (dezenter Wash + Gold-Text), off (kein Wash + Parchment-Text).
-	-- Der Wash wird über Alpha gesteuert (NICHT Show/Hide — sonst kein Hover-
-	-- Feedback auf nicht-aktiven Zeilen).
+	-- Menü-Zeilen einmalig bauen. Klare Trennung gewählt vs. überfahren:
+	--  • aktive (gewählte) Zeile -> Gold-Balken LINKS + Gold-Text (bleibt sichtbar)
+	--  • überfahrene Zeile       -> warmer Braun-Wash (inkTint) + heller Text
+	-- Der Gold-Balken markiert dauerhaft die Auswahl, der Braun-Wash nur den Hover
+	-- — so sehen Selected und Hover nicht mehr fast gleich aus (Florian-Feedback).
 	local pad, rowH, gap = 6, 34, 2
-	-- Hover = warmer Braunton (inkTint), hebt sich dezent vom Menü-Grund (ink550)
-	-- ab — KEIN kräftiges Gold (Florian-Feedback). Gold bleibt nur als zarter
-	-- Marker auf der aktiven (gewählten) Zeile.
-	local function setItemState(item, st)
-		if st == "hover" then
+	local function paintItem(item, hovered)
+		local active = (item._val == cur)
+		item._bar:SetShown(active)
+		if hovered then
 			item._wash:SetColorTexture(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1)
 			item._txt:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
-		elseif st == "active" then
-			item._wash:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, 0.10)
-			item._txt:SetTextColor(C.gold250.r, C.gold250.g, C.gold250.b)
 		else
 			item._wash:SetColorTexture(0, 0, 0, 0)
-			item._txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+			local tc = active and C.gold250 or C.textStrong
+			item._txt:SetTextColor(tc.r, tc.g, tc.b)
 		end
 	end
 	local prev
@@ -324,12 +333,19 @@ function W.Select(parent, o)
 		local wash = item:CreateTexture(nil, "BACKGROUND")
 		wash:SetAllPoints(item)
 		wash:SetColorTexture(0, 0, 0, 0)
+		-- Gold-Balken links (Auswahl-Marker), volle Zeilenhöhe.
+		local bar = item:CreateTexture(nil, "ARTWORK")
+		bar:SetWidth(3)
+		bar:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 0)
+		bar:SetPoint("BOTTOMLEFT", item, "BOTTOMLEFT", 0, 0)
+		UI.SetColor(bar, C.gold500)
+		bar:Hide()
 		local itxt = UI.FS(item, "selectText", C.textStrong)
-		itxt:SetPoint("LEFT", item, "LEFT", 10, 0)
+		itxt:SetPoint("LEFT", item, "LEFT", 12, 0)
 		itxt:SetText(op.label)
-		item._wash, item._txt, item._val = wash, itxt, op.value
-		item:SetScript("OnEnter", function(self) setItemState(self, "hover") end)
-		item:SetScript("OnLeave", function(self) setItemState(self, self._val == cur and "active" or "off") end)
+		item._wash, item._txt, item._val, item._bar = wash, itxt, op.value, bar
+		item:SetScript("OnEnter", function(self) paintItem(self, true) end)
+		item:SetScript("OnLeave", function(self) paintItem(self, false) end)
 		item:SetScript("OnClick", function(self)
 			cur = self._val
 			refreshLabel()
@@ -339,15 +355,15 @@ function W.Select(parent, o)
 		prev = item
 	end
 	menu:SetHeight(#opts * rowH + (#opts - 1) * gap + pad * 2)
-	menu._setItemState = setItemState
+	menu._paintItem = paintItem
 
 	local function openMenu()
 		menu:ClearAllPoints()
 		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -6)
 		menu:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -6)
-		-- aktive Zeile markieren
+		-- Zeilen-Optik auf den aktuellen Stand bringen (Gold-Balken auf gewählter Zeile)
 		for _, item in ipairs({ menu:GetChildren() }) do
-			if item._wash then menu._setItemState(item, item._val == cur and "active" or "off") end
+			if item._bar then menu._paintItem(item, false) end
 		end
 		closer:Show(); menu:Show()
 		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
@@ -434,21 +450,24 @@ end
 --  Button — primary (Gold) / ghost (Rand) / danger (rot). o = {text,variant,
 --  onClick,width}. Höhe 38, Breite aus Text + Padding falls nicht gesetzt.
 -- ---------------------------------------------------------------------------
+-- Schriftschnitt je Variante (wie im Prototyp: primary fett/700, ghost 500,
+-- danger 600). Größe bleibt die der btn-Rolle.
+local BTN_SIZE = UI.ROLE.btn[2]
 local BTN_VARIANTS = {
 	primary = {
 		bg = C.gold500, bgHover = C.gold400,
 		txt = C.onGold, txtHover = C.onGold,
-		line = C.gold500, lineHover = C.gold400, pad = 26,
+		line = C.gold500, lineHover = C.gold400, pad = 26, font = UI.FONT.hankenBold,
 	},
 	ghost = {
 		bg = nil, bgHover = nil,
 		txt = C.textHeading, txtHover = C.textStrong,
-		line = L.mid, lineHover = L.strong, pad = 22,
+		line = L.mid, lineHover = L.strong, pad = 22, font = UI.FONT.hankenMed,
 	},
 	danger = {
 		bg = L.dangerWash, bgHover = { r = C.danger500.r, g = C.danger500.g, b = C.danger500.b, a = 0.20 },
 		txt = C.danger500, txtHover = C.danger500,
-		line = L.dangerLine, lineHover = C.danger500, pad = 22,
+		line = L.dangerLine, lineHover = C.danger500, pad = 22, font = UI.FONT.hankenSemi,
 	},
 }
 
@@ -481,6 +500,7 @@ function W.Button(parent, o)
 
 	local edges = UI.Border(b, v.line, 1, "OVERLAY")
 	local txt = UI.FS(b, "btn", v.txt)
+	txt:SetFont(v.font, BTN_SIZE, "") -- Schnitt je Variante (s. BTN_VARIANTS)
 	txt:SetText(o.text or "")
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 
