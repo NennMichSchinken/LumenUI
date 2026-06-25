@@ -16,6 +16,7 @@ exclude_files = { "Libs/", "tools/" }
 read_globals = {
     -- Lua-/WoW-Ergänzungen
     "wipe", "hooksecurefunc", "issecretvalue", "securecall",
+    "tinsert", "tremove", "UISpecialFrames", "PixelUtil",
     -- Frames / Core
     "CreateFrame", "UIParent", "InCombatLockdown",
     "STANDARD_TEXT_FONT", "GameFontNormal",
