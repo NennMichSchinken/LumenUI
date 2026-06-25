@@ -110,6 +110,16 @@ function ns.SetupOptions()
 		rf().dispelColors[DISPEL_KEYS[info[#info]]] = { r = r, g = g, b = b }
 		if ns.Raidframes then ns.Raidframes:UpdateLayout() end
 	end
+	-- Aggro: Text ist in einer Stufe aktiv, wenn sie "overlay" zeigt UND deren Text-Toggle an ist.
+	local AGGRO_TEXT_DESC = "Nur verfügbar, wenn in einer Stufe der Text aktiv ist (Darstellung „Rand + Overlay\" + „Text anzeigen\")."
+	local function aggroTextActive()
+		return (rf().aggroModeAggro == "overlay" and rf().aggroTextAggro)
+			or (rf().aggroModeWarn == "overlay" and rf().aggroTextWarn)
+	end
+	local function aggroTextDisabled()
+		return not rf().aggroEnabled or not aggroTextActive()
+	end
+
 	-- Layout-Werte liegen PRO KONTEXT in rf().raid bzw. rf().party.
 	local function ctxGetSet(ctxKey)
 		local function get(info) local t = rf()[ctxKey] or {}; return t[info[#info]] end
@@ -716,6 +726,76 @@ function ns.SetupOptions()
 					dispelCurse   = { type = "color", order = 25.6, name = "Farbe: Fluch",     get = getDispelColor, set = setDispelColor, disabled = function() return not rf().dispelEnabled end },
 					dispelDisease = { type = "color", order = 25.7, name = "Farbe: Krankheit", get = getDispelColor, set = setDispelColor, disabled = function() return not rf().dispelEnabled end },
 					dispelPoison  = { type = "color", order = 25.8, name = "Farbe: Gift",      get = getDispelColor, set = setDispelColor, disabled = function() return not rf().dispelEnabled end },
+
+					aggroHead = { type = "header", order = 30, name = "Aggro-Warnung" },
+					aggroEnabled = {
+						type = "toggle", order = 30.1, width = "full",
+						name = "Aggro-Warnung anzeigen (Tanks ausgenommen)",
+					},
+
+					-- Block: hat Aggro (rot, Status 3)
+					aggroAggroHead = { type = "header", order = 31, name = "Hat Aggro (rot)" },
+					aggroColorAggro = {
+						type = "color", order = 31.1, name = "Farbe",
+						get = getColor, set = setColor,
+						disabled = function() return not rf().aggroEnabled end,
+					},
+					aggroModeAggro = {
+						type = "select", order = 31.2, name = "Darstellung",
+						values = { border = "Nur Rand", overlay = "Rand + Overlay" },
+						disabled = function() return not rf().aggroEnabled end,
+					},
+					aggroTextAggro = {
+						type = "toggle", order = 31.3, name = "\"Aggro\"-Text anzeigen",
+						desc = "Nur verfügbar, wenn Darstellung „Rand + Overlay\" ist.",
+						disabled = function() return not rf().aggroEnabled or rf().aggroModeAggro ~= "overlay" end,
+					},
+
+					-- Block: Aggro droht (gelb, Status 1-2)
+					aggroWarnHead = { type = "header", order = 32, name = "Aggro droht (gelb)" },
+					aggroColorWarn = {
+						type = "color", order = 32.1, name = "Farbe",
+						get = getColor, set = setColor,
+						disabled = function() return not rf().aggroEnabled end,
+					},
+					aggroModeWarn = {
+						type = "select", order = 32.2, name = "Darstellung",
+						values = { border = "Nur Rand", overlay = "Rand + Overlay" },
+						disabled = function() return not rf().aggroEnabled end,
+					},
+					aggroTextWarn = {
+						type = "toggle", order = 32.3, name = "\"Aggro\"-Text anzeigen",
+						desc = "Nur verfügbar, wenn Darstellung „Rand + Overlay\" ist.",
+						disabled = function() return not rf().aggroEnabled or rf().aggroModeWarn ~= "overlay" end,
+					},
+
+					-- Block: geteilte Darstellung beider Stufen
+					aggroSharedHead = { type = "header", order = 33, name = "Darstellung (beide Stufen)" },
+					aggroFillAlpha = {
+						type = "range", order = 33.1, name = "Overlay-Deckkraft", min = 0, max = 1, step = 0.05, isPercent = true,
+						desc = "Nur verfügbar, wenn mindestens eine Stufe „Rand + Overlay\" nutzt.",
+						disabled = function() return not rf().aggroEnabled or (rf().aggroModeAggro ~= "overlay" and rf().aggroModeWarn ~= "overlay") end,
+					},
+					aggroTextSize = {
+						type = "range", order = 33.2, name = "Textgröße", min = 6, max = 28, step = 1,
+						desc = AGGRO_TEXT_DESC, disabled = aggroTextDisabled,
+					},
+					aggroTextPoint = {
+						type = "select", order = 33.3, name = "Textposition", values = POINTS,
+						desc = AGGRO_TEXT_DESC, disabled = aggroTextDisabled,
+					},
+					aggroTextX = {
+						type = "range", order = 33.4, name = "Text X-Versatz", min = -60, max = 60, step = 1,
+						desc = AGGRO_TEXT_DESC, disabled = aggroTextDisabled,
+					},
+					aggroTextY = {
+						type = "range", order = 33.5, name = "Text Y-Versatz", min = -60, max = 60, step = 1,
+						desc = AGGRO_TEXT_DESC, disabled = aggroTextDisabled,
+					},
+					aggroTextOutline = {
+						type = "select", order = 33.6, name = "Text-Umrandung", values = OUTLINES,
+						desc = AGGRO_TEXT_DESC, disabled = aggroTextDisabled,
+					},
 
 					-- (Name-/HP-Text-Optionen liegen jetzt PRO KONTEXT in den Tabs Raid & Group.)
 

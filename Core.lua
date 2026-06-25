@@ -38,6 +38,26 @@ local defaults = {
 				Poison  = { r = 0.12, g = 0.69, b = 0.29 },
 			},
 
+			-- Aggro-Warnung (secret-sicher: Threat-API ist NICHT secret, event-getrieben).
+			-- 2-stufig: gelb = Aggro droht (Status 1-2), rot = hat Aggro (Status 3).
+			aggroEnabled = true,
+			-- Pro Stufe: Darstellung "border" (nur Rand) | "overlay" (Rand + Overlay).
+			-- Text gibt es nur im Overlay-Modus (eigener Toggle). Rot/Gelb nie gleichzeitig
+			-- auf einem Frame -> Text-Optik (Position/Größe) ist GETEILT (unten).
+			aggroColorAggro = { r = 0.90, g = 0.15, b = 0.15 }, -- rot, "hat Aggro" (Status 3)
+			aggroModeAggro  = "overlay",           -- "border" | "overlay"
+			aggroTextAggro  = true,                -- "Aggro"-Text (nur im Overlay-Modus)
+			aggroColorWarn  = { r = 0.95, g = 0.80, b = 0.20 }, -- gelb, "Aggro droht" (Status 1-2)
+			aggroModeWarn   = "border",            -- "border" | "overlay"
+			aggroTextWarn   = false,
+			-- Geteilte Darstellung beider Stufen:
+			aggroFillAlpha   = 0.22,               -- Deckkraft des Overlays
+			aggroTextSize    = 12,
+			aggroTextPoint   = "TOP",
+			aggroTextX       = 0,
+			aggroTextY       = -2,
+			aggroTextOutline = "thick",            -- none | outline | thick
+
 			-- Test / Beispielgruppe (geteilt)
 			testMode = false,
 			testSize = 5,

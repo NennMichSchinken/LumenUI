@@ -21,6 +21,8 @@ local CreateFrame, UIParent = CreateFrame, UIParent
 local InCombatLockdown = InCombatLockdown
 local UnitExists, UnitHealth, UnitHealthMax = UnitExists, UnitHealth, UnitHealthMax
 local UnitName, UnitClass = UnitName, UnitClass
+local UnitThreatSituation = UnitThreatSituation
+local UnitGroupRolesAssigned = UnitGroupRolesAssigned
 local UnitGetTotalAbsorbs = UnitGetTotalAbsorbs
 local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
 local UnitGetIncomingHeals = UnitGetIncomingHeals
@@ -102,11 +104,11 @@ end
 -- Beispiel-Roster (Testmodus)
 local FAKE_MAX = 600000
 local FAKE = {
-	{ name = "Owlday",     class = "DRUID",   hp = 0.84 },
+	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3 },
 	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25 },
 	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse" },
 	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison" },
-	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22 },
+	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1 },
 	{ name = "Kaelura",    class = "PRIEST",  hp = 0.77, healAbsorb = 0.20 },
 	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic" },
 	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25 },
@@ -855,6 +857,27 @@ local function Decorate(f)
 		t:SetColorTexture(0.83, 0.64, 0.31, 1); t:Hide(); return t
 	end
 	f.eT, f.eB, f.eL, f.eR = edge(), edge(), edge(), edge()
+
+	-- Aggro-Warnung: komplette eigene Schicht mit klar höherem Frame-Level ÜBER den
+	-- Aura-Holdern (die sind Kinder von f.overlay), damit Overlay-Füllung, Rand UND
+	-- "Aggro"-Text über den Aura-Icons liegen. Weiße Texturen -> Farbe per SetVertexColor.
+	f.aggroLayer = CreateFrame("Frame", nil, f)
+	f.aggroLayer:SetAllPoints(f)
+	f.aggroLayer:SetFrameLevel(base + 10)
+	f.aggroFill = f.aggroLayer:CreateTexture(nil, "ARTWORK")
+	f.aggroFill:SetColorTexture(1, 1, 1, 1); f.aggroFill:SetAllPoints(f.health); f.aggroFill:Hide()
+	local function aedge()
+		local t = f.aggroLayer:CreateTexture(nil, "OVERLAY")
+		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t
+	end
+	f.aT, f.aB, f.aL, f.aR = aedge(), aedge(), aedge(), aedge()
+	f.aT:SetPoint("TOPLEFT"); f.aT:SetPoint("TOPRIGHT"); f.aT:SetHeight(2)
+	f.aB:SetPoint("BOTTOMLEFT"); f.aB:SetPoint("BOTTOMRIGHT"); f.aB:SetHeight(2)
+	f.aL:SetPoint("TOPLEFT"); f.aL:SetPoint("BOTTOMLEFT"); f.aL:SetWidth(2)
+	f.aR:SetPoint("TOPRIGHT"); f.aR:SetPoint("BOTTOMRIGHT"); f.aR:SetWidth(2)
+	f.aggroText = f.aggroLayer:CreateFontString(nil, "OVERLAY")
+	f.aggroText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+	f.aggroText:SetText("Aggro"); f.aggroText:Hide()
 end
 
 -- Preview-/Test-Host: gewöhnlicher (Nicht-Secure-)Frame, mit direkten Maus-Scripts.
@@ -888,6 +911,36 @@ function Raidframes:SetDispelOverlay(f, on, r, g, b, alpha)
 	end
 end
 
+-- Aggro-Warnung setzen. status = Blizzards UnitThreatSituation (nil/0 = aus, 1-2 = gelb
+-- "Aggro droht", 3 = rot "hat Aggro"). Darstellung PRO STUFE: "border" (nur Rand) oder
+-- "overlay" (Rand + Füllung); Text nur im Overlay-Modus + eigener Toggle pro Stufe.
+-- Threat-Werte sind NICHT secret -> Vergleich/Show im Kampf erlaubt.
+function Raidframes:SetAggro(f, status)
+	if not status or status == 0 then
+		f.aT:Hide(); f.aB:Hide(); f.aL:Hide(); f.aR:Hide()
+		f.aggroFill:Hide(); f.aggroText:Hide()
+		return
+	end
+	local d = db()
+	local isAggro = status >= 3
+	local c      = isAggro and d.aggroColorAggro or d.aggroColorWarn
+	local mode   = isAggro and d.aggroModeAggro  or d.aggroModeWarn
+	local textOn = isAggro and d.aggroTextAggro  or d.aggroTextWarn
+	local r, g, b = c.r, c.g, c.b
+	-- Rand immer (beide Modi enthalten ihn).
+	f.aT:SetVertexColor(r, g, b, 1); f.aT:Show()
+	f.aB:SetVertexColor(r, g, b, 1); f.aB:Show()
+	f.aL:SetVertexColor(r, g, b, 1); f.aL:Show()
+	f.aR:SetVertexColor(r, g, b, 1); f.aR:Show()
+	-- Füllung + Text nur im Overlay-Modus; Text zusätzlich per Stufen-Toggle.
+	if mode == "overlay" then
+		f.aggroFill:SetVertexColor(r, g, b, d.aggroFillAlpha or 0.22); f.aggroFill:Show()
+		if textOn then f.aggroText:SetTextColor(r, g, b, 1); f.aggroText:Show() else f.aggroText:Hide() end
+	else
+		f.aggroFill:Hide(); f.aggroText:Hide()
+	end
+end
+
 function Raidframes:ApplyConfig(f)
 	local d = db()
 	local L = layoutCtx()
@@ -916,6 +969,7 @@ function Raidframes:ApplyConfig(f)
 	f.name:SetShown(L.showName)
 	applyText(f.name, f, L.namePoint, L.nameX, L.nameY, L.nameSize, L.nameColor, L.nameOutline)
 	applyText(f.htext, f, L.healthTextPoint, L.healthTextX, L.healthTextY, L.healthTextSize, L.healthTextColor, L.healthTextOutline)
+		applyText(f.aggroText, f, d.aggroTextPoint, d.aggroTextX, d.aggroTextY, d.aggroTextSize, nil, d.aggroTextOutline)
 	f.eT:ClearAllPoints(); f.eT:SetPoint("TOPLEFT"); f.eT:SetPoint("TOPRIGHT"); f.eT:SetHeight(2)
 	f.eB:ClearAllPoints(); f.eB:SetPoint("BOTTOMLEFT"); f.eB:SetPoint("BOTTOMRIGHT"); f.eB:SetHeight(2)
 	f.eL:ClearAllPoints(); f.eL:SetPoint("TOPLEFT"); f.eL:SetPoint("BOTTOMLEFT"); f.eL:SetWidth(2)
@@ -975,6 +1029,15 @@ function Raidframes:RenderLive(f)
 	end
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
+	if d.aggroEnabled then
+		-- Tanks ausnehmen: sie sollen Aggro haben -> kein Dauer-Rot.
+		local isTank = UnitGroupRolesAssigned and UnitGroupRolesAssigned(u) == "TANK"
+		local st = (not isTank) and UnitThreatSituation and UnitThreatSituation(u) or nil
+		self:SetAggro(f, st)
+	else
+		self:SetAggro(f, nil)
+	end
+
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
 
@@ -1022,6 +1085,8 @@ function Raidframes:RenderFake(f)
 		f.health:SetStatusBarColor(fillRGB(d, fk.class))
 	end
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
+
+	if d.aggroEnabled then self:SetAggro(f, fk.aggro) else self:SetAggro(f, nil) end
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(fk.name) end
@@ -1419,12 +1484,12 @@ end
 local UNIT_EVENTS = {
 	"UNIT_HEALTH", "UNIT_MAXHEALTH",
 	"UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
-	"UNIT_HEAL_PREDICTION", "UNIT_AURA",
+	"UNIT_HEAL_PREDICTION", "UNIT_AURA", "UNIT_THREAT_SITUATION_UPDATE",
 }
 local function isUnitEvent(e)
 	return e == "UNIT_HEALTH" or e == "UNIT_MAXHEALTH"
 		or e == "UNIT_ABSORB_AMOUNT_CHANGED" or e == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED"
-		or e == "UNIT_HEAL_PREDICTION" or e == "UNIT_AURA"
+		or e == "UNIT_HEAL_PREDICTION" or e == "UNIT_AURA" or e == "UNIT_THREAT_SITUATION_UPDATE"
 end
 local function OnUnitEvent(unit)
 	if db().testMode then return end
