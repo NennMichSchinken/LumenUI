@@ -95,18 +95,20 @@ UI.ROLE = {
 	body     = { UI.FONT.hankenReg,  14, "" },
 	label    = { UI.FONT.hankenMed,  14, "" },
 	tab      = { UI.FONT.hankenMed,  18, "" },
-	caption  = { UI.FONT.hankenReg,  12, "" },
+	caption  = { UI.FONT.hankenReg,  13, "" },
 	eyebrow  = { UI.FONT.hankenMed,  12, "" },
 	tagline  = { UI.FONT.hankenReg,  12, "" },
 
 	-- Widget-Toolkit (Phase 2) — kleine, control-nahe Rollen.
-	fieldLabel = { UI.FONT.hankenMed,  13, "" }, -- Gold-Label über einem Control
-	groupTitle = { UI.FONT.cinzelSemi, 15, "" }, -- GroupPanel- / Divider-Überschrift
-	sliderCap  = { UI.FONT.cinzelSemi, 13, "" }, -- Slider-Beschriftung
-	value      = { UI.FONT.hankenMed,  14, "" }, -- Wert-Box
-	ends       = { UI.FONT.hankenReg,  11, "" }, -- Slider Min/Max-Zahlen
-	option     = { UI.FONT.hankenMed,  14, "" }, -- Dropdown-Header/-Zeilen, Checkbox-Label
-	btn        = { UI.FONT.hankenSemi, 14, "" }, -- Button-Label
+	fieldLabel = { UI.FONT.hankenMed,  16, "" }, -- Gold-Label über einem Control (Dropdown etc.)
+	sectionHead= { UI.FONT.cinzelSemi, 24, "" }, -- SectionDivider / Tab-Überschrift
+	groupTitle = { UI.FONT.cinzelSemi, 15, "" }, -- GroupPanel-Titel / IconTile-Letter
+	sliderCap  = { UI.FONT.cinzelSemi, 16, "" }, -- Slider-Beschriftung
+	value      = { UI.FONT.hankenMed,  16, "" }, -- Wert-Box
+	ends       = { UI.FONT.hankenMed,  14, "" }, -- Slider Min/Max-Zahlen (dicker + größer)
+	selectText = { UI.FONT.hankenMed,  16, "" }, -- Dropdown-Header + -Zeilen
+	checkLabel = { UI.FONT.hankenMed,  14, "" }, -- Checkbox-Label
+	btn        = { UI.FONT.hankenSemi, 16, "" }, -- Button-Label
 }
 
 -- FontString auf eine Rolle setzen. Gibt das FontString zurück (chainbar).

@@ -51,8 +51,8 @@ end
 -- ---------------------------------------------------------------------------
 function W.SectionDivider(parent, text)
 	local f = CreateFrame("Frame", nil, parent)
-	f:SetHeight(28)
-	local head = UI.FS(f, "groupTitle", C.gold300)
+	f:SetHeight(36)
+	local head = UI.FS(f, "sectionHead", C.gold300)
 	head:SetText(text)
 	head:SetPoint("CENTER", f, "CENTER", 0, 0)
 
@@ -78,7 +78,7 @@ local function fieldLabel(parent, text)
 	lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 	lbl:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
 	lbl:SetJustifyH("LEFT")
-	return lbl, -22 -- yOffset für das darunterliegende Control
+	return lbl, -26 -- yOffset für das darunterliegende Control (16px-Label)
 end
 
 -- ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ end
 function W.Slider(parent, o)
 	local minV, maxV, step = o.min or 0, o.max or 100, o.step or 1
 	local f = CreateFrame("Frame", nil, parent)
-	f:SetHeight(80)
+	f:SetHeight(86)
 	if o.width then f:SetWidth(o.width) end
 
 	local cap = UI.FS(f, "sliderCap", C.gold300)
@@ -99,8 +99,8 @@ function W.Slider(parent, o)
 	-- Track-Reihe: [min] —— track —— [max]
 	local row = CreateFrame("Frame", nil, f)
 	row:SetHeight(18)
-	row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -24)
-	row:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -24)
+	row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -30)
+	row:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -30)
 
 	local minL = UI.FS(row, "ends", C.textMuted)
 	minL:SetText(tostring(minV)); minL:SetWidth(28); minL:SetJustifyH("RIGHT")
@@ -229,7 +229,7 @@ function W.Select(parent, o)
 	chev:SetPoint("RIGHT", btn, "RIGHT", -12, 0)
 	chevron(chev, C.textMuted)
 
-	local lbl = UI.FS(btn, "option", C.textStrong)
+	local lbl = UI.FS(btn, "selectText", C.textStrong)
 	lbl:SetPoint("LEFT", btn, "LEFT", 12, 0)
 	lbl:SetPoint("RIGHT", chev, "LEFT", -8, 0)
 	lbl:SetJustifyH("LEFT"); lbl:SetWordWrap(false)
@@ -267,8 +267,23 @@ function W.Select(parent, o)
 	end
 	closer:SetScript("OnClick", closeMenu)
 
-	-- Menü-Zeilen einmalig bauen.
+	-- Menü-Zeilen einmalig bauen. Drei Zustände: hover (heller Gold-Wash + Gold-
+	-- Text), active (dezenter Wash + Gold-Text), off (kein Wash + Parchment-Text).
+	-- Der Wash wird über Alpha gesteuert (NICHT Show/Hide — sonst kein Hover-
+	-- Feedback auf nicht-aktiven Zeilen).
 	local pad, rowH, gap = 6, 34, 2
+	local function setItemState(item, st)
+		if st == "hover" then
+			item._wash:SetAlpha(0.18)
+			item._txt:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
+		elseif st == "active" then
+			item._wash:SetAlpha(0.10)
+			item._txt:SetTextColor(C.gold250.r, C.gold250.g, C.gold250.b)
+		else
+			item._wash:SetAlpha(0)
+			item._txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		end
+	end
 	local prev
 	for _, op in ipairs(opts) do
 		local item = CreateFrame("Button", nil, menu)
@@ -278,13 +293,15 @@ function W.Select(parent, o)
 		if prev then item:SetPoint("TOP", prev, "BOTTOM", 0, -gap)
 		else item:SetPoint("TOP", menu, "TOP", 0, -pad) end
 		local wash = item:CreateTexture(nil, "BACKGROUND")
-		wash:SetAllPoints(item); wash:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, 0.10)
-		local itxt = UI.FS(item, "option", C.textStrong)
+		wash:SetAllPoints(item)
+		wash:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, 1)
+		wash:SetAlpha(0)
+		local itxt = UI.FS(item, "selectText", C.textStrong)
 		itxt:SetPoint("LEFT", item, "LEFT", 10, 0)
 		itxt:SetText(op.label)
 		item._wash, item._txt, item._val = wash, itxt, op.value
-		item:SetScript("OnEnter", function(self) self._wash:SetAlpha(1); self._wash:SetVertexColor(1, 1, 1, 1.4) end)
-		item:SetScript("OnLeave", function(self) self._wash:SetShown(self._val == cur) end)
+		item:SetScript("OnEnter", function(self) setItemState(self, "hover") end)
+		item:SetScript("OnLeave", function(self) setItemState(self, self._val == cur and "active" or "off") end)
 		item:SetScript("OnClick", function(self)
 			cur = self._val
 			refreshLabel()
@@ -294,6 +311,7 @@ function W.Select(parent, o)
 		prev = item
 	end
 	menu:SetHeight(#opts * rowH + (#opts - 1) * gap + pad * 2)
+	menu._setItemState = setItemState
 
 	local function openMenu()
 		menu:ClearAllPoints()
@@ -301,7 +319,7 @@ function W.Select(parent, o)
 		menu:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -6)
 		-- aktive Zeile markieren
 		for _, item in ipairs({ menu:GetChildren() }) do
-			if item._wash then item._wash:SetShown(item._val == cur) end
+			if item._wash then menu._setItemState(item, item._val == cur and "active" or "off") end
 		end
 		closer:Show(); menu:Show()
 		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
@@ -327,28 +345,30 @@ end
 --  o = {label,get,set,value}. Höhe 20, Breite passt sich dem Label an.
 -- ---------------------------------------------------------------------------
 function W.Checkbox(parent, o)
+	local BOX = 22
 	local b = CreateFrame("Button", nil, parent)
-	b:SetHeight(20)
+	b:SetHeight(BOX)
 
 	local box = CreateFrame("Frame", nil, b)
-	box:SetSize(18, 18)
+	box:SetSize(BOX, BOX)
 	box:SetPoint("LEFT", b, "LEFT", 0, 0)
 	local boxbg = box:CreateTexture(nil, "BACKGROUND")
 	boxbg:SetAllPoints(box); boxbg:SetColorTexture(0, 0, 0, 0)
 	local edges = UI.Border(box, L.mid, 1, "OVERLAY")
 
-	-- Häkchen (zwei Linien) in Ink-auf-Gold.
-	local t1 = box:CreateLine(nil, "OVERLAY"); t1:SetThickness(2)
-	local t2 = box:CreateLine(nil, "OVERLAY"); t2:SetThickness(2)
+	-- Häkchen (zwei Linien) in Ink-auf-Gold. Dicker (3px) und auf die größere Box
+	-- skaliert -> weniger pixelig als die alte 2px/18px-Variante.
+	local t1 = box:CreateLine(nil, "OVERLAY"); t1:SetThickness(3)
+	local t2 = box:CreateLine(nil, "OVERLAY"); t2:SetThickness(3)
 	local function tickCol(c) t1:SetColorTexture(c.r, c.g, c.b, 1); t2:SetColorTexture(c.r, c.g, c.b, 1) end
 	tickCol(C.onGold)
-	t1:SetStartPoint("CENTER", box, -4, 0); t1:SetEndPoint("CENTER", box, -1, -3)
-	t2:SetStartPoint("CENTER", box, -1, -3); t2:SetEndPoint("CENTER", box, 4, 4)
+	t1:SetStartPoint("CENTER", box, -5, -1); t1:SetEndPoint("CENTER", box, -1, -5)
+	t2:SetStartPoint("CENTER", box, -1, -5); t2:SetEndPoint("CENTER", box, 6, 5)
 
-	local lbl = UI.FS(b, "option", C.textBody)
+	local lbl = UI.FS(b, "checkLabel", C.textBody)
 	lbl:SetText(o.label or "")
-	lbl:SetPoint("LEFT", box, "RIGHT", 9, 0)
-	b:SetWidth(18 + 9 + math.ceil(lbl:GetStringWidth()) + 2)
+	lbl:SetPoint("LEFT", box, "RIGHT", 10, 0)
+	b:SetWidth(BOX + 10 + math.ceil(lbl:GetStringWidth()) + 2)
 
 	local val = (o.get and o.get()) or o.value or false
 	local function apply(on)
@@ -404,13 +424,32 @@ local BTN_VARIANTS = {
 }
 
 function W.Button(parent, o)
-	local v = BTN_VARIANTS[o.variant or "primary"]
+	local variant = o.variant or "primary"
+	local v = BTN_VARIANTS[variant]
 	local b = CreateFrame("Button", nil, parent)
 	b:SetHeight(38)
 
 	local bg = b:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints(b)
-	if v.bg then UI.SetColor(bg, v.bg) else bg:SetColorTexture(0, 0, 0, 0) end
+
+	-- primary trägt einen vertikalen Gold-Gradient (oben heller -> metallischer
+	-- Schimmer wie die Wortmarke); Hover schiebt den Gradient eine Stufe heller.
+	local function paintBg(hover)
+		if variant == "primary" then
+			bg:SetColorTexture(1, 1, 1, 1)
+			local top = hover and C.gold200 or C.gold300
+			local bot = hover and C.gold400 or C.gold500
+			bg:SetGradient("VERTICAL",
+				CreateColor(bot.r, bot.g, bot.b, 1),
+				CreateColor(top.r, top.g, top.b, 1))
+		elseif v.bg then
+			UI.SetColor(bg, hover and v.bgHover or v.bg)
+		else
+			bg:SetColorTexture(0, 0, 0, 0)
+		end
+	end
+	paintBg(false)
+
 	local edges = UI.Border(b, v.line, 1, "OVERLAY")
 	local txt = UI.FS(b, "btn", v.txt)
 	txt:SetText(o.text or "")
@@ -419,12 +458,12 @@ function W.Button(parent, o)
 	b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
 
 	b:SetScript("OnEnter", function()
-		if v.bgHover then UI.SetColor(bg, v.bgHover) end
+		paintBg(true)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.lineHover) end
 		txt:SetTextColor(v.txtHover.r, v.txtHover.g, v.txtHover.b)
 	end)
 	b:SetScript("OnLeave", function()
-		if v.bg then UI.SetColor(bg, v.bg) else bg:SetColorTexture(0, 0, 0, 0) end
+		paintBg(false)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.line) end
 		txt:SetTextColor(v.txt.r, v.txt.g, v.txt.b)
 	end)

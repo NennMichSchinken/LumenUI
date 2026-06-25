@@ -433,25 +433,25 @@ function Shell:RenderDummy()
 	end
 
 	-- 1) Section-Divider
-	place(W.SectionDivider(d, secName .. " · " .. tabName), 28, 24)
+	place(W.SectionDivider(d, secName .. " · " .. tabName), 36, 24)
 
 	-- 2) Drei Slider nebeneinander (row3)
-	local sliderRow, cells = W.Row(d, 3, { height = 80 })
+	local sliderRow, cells = W.Row(d, 3, { height = 86 })
 	W.Slider(cells[1], { label = "Breite", min = 40, max = 240, value = demo.breite, unit = " px",
 		get = g("breite"), set = s("breite") }):SetAllPoints(cells[1])
 	W.Slider(cells[2], { label = "Höhe", min = 20, max = 160, value = demo.hoehe, unit = " px",
 		get = g("hoehe"), set = s("hoehe") }):SetAllPoints(cells[2])
 	W.Slider(cells[3], { label = "Abstand", min = 0, max = 30, value = demo.abstand, unit = " px",
 		get = g("abstand"), set = s("abstand") }):SetAllPoints(cells[3])
-	place(sliderRow, 80, 22)
+	place(sliderRow, 86, 22)
 
 	-- 3) Zwei Dropdowns (Ausrichtung + Umrandung) als 2er-Reihe
-	local ddRow, ddCells = W.Row(d, 2, { height = 62 })
+	local ddRow, ddCells = W.Row(d, 2, { height = 66 })
 	W.Select(ddCells[1], { label = "Ausrichtung", options = ALIGN_OPTS,
 		get = g("ausrichtung"), set = s("ausrichtung") }):SetAllPoints(ddCells[1])
 	W.Select(ddCells[2], { label = "Namens-Umrandung", options = OUTLINE_OPTS,
 		get = g("outline"), set = s("outline") }):SetAllPoints(ddCells[2])
-	place(ddRow, 62, 24)
+	place(ddRow, 66, 24)
 
 	-- 4) Checkbox-Reihe
 	local cbRow = CreateFrame("Frame", nil, d)
@@ -459,7 +459,7 @@ function Shell:RenderDummy()
 	cb1:SetPoint("LEFT", cbRow, "LEFT", 0, 0)
 	local cb2 = W.Checkbox(cbRow, { label = "Namensfarbe", get = g("nameColor"), set = s("nameColor") })
 	cb2:SetPoint("LEFT", cb1, "RIGHT", 28, 0)
-	place(cbRow, 20, 26)
+	place(cbRow, 22, 26)
 
 	-- 5) GroupPanel mit Header-Right-Toggle + Inhalt
 	local panel, pc = W.GroupPanel(d, { title = "HoTs" })
@@ -468,7 +468,7 @@ function Shell:RenderDummy()
 		get = g("nameSize"), set = s("nameSize") })
 	pcSlider:SetPoint("TOPLEFT", pc, "TOPLEFT", 0, 0)
 	pcSlider:SetWidth(320)
-	place(panel, 150, 24)
+	place(panel, 165, 24)
 
 	-- 6) Button-Reihe (primary / ghost / danger)
 	local btnRow = CreateFrame("Frame", nil, d)
