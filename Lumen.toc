@@ -2,7 +2,7 @@
 ## Title: Lumen
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## Author: NennMichSchinken
-## Version: 0.9.31
+## Version: 0.9.36
 ## SavedVariables: LumenDB
 ## X-Website: https://github.com/NennMichSchinken
 
@@ -11,6 +11,7 @@ Core.lua
 EditMode.lua
 Style.lua
 Shell\Tokens.lua
+Shell\Widgets.lua
 Shell\Shell.lua
 Modules\Raidframes.lua
 Modules\ClickCast.lua

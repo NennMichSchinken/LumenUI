@@ -18,7 +18,7 @@ read_globals = {
     "wipe", "hooksecurefunc", "issecretvalue", "securecall",
     "tinsert", "tremove", "UISpecialFrames", "PixelUtil",
     -- Frames / Core
-    "CreateFrame", "UIParent", "InCombatLockdown",
+    "CreateFrame", "UIParent", "InCombatLockdown", "GetCursorPosition",
     "STANDARD_TEXT_FONT", "GameFontNormal",
     "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip",
     -- Einheiten / Leben

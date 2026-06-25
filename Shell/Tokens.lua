@@ -84,6 +84,7 @@ UI.FONT = {
 	hankenReg    = FP .. "HankenGrotesk-Regular.ttf",
 	hankenMed    = FP .. "HankenGrotesk-Medium.ttf",
 	hankenSemi   = FP .. "HankenGrotesk-SemiBold.ttf",
+	hankenBold   = FP .. "HankenGrotesk-Bold.ttf",
 }
 
 -- Rollen → { Pfad, Größe, Flags }. Größen aus typography.css.
@@ -98,6 +99,18 @@ UI.ROLE = {
 	caption  = { UI.FONT.hankenReg,  12, "" },
 	eyebrow  = { UI.FONT.hankenMed,  12, "" },
 	tagline  = { UI.FONT.hankenReg,  12, "" },
+
+	-- Widget-Toolkit (Phase 2) — kleine, control-nahe Rollen. Größen auf dem
+	-- 4er-Raster (12/16/20). Hier zentral ändern -> schlägt überall durch.
+	fieldLabel = { UI.FONT.hankenMed,  16, "" }, -- Gold-Label über einem Control (Dropdown etc.)
+	sectionHead= { UI.FONT.cinzelSemi, 20, "" }, -- SectionDivider / Tab-Überschrift
+	groupTitle = { UI.FONT.cinzelSemi, 16, "" }, -- GroupPanel-Titel / IconTile-Letter
+	sliderCap  = { UI.FONT.cinzelSemi, 16, "" }, -- Slider-Beschriftung
+	value      = { UI.FONT.hankenMed,  14, "" }, -- Wert-Box
+	ends       = { UI.FONT.hankenMed,  14, "" }, -- Slider Min/Max-Zahlen
+	selectText = { UI.FONT.hankenMed,  16, "" }, -- Dropdown-Header + -Zeilen
+	checkLabel = { UI.FONT.hankenMed,  16, "" }, -- Checkbox-Label
+	btn        = { UI.FONT.hankenSemi, 16, "" }, -- Button-Label (Schnitt je Variante, s. Widgets)
 }
 
 -- FontString auf eine Rolle setzen. Gibt das FontString zurück (chainbar).
@@ -132,7 +145,108 @@ UI.R = {
 	panel = 2, control = 8, popover = 9, card = 10, check = 4,
 }
 
+-- ---------------------------------------------------------------------------
+--  Widget-Maße — ALLE Dimensionen des Widget-Toolkits zentral. Hier ändern,
+--  dann zieht es überall nach (Shell/Widgets.lua liest nur daraus, keine
+--  Magic Numbers mehr im Widget-Code). Werte auf dem 4er-Raster halten.
+-- ---------------------------------------------------------------------------
+UI.WIDGET = {
+	controlH    = 40, -- Dropdown/Eingabe-Höhe
+	buttonH     = 40, -- Button-Höhe
+	fieldGap    = 26, -- vertikaler Abstand Label -> Control darunter
+
+	-- Checkbox
+	checkBox    = 22, -- Box-Kantenlänge
+	checkLabelGap = 10,
+
+	-- Slider
+	sliderH     = 86, -- Gesamthöhe (Label + Track-Reihe + Wert-Box)
+	sliderTrackH= 18, -- Höhe der klickbaren Track-Reihe
+	sliderBarH  = 4,  -- Dicke des Balkens
+	sliderThumb = 14, -- Knopf-Kantenlänge
+	sliderCapGap= 30, -- yOffset Label -> Track-Reihe
+	sliderEndW  = 28, -- Breite der Min/Max-Zahlenfelder
+	sliderEndPad= 10, -- Abstand Zahl <-> Track
+	valueBoxW   = 92, -- Wert-Box Breite
+	valueBoxH   = 28, -- Wert-Box Höhe
+	valueBoxGap = 10, -- yOffset Track-Reihe -> Wert-Box
+
+	-- GroupPanel
+	groupTitleY = -16, -- yOffset des Titels von der oberen Kante
+	groupContentY = -48, -- yOffset des Inhaltsbereichs
+
+	-- Section-Divider
+	dividerH    = 36, -- Höhe des Divider-Blocks
+	dividerGap  = 16, -- Abstand Text <-> Gold-Rule
+
+	rowGap      = 30, -- Spaltenabstand in W.Row (row3/row2)
+}
+
 -- Panel-Maße (Design 1500×1000). Auf dem Bildschirm via SetScale verkleinert.
 UI.PANEL = {
 	w = 1500, h = 1000, headerH = 88, footerH = 78, scale = 0.74,
 }
+
+-- ---------------------------------------------------------------------------
+--  Gemeinsame Bau-Primitive (Shell-Chrome + Widget-Toolkit lesen daraus — DRY).
+--  Standen vorher als Datei-Locals in Shell.lua; hochgezogen, damit beide sie
+--  teilen. Verhalten identisch (reine Verschiebung).
+-- ---------------------------------------------------------------------------
+function UI.SetColor(t, col) t:SetColorTexture(col.r, col.g, col.b, col.a or 1) end
+
+-- Vollflächige Füll-Textur über parent.
+function UI.Fill(parent, col, layer)
+	local t = parent:CreateTexture(nil, layer or "BACKGROUND")
+	t:SetAllPoints(parent)
+	UI.SetColor(t, col)
+	return t
+end
+
+-- 1px-Hairline-Border (4 Kanten) um frame, Gold-at-opacity. Pixel-Snapping via
+-- PixelUtil: rechnet die effektive Scale ein -> Linien liegen exakt auf dem
+-- physischen Pixelraster und verschwinden NICHT bei skaliertem Panel (SetScale).
+-- Gibt die 4 Kanten-Texturen zurück (für späteres Umfärben, z.B. Hover/aktiv).
+function UI.Border(frame, col, thick, layer)
+	thick = thick or 1
+	local edges = {}
+	local function mk()
+		local t = frame:CreateTexture(nil, layer or "BORDER")
+		UI.SetColor(t, col)
+		edges[#edges + 1] = t
+		return t
+	end
+	local top = mk();   PixelUtil.SetHeight(top, thick)
+	PixelUtil.SetPoint(top, "TOPLEFT", frame, "TOPLEFT", 0, 0)
+	PixelUtil.SetPoint(top, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	local bot = mk();   PixelUtil.SetHeight(bot, thick)
+	PixelUtil.SetPoint(bot, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+	PixelUtil.SetPoint(bot, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	local left = mk();  PixelUtil.SetWidth(left, thick)
+	PixelUtil.SetPoint(left, "TOPLEFT", frame, "TOPLEFT", 0, 0)
+	PixelUtil.SetPoint(left, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+	local right = mk(); PixelUtil.SetWidth(right, thick)
+	PixelUtil.SetPoint(right, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	PixelUtil.SetPoint(right, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	return edges
+end
+
+-- FontString in einer Design-Rolle.
+function UI.FS(parent, role, col, layer)
+	local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+	UI:SetFont(fs, role, col)
+	return fs
+end
+
+-- Horizontale 1px-Gradient-Linie (Gold fadet aus). dir: "out"=Gold stark links →
+-- schwach rechts | "in"=umgekehrt. Für Section-Divider-Rules u.ä.
+function UI.GradientLine(parent, dir, strongA, faintA)
+	local gc = UI.C.gold500
+	local t = parent:CreateTexture(nil, "ARTWORK")
+	t:SetHeight(1)
+	t:SetColorTexture(1, 1, 1, 1)
+	local strong = CreateColor(gc.r, gc.g, gc.b, strongA or 0.45)
+	local faint  = CreateColor(gc.r, gc.g, gc.b, faintA or 0.0)
+	if dir == "in" then t:SetGradient("HORIZONTAL", faint, strong)
+	else t:SetGradient("HORIZONTAL", strong, faint) end
+	return t
+end
