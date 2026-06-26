@@ -116,6 +116,11 @@ UI.ROLE = {
 	listLabel  = { UI.FONT.hankenMed,  18, "" }, -- Listen-Zeile (Rollen-Sortierliste)
 	subDivider = { UI.FONT.cinzelSemi, 16, "" }, -- kleinere zentrierte Unter-Überschrift
 	btn        = { UI.FONT.hankenSemi, 16, "" }, -- Button-Label (Schnitt je Variante, s. Widgets)
+
+	-- Eigener Lumen-Tooltip — eigene Rollen, damit Schriftgröße/Schnitt unabhängig
+	-- justierbar sind (Florian stellt hier selbst ein).
+	tipTitle = { UI.FONT.hankenSemi, 16, "" }, -- Tooltip-Titel / Spell-Name (Gold)
+	tipBody  = { UI.FONT.hankenReg,  14, "" }, -- Tooltip-Text / Spell-Beschreibung
 }
 
 -- FontString auf eine Rolle setzen. Gibt das FontString zurück (chainbar).
@@ -226,6 +231,36 @@ UI.WIDGET = {
 	cpBtnGap = 8,   -- Abstand zwischen Übernehmen/Abbrechen im Color-Picker
 
 	rowGap      = 30, -- Spaltenabstand in W.Row (row3/row2)
+
+	-- Tracking-Tab: getrackte-Spell-Zeile (Icon + Name + „Entfernen") + Spell-Picker.
+	-- Der Picker ist die „echte Typeahead-Suche": W.Select kann nicht scrollen — hier
+	-- laufen 30–60 Spells gefiltert in einer SCROLLBAREN Liste (Suchfeld oben + Liste).
+	trackRowH      = 36, -- Höhe einer getrackten-Spell-Zeile
+	trackIcon      = 22, -- Icon-Kantenlänge (Tracking-Liste UND Picker)
+	trackRemoveW   = 104, -- Breite des „✕ Entfernen"-Buttons rechts in der Zeile
+	spBtnW         = 210, -- Breite des „+ Spell hinzufügen"-Auslöse-Buttons
+	spW            = 340, -- Breite des Spell-Picker-Popovers
+	spPad          = 10,  -- Innenabstand des Popovers
+	spSearchH      = 32,  -- Höhe des Suchfelds
+	spRowH         = 32,  -- Höhe einer Picker-Listenzeile
+	spVisibleRows  = 7,   -- gleichzeitig sichtbare Zeilen (Rest scrollt)
+	spScrollW      = 4,   -- Breite des Picker-Scrollbalkens
+	spScrollGap    = 6,   -- Abstand Liste <-> Scrollbalken
+
+	-- Confirm-Dialog (modaler Bestätigungs-Popup; dunkelt die Shell dahinter ab).
+	confirmW      = 460, -- Karten-Breite
+	confirmH      = 188, -- Karten-Höhe (Titel + 2–3 Zeilen Text + Button-Reihe)
+	confirmPad    = 24,  -- Innenabstand der Karte
+	confirmBtnGap = 12,  -- Abstand zwischen Bestätigen/Abbrechen
+	confirmBtnW   = 150, -- feste Button-Breite (Text-Wechsel bricht das Layout nicht)
+	confirmDim    = 0.62, -- Deckkraft der Abdunklung hinter dem Popup
+
+	-- Eigener Spell-Tooltip (Lumen-Design statt Blizzard-GameTooltip).
+	tipW       = 320, -- feste Tooltip-Breite
+	tipPad     = 14,  -- Innenabstand
+	tipIcon    = 28,  -- Icon-Kantenlänge im Kopf
+	tipNameGap = 10,  -- Icon -> Name
+	tipGap     = 10,  -- Kopf (Icon/Name) -> Beschreibung
 }
 
 -- ---------------------------------------------------------------------------
@@ -276,6 +311,15 @@ UI.LAYOUT = {
 	},
 	auras = {               -- Auras-Tab (die Reihen-Abstände kommen aus rhythm oben)
 		afterIntro = 22,    -- Intro-Hinweis -> erste Kategorie-Karte
+	},
+	tracking = {            -- Tracking-Tab (Whitelist-Editor)
+		introH      = 58,   -- Höhe des mehrzeiligen Intro-Hinweises
+		afterIntro  = 14,   -- Intro -> Spec-Zeile
+		afterSpec   = 22,   -- Spec-Zeile -> erste Kategorie-Karte
+		afterDesc   = 14,   -- Kategorie-Beschreibung -> getrackte Liste
+		betweenRows = 6,    -- zwischen zwei getrackten Spell-Zeilen
+		emptyH      = 30,   -- Höhe der „(keine Spells)"-Zeile bei leerer Liste
+		afterList   = 18,   -- Liste -> Aktions-Buttons (Picker + Reset)
 	},
 }
 

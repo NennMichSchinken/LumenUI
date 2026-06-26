@@ -709,7 +709,131 @@ local function buildAuras(d, stack)
 	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Auras-Screen grau + gesperrt
 end
 
-ns.Screens["Raidframes/Base"]  = buildBase
-ns.Screens["Raidframes/Raid"]  = function(d, stack) buildRaid(d, stack, "raid") end
-ns.Screens["Raidframes/Group"] = function(d, stack) buildRaid(d, stack, "party") end
-ns.Screens["Raidframes/Auras"] = buildAuras
+-- ---------------------------------------------------------------------------
+--  TrackingScreen — Whitelist-Editor (B4): welche Spells als Aura-Icons getrackt
+--  werden (HoTs + eigene Defensiven). Spiegelt den AceConfig-Tab „Tracking".
+--  IMMER an die AKTIVE Spec gebunden (Talente/Zauberbuch nur dafür auslesbar;
+--  Defaults decken andere Specs ab). Spell-Quelle = ns.ClickCast:GetAuraSpells()
+--  (Zauberbuch + gewählte Talente). Kernstück: W.SpellPicker (suchbar + scrollbar).
+-- ---------------------------------------------------------------------------
+local TRACK_CATS = {
+	{ typ = "hot", label = "HoTs",                 desc = "Eigene Heilung über Zeit als Icon am Frame." },
+	{ typ = "def", label = "Defensives & Externe", desc = "Eigene Defensiven. Externe Schutzzauber anderer zeigt Lumen ohnehin automatisch." },
+}
+
+local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) or 0 end
+
+-- Eine getrackte-Spell-Zeile: Icon + Name + „Entfernen" (danger, rechts).
+local function makeTrackRow(parent, e, onRemove)
+	local row = CreateFrame("Frame", nil, parent)
+	row:SetHeight(M.trackRowH)
+	UI.Fill(row, C.ink520)
+	UI.Border(row, UI.line.faint, 1, "OVERLAY") -- L ist hier UI.LAYOUT; Gold-Deckkräfte liegen in UI.line
+	local icon = row:CreateTexture(nil, "ARTWORK")
+	icon:SetSize(M.trackIcon, M.trackIcon)
+	icon:SetPoint("LEFT", row, "LEFT", 8, 0)
+	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	icon:SetTexture(e.icon or 136243)
+	local rm = W.Button(row, { text = "Entfernen", variant = "danger", width = M.trackRemoveW, onClick = onRemove })
+	rm:SetHeight(M.trackRowH - 10)
+	rm:ClearAllPoints(); rm:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+	local name = UI.FS(row, "selectText", C.textStrong)
+	name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+	name:SetPoint("RIGHT", rm, "LEFT", -10, 0)
+	name:SetJustifyH("LEFT"); name:SetWordWrap(false)
+	name:SetText(e.name or ("Spell " .. tostring(e.id)))
+	-- Hover: dezenter Wash + eigener Lumen-Spell-Tooltip (wie die Picker-Liste).
+	local hov = UI.Fill(row, C.inkTint, "BORDER"); hov:SetAllPoints(row); hov:SetAlpha(0)
+	row:EnableMouse(true)
+	row:SetScript("OnEnter", function(self2)
+		hov:SetAlpha(0.5); W.ShowSpellTip(self2, e.id)
+	end)
+	row:SetScript("OnLeave", function() hov:SetAlpha(0); W.HideTip() end)
+	return row
+end
+
+local function buildTracking(d, stack)
+	local RFm  = ns.Raidframes
+	local spec = trkSpec()
+
+	stack:gap(L.base.topToToggle)
+	local intro = W.Hint(d, "Welche Spells als Aura-Icons getrackt werden — Anzeige & Position regelt der Tab \"Auras\". "
+		.. "Bearbeitet wird automatisch deine aktive Spec (Talente anderer Specs kann WoW nicht auslesen; deren Defaults greifen automatisch, sobald du sie spielst).")
+	stack:place(intro, L.tracking.introH, L.tracking.afterIntro)
+
+	local specRow = CreateFrame("Frame", nil, d)
+	specRow:SetHeight(20)
+	local specFS = UI.FS(specRow, "label", C.gold250)
+	specFS:SetPoint("TOPLEFT", specRow, "TOPLEFT", 0, 0)
+	specFS:SetText("Aktive Spec:  " .. ((ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))
+	stack:place(specRow, 20, L.tracking.afterSpec)
+
+	for _, cat in ipairs(TRACK_CATS) do
+		local s = stack:section(cat.label)
+
+		local desc = W.Hint(d, cat.desc)
+		s:place(desc, M.hintH, L.tracking.afterDesc)
+
+		-- Getrackte Spells als Zeilen (oder „(keine Spells)").
+		local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
+		if #entries == 0 then
+			s:place(W.Hint(d, "(keine Spells)"), L.tracking.emptyH, L.tracking.afterList)
+		else
+			for i, e in ipairs(entries) do
+				local last = (i == #entries)
+				local row = makeTrackRow(d, e, function()
+					if RFm then RFm:RemoveWhitelist(spec, e.id) end
+					ns.Shell:RenderContent(true)
+				end)
+				s:place(row, M.trackRowH, last and L.tracking.afterList or L.tracking.betweenRows)
+			end
+		end
+
+		-- Aktions-Reihe: Spell-Picker (suchbar/scrollbar) + „Standard wiederherstellen".
+		local actionRow = CreateFrame("Frame", nil, d)
+		actionRow:SetHeight(M.buttonH)
+		local picker = W.SpellPicker(actionRow, {
+			text = "+ Spell hinzufügen", width = M.spBtnW,
+			fetch = function()
+				local out = {}
+				local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
+				for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
+					-- Talent-IDs auf die echte Aura-ID normalisieren -> schon getrackte raus.
+					local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
+					if not tracked[rid] then out[#out + 1] = sp end
+				end
+				return out
+			end,
+			onPick = function(id)
+				if RFm then RFm:AddWhitelist(spec, id, cat.typ) end
+				ns.Shell:RenderContent(true)
+			end,
+		})
+		picker:SetPoint("LEFT", actionRow, "LEFT", 0, 0)
+		local reset = W.Button(actionRow, { text = "Standard wiederherstellen", variant = "ghost",
+			onClick = function()
+				W.Confirm({
+					title       = "Standard wiederherstellen?",
+					body        = "Diese Liste wird auf Lumens kuratierten Standard für deine aktive Spec zurückgesetzt. Eigene Einträge in dieser Kategorie gehen dabei verloren.",
+					confirmText = "Zurücksetzen",
+					cancelText  = "Abbrechen",
+					onConfirm   = function()
+						if RFm then RFm:ResetWhitelist(spec, cat.typ) end
+						ns.Shell:RenderContent(true)
+					end,
+				})
+			end })
+		reset:SetPoint("LEFT", picker, "RIGHT", 12, 0)
+		s:place(actionRow, M.buttonH, 0)
+
+		s:close()
+	end
+
+	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Screen grau + gesperrt
+end
+
+ns.Screens["Raidframes/Base"]     = buildBase
+ns.Screens["Raidframes/Raid"]     = function(d, stack) buildRaid(d, stack, "raid") end
+ns.Screens["Raidframes/Group"]    = function(d, stack) buildRaid(d, stack, "party") end
+ns.Screens["Raidframes/Auras"]    = buildAuras
+ns.Screens["Raidframes/Tracking"] = buildTracking
