@@ -525,7 +525,7 @@ local function buildBase(d, stack)
 		  get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end },
 		(rf().sortMode == "role") and function(sel)
 			local cbRaid = W.Checkbox(d, { label = "Auch im Raid nach Rolle sortieren",
-				tooltip = "Aus: im Raid bleibt deine selbst gebaute Anordnung nach Gruppe. An: die Rollen-Sortierung "
+				tooltip = "Aus: im Raid bleibt deine Anordnung. An: die Rollen-Sortierung greift! "
 					.. "gilt auch im Raid. (Dungeon/Party wird immer sortiert.)",
 				get = tget("sortApplyRaid"), set = tset("sortApplyRaid") })
 			cbRaid:SetPoint("LEFT", sel._control, "RIGHT", L.general.sideGap, 0)
