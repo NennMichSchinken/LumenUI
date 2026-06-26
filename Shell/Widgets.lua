@@ -399,16 +399,11 @@ function W.Select(parent, o)
 	end)
 	btn:SetScript("OnEnter", function()
 		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
-		if o.tooltip then
-			GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
-			GameTooltip:SetText(o.label or o.tooltipTitle or "", C.gold300.r, C.gold300.g, C.gold300.b)
-			GameTooltip:AddLine(o.tooltip, C.textBody.r, C.textBody.g, C.textBody.b, true)
-			GameTooltip:Show()
-		end
+		if o.tooltip then W.ShowTextTip(btn, o.label or o.tooltipTitle, o.tooltip) end
 	end)
 	btn:SetScript("OnLeave", function()
 		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end end
-		if o.tooltip then GameTooltip:Hide() end
+		if o.tooltip then W.HideTip() end
 	end)
 	btn:HookScript("OnHide", closeMenu)
 
@@ -419,6 +414,402 @@ function W.Select(parent, o)
 		if not on and menu:IsShown() then closeMenu() end
 	end
 	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  SpellPicker — Button öffnet ein suchbares, SCROLLBARES Auswahl-Popover.
+--  Das ist die „echte Typeahead-Suche": W.Select kann nicht scrollen, hier
+--  laufen 30–60 Spells live gefiltert in einer Scroll-Liste (Suchfeld oben +
+--  Mausrad/Scrollbalken). o = {
+--    text,                 -- Button-Beschriftung („+ Spell hinzufügen")
+--    width,                -- Button-Breite (optional, Default M.spBtnW)
+--    fetch  = function() return { {id,name,icon}, ... } end,  -- Kandidaten,
+--             -- vom Aufrufer bereits dedupliziert/whitelist-gefiltert, alphabetisch.
+--    onPick = function(id),  -- gewählter Spell.
+--  }
+--  Popover floatet am _menuHost (nicht-geclippt, wie W.Select) + wird über
+--  W._popovers eingesammelt und beim Tab-Wechsel aufgeräumt (kein Leak).
+-- ---------------------------------------------------------------------------
+function W.SpellPicker(parent, o)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(M.buttonH)
+	f:SetWidth(o.width or M.spBtnW)
+
+	local closeMenu -- forward-Deklaration (Zeilen-Klick ruft sie)
+
+	-- Auslöser-Button: Inset-Feld mit Gold-Rand + Gold-Text (wie im Mockup).
+	local btn = CreateFrame("Button", nil, f)
+	btn:SetAllPoints(f)
+	UI.Fill(btn, C.ink700)
+	local bEdges = UI.Border(btn, L.mid, 1, "OVERLAY")
+	local bTxt = UI.FS(btn, "btn", C.gold300)
+	bTxt:SetFont(UI.FONT.hankenSemi, 16, "")
+	bTxt:SetText(o.text or "+ Hinzufügen")
+	bTxt:SetPoint("CENTER", btn, "CENTER", 0, 0)
+	f._control = btn
+
+	-- Popover (Menü + Vollbild-Closer) am nicht-geclippten Host, wie W.Select.
+	local host = W._menuHost or f
+	local closer = CreateFrame("Button", nil, host)
+	closer:SetAllPoints(UIParent)
+	closer:SetFrameStrata("FULLSCREEN_DIALOG")
+	closer:Hide()
+
+	local menu = CreateFrame("Frame", nil, host)
+	menu:SetFrameStrata("FULLSCREEN_DIALOG")
+	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
+	menu:SetWidth(M.spW)
+	menu:Hide()
+	UI.Fill(menu, C.ink550)
+	UI.Border(menu, L.strong, 1, "OVERLAY")
+	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
+
+	local listH = M.spVisibleRows * M.spRowH
+	menu:SetHeight(M.spPad * 2 + M.spSearchH + 8 + listH)
+
+	-- Suchfeld (typeahead) ------------------------------------------------
+	local search = CreateFrame("EditBox", nil, menu)
+	search:SetHeight(M.spSearchH)
+	search:SetPoint("TOPLEFT", menu, "TOPLEFT", M.spPad, -M.spPad)
+	search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -M.spPad, -M.spPad)
+	UI.Fill(search, C.ink700)
+	UI.Border(search, L.soft, 1, "OVERLAY")
+	search:SetFont(UI.FONT.hankenMed, 14, "")
+	search:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+	search:SetTextInsets(10, 10, 0, 0)
+	search:SetAutoFocus(false)
+	local ph = UI.FS(search, "label", C.textMuted)
+	ph:SetText("Spell suchen …")
+	ph:SetPoint("LEFT", search, "LEFT", 10, 0)
+
+	-- Scroll-Liste --------------------------------------------------------
+	local sf = CreateFrame("ScrollFrame", nil, menu)
+	sf:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -8)
+	sf:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -(M.spPad + M.spScrollW + M.spScrollGap), M.spPad)
+	sf:EnableMouseWheel(true)
+	local child = CreateFrame("Frame", nil, sf)
+	child:SetSize(1, 1)
+	sf:SetScrollChild(child)
+	sf:SetScript("OnSizeChanged", function(self2, w) child:SetWidth(w or self2:GetWidth() or 1) end)
+
+	local emptyFS = UI.FS(menu, "label", C.textMuted)
+	emptyFS:SetText("(keine Treffer)")
+	emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
+	emptyFS:Hide()
+
+	-- Scrollbalken (Muster aus dem Shell-ScrollFrame: Mausrad + ziehbarer Thumb).
+	local sbTrack = CreateFrame("Frame", nil, menu)
+	sbTrack:SetWidth(M.spScrollW)
+	sbTrack:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -M.spPad, -(M.spPad + M.spSearchH + 8))
+	sbTrack:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -M.spPad, M.spPad)
+	local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
+	trackTex:SetAllPoints(sbTrack); UI.SetColor(trackTex, C.ink700)
+	local thumb = CreateFrame("Frame", nil, sbTrack)
+	thumb:SetWidth(M.spScrollW); thumb:EnableMouse(true)
+	local thumbTex = thumb:CreateTexture(nil, "OVERLAY"); thumbTex:SetAllPoints(thumb)
+	local function paintThumb(a) thumbTex:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, a) end
+	paintThumb(0.55)
+	local function updateBar()
+		local range = sf:GetVerticalScrollRange() or 0
+		local h = sf:GetHeight() or 1
+		if range <= 0.5 or h <= 1 then sbTrack:Hide(); return end
+		sbTrack:Show()
+		local total = h + range
+		local th = math.max(20, (h / total) * h)
+		thumb:SetHeight(th)
+		local pos = (sf:GetVerticalScroll() or 0) / range
+		thumb:ClearAllPoints(); thumb:SetPoint("TOP", sbTrack, "TOP", 0, -pos * (h - th))
+	end
+	local function scrollBy(d)
+		local range = sf:GetVerticalScrollRange() or 0
+		sf:SetVerticalScroll(math.max(0, math.min(range, (sf:GetVerticalScroll() or 0) - d))); updateBar()
+	end
+	sf:SetScript("OnMouseWheel", function(_, d) scrollBy(d * M.spRowH * 2) end)
+	sf:SetScript("OnScrollRangeChanged", updateBar)
+	thumb:SetScript("OnMouseDown", function(self2)
+		local _, cy = GetCursorPosition()
+		local sc = sbTrack:GetEffectiveScale() or 1
+		self2._grabOff = (thumb:GetTop() or 0) - (cy / (sc ~= 0 and sc or 1))
+		self2:SetScript("OnUpdate", function()
+			local _, cy2 = GetCursorPosition()
+			local s2 = sbTrack:GetEffectiveScale(); if not s2 or s2 == 0 then return end
+			cy2 = cy2 / s2
+			local top, h = sbTrack:GetTop(), sf:GetHeight() or 1
+			local denom = h - (thumb:GetHeight() or 0)
+			if not top or denom <= 0 then return end
+			local rel = math.max(0, math.min(1, (top - (cy2 + (self2._grabOff or 0))) / denom))
+			sf:SetVerticalScroll(rel * (sf:GetVerticalScrollRange() or 0)); updateBar()
+		end)
+	end)
+	thumb:SetScript("OnMouseUp", function(self2) self2:SetScript("OnUpdate", nil) end)
+	thumb:SetScript("OnHide", function(self2) self2:SetScript("OnUpdate", nil) end)
+	thumb:SetScript("OnEnter", function() paintThumb(0.85) end)
+	thumb:SetScript("OnLeave", function() paintThumb(0.55) end)
+
+	-- Zeilen-Pool (kein Frame-Churn beim Tippen): wiederverwendet, nur Text/Icon neu.
+	local rows = {}
+	local function getRow(i)
+		local r = rows[i]
+		if r then return r end
+		r = CreateFrame("Button", nil, child)
+		r:SetHeight(M.spRowH)
+		r:SetPoint("LEFT", child, "LEFT", 0, 0)
+		r:SetPoint("RIGHT", child, "RIGHT", 0, 0)
+		if i == 1 then r:SetPoint("TOP", child, "TOP", 0, 0)
+		else r:SetPoint("TOP", rows[i - 1], "BOTTOM", 0, 0) end
+		local wash = r:CreateTexture(nil, "BACKGROUND"); wash:SetAllPoints(r); wash:SetColorTexture(0, 0, 0, 0)
+		local bar = r:CreateTexture(nil, "ARTWORK"); bar:SetWidth(3)
+		bar:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0); bar:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
+		UI.SetColor(bar, C.gold500); bar:Hide()
+		local icon = r:CreateTexture(nil, "ARTWORK")
+		icon:SetSize(M.trackIcon, M.trackIcon)
+		icon:SetPoint("LEFT", r, "LEFT", 8, 0)
+		icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		local name = UI.FS(r, "selectText", C.textStrong)
+		name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+		name:SetPoint("RIGHT", r, "RIGHT", -8, 0)
+		name:SetJustifyH("LEFT"); name:SetWordWrap(false)
+		r._bar, r._wash, r._icon, r._name = bar, wash, icon, name
+		r:SetScript("OnEnter", function(self2)
+			self2._wash:SetColorTexture(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1)
+			self2._bar:Show()
+			self2._name:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
+			W.ShowSpellTip(self2, self2._id) -- eigener Lumen-Tooltip
+		end)
+		r:SetScript("OnLeave", function(self2)
+			self2._wash:SetColorTexture(0, 0, 0, 0); self2._bar:Hide()
+			self2._name:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+			W.HideTip()
+		end)
+		r:SetScript("OnClick", function(self2)
+			if self2._id then closeMenu(); if o.onPick then o.onPick(self2._id) end end
+		end)
+		rows[i] = r
+		return r
+	end
+
+	-- Kandidatenliste EINMAL beim Öffnen holen (fetch scannt Zauberbuch + Talente —
+	-- nicht pro Tastendruck wiederholen); Tippen filtert nur diese gecachte Liste.
+	local data = {}
+	local function populate()
+		local q = (search:GetText() or ""):lower()
+		local n = 0
+		for _, e in ipairs(data) do
+			if q == "" or (e.name and e.name:lower():find(q, 1, true)) then
+				n = n + 1
+				local r = getRow(n)
+				r._id = e.id
+				r._icon:SetTexture(e.icon or 136243)
+				r._name:SetText(e.name or ("Spell " .. tostring(e.id)))
+				r._wash:SetColorTexture(0, 0, 0, 0); r._bar:Hide()
+				r._name:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+				r:Show()
+			end
+		end
+		for i = n + 1, #rows do rows[i]:Hide() end
+		child:SetHeight(math.max(1, n * M.spRowH))
+		sf:SetVerticalScroll(0)
+		emptyFS:SetShown(n == 0)
+		updateBar()
+	end
+
+	search:SetScript("OnTextChanged", function() ph:SetShown((search:GetText() or "") == ""); populate() end)
+	search:SetScript("OnEscapePressed", function(self2) self2:ClearFocus(); closeMenu() end)
+	search:SetScript("OnEnterPressed", function(self2) self2:ClearFocus() end)
+
+	local function openMenu()
+		menu:ClearAllPoints()
+		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -6)
+		data = (o.fetch and o.fetch()) or {} -- einmal scannen, dann nur noch filtern
+		search:SetText("") -- OnTextChanged feuert nur bei echter Änderung -> explizit:
+		ph:Show()
+		populate()
+		closer:Show(); menu:Show()
+		for _, e in ipairs(bEdges) do UI.SetColor(e, L.strong) end
+		search:SetFocus()
+	end
+	closeMenu = function()
+		menu:Hide(); closer:Hide()
+		search:ClearFocus()
+		for _, e in ipairs(bEdges) do UI.SetColor(e, L.mid) end
+	end
+	closer:SetScript("OnClick", closeMenu)
+
+	btn:SetScript("OnClick", function() if menu:IsShown() then closeMenu() else openMenu() end end)
+	btn:SetScript("OnEnter", function()
+		if not menu:IsShown() then for _, e in ipairs(bEdges) do UI.SetColor(e, L.strong) end end
+		bTxt:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b)
+	end)
+	btn:SetScript("OnLeave", function()
+		if not menu:IsShown() then for _, e in ipairs(bEdges) do UI.SetColor(e, L.mid) end end
+		bTxt:SetTextColor(C.gold300.r, C.gold300.g, C.gold300.b)
+	end)
+	btn:HookScript("OnHide", closeMenu)
+
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  Confirm — modaler Bestätigungs-Dialog. Dunkelt die Shell ab (Overlay über
+--  dem Menü-Host = Panel) und zeigt eine zentrierte Karte mit Titel, Text und
+--  zwei Buttons (Bestätigen = danger / Abbrechen = ghost). Klick auf die
+--  abgedunkelte Fläche = Abbrechen. Singleton (einmal gebaut, je Aufruf neu
+--  konfiguriert, wie der Color-Picker). Aufruf:
+--    W.Confirm{ title, body, confirmText, cancelText, onConfirm, onCancel }
+-- ---------------------------------------------------------------------------
+local confirmDlg
+local function buildConfirm()
+	local host = W._menuHost or UIParent
+	local overlay = CreateFrame("Button", nil, host)
+	overlay:SetAllPoints(host)
+	overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+	overlay:EnableMouse(true) -- schluckt Klicks auf die abgedunkelte Shell (modal)
+	local dim = overlay:CreateTexture(nil, "BACKGROUND")
+	dim:SetAllPoints(overlay)
+	dim:SetColorTexture(0, 0, 0, M.confirmDim)
+	overlay:Hide()
+
+	local card = CreateFrame("Frame", nil, overlay)
+	card:SetFrameStrata("FULLSCREEN_DIALOG")
+	card:SetFrameLevel(overlay:GetFrameLevel() + 10)
+	card:SetSize(M.confirmW, M.confirmH)
+	card:SetPoint("CENTER", overlay, "CENTER", 0, 0)
+	card:EnableMouse(true) -- Klicks auf die Karte NICHT als „außerhalb" werten
+	UI.Fill(card, C.ink550)
+	UI.Border(card, L.strong, 1, "OVERLAY")
+	local accent = card:CreateTexture(nil, "OVERLAY") -- Gold-Akzent oben (Signatur)
+	accent:SetHeight(3)
+	accent:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
+	accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
+	UI.SetColor(accent, C.gold500)
+
+	local title = UI.FS(card, "sectionHead", C.gold300)
+	title:SetPoint("TOPLEFT", card, "TOPLEFT", M.confirmPad, -M.confirmPad)
+	title:SetPoint("TOPRIGHT", card, "TOPRIGHT", -M.confirmPad, -M.confirmPad)
+	title:SetJustifyH("LEFT")
+
+	local body = UI.FS(card, "hint", C.textBody)
+	body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -14)
+	body:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -14)
+	body:SetJustifyH("LEFT"); body:SetWordWrap(true)
+
+	local okBtn = W.Button(card, { text = "Bestätigen", variant = "danger", width = M.confirmBtnW })
+	okBtn:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -M.confirmPad, M.confirmPad)
+	local cancelBtn = W.Button(card, { text = "Abbrechen", variant = "ghost", width = M.confirmBtnW })
+	cancelBtn:SetPoint("RIGHT", okBtn, "LEFT", -M.confirmBtnGap, 0)
+
+	confirmDlg = { overlay = overlay, card = card, title = title, body = body, ok = okBtn, cancel = cancelBtn }
+	return confirmDlg
+end
+
+function W.Confirm(o)
+	local dlg = confirmDlg or buildConfirm()
+	dlg.title:SetText(o.title or "Bist du sicher?")
+	dlg.body:SetText(o.body or "")
+	dlg.ok._txt:SetText(o.confirmText or "Bestätigen")
+	dlg.cancel._txt:SetText(o.cancelText or "Abbrechen")
+	local function doCancel()
+		dlg.overlay:Hide()
+		if o.onCancel then o.onCancel() end
+	end
+	dlg.ok:SetScript("OnClick", function()
+		dlg.overlay:Hide()
+		if o.onConfirm then o.onConfirm() end
+	end)
+	dlg.cancel:SetScript("OnClick", doCancel)
+	dlg.overlay:SetScript("OnClick", doCancel) -- Klick auf die abgedunkelte Fläche = Abbrechen
+	dlg.overlay:Show()
+	dlg.overlay:Raise()
+end
+
+-- ---------------------------------------------------------------------------
+--  Tooltip — eigener, im Lumen-Design gestylter Tooltip (ersetzt den Blizzard-
+--  GameTooltip in der GANZEN Shell). Singleton, Strata TOOLTIP (über Popovers).
+--  Zwei Modi über EINE Karte: Spell (Icon + Name + C_Spell-Beschreibung) ODER
+--  Text (Titel + Hinweistext, ohne Icon). Höhe wächst mit dem Text. Schrift über
+--  die Rollen tipTitle/tipBody (UI.ROLE) -> zentral justierbar.
+--    W.ShowSpellTip(owner, spellID) · W.ShowTextTip(owner, title, body) · W.HideTip()
+-- ---------------------------------------------------------------------------
+local tipObj
+local function buildTip()
+	local host = W._menuHost or UIParent
+	local tip = CreateFrame("Frame", nil, host)
+	tip:SetFrameStrata("TOOLTIP")
+	tip:SetWidth(M.tipW)
+	tip:Hide()
+	UI.Fill(tip, C.ink850) -- dunkler als Popover -> klarer Tooltip-Kontrast
+	UI.Border(tip, L.strong, 1, "OVERLAY")
+	local accent = tip:CreateTexture(nil, "OVERLAY") -- Gold-Akzent oben (Signatur)
+	accent:SetHeight(2)
+	accent:SetPoint("TOPLEFT", tip, "TOPLEFT", 0, 0)
+	accent:SetPoint("TOPRIGHT", tip, "TOPRIGHT", 0, 0)
+	UI.SetColor(accent, C.gold500)
+
+	local icon = tip:CreateTexture(nil, "ARTWORK")
+	icon:SetSize(M.tipIcon, M.tipIcon)
+	icon:SetPoint("TOPLEFT", tip, "TOPLEFT", M.tipPad, -M.tipPad)
+	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+	local title = UI.FS(tip, "tipTitle", C.gold250)
+	title:SetJustifyH("LEFT"); title:SetJustifyV("MIDDLE")
+
+	local body = UI.FS(tip, "tipBody", C.textBody)
+	body:SetJustifyH("LEFT"); body:SetWordWrap(true)
+
+	tipObj = { tip = tip, icon = icon, title = title, body = body }
+	return tipObj
+end
+
+-- Gemeinsamer Aufbau für beide Modi: icon=nil -> reiner Text-Tooltip.
+local function applyTip(owner, icon, titleText, bodyText)
+	if not owner then return end
+	local t = tipObj or buildTip()
+	local hasIcon = icon ~= nil
+	local hasBody = bodyText ~= nil and bodyText ~= ""
+
+	t.icon:SetShown(hasIcon)
+	if hasIcon then t.icon:SetTexture(icon) end
+
+	t.title:ClearAllPoints()
+	t.title:SetPoint("RIGHT", t.tip, "RIGHT", -M.tipPad, 0)
+	if hasIcon then
+		t.title:SetPoint("TOPLEFT", t.icon, "TOPRIGHT", M.tipNameGap, 0)
+		t.title:SetHeight(M.tipIcon); t.title:SetWordWrap(false) -- Name einzeilig neben dem Icon
+	else
+		t.title:SetPoint("TOPLEFT", t.tip, "TOPLEFT", M.tipPad, -M.tipPad)
+		t.title:SetHeight(0); t.title:SetWordWrap(true)
+	end
+	t.title:SetText(titleText or "")
+
+	-- Kopfhöhe = Icon-Höhe (Spell) bzw. Titel-Höhe (Text); danach optional der Text.
+	local headH = hasIcon and M.tipIcon or (t.title:GetStringHeight() or 0)
+	t.body:SetShown(hasBody)
+	t.body:ClearAllPoints()
+	t.body:SetPoint("TOPLEFT", t.tip, "TOPLEFT", M.tipPad, -(M.tipPad + headH + M.tipGap))
+	t.body:SetPoint("RIGHT", t.tip, "RIGHT", -M.tipPad, 0)
+	t.body:SetText(hasBody and bodyText or "")
+	local bodyH = hasBody and (t.body:GetStringHeight() or 0) or 0
+
+	t.tip:SetHeight(M.tipPad + headH + (hasBody and (M.tipGap + bodyH) or 0) + M.tipPad)
+	t.tip:ClearAllPoints()
+	t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+	t.tip:Show(); t.tip:Raise()
+end
+
+function W.ShowSpellTip(owner, spellID)
+	if not spellID then return end
+	local nm = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)
+	local tx = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
+	local ds = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(spellID)
+	applyTip(owner, tx or 136243, nm or ("Spell " .. tostring(spellID)), ds)
+end
+
+function W.ShowTextTip(owner, title, body)
+	applyTip(owner, nil, title, body)
+end
+
+function W.HideTip()
+	if tipObj then tipObj.tip:Hide() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -469,17 +860,12 @@ function W.Checkbox(parent, o)
 	b:SetScript("OnEnter", function()
 		if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end end
 		lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
-		if o.tooltip then
-			GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
-			GameTooltip:SetText(o.label or "", C.gold300.r, C.gold300.g, C.gold300.b)
-			GameTooltip:AddLine(o.tooltip, C.textBody.r, C.textBody.g, C.textBody.b, true)
-			GameTooltip:Show()
-		end
+		if o.tooltip then W.ShowTextTip(b, o.label, o.tooltip) end
 	end)
 	b:SetScript("OnLeave", function()
 		if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
 		lbl:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
-		if o.tooltip then GameTooltip:Hide() end
+		if o.tooltip then W.HideTip() end
 	end)
 	b:SetScript("OnClick", function()
 		val = not val
@@ -853,8 +1239,16 @@ function W.Button(parent, o)
 
 	local edges = UI.Border(b, v.line, 1, "OVERLAY")
 	local txt = UI.FS(b, "btn", v.txt)
-	txt:SetFont(v.font, BTN_SIZE, "") -- Schnitt je Variante (s. BTN_VARIANTS)
+	local okFont = txt:SetFont(v.font, BTN_SIZE, "") -- Schnitt je Variante (s. BTN_VARIANTS)
 	txt:SetText(o.text or "")
+	-- Selbst-heilend: lädt die Variant-Font nicht (SetFont=false) oder rendert sie den
+	-- Text nicht (0 Breite trotz Inhalt — z.B. fehlende Glyphen wie „ü" in einem Schnitt),
+	-- auf die Rollen-Font (btn = hankenSemi, rendert Umlaute zuverlässig) zurückfallen.
+	-- So bleibt der bewusste Variant-Schnitt erhalten, wo er funktioniert.
+	if (o.text or "") ~= "" and (okFont == false or txt:GetStringWidth() <= 0) then
+		UI:SetFont(txt, "btn", v.txt)
+		txt:SetText(o.text)
+	end
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 
 	b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))

@@ -668,7 +668,16 @@ function Shell:RenderContent(keepScroll)
 	local sec = SECTIONS[self._section]
 	local key = sec[1] .. "/" .. (sec[2][self._tab] or "")
 	local builder = ns.Screens and ns.Screens[key]
-	if builder then builder(d, stack) else self:Gallery(d, stack) end
+	if builder then
+		-- Builder defensiv kapseln: ein Screen-Fehler soll NICHT die ganze Shell
+		-- leeren (sonst nur ein leerer Tab ohne Hinweis). Fehler in den Chat drucken.
+		local ok, err = pcall(builder, d, stack)
+		if not ok and ns.Lumen then
+			ns.Lumen:Print("|cffD66A5CShell-Fehler in " .. key .. ":|r " .. tostring(err))
+		end
+	else
+		self:Gallery(d, stack)
+	end
 
 	local h = stack:height()
 	d:SetHeight(h)
