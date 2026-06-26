@@ -129,7 +129,7 @@ function W.Slider(parent, o)
 	bg:SetHeight(M.sliderBarH)
 	bg:SetPoint("LEFT", track, "LEFT", 0, 0)
 	bg:SetPoint("RIGHT", track, "RIGHT", 0, 0)
-	UI.SetColor(bg, C.ink700)
+	UI.SetColor(bg, C.sliderTrack)
 
 	local fillbar = track:CreateTexture(nil, "ARTWORK", nil, 1)
 	fillbar:SetHeight(M.sliderBarH)
@@ -607,11 +607,11 @@ local function buildColorPicker()
 	hexHash:SetText("#"); hexHash:SetPoint("RIGHT", hexBox, "LEFT", -3, 0)
 
 	-- ---- Buttons ----
-	-- Übernehmen links, Abbrechen rechts, an die Picker-Ränder gesetzt (max. Spacing).
+	-- Übernehmen + Abbrechen unten links gruppiert, kleiner fester Abstand (cpBtnGap).
 	local okBtn = W.Button(cp, { text = "Übernehmen", variant = "primary" })
 	okBtn:SetPoint("BOTTOMLEFT", cp, "BOTTOMLEFT", pad, pad)
 	local cancelBtn = W.Button(cp, { text = "Abbrechen", variant = "ghost" })
-	cancelBtn:SetPoint("BOTTOMRIGHT", cp, "BOTTOMRIGHT", -pad, pad)
+	cancelBtn:SetPoint("LEFT", okBtn, "RIGHT", M.cpBtnGap, 0)
 
 	-- ---- State + Logik ----
 	cp._h, cp._s, cp._v = 0, 0, 1
@@ -723,21 +723,37 @@ end
 function W.ColorSwatch(parent, o)
 	local BOX = M.checkBox
 	local b = CreateFrame("Button", nil, parent)
-	b:SetHeight(BOX)
 
 	local box = CreateFrame("Frame", nil, b)
 	box:SetSize(BOX, BOX)
-	box:SetPoint("LEFT", b, "LEFT", 0, 0)
 	-- Farbfläche leicht eingerückt, damit der Gold-Rahmen sie sauber fasst.
 	local sw = box:CreateTexture(nil, "ARTWORK")
 	sw:SetPoint("TOPLEFT", box, "TOPLEFT", 1, -1)
 	sw:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -1, 1)
 	local edges = UI.Border(box, L.mid, 1, "OVERLAY")
 
-	local lbl = UI.FS(b, "checkLabel", C.textBody)
-	lbl:SetText(o.label or "")
-	lbl:SetPoint("LEFT", box, "RIGHT", M.checkLabelGap, 0)
-	b:SetWidth(BOX + M.checkLabelGap + math.ceil(lbl:GetStringWidth()) + 2)
+	-- Zwei Modi: field=true -> Label OBEN (rasterbündig zu Dropdowns, per SetAllPoints
+	-- in eine Feld-Zelle); sonst -> Swatch + Label rechts daneben (kompakte Zeile).
+	local lbl
+	if o.field then
+		-- Feld-Modus: Label OBEN, Swatch als kompakter Farb-Chip im Control-Band darunter.
+		-- Höhe = controlH (gleiche Flucht wie ein Dropdown), Breite kompakt (swatchFieldW)
+		-- -> sitzt sauber in der Reihe, ohne die Spalte als Vollbalken zu dominieren.
+		b:SetSize(M.swatchFieldW, M.controlH + M.fieldGap) -- nur Chip-Breite -> Klickfläche = Chip (NICHT die ganze Zelle)
+		box:SetSize(M.swatchFieldW, M.controlH)
+		box:SetPoint("TOPLEFT", b, "TOPLEFT", 0, -M.fieldGap)
+		lbl = UI.FS(b, "fieldLabel", C.gold250)
+		lbl:SetText(o.label or "")
+		lbl:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+		lbl:SetJustifyH("LEFT")
+	else
+		b:SetHeight(BOX)
+		box:SetPoint("LEFT", b, "LEFT", 0, 0)
+		lbl = UI.FS(b, "checkLabel", C.textBody)
+		lbl:SetText(o.label or "")
+		lbl:SetPoint("LEFT", box, "RIGHT", M.checkLabelGap, 0)
+		b:SetWidth(BOX + M.checkLabelGap + math.ceil(lbl:GetStringWidth()) + 2)
+	end
 
 	local function readRGB()
 		if o.get then local r, g, bl = o.get(); return r or 1, g or 1, bl or 1 end
@@ -756,11 +772,11 @@ function W.ColorSwatch(parent, o)
 	end)
 	b:SetScript("OnEnter", function()
 		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
-		lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		if not o.field then lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b) end
 	end)
 	b:SetScript("OnLeave", function()
 		for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
-		lbl:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		if not o.field then lbl:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b) end
 	end)
 	b.SetValueExternal = function() paint() end
 	b.SetWidgetEnabled = function(_, on) b:SetAlpha(on and 1 or 0.35); b:EnableMouse(on) end

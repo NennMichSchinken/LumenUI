@@ -122,7 +122,12 @@ local function makeTab(parent, label)
 	local txt = FS(b, "tab", C.textBody)
 	txt:SetText(label)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
-	b:SetSize(math.floor(txt:GetStringWidth() + 44 + 0.5), 36)
+	b:SetHeight(36)
+	-- Breite aus der String-Breite. Beim ersten Spielstart ist die Custom-Font-Breite
+	-- teils noch 0 (Tabs winzig) -> Fit() misst neu, sobald das Panel sichtbar ist
+	-- (OnShow ruft es). Anker LEFT->prev RIGHT ziehen die Positionen automatisch nach.
+	function b:Fit() self:SetWidth(math.floor(txt:GetStringWidth() + 44 + 0.5)) end
+	b:Fit()
 
 	-- gefüllte Card-Fläche (inaktiv) — wie Prototyp (surface-card).
 	local base = b:CreateTexture(nil, "BACKGROUND")
@@ -262,7 +267,12 @@ function Shell:Build()
 	-- Beim Anzeigen den aktuellen Tab neu aufbauen: der erste Render in Build läuft
 	-- noch versteckt (Größen unaufgelöst) -> manche Zellen (z.B. die erste Dispel-
 	-- Farbe) landen falsch, bis man den Tab wechselt. Re-Render im sichtbaren Zustand.
-	f:SetScript("OnShow", function() if Shell._section then Shell:RenderContent() end end)
+	f:SetScript("OnShow", function()
+		-- Tabs neu vermessen: bei der ersten Anzeige nach Spielstart war die Font-Breite
+		-- evtl. noch 0 (Tabs winzig). Anker ziehen die Positionen automatisch nach.
+		if Shell._tabButtons then for _, t in ipairs(Shell._tabButtons) do if t.Fit then t:Fit() end end end
+		if Shell._section then Shell:RenderContent() end
+	end)
 
 	fill(f, C.ink850, "BACKGROUND")
 	-- Radial-Glow-Approx: vertikaler Gradient (oben heller) als Overlay.
@@ -465,6 +475,11 @@ function Shell:RebuildTabs(sectionIndex)
 		self._tabButtons[i] = tb
 		prev = tb
 	end
+	-- Eine Frame später neu vermessen: beim allerersten Aufbau (Panel noch versteckt /
+	-- Fonts evtl. nicht fertig) liefert GetStringWidth 0 -> winzige Tabs.
+	C_Timer.After(0, function()
+		for _, t in ipairs(self._tabButtons) do if t.Fit then t:Fit() end end
+	end)
 	Shell:SelectTab(1)
 end
 
@@ -507,54 +522,70 @@ local function newStack(holder)
 	function stack:y() return y end
 	function stack:height() return -y + S.panelGutter end
 
-	-- Sektions-Karte (Konzept A): zeichnet eine Karte (Hintergrund + Gold-Hairline +
-	-- Header-Leiste mit Gold-Akzent + Titel) an der aktuellen Stack-Position und gibt
-	-- einen INNEREN Stapler zurück. Dessen :place/:placeLeft setzen die Reihen
-	-- eingerückt (sectionPad) unter dem Header; :close() finalisiert die Kartenhöhe
-	-- und rückt den äußeren Stack um Karte + sectionGap weiter. Ersetzt den früheren
-	-- zentrierten Gold-Divider für Haupt-Sektionen (löst zugleich den Divider-Bug).
-	function stack:section(title)
+	-- Box-Primitiv: zeichnet eine Karte (Hintergrund + Gold-Hairline [+ optional
+	-- Header-Leiste mit Gold-Akzent + Titel]) an Position `topY`, anchored an `holder`
+	-- mit Außen-Einzug `outerPad`; Reihen werden zusätzlich um `pad` eingerückt. Gibt
+	-- einen INNEREN Stapler zurück (place/placeLeft/gap/y/subgroup/close). `close()`
+	-- setzt die Box-Höhe und liefert den Boden-iy; der Aufrufer rückt seinen Cursor
+	-- weiter. So nutzen section (Haupt-Karte mit Header) UND subgroup (hellere Unter-
+	-- Box ohne Header) EXAKT denselben Code (DRY; verschachtelbar).
+	local function makeBox(topY, o)
 		local M = UI.WIDGET
-		local top = y
-		local pad = M.sectionPad
-		local headerH = M.sectionHeaderH
+		local outerPad, pad = o.outerPad or 0, o.pad
 
 		local panel = CreateFrame("Frame", nil, holder)
 		-- Karte als Hintergrund-Ebene: Frame-Level auf Holder-Niveau, damit die später
 		-- erzeugten Inhalts-Frames (Geschwister, NICHT Kinder der Karte) darüber rendern.
 		panel:SetFrameLevel(holder:GetFrameLevel())
-		panel:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, top)
-		panel:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, top)
-		fill(panel, C.ink600)
-		border(panel, L.soft, 1)
+		panel:SetPoint("TOPLEFT", holder, "TOPLEFT", outerPad, topY)
+		panel:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -outerPad, topY)
+		fill(panel, o.fill)
+		-- Rahmen auf OVERLAY: die Header-Leiste (hbar, ARTWORK) liegt sonst ÜBER dem
+		-- Rahmen und überdeckt die dünne Gold-Linie oben + rechts im Header-Bereich.
+		border(panel, o.border, 1, "OVERLAY")
 
-		-- Header-Leiste (leicht heller) + feine Trennlinie darunter + Gold-Akzent links.
-		local hbar = panel:CreateTexture(nil, "ARTWORK")
-		hbar:SetHeight(headerH)
-		hbar:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-		hbar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-		setColor(hbar, C.ink550)
-		local hsep = panel:CreateTexture(nil, "OVERLAY")
-		PixelUtil.SetHeight(hsep, 1)
-		hsep:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -headerH)
-		hsep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -headerH)
-		setColor(hsep, L.faint)
-		local accent = panel:CreateTexture(nil, "OVERLAY")
-		accent:SetWidth(M.sectionHeaderBarW)
-		accent:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-		accent:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 0, -headerH)
-		setColor(accent, C.gold500)
-		local titleFS = FS(panel, "sectionHead", C.gold300)
-		titleFS:SetPoint("LEFT", panel, "TOPLEFT", M.sectionTitleX, -headerH / 2)
-		titleFS:SetText(title or "")
+		-- Header: schwer (Sektion = Gold-Leiste + Akzent + Cinzel-Titel) | leicht
+		-- (Unter-Box = nur kleines Gold-Label) | keiner (oben = Innenabstand `pad`,
+		-- symmetrisch zur Unterkante).
+		local headerH, topInset = 0, pad
+		if o.title and o.titleStyle == "light" then
+			headerH, topInset = M.subgroupTitleH, 0
+			local t = FS(panel, "groupTitle", C.gold300)
+			t:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.subgroupPad)
+			t:SetText(o.title)
+			panel._title = t
+		elseif o.title then
+			headerH, topInset = M.sectionHeaderH, (o.afterHeader or 0)
+			-- Header-Leiste (leicht heller) + feine Trennlinie darunter + Gold-Akzent links.
+			local hbar = panel:CreateTexture(nil, "ARTWORK")
+			hbar:SetHeight(headerH)
+			hbar:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+			hbar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
+			setColor(hbar, C.ink550)
+			local hsep = panel:CreateTexture(nil, "OVERLAY")
+			PixelUtil.SetHeight(hsep, 1)
+			hsep:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -headerH)
+			hsep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -headerH)
+			setColor(hsep, L.faint)
+			local accent = panel:CreateTexture(nil, "OVERLAY")
+			accent:SetWidth(M.sectionHeaderBarW)
+			accent:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+			accent:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 0, -headerH)
+			setColor(accent, C.gold500)
+			local titleFS = FS(panel, "sectionHead", C.gold300)
+			titleFS:SetPoint("LEFT", panel, "TOPLEFT", M.sectionTitleX, -headerH / 2)
+			titleFS:SetText(o.title)
+			panel._title = titleFS
+		end
 
-		local inner, iy, pending = {}, top - headerH - M.sectionAfterHeader, nil
+		local rowPad = outerPad + pad -- Reihen-Einzug der Box IM holder
+		local inner, iy, pending = {}, topY - headerH - topInset, nil
 		local function anchor(widget, h, full)
 			if pending then iy = iy - pending end
 			widget:SetParent(holder)
 			widget:ClearAllPoints()
-			widget:SetPoint("TOPLEFT", holder, "TOPLEFT", pad, iy)
-			if full then widget:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -pad, iy) end
+			widget:SetPoint("TOPLEFT", holder, "TOPLEFT", rowPad, iy)
+			if full then widget:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -rowPad, iy) end
 			if h then widget:SetHeight(h) end
 			iy = iy - (h or widget:GetHeight())
 		end
@@ -562,19 +593,57 @@ local function newStack(holder)
 		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); pending = gap or 22 end
 		function inner.gap(_, dy) iy = iy - (dy or 8) end
 		function inner.y() return iy end
+		-- Verschachtelte hellere Unter-Box an der aktuellen Position; gleiche API.
+		function inner.subgroup(_, o2)
+			o2 = o2 or {}
+			if pending then iy = iy - pending; pending = nil end -- Pending VOR der Box anwenden
+			local sub = makeBox(iy, {
+				outerPad = rowPad, pad = M.subgroupPad,
+				fill = C.ink520, border = L.faint,
+				title = o2.title, titleStyle = o2.title and "light" or nil,
+			})
+			local rawClose = sub.close
+			function sub.close()
+				iy = rawClose()                    -- Cursor an die Box-Unterkante
+				pending = o2.gap or M.subgroupGap  -- Gap als pending -> fällt am Eltern-close weg (symmetrisches Karten-Ende)
+				return sub._panel
+			end
+			return sub
+		end
 		function inner.close()
-			local bottom = iy - pad
-			panel:SetHeight(top - bottom) -- top/bottom = negative Offsets -> Differenz = Höhe
-			y = bottom - M.sectionGap
-			return panel
+			local bottom = iy - pad -- Boden = letzte Reihe + Innenabstand (Trailing-Gap fällt weg)
+			panel:SetHeight(topY - bottom) -- topY/bottom = negative Offsets -> Differenz = Höhe
+			return bottom
 		end
 		inner._panel = panel
-		inner._title = titleFS
+		return inner
+	end
+
+	-- Sektions-Karte (Konzept A): Box mit Header + Titel an der aktuellen Stack-
+	-- Position. :close() finalisiert die Kartenhöhe UND rückt den äußeren Stack um
+	-- Karte + sectionGap weiter (subgroups rücken stattdessen ihren Eltern-Cursor).
+	function stack:section(title)
+		local M = UI.WIDGET
+		local inner = makeBox(y, {
+			outerPad = 0, pad = M.sectionPad, fill = C.ink600, border = L.soft,
+			title = title, afterHeader = M.sectionAfterHeader,
+		})
+		local rawClose = inner.close
+		function inner.close()
+			local bottom = rawClose()
+			y = bottom - M.sectionGap
+			return inner._panel
+		end
+		inner._title = inner._panel._title
 		return inner
 	end
 
 	return stack
 end
+
+-- Screens (Shell/Screens.lua) brauchen denselben Stapler für eigene Sub-Frames
+-- (z.B. der Base-Screen baut seinen gate-baren Body über einen eigenen Stack).
+Shell.NewStack = newStack
 
 -- Inhalt für aktuelle Sektion/Tab rendern: echter Screen (Shell/Screens.lua) wenn
 -- registriert, sonst die Widget-Galerie (Phase-2-Fallback). Danach Scroll-Child-
