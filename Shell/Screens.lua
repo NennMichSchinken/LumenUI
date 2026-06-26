@@ -47,14 +47,30 @@ local POINT_OPTS = {
 	{ value = "BOTTOM",      label = "Unten" },
 	{ value = "BOTTOMRIGHT", label = "Unten rechts" },
 }
+-- Auras-Tab: Wachstumsrichtung (Werte = Profil-Keys wie in Options.lua GROW).
+local GROW_OPTS = {
+	{ value = "RIGHT", label = "Nach rechts" },
+	{ value = "LEFT",  label = "Nach links" },
+	{ value = "UP",    label = "Nach oben" },
+	{ value = "DOWN",  label = "Nach unten" },
+}
+-- Auras-Tab: Debuff-Filtermodus (nur Kategorie „debuffs").
+local AURA_FILTER_OPTS = {
+	{ value = "raid",        label = "Raid-relevant (Blizzard)" },
+	{ value = "all",         label = "Alle" },
+	{ value = "dispellable", label = "Nur dispellbar" },
+}
 -- Base-Tab-Optionen.
 local DISPEL_MODE_OPTS = {
 	{ value = "recolor", label = "Lebensbalken einfärben" },
 	{ value = "overlay", label = "Rand + Overlay (Klassenfarbe bleibt)" },
 }
+-- Werte kombinieren Modus + Text (das Datenmodell bleibt getrennt: aggroMode +
+-- aggroText). „overlaytext" = overlay-Modus MIT Text. Map siehe aggroStage.
 local AGGRO_MODE_OPTS = {
-	{ value = "border",  label = "Nur Rand" },
-	{ value = "overlay", label = "Rand + Overlay" },
+	{ value = "border",      label = "Nur Rand" },
+	{ value = "overlay",     label = "Rand + Overlay" },
+	{ value = "overlaytext", label = "Rand + Overlay + Text" },
 }
 local SORT_MODE_OPTS = {
 	{ value = "group", label = "Gruppe" },
@@ -109,6 +125,16 @@ local function dcset(typ) return function(r, g, b) rf().dispelColors = rf().disp
 local function pctget(key) return function() return math.floor((rf()[key] or 0) * 100 + 0.5) end end
 local function pctset(key) return function(v) rf()[key] = v / 100; relayout() end end
 
+-- Aura-Werte liegen in rf().auras[<cat>][key]. Set löst RefreshAuras() aus (leicht
+-- + kampf-sicher; UpdateLayout würde im Kampf abbrechen — wie der AceConfig-Auras-Tab).
+local function aget(cat, key) return function() return ((rf().auras or {})[cat] or {})[key] end end
+local function aset(cat, key)
+	return function(v)
+		local t = rf(); t.auras = t.auras or {}; t.auras[cat] = t.auras[cat] or {}; t.auras[cat][key] = v
+		if ns.Raidframes then ns.Raidframes:RefreshAuras() end
+	end
+end
+
 -- Balken-Texturen aus Raidframes:TextureValues() -> sortierte {value,label}-Liste.
 local function textureOptions()
 	local vals = (ns.Raidframes and ns.Raidframes:TextureValues()) or {}
@@ -118,16 +144,6 @@ local function textureOptions()
 	local opts = {}
 	for _, k in ipairs(list) do opts[#opts + 1] = { value = k, label = k } end
 	return opts
-end
-
--- Linksbündige Unter-Überschrift (für Aggro-Stufen-Blöcke etc.).
-local function subHead(parent, text)
-	local f = CreateFrame("Frame", nil, parent)
-	f:SetHeight(M.subHeadH)
-	local fs = UI.FS(f, "groupTitle", C.gold300)
-	fs:SetPoint("LEFT", f, "LEFT", 0, 0)
-	fs:SetText(text)
-	return f
 end
 
 -- Einzelnes Dropdown RASTERBÜNDIG: Zelle 1 eines 3-Spalten-Rasters, damit ALLE
@@ -142,6 +158,26 @@ local function gridSelect(d, stack, gap, o, sideFn)
 	return sel
 end
 
+-- Dimmt + sperrt einen Inhalts-Frame im „Modul deaktiviert"-Zustand (gleicher
+-- 0.35-Look wie eine ausgegraute Unter-Option). Wiederverwendbar: Base gated sein
+-- Body-Frame (Master bleibt bedienbar), Raid/Group/Auras gaten den ganzen Screen.
+-- Der Cover-Button schluckt alle Klicks; Mausrad-Scrollen (am ScrollFrame) bleibt.
+local function applyModuleGate(holder, enabled)
+	if not holder._gateCover then
+		local cover = CreateFrame("Button", nil, holder)
+		cover:SetAllPoints(holder)
+		cover:SetFrameLevel(holder:GetFrameLevel() + 1000)
+		cover:EnableMouse(true)
+		cover:Hide()
+		holder._gateCover = cover
+	end
+	if enabled then
+		holder:SetAlpha(1); holder._gateCover:Hide()
+	else
+		holder:SetAlpha(0.35); holder._gateCover:Show()
+	end
+end
+
 -- ---------------------------------------------------------------------------
 --  RaidScreen — Größe/Anordnung + Name-/HP-Text (Prototyp RaidScreen.jsx).
 --  Wird für Raid (ctx="raid") UND Group (ctx="party") genutzt — identische
@@ -149,6 +185,7 @@ end
 -- ---------------------------------------------------------------------------
 local function buildRaid(d, stack, ctx)
 	local fieldH = M.controlH + M.fieldGap -- Höhe eines Selects MIT Label
+	local R = L.rhythm
 
 	-- ===== Größe & Anordnung ===============================================
 	local sSize = stack:section("Größe & Anordnung")
@@ -167,8 +204,7 @@ local function buildRaid(d, stack, ctx)
 	sSize:close()
 
 	-- ===== Text — Name =====================================================
-	-- „Name anzeigen" ist der Master: aus -> alle übrigen Name-Controls ausgegraut.
-	-- Reihenfolge (Florian): Master / Umrandung·Position / Größe·X·Y / Farbe.
+	-- „Name anzeigen" ist der Master (frei über der Box): aus -> Box ausgegraut.
 	local sName = stack:section("Text — Name")
 
 	local nameDeps = {}
@@ -181,17 +217,20 @@ local function buildRaid(d, stack, ctx)
 	local cbName = W.Checkbox(nameTogRow, { label = "Name anzeigen", get = vget(ctx, "showName"),
 		set = function(v) vset(ctx, "showName")(v); refreshName() end })
 	cbName:SetPoint("LEFT", nameTogRow, "LEFT", 0, 0)
-	sName:place(nameTogRow, M.checkBox, L.nameText.afterMaster)
+	sName:place(nameTogRow, M.checkBox, R.afterCheck)
 
-	-- Reihe: Umrandung | Position | (frei)
+	-- Unter-Box (untitelt — der Master darüber benennt sie): Umrandung/Position /
+	-- Größe·X·Y / Farbe.
+	local boxN = sName:subgroup()
 	local nr1, nc1 = W.Row(d, 3, { height = fieldH })
 	local nameOutline = W.Select(nc1[1], { label = "Namens-Umrandung", options = OUTLINE_OPTS, get = vget(ctx, "nameOutline"), set = vset(ctx, "nameOutline") })
 	nameOutline:SetAllPoints(nc1[1])
 	local namePos = W.Select(nc1[2], { label = "Namensposition", options = POINT_OPTS, get = vget(ctx, "namePoint"), set = vset(ctx, "namePoint") })
 	namePos:SetAllPoints(nc1[2])
-	sName:place(nr1, fieldH, L.nameText.afterOutline)
+	local swName = W.ColorSwatch(nc1[3], { label = "Farbe", field = true, get = cget(ctx, "nameColor"), set = cset(ctx, "nameColor") })
+	swName:SetPoint("TOPLEFT", nc1[3], "TOPLEFT", 0, 0)
+	boxN:place(nr1, fieldH, R.row)
 
-	-- Reihe: Größe | X-Versatz | Y-Versatz
 	local nr2, nc2 = W.Row(d, 3, { height = M.sliderH })
 	local nameSize = W.Slider(nc2[1], { label = "Namensgröße", min = 6, max = 30, get = vget(ctx, "nameSize"), set = vset(ctx, "nameSize") })
 	nameSize:SetAllPoints(nc2[1])
@@ -199,20 +238,16 @@ local function buildRaid(d, stack, ctx)
 	nameX:SetAllPoints(nc2[2])
 	local nameY = W.Slider(nc2[3], { label = "Name Y-Versatz", min = -40, max = 40, get = vget(ctx, "nameY"), set = vset(ctx, "nameY") })
 	nameY:SetAllPoints(nc2[3])
-	sName:place(nr2, M.sliderH, L.nameText.afterSize)
-
-	-- Reihe: Farbe (allein)
-	local nameColRow = CreateFrame("Frame", nil, d)
-	local swName = W.ColorSwatch(nameColRow, { label = "Farbe", get = cget(ctx, "nameColor"), set = cset(ctx, "nameColor") })
-	swName:SetPoint("LEFT", nameColRow, "LEFT", 0, 0)
-	sName:place(nameColRow, M.checkBox, L.nameText.afterColor)
+	boxN:place(nr2, M.sliderH, R.tight)
+	boxN:close()
 	sName:close()
 
 	for _, w in ipairs({ nameOutline, namePos, nameSize, nameX, nameY, swName }) do nameDeps[#nameDeps + 1] = w end
 	refreshName()
 
 	-- ===== Text — HP-Anzeige ===============================================
-	-- Reihenfolge: HP-Text·Umrandung·Position / Größe·X·Y / Farbe. „Keine" graut den Rest.
+	-- „HP-Text" ist der Master (frei rausgezogen): „Keine" graut die Box aus.
+	-- Symmetrisch zu Name.
 	local sHP = stack:section("Text — HP-Anzeige")
 
 	local hpDeps = {}
@@ -221,19 +256,25 @@ local function buildRaid(d, stack, ctx)
 		for _, w in ipairs(hpDeps) do w:SetWidgetEnabled(on) end
 	end
 
-	-- Reihe: HP-Text | Umrandung | Position. Live-Hinweis als Tooltip auf HP-Text.
-	local hr1, hc1 = W.Row(d, 3, { height = fieldH })
-	local hpType = W.Select(hc1[1], { label = "HP-Text", options = HPTEXT_OPTS,
+	-- Master-Reihe: HP-Text-Dropdown allein (rasterbündig in Spalte 1).
+	local hMaster, hmc = W.Row(d, 3, { height = fieldH })
+	local hpType = W.Select(hmc[1], { label = "HP-Text", options = HPTEXT_OPTS,
 		tooltip = "Live zeigt WoW (12.0) secret-bedingt die aktuelle HP; exaktes Prozent im Testmodus.",
 		get = vget(ctx, "healthTextType"), set = function(v) vset(ctx, "healthTextType")(v); refreshHP() end })
-	hpType:SetAllPoints(hc1[1])
-	local hpOutline = W.Select(hc1[2], { label = "HP-Text-Umrandung", options = OUTLINE_OPTS, get = vget(ctx, "healthTextOutline"), set = vset(ctx, "healthTextOutline") })
-	hpOutline:SetAllPoints(hc1[2])
-	local hpPos = W.Select(hc1[3], { label = "HP-Textposition", options = POINT_OPTS, get = vget(ctx, "healthTextPoint"), set = vset(ctx, "healthTextPoint") })
-	hpPos:SetAllPoints(hc1[3])
-	sHP:place(hr1, fieldH, L.hpText.afterType)
+	hpType:SetAllPoints(hmc[1])
+	sHP:place(hMaster, fieldH, R.afterCheck)
 
-	-- Reihe: Größe | X-Versatz | Y-Versatz
+	-- Unter-Box (untitelt): Umrandung/Position / Größe·X·Y / Farbe.
+	local boxH = sHP:subgroup()
+	local hr1, hc1 = W.Row(d, 3, { height = fieldH })
+	local hpOutline = W.Select(hc1[1], { label = "HP-Text-Umrandung", options = OUTLINE_OPTS, get = vget(ctx, "healthTextOutline"), set = vset(ctx, "healthTextOutline") })
+	hpOutline:SetAllPoints(hc1[1])
+	local hpPos = W.Select(hc1[2], { label = "HP-Textposition", options = POINT_OPTS, get = vget(ctx, "healthTextPoint"), set = vset(ctx, "healthTextPoint") })
+	hpPos:SetAllPoints(hc1[2])
+	local swHP = W.ColorSwatch(hc1[3], { label = "Farbe", field = true, get = cget(ctx, "healthTextColor"), set = cset(ctx, "healthTextColor") })
+	swHP:SetPoint("TOPLEFT", hc1[3], "TOPLEFT", 0, 0)
+	boxH:place(hr1, fieldH, R.row)
+
 	local hr2, hc2 = W.Row(d, 3, { height = M.sliderH })
 	local hpSize = W.Slider(hc2[1], { label = "HP-Textgröße", min = 6, max = 30, get = vget(ctx, "healthTextSize"), set = vset(ctx, "healthTextSize") })
 	hpSize:SetAllPoints(hc2[1])
@@ -241,17 +282,14 @@ local function buildRaid(d, stack, ctx)
 	hpX:SetAllPoints(hc2[2])
 	local hpY = W.Slider(hc2[3], { label = "HP-Text Y-Versatz", min = -40, max = 40, get = vget(ctx, "healthTextY"), set = vset(ctx, "healthTextY") })
 	hpY:SetAllPoints(hc2[3])
-	sHP:place(hr2, M.sliderH, L.hpText.afterSize)
-
-	-- Reihe: Farbe (allein)
-	local hpColRow = CreateFrame("Frame", nil, d)
-	local swHP = W.ColorSwatch(hpColRow, { label = "Farbe", get = cget(ctx, "healthTextColor"), set = cset(ctx, "healthTextColor") })
-	swHP:SetPoint("LEFT", hpColRow, "LEFT", 0, 0)
-	sHP:place(hpColRow, M.checkBox, L.hpText.afterColor)
+	boxH:place(hr2, M.sliderH, R.tight)
+	boxH:close()
 	sHP:close()
 
 	for _, w in ipairs({ hpOutline, hpPos, hpSize, hpX, hpY, swHP }) do hpDeps[#hpDeps + 1] = w end
 	refreshHP()
+
+	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Raid/Group-Screen grau + gesperrt
 end
 
 -- Kleiner Pfeil-Button (↑/↓) aus zwei Linien (Font-Glyphen ▲▼ sind unsicher).
@@ -298,8 +336,11 @@ local ROLE_ACCENT = {
 -- ---------------------------------------------------------------------------
 local function buildBase(d, stack)
 	local fieldH = M.controlH + M.fieldGap
+	local R = L.rhythm
 
-	-- ===== Aktiviert =======================================================
+	-- ===== Aktiviert (Master — bleibt IMMER bedienbar, außerhalb des Gates) =
+	local outerStack = stack
+	local body -- forward-declare: die Master-Closure gated dieses Body-Frame
 	stack:gap(L.base.topToToggle) -- oben mehr Luft vor dem Master-Schalter
 	local enRow = CreateFrame("Frame", nil, d)
 	local cbEnabled = W.Checkbox(enRow, {
@@ -307,10 +348,18 @@ local function buildBase(d, stack)
 		set = function(v)
 			rf().enabled = v
 			if ns.Raidframes then if v then ns.Raidframes:Enable() else ns.Raidframes:Disable() end end
+			applyModuleGate(body, v)
 		end,
 	})
 	cbEnabled:SetPoint("LEFT", enRow, "LEFT", 0, 0)
 	stack:place(enRow, M.checkBox, L.base.toggleToSection)
+
+	-- Alles Weitere läuft in ein gate-bares Body-Frame: bei „aus" gedimmt + gesperrt
+	-- (gleicher 0.35-Look wie die Unter-Optionen). Die lokalen Namen d/stack werden
+	-- auf body/bstack umgebogen -> der restliche Base-Code baut unverändert weiter.
+	body = CreateFrame("Frame", nil, d)
+	local bstack = ns.Shell.NewStack(body)
+	d, stack = body, bstack
 
 	-- ===== Lebensbalken ====================================================
 	local sBar = stack:section("Lebensbalken")
@@ -357,18 +406,20 @@ local function buildBase(d, stack)
 	local cbShowAll = W.Checkbox(dRow1, { label = "Alle dispellbaren zeigen (nicht nur eigene)",
 		get = tget("dispelShowAll"), set = tset("dispelShowAll") })
 	cbShowAll:SetPoint("LEFT", cbDispel, "RIGHT", L.general.checkRowGap, 0)
-	sDispel:place(dRow1, M.checkBox, L.dispel.afterMaster)
+	sDispel:place(dRow1, M.checkBox, R.afterCheck)
+
+	local boxD = sDispel:subgroup() -- Unter-Box: Typ-Farben / Darstellung-Deckkraft
 
 	-- Reihe 2: Typ-Farben (Magie/Fluch/Krankheit/Gift) — vor der Slider-Reihe, damit
 	-- die Slider-Wertbox unten nicht an den Farben klebt.
-	local dColRow, dcc = W.Row(d, 4, { height = M.checkBox })
+	local dColRow, dcc = W.Row(d, 4, { height = fieldH })
 	local dispColW = {}
 	for i, t in ipairs(DISPEL_TYPES) do
-		local sw = W.ColorSwatch(dcc[i], { label = t.label, get = dcget(t.key), set = dcset(t.key) })
-		sw:SetPoint("LEFT", dcc[i], "LEFT", 0, 0)
+		local sw = W.ColorSwatch(dcc[i], { label = t.label, field = true, get = dcget(t.key), set = dcset(t.key) })
+		sw:SetPoint("TOPLEFT", dcc[i], "TOPLEFT", 0, 0)
 		dispColW[i] = sw
 	end
-	sDispel:place(dColRow, M.checkBox, L.dispel.afterColors)
+	boxD:place(dColRow, fieldH, R.row)
 
 	-- Reihe 3: Darstellung (Spalte 1) + Overlay-Deckkraft (Spalte 2) im Raster.
 	local dr2, dc2 = W.Row(d, 3, { height = M.sliderH })
@@ -378,7 +429,8 @@ local function buildBase(d, stack)
 	dispelAlphaW = W.Slider(dc2[2], { label = "Overlay-Deckkraft", min = 0, max = 100, unit = " %",
 		get = pctget("dispelAlpha"), set = pctset("dispelAlpha") })
 	dispelAlphaW:SetAllPoints(dc2[2])
-	sDispel:place(dr2, M.sliderH, L.dispel.afterMode)
+	boxD:place(dr2, M.sliderH, R.tight)
+	boxD:close()
 	sDispel:close()
 
 	for _, w in ipairs({ dispMode, cbShowAll, dispColW[1], dispColW[2], dispColW[3], dispColW[4] }) do
@@ -390,14 +442,11 @@ local function buildBase(d, stack)
 	local sAggro = stack:section("Aggro-Warnung")
 
 	local aggroAlways = {}                 -- nur an aggroEnabled gekoppelt
-	local aggroTextAggroW, aggroTextWarnW  -- zusätzlich modusabhängig
 	local aggroAlphaW
 	local aggroTextOpts = {}               -- nur aktiv, wenn Text wirklich angezeigt wird
 	local function refreshAggro()
 		local en = rf().aggroEnabled and true or false
 		for _, w in ipairs(aggroAlways) do w:SetWidgetEnabled(en) end
-		aggroTextAggroW:SetWidgetEnabled(en and rf().aggroModeAggro == "overlay")
-		aggroTextWarnW:SetWidgetEnabled(en and rf().aggroModeWarn == "overlay")
 		aggroAlphaW:SetWidgetEnabled(en and (rf().aggroModeAggro == "overlay" or rf().aggroModeWarn == "overlay"))
 		local textActive = (rf().aggroModeAggro == "overlay" and rf().aggroTextAggro)
 			or (rf().aggroModeWarn == "overlay" and rf().aggroTextWarn)
@@ -408,31 +457,39 @@ local function buildBase(d, stack)
 	local cbAggro = W.Checkbox(agRow, { label = "Aggro-Warnung anzeigen (Tanks ausgenommen)",
 		get = tget("aggroEnabled"), set = function(v) rf().aggroEnabled = v; relayout(); refreshAggro() end })
 	cbAggro:SetPoint("LEFT", agRow, "LEFT", 0, 0)
-	sAggro:place(agRow, M.checkBox, L.aggro.afterMaster)
+	sAggro:place(agRow, M.checkBox, R.afterCheck)
 
-	-- Ein Aggro-Stufen-Block (rot/gelb): Darstellung (1 Spalte) | Farbe | "Aggro"-Text,
-	-- Farbe + Text direkt neben dem Control gepackt (nicht über die Breite verteilt).
-	local function aggroStage(label, colorKey, modeKey, textKey, trailGap)
-		sAggro:place(subHead(d, label), M.subHeadH, L.general.subHeadToRow)
+	-- Eine Aggro-Stufe (rot/gelb) als getitelte Unter-Box: Darstellung | Farbe.
+	-- Das Darstellung-Dropdown vereint Modus + Text (3 Optionen): „Rand + Overlay +
+	-- Text" = overlay-Modus mit Text. Geschrieben werden weiter die getrennten
+	-- Profil-Felder modeKey + textKey (Datenmodell/Render unverändert).
+	local function aggroStage(label, colorKey, modeKey, textKey)
+		local box = sAggro:subgroup({ title = label })
 		local r, c = W.Row(d, 3, { height = fieldH })
 		local mode = W.Select(c[1], { label = "Darstellung", options = AGGRO_MODE_OPTS,
-			get = tget(modeKey), set = function(v) tset(modeKey)(v); refreshAggro() end })
+			get = function()
+				if rf()[modeKey] == "overlay" and rf()[textKey] then return "overlaytext" end
+				return rf()[modeKey]
+			end,
+			set = function(v)
+				if v == "overlaytext" then rf()[modeKey] = "overlay"; rf()[textKey] = true
+				elseif v == "overlay" then rf()[modeKey] = "overlay"; rf()[textKey] = false
+				else rf()[modeKey] = "border"; rf()[textKey] = false end
+				relayout(); refreshAggro()
+			end })
 		mode:SetAllPoints(c[1])
-		local sw = W.ColorSwatch(d, { label = "Farbe", get = tcget(colorKey), set = tcset(colorKey) })
-		sw:SetPoint("LEFT", mode._control, "RIGHT", L.general.sideGap, 0)
-		local cbTxt = W.Checkbox(d, { label = "\"Aggro\"-Text anzeigen", get = tget(textKey),
-			set = function(v) tset(textKey)(v); refreshAggro() end })
-		cbTxt:SetPoint("LEFT", sw, "RIGHT", L.general.sideGap, 0)
-		sAggro:place(r, fieldH, trailGap)
+		local sw = W.ColorSwatch(c[2], { label = "Farbe", field = true, get = tcget(colorKey), set = tcset(colorKey) })
+		sw:SetPoint("TOPLEFT", c[2], "TOPLEFT", 0, 0)
+		box:place(r, fieldH, R.tight)
+		box:close()
 		aggroAlways[#aggroAlways + 1] = sw
 		aggroAlways[#aggroAlways + 1] = mode
-		return cbTxt
 	end
-	aggroTextAggroW = aggroStage("Hat Aggro (rot)",   "aggroColorAggro", "aggroModeAggro", "aggroTextAggro", L.aggro.afterStage)
-	aggroTextWarnW  = aggroStage("Aggro droht (gelb)", "aggroColorWarn",  "aggroModeWarn",  "aggroTextWarn", L.aggro.beforeSubDivider)
+	aggroStage("Hat Aggro (rot)",    "aggroColorAggro", "aggroModeAggro", "aggroTextAggro")
+	aggroStage("Aggro droht (gelb)", "aggroColorWarn",  "aggroModeWarn",  "aggroTextWarn")
 
-	-- Geteilte Darstellung beider Stufen — zentrierter Sub-Divider INNERHALB der Karte.
-	sAggro:place(W.SectionDivider(d, "Darstellung (beide Stufen)", true), M.dividerH, L.aggro.afterSubDivider)
+	-- Geteilte Text-Darstellung beider Stufen — eigene getitelte Unter-Box.
+	local boxShared = sAggro:subgroup({ title = "Text (beide Stufen)" })
 	-- Reihe 1: Textposition | Text-Umrandung | Overlay-Deckkraft.
 	local ar1, ac1 = W.Row(d, 3, { height = M.sliderH })
 	local agPoint = W.Select(ac1[1], { label = "Textposition", options = POINT_OPTS, get = tget("aggroTextPoint"), set = tset("aggroTextPoint") })
@@ -442,7 +499,7 @@ local function buildBase(d, stack)
 	aggroAlphaW = W.Slider(ac1[3], { label = "Overlay-Deckkraft", min = 0, max = 100, unit = " %",
 		get = pctget("aggroFillAlpha"), set = pctset("aggroFillAlpha") })
 	aggroAlphaW:SetAllPoints(ac1[3])
-	sAggro:place(ar1, M.sliderH, L.aggro.betweenShared)
+	boxShared:place(ar1, M.sliderH, R.row)
 
 	-- Reihe 2: Textgröße | Text X-Versatz | Text Y-Versatz.
 	local ar2, ac2 = W.Row(d, 3, { height = M.sliderH })
@@ -452,7 +509,8 @@ local function buildBase(d, stack)
 	agX:SetAllPoints(ac2[2])
 	local agY = W.Slider(ac2[3], { label = "Text Y-Versatz", min = -60, max = 60, get = tget("aggroTextY"), set = tset("aggroTextY") })
 	agY:SetAllPoints(ac2[3])
-	sAggro:place(ar2, M.sliderH, L.aggro.afterShared)
+	boxShared:place(ar2, M.sliderH, R.tight)
+	boxShared:close()
 	sAggro:close()
 
 	for _, w in ipairs({ agPoint, agOutline, agSize, agX, agY }) do aggroTextOpts[#aggroTextOpts + 1] = w end
@@ -537,8 +595,121 @@ local function buildBase(d, stack)
 		{ label = "Test-Gruppengröße", options = TESTSIZE_OPTS, get = tget("testSize"), set = tset("testSize") })
 	sTest:close()
 	refreshTest()
+
+	-- Body in den äußeren Stack einhängen + initial gaten (Modul aus -> alles grau).
+	outerStack:place(body, bstack:height(), 0)
+	applyModuleGate(body, rf().enabled)
+end
+
+-- ---------------------------------------------------------------------------
+--  Eine Aura-Kategorie als Sektions-Karte (spiegelt auraCatGroup aus Options.lua).
+--  „Anzeigen" ist der Master: aus -> alle übrigen Controls ausgegraut. „Auto-Fit"
+--  graut zusätzlich die beiden Größen-Slider. `isDebuff` blendet den Filter ein.
+-- ---------------------------------------------------------------------------
+local function auraCat(d, stack, cat, label, isDebuff)
+	local fieldH = M.controlH + M.fieldGap
+	local R = L.rhythm
+	local s = stack:section(label)
+
+	local deps = {}             -- nur an „Anzeigen" gekoppelt
+	local szRaidW, szPartyW     -- zusätzlich an „Auto-Fit" gekoppelt
+	local function refresh()
+		local on = aget(cat, "enabled")() and true or false
+		for _, w in ipairs(deps) do w:SetWidgetEnabled(on) end
+		local sz = on and not aget(cat, "autoFit")()
+		if szRaidW  then szRaidW:SetWidgetEnabled(sz and true or false) end
+		if szPartyW then szPartyW:SetWidgetEnabled(sz and true or false) end
+	end
+
+	-- „Anzeigen" (Master) — frei in der Karte, ÜBER den Unter-Boxen.
+	local mRow = CreateFrame("Frame", nil, d)
+	local cbOn = W.Checkbox(mRow, { label = "Anzeigen", get = aget(cat, "enabled"),
+		set = function(v) aset(cat, "enabled")(v); refresh() end })
+	cbOn:SetPoint("LEFT", mRow, "LEFT", 0, 0)
+	s:place(mRow, M.checkBox, R.afterCheck)
+
+	-- ── Unter-Box A: Platzierung & Menge ─────────────────────────────────
+	local boxA = s:subgroup()
+
+	-- Reihe: Position | Wachstum | (Filter bei Debuffs, sonst Cooldown-Swipe).
+	local r1, c1 = W.Row(d, 3, { height = fieldH })
+	local anchorW = W.Select(c1[1], { label = "Position (Anker)", options = POINT_OPTS, get = aget(cat, "anchor"), set = aset(cat, "anchor") })
+	anchorW:SetAllPoints(c1[1])
+	local growW = W.Select(c1[2], { label = "Wachstumsrichtung", options = GROW_OPTS, get = aget(cat, "grow"), set = aset(cat, "grow") })
+	growW:SetAllPoints(c1[2])
+	deps[#deps + 1] = anchorW; deps[#deps + 1] = growW
+	if isDebuff then
+		local filterW = W.Select(c1[3], { label = "Filter", options = AURA_FILTER_OPTS,
+			tooltip = "Welche Debuffs gezeigt werden. Raid-relevant = Blizzards Standard-Auswahl.",
+			get = aget(cat, "filterMode"), set = aset(cat, "filterMode") })
+		filterW:SetAllPoints(c1[3])
+		deps[#deps + 1] = filterW
+	else
+		-- Cooldown-Swipe sitzt bei den Dropdowns (vertikal mittig in der Zeile).
+		local cbSwipe = W.Checkbox(c1[3], { label = "Cooldown-Swipe", get = aget(cat, "showSwipe"), set = aset(cat, "showSwipe") })
+		cbSwipe:SetPoint("LEFT", c1[3], "LEFT", 0, 0)
+		deps[#deps + 1] = cbSwipe
+	end
+	boxA:place(r1, fieldH, R.row)
+
+	-- Reihe: Abstand | Max. Icons | (bei Debuffs Cooldown-Swipe, da Filter oben sitzt).
+	local r2, c2 = W.Row(d, 3, { height = M.sliderH })
+	local spaceW = W.Slider(c2[1], { label = "Abstand", min = 0, max = 20, unit = " px", get = aget(cat, "spacing"), set = aset(cat, "spacing") })
+	spaceW:SetAllPoints(c2[1])
+	local maxW = W.Slider(c2[2], { label = "Max. Icons", min = 1, max = 8, get = aget(cat, "maxIcons"), set = aset(cat, "maxIcons") })
+	maxW:SetAllPoints(c2[2])
+	deps[#deps + 1] = spaceW; deps[#deps + 1] = maxW
+	if isDebuff then
+		local cbSwipe = W.Checkbox(c2[3], { label = "Cooldown-Swipe", get = aget(cat, "showSwipe"), set = aset(cat, "showSwipe") })
+		cbSwipe:SetPoint("LEFT", c2[3], "LEFT", 0, 0)
+		deps[#deps + 1] = cbSwipe
+	end
+	boxA:place(r2, M.sliderH, R.tight)
+	boxA:close()
+
+	-- ── Unter-Box B: Auto-Fit & Größe ────────────────────────────────────
+	local boxB = s:subgroup()
+
+	-- Auto-Fit vorne (Gruppen-Kopf der Größen). Checkbox -> Slider = afterCheck.
+	local fRow = CreateFrame("Frame", nil, d)
+	local cbFit = W.Checkbox(fRow, { label = "Auto-Fit (Größe aus Frame-Höhe)", get = aget(cat, "autoFit"),
+		set = function(v) aset(cat, "autoFit")(v); refresh() end })
+	cbFit:SetPoint("LEFT", fRow, "LEFT", 0, 0)
+	deps[#deps + 1] = cbFit
+	boxB:place(fRow, M.checkBox, R.afterCheck)
+
+	-- Reihe: Größe (Raid) | Größe (Gruppe) | (frei) — nur aktiv ohne Auto-Fit.
+	local r3, c3 = W.Row(d, 3, { height = M.sliderH })
+	szRaidW = W.Slider(c3[1], { label = "Größe (Raid)", min = 8, max = 48, unit = " px", get = aget(cat, "sizeRaid"), set = aset(cat, "sizeRaid") })
+	szRaidW:SetAllPoints(c3[1])
+	szPartyW = W.Slider(c3[2], { label = "Größe (Gruppe)", min = 8, max = 48, unit = " px", get = aget(cat, "sizeParty"), set = aset(cat, "sizeParty") })
+	szPartyW:SetAllPoints(c3[2])
+	boxB:place(r3, M.sliderH, R.tight)
+	boxB:close()
+
+	s:close()
+	refresh()
+end
+
+-- ---------------------------------------------------------------------------
+--  AurasScreen — Aura-Indikatoren je Kategorie (Prototyp/AceConfig-Auras-Tab).
+--  Drei Kategorien: eigene HoTs, Defensives & Externe, Debuffs.
+-- ---------------------------------------------------------------------------
+local function buildAuras(d, stack)
+	stack:gap(L.base.topToToggle)
+	local intro = W.Hint(d, "Aura-Indikatoren am Frame: eigene HoTs, Defensives & Externe, Debuffs. "
+		.. "Jede Kategorie hat eigenen Anker, Wachstum und Größe. Welche Spells getrackt werden, "
+		.. "regelt der Tab \"Tracking\". Im Testmodus (Tab \"Base\") zur Vorschau sichtbar.")
+	stack:place(intro, M.hintH, L.auras.afterIntro)
+
+	auraCat(d, stack, "hotsOwn",    "HoTs",                 false)
+	auraCat(d, stack, "defensives", "Defensives & Externe", false)
+	auraCat(d, stack, "debuffs",    "Debuffs",              true)
+
+	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Auras-Screen grau + gesperrt
 end
 
 ns.Screens["Raidframes/Base"]  = buildBase
 ns.Screens["Raidframes/Raid"]  = function(d, stack) buildRaid(d, stack, "raid") end
 ns.Screens["Raidframes/Group"] = function(d, stack) buildRaid(d, stack, "party") end
+ns.Screens["Raidframes/Auras"] = buildAuras

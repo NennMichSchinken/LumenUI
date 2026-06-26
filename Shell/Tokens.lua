@@ -32,7 +32,9 @@ UI.C = {
 	ink650   = hex("15100a"), -- Icon-Tile-Schatten
 	ink600   = hex("171411"), -- Raised Card
 	ink550   = hex("1B1712"), -- Popover / Floating
+	ink520   = hex("1E1A13"), -- Unter-Box (heller als Card, für Funktionsgruppen in einer Karte)
 	inkTint  = hex("2c2318"), -- Icon-Tile-Gradient oben
+	sliderTrack = hex("3A3122"), -- ungefüllter Slider-Track (deutlich sichtbar, nicht „in der Luft")
 
 	-- Gold — die eine Akzentfarbe, in vielen Deckkräften
 	gold500  = hex("D4A34F"), -- Kern-Akzent: Borders, Icons, aktiv
@@ -164,6 +166,10 @@ UI.WIDGET = {
 	checkBox    = 22, -- Box-Kantenlänge
 	checkLabelGap = 10,
 
+	-- Field-Swatch (ColorSwatch field=true): quadratischer Farb-Chip auf Dropdown-Höhe
+	-- (controlH × swatchFieldW) -> sitzt sauber in der Reihe, dominiert die Spalte nicht.
+	swatchFieldW = 40,
+
 	-- Slider
 	sliderH     = 86, -- Gesamthöhe (Label + Track-Reihe + Wert-Box)
 	sliderTrackH= 18, -- Höhe der klickbaren Track-Reihe
@@ -194,6 +200,11 @@ UI.WIDGET = {
 	sectionHeaderBarW  = 3,  -- Breite des Gold-Akzent-Balkens am Header links
 	sectionTitleX      = 18, -- X-Einzug des Header-Titels
 
+	-- Unter-Box (subgroup): hellere Funktionsgruppe INNERHALB einer Sektions-Karte.
+	subgroupPad   = 16, -- innerer Einzug der Unter-Box (Reihen zur Box-Kante)
+	subgroupGap   = 14, -- Abstand zwischen zwei Unter-Boxen / nach der letzten
+	subgroupTitleH = 40, -- Titel-Bereich einer GETITELTEN Unter-Box (Label + Abstand zur 1. Reihe)
+
 	-- Hint (gedämpfte Fließtext-Zeile)
 	hintH       = 40, -- Default-Höhe eines Hint-Blocks (1–2 Zeilen)
 	subHeadH    = 26, -- linksbündige Unter-Überschrift (z.B. Aggro-Stufen-Blöcke)
@@ -205,13 +216,14 @@ UI.WIDGET = {
 	sortAccentW   = 4,  -- Breite des rollenfarbenen Akzent-Balkens links
 
 	-- Color-Picker (eigenes Popover im Lumen-Stil)
-	cpSVW    = 240, -- Breite des Sättigung/Helligkeit-Feldes
+	cpSVW    = 280, -- Breite des Sättigung/Helligkeit-Feldes (breit genug, dass die Buttons + rechter Rand passen)
 	cpSVH    = 168, -- Höhe des SV-Feldes (= Höhe der Hue-Leiste)
 	cpHueW   = 20,  -- Breite der Farbton-Leiste
 	cpPad    = 16,  -- Innenabstand des Pickers
 	cpGap    = 12,  -- Abstand SV-Feld <-> Hue-Leiste
 	cpMarker = 10,  -- Kantenlänge der Marker
 	cpPrevH  = 30,  -- Höhe der Vorschau-/Hex-Reihe
+	cpBtnGap = 8,   -- Abstand zwischen Übernehmen/Abbrechen im Color-Picker
 
 	rowGap      = 30, -- Spaltenabstand in W.Row (row3/row2)
 }
@@ -226,6 +238,15 @@ UI.WIDGET = {
 --  geben, dann tausche ich die Reihen.
 -- ---------------------------------------------------------------------------
 UI.LAYOUT = {
+	-- RHYTHMUS — semantische Reihen-Abstände. Abstand über die BEZIEHUNG zweier Reihen
+	-- wählen, nicht über eine geratene Zahl. Prinzip: ein Höhensprung (kurzes Control
+	-- wie Checkbox/Swatch -> hohes wie Dropdown/Slider) braucht mehr Luft.
+	rhythm = {
+		tight      = 14, -- eng zusammengehörige Reihen (Slider->Slider, Größe/X/Y->Farbe)
+		row        = 22, -- Standard zwischen zwei Control-Reihen
+		afterCheck = 30, -- nach Checkbox/kurzem Control -> hohes Control (Dropdown/Slider)
+		group      = 32, -- bewusster Bruch zwischen zwei Unter-Gruppen in einer Karte
+	},
 	general = {
 		afterDivider  = 16, -- Divider -> erstes Element der Sektion
 		beforeSection = 52, -- Sektions-Ende -> nächste Kategorie (große Trennung)
@@ -241,19 +262,6 @@ UI.LAYOUT = {
 		afterTexture = 22,  -- Balken-Textur-Reihe -> Klassenfarbe-Reihe
 		afterClass   = 52,  -- Klassenfarbe-Reihe -> nächste Kategorie
 	},
-	dispel = {
-		afterMaster = 22,   -- Master-Reihe -> Typ-Farben
-		afterColors = 28,   -- Typ-Farben -> Darstellung/Deckkraft
-		afterMode   = 52,   -- Darstellung/Deckkraft -> nächste Kategorie
-	},
-	aggro = {
-		afterMaster      = 18, -- „Aggro anzeigen" -> „Hat Aggro (rot)"
-		afterStage       = 18, -- Stufen-Reihe -> nächste Unter-Überschrift
-		beforeSubDivider = 26, -- letzte Stufe -> „Darstellung (beide Stufen)"
-		afterSubDivider  = 18, -- Sub-Divider -> erste geteilte Reihe
-		betweenShared    = 14, -- geteilte Reihe 1 -> Reihe 2
-		afterShared      = 52, -- geteilte Reihe 2 -> nächste Kategorie
-	},
 	sort = {
 		afterMode = 22,     -- „Sortieren nach" -> Prioritäts-Card
 		afterCard = 52,     -- Card -> nächste Kategorie
@@ -266,16 +274,8 @@ UI.LAYOUT = {
 		afterSliders = 22,  -- Breite/Höhe/Abstand -> Ausrichtung
 		afterAlign   = 52,  -- Ausrichtung -> Text — Name
 	},
-	nameText = {            -- Raid/Group: Text — Name
-		afterMaster  = 18,  -- „Name anzeigen" -> Umrandung/Position
-		afterOutline = 14,  -- Umrandung/Position -> Größe/X/Y
-		afterSize    = 14,  -- Größe/X/Y -> Farbe
-		afterColor   = 52,  -- Farbe -> Text — HP-Anzeige
-	},
-	hpText = {              -- Raid/Group: Text — HP-Anzeige
-		afterType  = 14,    -- HP-Text/Umrandung/Position -> Größe/X/Y
-		afterSize  = 14,    -- Größe/X/Y -> Farbe
-		afterColor = 14,    -- Farbe -> Ende
+	auras = {               -- Auras-Tab (die Reihen-Abstände kommen aus rhythm oben)
+		afterIntro = 22,    -- Intro-Hinweis -> erste Kategorie-Karte
 	},
 }
 
