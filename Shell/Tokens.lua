@@ -97,6 +97,7 @@ UI.ROLE = {
 	label    = { UI.FONT.hankenMed,  14, "" },
 	tab      = { UI.FONT.hankenMed,  18, "" },
 	caption  = { UI.FONT.hankenReg,  12, "" },
+	hint     = { UI.FONT.hankenReg,  14, "" }, -- Beschreibungs-/Hinweistext unter Controls
 	eyebrow  = { UI.FONT.hankenMed,  12, "" },
 	tagline  = { UI.FONT.hankenReg,  12, "" },
 
@@ -110,6 +111,8 @@ UI.ROLE = {
 	ends       = { UI.FONT.hankenMed,  14, "" }, -- Slider Min/Max-Zahlen
 	selectText = { UI.FONT.hankenMed,  16, "" }, -- Dropdown-Header + -Zeilen
 	checkLabel = { UI.FONT.hankenMed,  16, "" }, -- Checkbox-Label
+	listLabel  = { UI.FONT.hankenMed,  18, "" }, -- Listen-Zeile (Rollen-Sortierliste)
+	subDivider = { UI.FONT.cinzelSemi, 16, "" }, -- kleinere zentrierte Unter-Überschrift
 	btn        = { UI.FONT.hankenSemi, 16, "" }, -- Button-Label (Schnitt je Variante, s. Widgets)
 }
 
@@ -140,6 +143,8 @@ UI.S = {
 	cardPad     = 20,
 	panelGutter = 36,
 	navWidth    = 260,
+	scrollBarW  = 4,  -- Breite der Content-Scrollleiste
+	scrollBarGap = 14, -- Abstand ScrollFrame -> Scrollleiste (im Gutter)
 }
 UI.R = {
 	panel = 2, control = 8, popover = 9, card = 10, check = 4,
@@ -175,16 +180,110 @@ UI.WIDGET = {
 	groupTitleY = -16, -- yOffset des Titels von der oberen Kante
 	groupContentY = -48, -- yOffset des Inhaltsbereichs
 
-	-- Section-Divider
+	-- Section-Divider (zentrierte Gold-Linie — jetzt nur noch für UNTER-Überschriften
+	-- innerhalb einer Sektions-Karte; Haupt-Sektionen tragen den Panel-Header).
 	dividerH    = 36, -- Höhe des Divider-Blocks
 	dividerGap  = 16, -- Abstand Text <-> Gold-Rule
+
+	-- Sektions-Panel (Konzept A: jede Sektion = eigene Karte mit Header). Zentral
+	-- justierbar; stack:section() in Shell.lua liest nur daraus.
+	sectionPad         = 22, -- innerer L/R- + Boden-Abstand der Karte
+	sectionHeaderH     = 46, -- Höhe der Header-Leiste (Titel)
+	sectionAfterHeader = 18, -- Header-Unterkante -> erste Inhalts-Reihe
+	sectionGap         = 26, -- Abstand zwischen zwei Sektions-Karten
+	sectionHeaderBarW  = 3,  -- Breite des Gold-Akzent-Balkens am Header links
+	sectionTitleX      = 18, -- X-Einzug des Header-Titels
+
+	-- Hint (gedämpfte Fließtext-Zeile)
+	hintH       = 40, -- Default-Höhe eines Hint-Blocks (1–2 Zeilen)
+	subHeadH    = 26, -- linksbündige Unter-Überschrift (z.B. Aggro-Stufen-Blöcke)
+
+	-- (Die LAYOUT-ABSTÄNDE der Screens liegen zentral & pro Kategorie in UI.LAYOUT
+	-- weiter unten — hier in UI.WIDGET nur die WIDGET-Maße.)
+	sortRowH      = 42, -- Höhe einer Reihe in der Rollen-Prioritätsliste
+	sortCardPad   = 6,  -- Innenabstand der Rollen-Prioritäts-Card
+	sortAccentW   = 4,  -- Breite des rollenfarbenen Akzent-Balkens links
+
+	-- Color-Picker (eigenes Popover im Lumen-Stil)
+	cpSVW    = 240, -- Breite des Sättigung/Helligkeit-Feldes
+	cpSVH    = 168, -- Höhe des SV-Feldes (= Höhe der Hue-Leiste)
+	cpHueW   = 20,  -- Breite der Farbton-Leiste
+	cpPad    = 16,  -- Innenabstand des Pickers
+	cpGap    = 12,  -- Abstand SV-Feld <-> Hue-Leiste
+	cpMarker = 10,  -- Kantenlänge der Marker
+	cpPrevH  = 30,  -- Höhe der Vorschau-/Hex-Reihe
 
 	rowGap      = 30, -- Spaltenabstand in W.Row (row3/row2)
 }
 
--- Panel-Maße (Design 1500×1000). Auf dem Bildschirm via SetScale verkleinert.
+-- ---------------------------------------------------------------------------
+--  LAYOUT-ABSTÄNDE — ZENTRAL & PRO KATEGORIE. Hier justiert Florian die Abstände
+--  jeder Sektion EINZELN. `general` = globale Standardwerte (Divider-Abstand,
+--  Sektions-Trennung, Side-/Checkbox-Gaps). Darunter ein Block je Kategorie mit
+--  „nach welcher Reihe wie viel Platz". Werte in Design-Pixeln (4er-Raster).
+--  HINWEIS: die ELEMENT-/Reihen-REIHENFOLGE je Sektion liegt im jeweiligen Block
+--  in Shell/Screens.lua (klar kommentiert) — für ein Umsortieren kurz Bescheid
+--  geben, dann tausche ich die Reihen.
+-- ---------------------------------------------------------------------------
+UI.LAYOUT = {
+	general = {
+		afterDivider  = 16, -- Divider -> erstes Element der Sektion
+		beforeSection = 52, -- Sektions-Ende -> nächste Kategorie (große Trennung)
+		sideGap       = 28, -- Control -> direkt daneben sitzende Checkbox
+		checkRowGap   = 40, -- zwischen zwei Checkboxen in einer Reihe
+		subHeadToRow  = 8,  -- Unter-Überschrift -> ihre Reihe
+	},
+	base = {                    -- Base-Tab: freistehender „Raidframes aktiviert"-Schalter
+		topToToggle    = 30,    -- Tab-Strip -> Checkbox (oben mehr Platz)
+		toggleToSection = 16,   -- Checkbox -> erste Sektions-Karte (unten weniger, näher dran)
+	},
+	lebensbalken = {
+		afterTexture = 22,  -- Balken-Textur-Reihe -> Klassenfarbe-Reihe
+		afterClass   = 52,  -- Klassenfarbe-Reihe -> nächste Kategorie
+	},
+	dispel = {
+		afterMaster = 22,   -- Master-Reihe -> Typ-Farben
+		afterColors = 28,   -- Typ-Farben -> Darstellung/Deckkraft
+		afterMode   = 52,   -- Darstellung/Deckkraft -> nächste Kategorie
+	},
+	aggro = {
+		afterMaster      = 18, -- „Aggro anzeigen" -> „Hat Aggro (rot)"
+		afterStage       = 18, -- Stufen-Reihe -> nächste Unter-Überschrift
+		beforeSubDivider = 26, -- letzte Stufe -> „Darstellung (beide Stufen)"
+		afterSubDivider  = 18, -- Sub-Divider -> erste geteilte Reihe
+		betweenShared    = 14, -- geteilte Reihe 1 -> Reihe 2
+		afterShared      = 52, -- geteilte Reihe 2 -> nächste Kategorie
+	},
+	sort = {
+		afterMode = 22,     -- „Sortieren nach" -> Prioritäts-Card
+		afterCard = 52,     -- Card -> nächste Kategorie
+	},
+	test = {
+		afterMaster = 14,   -- „Testmodus" -> Test-Gruppengröße
+		afterSize   = 14,   -- Test-Gruppengröße -> Ende
+	},
+	sizeArrange = {         -- Raid/Group: Größe & Anordnung
+		afterSliders = 22,  -- Breite/Höhe/Abstand -> Ausrichtung
+		afterAlign   = 52,  -- Ausrichtung -> Text — Name
+	},
+	nameText = {            -- Raid/Group: Text — Name
+		afterMaster  = 18,  -- „Name anzeigen" -> Umrandung/Position
+		afterOutline = 14,  -- Umrandung/Position -> Größe/X/Y
+		afterSize    = 14,  -- Größe/X/Y -> Farbe
+		afterColor   = 52,  -- Farbe -> Text — HP-Anzeige
+	},
+	hpText = {              -- Raid/Group: Text — HP-Anzeige
+		afterType  = 14,    -- HP-Text/Umrandung/Position -> Größe/X/Y
+		afterSize  = 14,    -- Größe/X/Y -> Farbe
+		afterColor = 14,    -- Farbe -> Ende
+	},
+}
+
+-- Panel-Maße (Design 1500×1060). Auf dem Bildschirm via SetScale verkleinert.
+-- scale 0.80 + Höhe 1060: spürbar größer, Inhalt atmet (Florian-Wunsch). Hier
+-- nachjustieren — w/h ändern den Platz, scale die Gesamtgröße inkl. Schrift.
 UI.PANEL = {
-	w = 1500, h = 1000, headerH = 88, footerH = 78, scale = 0.74,
+	w = 1500, h = 1060, headerH = 88, footerH = 78, scale = 0.80,
 }
 
 -- ---------------------------------------------------------------------------
@@ -237,16 +336,37 @@ function UI.FS(parent, role, col, layer)
 	return fs
 end
 
--- Horizontale 1px-Gradient-Linie (Gold fadet aus). dir: "out"=Gold stark links →
--- schwach rechts | "in"=umgekehrt. Für Section-Divider-Rules u.ä.
+-- Horizontale 1px-Fade-Linie (Gold fadet zur Kante aus). dir: "out"=stark am
+-- rechten Ende (an der Überschrift) | "in"=stark am linken Ende.
+-- ABSICHTLICH aus 3 soliden Segmenten, REIN ÜBER ANKER (kein SetGradient, kein
+-- OnSizeChanged): beides braucht einen Layout-/Render-Pass, der im ScrollFrame
+-- für Inhalt unter dem Sichtbereich verzögert wird -> Linien fehlen oben/flackern.
+-- Solide, anker-positionierte Flächen rendern sofort (auch off-screen) und ruhig.
+-- Die zwei „Detail"-Segmente nahe der Überschrift haben feste Breite, das lange
+-- blasse Segment füllt variabel bis zur Kante.
 function UI.GradientLine(parent, dir, strongA, faintA)
 	local gc = UI.C.gold500
-	local t = parent:CreateTexture(nil, "ARTWORK")
-	t:SetHeight(1)
-	t:SetColorTexture(1, 1, 1, 1)
-	local strong = CreateColor(gc.r, gc.g, gc.b, strongA or 0.45)
-	local faint  = CreateColor(gc.r, gc.g, gc.b, faintA or 0.0)
-	if dir == "in" then t:SetGradient("HORIZONTAL", faint, strong)
-	else t:SetGradient("HORIZONTAL", strong, faint) end
-	return t
+	strongA, faintA = strongA or 0.45, faintA or 0.0
+	local midA  = (strongA + faintA) / 2
+	local SEG   = 70 -- feste Breite der beiden Detail-Segmente nahe der Überschrift
+	local f = CreateFrame("Frame", nil, parent)
+	PixelUtil.SetHeight(f, 1) -- pixel-gesnappt: naive 1px-Höhe verschwindet unter SetScale beim Scrollen
+	local function mk(a)
+		local t = f:CreateTexture(nil, "ARTWORK"); PixelUtil.SetHeight(t, 1)
+		t:SetColorTexture(gc.r, gc.g, gc.b, a)
+		return t
+	end
+	local strong, mid, faint = mk(strongA), mk(midA), mk(faintA + 0.05)
+	if dir == "in" then
+		-- Überschrift am LINKEN Ende: stark links -> blass zur rechten Kante.
+		strong:SetPoint("LEFT", f, "LEFT", 0, 0); strong:SetWidth(SEG)
+		mid:SetPoint("LEFT", strong, "RIGHT", 0, 0); mid:SetWidth(SEG)
+		faint:SetPoint("LEFT", mid, "RIGHT", 0, 0); faint:SetPoint("RIGHT", f, "RIGHT", 0, 0)
+	else
+		-- Überschrift am RECHTEN Ende: stark rechts -> blass zur linken Kante.
+		strong:SetPoint("RIGHT", f, "RIGHT", 0, 0); strong:SetWidth(SEG)
+		mid:SetPoint("RIGHT", strong, "LEFT", 0, 0); mid:SetWidth(SEG)
+		faint:SetPoint("RIGHT", mid, "LEFT", 0, 0); faint:SetPoint("LEFT", f, "LEFT", 0, 0)
+	end
+	return f
 end

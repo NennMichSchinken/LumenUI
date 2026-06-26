@@ -19,6 +19,15 @@ local C, L, S, M = UI.C, UI.line, UI.S, UI.WIDGET
 local W = {}
 ns.W = W
 
+-- Popover-Host + Sammelliste für Select-Menüs. Selects in einem ScrollFrame würden
+-- vom Clipping abgeschnitten -> ihre Menüs floaten an einem nicht-geclippten Host
+-- (von der Shell auf das Panel gesetzt). Die Shell übergibt pro Screen eine frische
+-- Sammelliste und räumt die vorige beim Tab-Wechsel auf (kein Leak).
+W._menuHost = nil
+W._popovers = nil
+function W.SetMenuHost(frame) W._menuHost = frame end
+function W.CapturePopovers(list) W._popovers = list end
+
 local CONTROL_H = M.controlH
 
 -- ---------------------------------------------------------------------------
@@ -49,18 +58,19 @@ end
 --  SectionDivider — zentrierte Cinzel-Überschrift mit symmetrisch ausfadenden
 --  Gold-Rules. Primärer Seiten-Gliederer. Höhe ~28.
 -- ---------------------------------------------------------------------------
-function W.SectionDivider(parent, text)
+function W.SectionDivider(parent, text, small)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(M.dividerH)
-	local head = UI.FS(f, "sectionHead", C.gold300)
+	local strongA = small and 0.30 or 0.45 -- kleinere Unter-Überschrift = dezentere Linien
+	local head = UI.FS(f, small and "subDivider" or "sectionHead", small and C.gold250 or C.gold300)
 	head:SetText(text)
 	head:SetPoint("CENTER", f, "CENTER", 0, 0)
 
-	local lr = UI.GradientLine(f, "out", 0.45, 0.0)
+	local lr = UI.GradientLine(f, "out", strongA, 0.0)
 	lr:SetPoint("RIGHT", head, "LEFT", -M.dividerGap, 0)
 	lr:SetPoint("LEFT", f, "LEFT", 0, 0)
 	lr:SetPoint("TOP", head, "CENTER", 0, 0)
-	local rr = UI.GradientLine(f, "in", 0.45, 0.0)
+	local rr = UI.GradientLine(f, "in", strongA, 0.0)
 	rr:SetPoint("LEFT", head, "RIGHT", M.dividerGap, 0)
 	rr:SetPoint("RIGHT", f, "RIGHT", 0, 0)
 	rr:SetPoint("TOP", head, "CENTER", 0, 0)
@@ -222,6 +232,13 @@ function W.Slider(parent, o)
 
 	visual(cur)
 	f.SetValueExternal = function(_, v) cur = v; visual(v) end
+	-- Ausgrauen + Interaktion sperren (für abhängige Sektionen, z.B. „Name anzeigen" aus).
+	f.SetWidgetEnabled = function(_, on)
+		f:SetAlpha(on and 1 or 0.35)
+		track:EnableMouse(on)
+		box:EnableMouse(on)
+		if not on then box:ClearFocus() end
+	end
 	return f
 end
 
@@ -260,6 +277,7 @@ function W.Select(parent, o)
 	btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
 	UI.Fill(btn, C.ink700)
 	local edges = UI.Border(btn, L.soft, 1, "OVERLAY")
+	f._control = btn -- Anker für „Checkbox direkt neben dem Control" (vertikal bündig)
 
 	local chev = CreateFrame("Frame", nil, btn)
 	chev:SetSize(12, 8)
@@ -284,19 +302,26 @@ function W.Select(parent, o)
 	refreshLabel()
 
 	-- Popover-Menü (floatet über allem) + Vollbild-Closer für Klick-außerhalb.
-	-- An f gehängt (nicht UIParent): erbt die Panel-Scale (0.74) und räumt sich
-	-- automatisch auf, wenn das Widget beim Tab-Wechsel versteckt wird.
-	local closer = CreateFrame("Button", nil, f)
+	-- Host = der von der Shell gesetzte, NICHT-geclippte Menü-Host (das Panel);
+	-- nötig, weil Selects im ScrollFrame liegen und dessen Clipping das Popover
+	-- sonst abschneiden würde. Fallback ohne Shell: an f (für Nicht-Scroll-Kontexte).
+	-- Der Host erbt die Panel-Scale (0.74); Anker auf btn funktioniert frame-übergreifend.
+	-- Die Shell sammelt die Popover je Screen ein (W.CapturePopovers) und räumt sie
+	-- beim Neuaufbau auf -> kein Leak trotz Host-Parenting.
+	local host = W._menuHost or f
+	local closer = CreateFrame("Button", nil, host)
 	closer:SetAllPoints(UIParent)
 	closer:SetFrameStrata("FULLSCREEN_DIALOG")
 	closer:Hide()
 
-	local menu = CreateFrame("Frame", nil, f)
+	local menu = CreateFrame("Frame", nil, host)
 	menu:SetFrameStrata("FULLSCREEN_DIALOG")
 	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
 	menu:Hide()
 	UI.Fill(menu, C.ink550)
 	UI.Border(menu, L.mid, 1, "OVERLAY")
+
+	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
 
 	local function closeMenu()
 		menu:Hide(); closer:Hide()
@@ -374,13 +399,25 @@ function W.Select(parent, o)
 	end)
 	btn:SetScript("OnEnter", function()
 		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
+		if o.tooltip then
+			GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
+			GameTooltip:SetText(o.label or o.tooltipTitle or "", C.gold300.r, C.gold300.g, C.gold300.b)
+			GameTooltip:AddLine(o.tooltip, C.textBody.r, C.textBody.g, C.textBody.b, true)
+			GameTooltip:Show()
+		end
 	end)
 	btn:SetScript("OnLeave", function()
 		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end end
+		if o.tooltip then GameTooltip:Hide() end
 	end)
 	btn:HookScript("OnHide", closeMenu)
 
 	f.SetValueExternal = function(_, v) cur = v; refreshLabel() end
+	f.SetWidgetEnabled = function(_, on)
+		f:SetAlpha(on and 1 or 0.35)
+		btn:EnableMouse(on)
+		if not on and menu:IsShown() then closeMenu() end
+	end
 	return f
 end
 
@@ -432,10 +469,17 @@ function W.Checkbox(parent, o)
 	b:SetScript("OnEnter", function()
 		if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end end
 		lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		if o.tooltip then
+			GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+			GameTooltip:SetText(o.label or "", C.gold300.r, C.gold300.g, C.gold300.b)
+			GameTooltip:AddLine(o.tooltip, C.textBody.r, C.textBody.g, C.textBody.b, true)
+			GameTooltip:Show()
+		end
 	end)
 	b:SetScript("OnLeave", function()
 		if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
 		lbl:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		if o.tooltip then GameTooltip:Hide() end
 	end)
 	b:SetScript("OnClick", function()
 		val = not val
@@ -443,7 +487,300 @@ function W.Checkbox(parent, o)
 		if o.set then o.set(val) end
 	end)
 	b.SetValueExternal = function(_, v) val = v; apply(v) end
+	b.SetWidgetEnabled = function(_, on) b:SetAlpha(on and 1 or 0.35); b:EnableMouse(on) end
 	return b
+end
+
+-- ===========================================================================
+--  Color-Picker (eigenes Popover im Lumen-Stil statt Blizzards ColorPickerFrame)
+--  HSV-Modell: SV-Feld (Sättigung x / Helligkeit y) + Farbton-Leiste + Vorschau +
+--  Hex-Eingabe + Übernehmen/Abbrechen. Singleton (einmal gebaut, wiederverwendet),
+--  am Menü-Host (Panel) -> erbt Scale, nicht geclippt. Live-Vorschau über onChange.
+-- ===========================================================================
+local function rgb2hsv(r, g, b)
+	local mx, mn = math.max(r, g, b), math.min(r, g, b)
+	local v, dd = mx, mx - mn
+	local s = (mx == 0) and 0 or dd / mx
+	local h = 0
+	if dd ~= 0 then
+		if mx == r then h = ((g - b) / dd) % 6
+		elseif mx == g then h = (b - r) / dd + 2
+		else h = (r - g) / dd + 4 end
+		h = h / 6; if h < 0 then h = h + 1 end
+	end
+	return h, s, v
+end
+local function hsv2rgb(h, s, v)
+	local i = math.floor(h * 6)
+	local f = h * 6 - i
+	local p, q, t = v * (1 - s), v * (1 - f * s), v * (1 - (1 - f) * s)
+	i = i % 6
+	if i == 0 then return v, t, p
+	elseif i == 1 then return q, v, p
+	elseif i == 2 then return p, v, t
+	elseif i == 3 then return p, q, v
+	elseif i == 4 then return t, p, v
+	else return v, p, q end
+end
+local function toHex(r, g, b)
+	return string.format("%02X%02X%02X", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+end
+
+local colorPicker -- Singleton-Frame (lazy)
+
+local function buildColorPicker()
+	local host = W._menuHost or UIParent
+	local cp = CreateFrame("Frame", nil, host)
+	cp:SetFrameStrata("FULLSCREEN_DIALOG")
+	cp:EnableMouse(true) -- schluckt Klicks (nicht durch zum Closer)
+	UI.Fill(cp, C.ink850)
+	UI.Border(cp, L.strong, 1, "OVERLAY")
+
+	-- Vollbild-Closer dahinter (Klick ausserhalb = übernehmen/schliessen).
+	local closer = CreateFrame("Button", nil, host)
+	closer:SetAllPoints(UIParent)
+	closer:SetFrameStrata("FULLSCREEN_DIALOG")
+	closer:SetFrameLevel(cp:GetFrameLevel() - 1)
+	cp._closer = closer
+
+	local pad = M.cpPad
+	cp:SetSize(pad * 2 + M.cpSVW + M.cpGap + M.cpHueW, pad * 3 + M.cpSVH + M.cpPrevH + M.buttonH + 14)
+
+	-- ---- SV-Feld (Sättigung x, Helligkeit y) ----
+	local sv = CreateFrame("Frame", nil, cp)
+	sv:SetSize(M.cpSVW, M.cpSVH)
+	sv:SetPoint("TOPLEFT", cp, "TOPLEFT", pad, -pad)
+	sv:EnableMouse(true)
+	local svBase = sv:CreateTexture(nil, "BACKGROUND")     -- reine Hue-Farbe
+	svBase:SetAllPoints(sv)
+	local svWhite = sv:CreateTexture(nil, "ARTWORK")       -- links weiss -> rechts klar (Sättigung)
+	svWhite:SetAllPoints(sv); svWhite:SetColorTexture(1, 1, 1, 1)
+	svWhite:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
+	local svBlack = sv:CreateTexture(nil, "ARTWORK", nil, 1) -- unten schwarz -> oben klar (Helligkeit)
+	svBlack:SetAllPoints(sv); svBlack:SetColorTexture(0, 0, 0, 1)
+	svBlack:SetGradient("VERTICAL", CreateColor(0, 0, 0, 1), CreateColor(0, 0, 0, 0))
+	UI.Border(sv, L.mid, 1, "OVERLAY")
+	local svMark = CreateFrame("Frame", nil, sv)
+	svMark:SetSize(M.cpMarker, M.cpMarker)
+	UI.Border(svMark, { r = 1, g = 1, b = 1, a = 1 }, 2, "OVERLAY")
+
+	-- ---- Farbton-Leiste (6 Segmente, je vertikaler Gradient) ----
+	local hue = CreateFrame("Frame", nil, cp)
+	hue:SetSize(M.cpHueW, M.cpSVH)
+	hue:SetPoint("TOPLEFT", sv, "TOPRIGHT", M.cpGap, 0)
+	hue:EnableMouse(true)
+	local HUES = { {1,0,0}, {1,1,0}, {0,1,0}, {0,1,1}, {0,0,1}, {1,0,1}, {1,0,0} }
+	local segH = M.cpSVH / 6
+	for i = 1, 6 do
+		local seg = hue:CreateTexture(nil, "ARTWORK")
+		seg:SetColorTexture(1, 1, 1, 1)
+		seg:SetPoint("TOPLEFT", hue, "TOPLEFT", 0, -(i - 1) * segH)
+		seg:SetPoint("TOPRIGHT", hue, "TOPRIGHT", 0, -(i - 1) * segH)
+		seg:SetHeight(segH)
+		local a, c2 = HUES[i], HUES[i + 1]
+		-- oben = a (Segmentstart), unten = c2 -> min(unten)=c2, max(oben)=a
+		seg:SetGradient("VERTICAL", CreateColor(c2[1], c2[2], c2[3], 1), CreateColor(a[1], a[2], a[3], 1))
+	end
+	UI.Border(hue, L.mid, 1, "OVERLAY")
+	local hueMark = hue:CreateTexture(nil, "OVERLAY")
+	hueMark:SetColorTexture(1, 1, 1, 1)
+	hueMark:SetPoint("LEFT", hue, "LEFT", -2, 0)
+	hueMark:SetPoint("RIGHT", hue, "RIGHT", 2, 0)
+	hueMark:SetHeight(3)
+
+	-- ---- Vorschau + Hex ----
+	local preview = CreateFrame("Frame", nil, cp)
+	preview:SetSize(M.cpPrevH + 14, M.cpPrevH)
+	preview:SetPoint("TOPLEFT", sv, "BOTTOMLEFT", 0, -14)
+	local prevTex = preview:CreateTexture(nil, "ARTWORK"); prevTex:SetAllPoints(preview)
+	UI.Border(preview, L.mid, 1, "OVERLAY")
+
+	local hexBox = CreateFrame("EditBox", nil, cp)
+	hexBox:SetSize(110, M.cpPrevH)
+	hexBox:SetPoint("LEFT", preview, "RIGHT", 26, 0)
+	UI.Fill(hexBox, C.ink700)
+	UI.Border(hexBox, L.soft, 1, "OVERLAY")
+	UI:SetFont(hexBox, "value", C.textStrong)
+	hexBox:SetJustifyH("CENTER"); hexBox:SetAutoFocus(false); hexBox:SetMaxLetters(6)
+	hexBox:SetTextInsets(6, 6, 0, 0)
+	local hexHash = UI.FS(cp, "value", C.textMuted)
+	hexHash:SetText("#"); hexHash:SetPoint("RIGHT", hexBox, "LEFT", -3, 0)
+
+	-- ---- Buttons ----
+	-- Übernehmen links, Abbrechen rechts, an die Picker-Ränder gesetzt (max. Spacing).
+	local okBtn = W.Button(cp, { text = "Übernehmen", variant = "primary" })
+	okBtn:SetPoint("BOTTOMLEFT", cp, "BOTTOMLEFT", pad, pad)
+	local cancelBtn = W.Button(cp, { text = "Abbrechen", variant = "ghost" })
+	cancelBtn:SetPoint("BOTTOMRIGHT", cp, "BOTTOMRIGHT", -pad, pad)
+
+	-- ---- State + Logik ----
+	cp._h, cp._s, cp._v = 0, 0, 1
+	cp._orig = { 1, 1, 1 }
+	cp._onChange, cp._onCancel = nil, nil
+
+	local function curRGB() return hsv2rgb(cp._h, cp._s, cp._v) end
+	local function placeMarks()
+		svMark:ClearAllPoints()
+		svMark:SetPoint("CENTER", sv, "TOPLEFT", cp._s * M.cpSVW, -(1 - cp._v) * M.cpSVH)
+		hueMark:ClearAllPoints()
+		hueMark:SetPoint("LEFT", hue, "LEFT", -2, 0)
+		hueMark:SetPoint("RIGHT", hue, "RIGHT", 2, 0)
+		hueMark:SetPoint("TOP", hue, "TOP", 0, -cp._h * M.cpSVH + 1.5)
+	end
+	local function applyVisual(fromHex)
+		local hr, hg, hb = hsv2rgb(cp._h, 1, 1)
+		svBase:SetColorTexture(hr, hg, hb, 1)
+		local r, g, b = curRGB()
+		prevTex:SetColorTexture(r, g, b, 1)
+		if not fromHex then hexBox:SetText(toHex(r, g, b)) end
+		placeMarks()
+	end
+	cp._fireChange = function()
+		if cp._onChange then local r, g, b = curRGB(); cp._onChange(r, g, b) end
+	end
+
+	-- SV-Drag
+	local function svFromCursor()
+		local cx, cy = GetCursorPosition()
+		local sc = sv:GetEffectiveScale(); if not sc or sc == 0 then return end
+		cx, cy = cx / sc, cy / sc
+		local left, top = sv:GetLeft(), sv:GetTop()
+		if not left or not top then return end
+		cp._s = clamp((cx - left) / M.cpSVW, 0, 1)
+		cp._v = clamp(1 - (top - cy) / M.cpSVH, 0, 1)
+		applyVisual(); cp._fireChange()
+	end
+	sv:SetScript("OnMouseDown", function(self) self:SetScript("OnUpdate", svFromCursor); svFromCursor() end)
+	sv:SetScript("OnMouseUp", function(self) self:SetScript("OnUpdate", nil) end)
+	sv:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
+
+	-- Hue-Drag
+	local function hueFromCursor()
+		local _, cy = GetCursorPosition()
+		local sc = hue:GetEffectiveScale(); if not sc or sc == 0 then return end
+		cy = cy / sc
+		local top = hue:GetTop(); if not top then return end
+		cp._h = clamp((top - cy) / M.cpSVH, 0, 0.999999)
+		applyVisual(); cp._fireChange()
+	end
+	hue:SetScript("OnMouseDown", function(self) self:SetScript("OnUpdate", hueFromCursor); hueFromCursor() end)
+	hue:SetScript("OnMouseUp", function(self) self:SetScript("OnUpdate", nil) end)
+	hue:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
+
+	-- Hex-Eingabe
+	hexBox:SetScript("OnEnterPressed", function(self)
+		local s = self:GetText():gsub("[^0-9A-Fa-f]", "")
+		if #s == 6 then
+			local r = tonumber(s:sub(1, 2), 16) / 255
+			local g = tonumber(s:sub(3, 4), 16) / 255
+			local b = tonumber(s:sub(5, 6), 16) / 255
+			cp._h, cp._s, cp._v = rgb2hsv(r, g, b)
+			applyVisual(true); cp._fireChange()
+		end
+		self:ClearFocus()
+	end)
+	hexBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+	local function close() cp:Hide(); closer:Hide() end
+	cp._close = close
+	okBtn:SetScript("OnClick", close) -- onChange war live -> nur schliessen
+	cancelBtn:SetScript("OnClick", function()
+		if cp._onCancel then cp._onCancel() end
+		close()
+	end)
+	closer:SetScript("OnClick", close)
+
+	cp._applyVisual = applyVisual
+	return cp
+end
+
+-- o = { r,g,b, anchor?, onChange(r,g,b), onCancel() }. Öffnet den Singleton-Picker.
+function W.OpenColorPicker(o)
+	colorPicker = colorPicker or buildColorPicker()
+	local cp = colorPicker
+	-- Host kann sich seit dem Bau geändert haben (eigentlich nicht) — Parent sicherstellen.
+	cp._onChange, cp._onCancel = o.onChange, o.onCancel
+	cp._orig = { o.r or 1, o.g or 1, o.b or 1 }
+	cp._h, cp._s, cp._v = rgb2hsv(o.r or 1, o.g or 1, o.b or 1)
+	cp._applyVisual()
+
+	cp:ClearAllPoints()
+	if o.anchor then
+		cp:SetPoint("TOPLEFT", o.anchor, "BOTTOMLEFT", 0, -8)
+	else
+		cp:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	end
+	cp._closer:Show()
+	cp:Show()
+	cp:Raise()
+end
+
+-- ---------------------------------------------------------------------------
+--  ColorSwatch — Gold-gerahmtes Farbfeld + Label, öffnet den Lumen-ColorPicker.
+--  o = {label, get -> r,g,b, set(r,g,b)}. Layout wie die Checkbox (Box links,
+--  Label rechts), damit es austauschbar in Reihen/Zellen sitzt. Maße aus UI.WIDGET.
+-- ---------------------------------------------------------------------------
+function W.ColorSwatch(parent, o)
+	local BOX = M.checkBox
+	local b = CreateFrame("Button", nil, parent)
+	b:SetHeight(BOX)
+
+	local box = CreateFrame("Frame", nil, b)
+	box:SetSize(BOX, BOX)
+	box:SetPoint("LEFT", b, "LEFT", 0, 0)
+	-- Farbfläche leicht eingerückt, damit der Gold-Rahmen sie sauber fasst.
+	local sw = box:CreateTexture(nil, "ARTWORK")
+	sw:SetPoint("TOPLEFT", box, "TOPLEFT", 1, -1)
+	sw:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -1, 1)
+	local edges = UI.Border(box, L.mid, 1, "OVERLAY")
+
+	local lbl = UI.FS(b, "checkLabel", C.textBody)
+	lbl:SetText(o.label or "")
+	lbl:SetPoint("LEFT", box, "RIGHT", M.checkLabelGap, 0)
+	b:SetWidth(BOX + M.checkLabelGap + math.ceil(lbl:GetStringWidth()) + 2)
+
+	local function readRGB()
+		if o.get then local r, g, bl = o.get(); return r or 1, g or 1, bl or 1 end
+		return 1, 1, 1
+	end
+	local function paint() local r, g, bl = readRGB(); sw:SetColorTexture(r, g, bl, 1) end
+	paint()
+
+	b:SetScript("OnClick", function()
+		local r, g, bl = readRGB()
+		W.OpenColorPicker({
+			r = r, g = g, b = bl, anchor = b,
+			onChange = function(nr, ng, nb) if o.set then o.set(nr, ng, nb) end; paint() end,
+			onCancel = function() if o.set then o.set(r, g, bl) end; paint() end,
+		})
+	end)
+	b:SetScript("OnEnter", function()
+		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
+		lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+	end)
+	b:SetScript("OnLeave", function()
+		for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
+		lbl:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+	end)
+	b.SetValueExternal = function() paint() end
+	b.SetWidgetEnabled = function(_, on) b:SetAlpha(on and 1 or 0.35); b:EnableMouse(on) end
+	return b
+end
+
+-- ---------------------------------------------------------------------------
+--  Hint — gedämpfte Fließtext-Zeile (Caption), wortumbrechend in eigenem Frame
+--  (damit der Layout-Stack sie wie ein normales Widget mit Höhe behandeln kann).
+-- ---------------------------------------------------------------------------
+function W.Hint(parent, text, height)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(height or M.hintH)
+	local fs = UI.FS(f, "hint", C.textFaint)
+	fs:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+	fs:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+	fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
+	fs:SetText(text or "")
+	f._fs = fs
+	return f
 end
 
 -- ---------------------------------------------------------------------------
