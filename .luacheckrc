@@ -20,7 +20,7 @@ read_globals = {
     -- Frames / Core
     "CreateFrame", "UIParent", "InCombatLockdown", "GetCursorPosition",
     "STANDARD_TEXT_FONT", "GameFontNormal",
-    "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip",
+    "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip", "ColorPickerFrame",
     -- Einheiten / Leben
     "UnitExists", "UnitName", "UnitClass", "UnitThreatSituation", "UnitGroupRolesAssigned",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",

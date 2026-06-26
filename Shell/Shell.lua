@@ -255,6 +255,15 @@ function Shell:Build()
 	tinsert(UISpecialFrames, "LumenShellFrame") -- ESC schließt
 	self._frame = f
 
+	-- Select-Popover an diesem (nicht-geclippten) Panel floaten lassen, sonst
+	-- schneidet der Content-ScrollFrame sie ab. Sammelliste setzt RenderContent.
+	if ns.W and ns.W.SetMenuHost then ns.W.SetMenuHost(f) end
+
+	-- Beim Anzeigen den aktuellen Tab neu aufbauen: der erste Render in Build läuft
+	-- noch versteckt (Größen unaufgelöst) -> manche Zellen (z.B. die erste Dispel-
+	-- Farbe) landen falsch, bis man den Tab wechselt. Re-Render im sichtbaren Zustand.
+	f:SetScript("OnShow", function() if Shell._section then Shell:RenderContent() end end)
+
 	fill(f, C.ink850, "BACKGROUND")
 	-- Radial-Glow-Approx: vertikaler Gradient (oben heller) als Overlay.
 	local glow = f:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -327,11 +336,98 @@ function Shell:Build()
 	tabStrip:SetPoint("TOPLEFT", main, "TOPLEFT", S.panelGutter, -22)
 	tabStrip:SetPoint("TOPRIGHT", main, "TOPRIGHT", -S.panelGutter, -22)
 
-	-- Content-Bereich (Dummy in Phase 1)
-	local content = CreateFrame("Frame", nil, main)
-	content:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -26)
-	content:SetPoint("BOTTOMRIGHT", main, "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
-	self._content = content
+	-- Content-Bereich: scrollbar (Screens sind höher als die feste Content-Höhe).
+	-- ScrollFrame + Scroll-Child; die Screens bauen in den Child. Schlanke
+	-- Gold-Scrollleiste rechts im Gutter (Mausrad + ziehbarer Thumb).
+	local scroll = CreateFrame("ScrollFrame", nil, main)
+	scroll:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -26)
+	scroll:SetPoint("BOTTOMRIGHT", main, "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
+	scroll:EnableMouseWheel(true)
+	self._scroll = scroll
+
+	local scrollChild = CreateFrame("Frame", nil, scroll)
+	scrollChild:SetSize(1, 1)
+	scroll:SetScrollChild(scrollChild)
+	self._scrollChild = scrollChild
+	self._content = scrollChild -- Kompat: Screens ankern in diesen Child
+
+	-- Scroll-Child folgt der Breite des ScrollFrames (Pflicht, sonst 0 breit).
+	scroll:SetScript("OnSizeChanged", function(self2, w) scrollChild:SetWidth(w or self2:GetWidth() or 1) end)
+
+	-- Scrollleiste (rechts neben dem ScrollFrame, im Panel-Gutter).
+	local sbTrack = CreateFrame("Frame", nil, main)
+	sbTrack:SetWidth(S.scrollBarW)
+	sbTrack:SetPoint("TOPLEFT", scroll, "TOPRIGHT", S.scrollBarGap, 0)
+	sbTrack:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", S.scrollBarGap, 0)
+	local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
+	trackTex:SetAllPoints(sbTrack); setColor(trackTex, C.ink700)
+
+	-- Thumb über TOP (= horizontal mittig) angekoppelt, Breite separat -> auf Hover
+	-- verbreiterbar (besser greifbar). Höhe/Position setzt updateBar.
+	local thumb = CreateFrame("Frame", nil, sbTrack)
+	thumb:SetWidth(S.scrollBarW)
+	thumb:EnableMouse(true)
+	thumb._w = S.scrollBarW
+	local thumbTex = thumb:CreateTexture(nil, "OVERLAY")
+	thumbTex:SetAllPoints(thumb)
+	local function paintThumb(a) thumbTex:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, a) end
+	paintThumb(0.55)
+
+	local function updateBar()
+		local range = scroll:GetVerticalScrollRange() or 0
+		local h = scroll:GetHeight() or 1
+		if range <= 0.5 or h <= 1 then sbTrack:Hide(); return end
+		sbTrack:Show()
+		local total = h + range
+		local th = math.max(24, (h / total) * h)
+		thumb:SetHeight(th)
+		thumb:SetWidth(thumb._w)
+		local pos = (scroll:GetVerticalScroll() or 0) / range
+		thumb:ClearAllPoints()
+		thumb:SetPoint("TOP", sbTrack, "TOP", 0, -pos * (h - th))
+	end
+	self._updateBar = updateBar
+
+	local function scrollBy(delta)
+		local range = scroll:GetVerticalScrollRange() or 0
+		local new = math.max(0, math.min(range, (scroll:GetVerticalScroll() or 0) - delta))
+		scroll:SetVerticalScroll(new); updateBar()
+	end
+	scroll:SetScript("OnMouseWheel", function(_, d) scrollBy(d * 48) end)
+	scroll:SetScript("OnScrollRangeChanged", updateBar)
+
+	-- Thumb ziehen: beim Anpacken den Greif-Offset (Cursor↔Thumb-Oberkante) merken,
+	-- damit der Thumb nicht zur Cursor-Mitte springt (fühlte sich „hakelig" an).
+	local function thumbDrag()
+		local _, cy = GetCursorPosition()
+		local sc = sbTrack:GetEffectiveScale()
+		if not sc or sc == 0 then return end
+		cy = cy / sc
+		local top, h = sbTrack:GetTop(), scroll:GetHeight() or 1
+		local denom = h - (thumb:GetHeight() or 0)
+		if not top or denom <= 0 then return end
+		local desiredTop = cy + (thumb._grabOff or 0)
+		local rel = math.max(0, math.min(1, (top - desiredTop) / denom))
+		scroll:SetVerticalScroll(rel * (scroll:GetVerticalScrollRange() or 0)); updateBar()
+	end
+	thumb:SetScript("OnMouseDown", function(self2)
+		local _, cy = GetCursorPosition()
+		local sc = sbTrack:GetEffectiveScale() or 1
+		self2._grabOff = (thumb:GetTop() or 0) - (cy / (sc ~= 0 and sc or 1))
+		self2._dragging = true
+		self2:SetScript("OnUpdate", thumbDrag)
+	end)
+	local function endDrag(self2)
+		self2._dragging = false
+		self2:SetScript("OnUpdate", nil)
+		if not self2:IsMouseOver() then self2._w = S.scrollBarW; paintThumb(0.55); updateBar() end
+	end
+	thumb:SetScript("OnMouseUp", endDrag)
+	thumb:SetScript("OnHide", function(self2) self2._dragging = false; self2:SetScript("OnUpdate", nil) end)
+	thumb:SetScript("OnEnter", function(self2) self2._w = S.scrollBarW + 3; paintThumb(0.85); updateBar() end)
+	thumb:SetScript("OnLeave", function(self2)
+		if not self2._dragging then self2._w = S.scrollBarW; paintThumb(0.55); updateBar() end
+	end)
 
 	-- Nav-Buttons
 	self._navButtons = {}
@@ -381,7 +477,140 @@ end
 function Shell:SelectTab(index)
 	self._tab = index
 	for i, tb in ipairs(self._tabButtons) do tb:SetActive(i == index) end
-	self:RenderDummy()
+	self:RenderContent()
+end
+
+-- ---------------------------------------------------------------------------
+--  Layout-Stack: stapelt Widgets von oben nach unten in einen Holder. `place`
+--  = volle Breite (TOPLEFT/RIGHT), `placeLeft` = links bündig mit eigener Breite
+--  (für schmale Felder). Screens (Shell/Screens.lua) bauen ausschließlich darüber.
+-- ---------------------------------------------------------------------------
+local function newStack(holder)
+	local y = -4
+	local stack = {}
+	function stack:place(widget, h, gap)
+		widget:SetParent(holder)
+		widget:ClearAllPoints()
+		widget:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, y)
+		widget:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, y)
+		if h then widget:SetHeight(h) end
+		y = y - (h or widget:GetHeight()) - (gap or 22)
+	end
+	function stack:placeLeft(widget, h, gap)
+		widget:SetParent(holder)
+		widget:ClearAllPoints()
+		widget:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, y)
+		if h then widget:SetHeight(h) end
+		y = y - (h or widget:GetHeight()) - (gap or 22)
+	end
+	function stack:gap(dy) y = y - (dy or 8) end
+	function stack:y() return y end
+	function stack:height() return -y + S.panelGutter end
+
+	-- Sektions-Karte (Konzept A): zeichnet eine Karte (Hintergrund + Gold-Hairline +
+	-- Header-Leiste mit Gold-Akzent + Titel) an der aktuellen Stack-Position und gibt
+	-- einen INNEREN Stapler zurück. Dessen :place/:placeLeft setzen die Reihen
+	-- eingerückt (sectionPad) unter dem Header; :close() finalisiert die Kartenhöhe
+	-- und rückt den äußeren Stack um Karte + sectionGap weiter. Ersetzt den früheren
+	-- zentrierten Gold-Divider für Haupt-Sektionen (löst zugleich den Divider-Bug).
+	function stack:section(title)
+		local M = UI.WIDGET
+		local top = y
+		local pad = M.sectionPad
+		local headerH = M.sectionHeaderH
+
+		local panel = CreateFrame("Frame", nil, holder)
+		-- Karte als Hintergrund-Ebene: Frame-Level auf Holder-Niveau, damit die später
+		-- erzeugten Inhalts-Frames (Geschwister, NICHT Kinder der Karte) darüber rendern.
+		panel:SetFrameLevel(holder:GetFrameLevel())
+		panel:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, top)
+		panel:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, top)
+		fill(panel, C.ink600)
+		border(panel, L.soft, 1)
+
+		-- Header-Leiste (leicht heller) + feine Trennlinie darunter + Gold-Akzent links.
+		local hbar = panel:CreateTexture(nil, "ARTWORK")
+		hbar:SetHeight(headerH)
+		hbar:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+		hbar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
+		setColor(hbar, C.ink550)
+		local hsep = panel:CreateTexture(nil, "OVERLAY")
+		PixelUtil.SetHeight(hsep, 1)
+		hsep:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -headerH)
+		hsep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -headerH)
+		setColor(hsep, L.faint)
+		local accent = panel:CreateTexture(nil, "OVERLAY")
+		accent:SetWidth(M.sectionHeaderBarW)
+		accent:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+		accent:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 0, -headerH)
+		setColor(accent, C.gold500)
+		local titleFS = FS(panel, "sectionHead", C.gold300)
+		titleFS:SetPoint("LEFT", panel, "TOPLEFT", M.sectionTitleX, -headerH / 2)
+		titleFS:SetText(title or "")
+
+		local inner, iy, pending = {}, top - headerH - M.sectionAfterHeader, nil
+		local function anchor(widget, h, full)
+			if pending then iy = iy - pending end
+			widget:SetParent(holder)
+			widget:ClearAllPoints()
+			widget:SetPoint("TOPLEFT", holder, "TOPLEFT", pad, iy)
+			if full then widget:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -pad, iy) end
+			if h then widget:SetHeight(h) end
+			iy = iy - (h or widget:GetHeight())
+		end
+		function inner.place(_, widget, h, gap) anchor(widget, h, true); pending = gap or 22 end
+		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); pending = gap or 22 end
+		function inner.gap(_, dy) iy = iy - (dy or 8) end
+		function inner.y() return iy end
+		function inner.close()
+			local bottom = iy - pad
+			panel:SetHeight(top - bottom) -- top/bottom = negative Offsets -> Differenz = Höhe
+			y = bottom - M.sectionGap
+			return panel
+		end
+		inner._panel = panel
+		inner._title = titleFS
+		return inner
+	end
+
+	return stack
+end
+
+-- Inhalt für aktuelle Sektion/Tab rendern: echter Screen (Shell/Screens.lua) wenn
+-- registriert, sonst die Widget-Galerie (Phase-2-Fallback). Danach Scroll-Child-
+-- Höhe setzen, nach oben scrollen, Scrollleiste aktualisieren.
+function Shell:RenderContent(keepScroll)
+	local prevScroll = (keepScroll and self._scroll and self._scroll:GetVerticalScroll()) or 0
+	local holderParent = self._scrollChild
+	if self._screen then self._screen:Hide(); self._screen:SetParent(nil); self._screen = nil end
+	-- Popover des vorigen Screens (am Panel-Host) freigeben, dann frische Liste setzen.
+	if self._popovers then
+		for _, fr in ipairs(self._popovers) do fr:Hide(); fr:SetParent(nil) end
+	end
+	self._popovers = {}
+	if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(self._popovers) end
+
+	local d = CreateFrame("Frame", nil, holderParent)
+	d:SetPoint("TOPLEFT", holderParent, "TOPLEFT", 0, 0)
+	d:SetPoint("TOPRIGHT", holderParent, "TOPRIGHT", 0, 0)
+	self._screen = d
+
+	local stack = newStack(d)
+	local sec = SECTIONS[self._section]
+	local key = sec[1] .. "/" .. (sec[2][self._tab] or "")
+	local builder = ns.Screens and ns.Screens[key]
+	if builder then builder(d, stack) else self:Gallery(d, stack) end
+
+	local h = stack:height()
+	d:SetHeight(h)
+	holderParent:SetHeight(h)
+	if self._scroll then
+		-- Beim erzwungenen Neuaufbau (z.B. Rollen-Umsortierung) die Scrollposition
+		-- halten, sonst nach oben springen.
+		local range = self._scroll:GetVerticalScrollRange() or 0
+		self._scroll:SetVerticalScroll(math.max(0, math.min(range, prevScroll)))
+	end
+	if self._updateBar then self._updateBar() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -412,26 +641,11 @@ local OUTLINE_OPTS = {
 	{ value = "thick", label = "Dick" }, { value = "mono", label = "Monochrom" },
 }
 
-function Shell:RenderDummy()
-	local content = self._content
-	if self._dummy then self._dummy:Hide(); self._dummy:SetParent(nil) end
-	local d = CreateFrame("Frame", nil, content)
-	d:SetAllPoints(content)
-	self._dummy = d
+function Shell:Gallery(d, stack)
+	local place = function(w, h, dy) stack:place(w, h, dy) end
 
 	local secName = SECTIONS[self._section][1]
 	local tabName = SECTIONS[self._section][2][self._tab] or "?"
-
-	-- y-Cursor: stapelt Blöcke von oben nach unten in den Content-Bereich.
-	local y = -4
-	local function place(widget, h, dy)
-		widget:SetParent(d)
-		widget:ClearAllPoints()
-		widget:SetPoint("TOPLEFT", d, "TOPLEFT", 0, y)
-		widget:SetPoint("TOPRIGHT", d, "TOPRIGHT", 0, y)
-		if h then widget:SetHeight(h) end
-		y = y - (h or widget:GetHeight()) - (dy or 22)
-	end
 
 	-- 1) Section-Divider
 	place(W.SectionDivider(d, secName .. " · " .. tabName), M.dividerH, 24)
@@ -498,7 +712,8 @@ function Shell:RenderDummy()
 	local hint = FS(d, "caption", C.textFaint)
 	hint:SetText("Phase 2 — Widget-Toolkit (live bedienbar, noch Sandbox-Daten). "
 		.. "/lumen öffnet weiterhin die klassische Konfiguration.")
-	hint:SetPoint("TOPLEFT", d, "TOPLEFT", 0, y)
+	hint:SetPoint("TOPLEFT", d, "TOPLEFT", 0, stack:y())
+	stack:gap(M.hintH) -- den Hinweis-Block in die Höhe einrechnen
 end
 
 -- ===========================================================================
