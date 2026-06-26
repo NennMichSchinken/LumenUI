@@ -92,14 +92,14 @@ UI.FONT = {
 -- Rollen → { Pfad, Größe, Flags }. Größen aus typography.css.
 UI.ROLE = {
 	wordmark = { UI.FONT.cinzelSemi, 30, "" }, -- LUMEN
-	display  = { UI.FONT.cinzelSemi, 21, "" },
-	section  = { UI.FONT.cinzelSemi, 19, "" }, -- Section-Heading (Cinzel)
+	display  = { UI.FONT.cinzelSemi, 22, "" },
+	section  = { UI.FONT.cinzelSemi, 20, "" }, -- Section-Heading (Cinzel)
 	nav      = { UI.FONT.hankenMed,  18, "" },
 	body     = { UI.FONT.hankenReg,  14, "" },
 	label    = { UI.FONT.hankenMed,  14, "" },
 	tab      = { UI.FONT.hankenMed,  18, "" },
 	caption  = { UI.FONT.hankenReg,  12, "" },
-	hint     = { UI.FONT.hankenReg,  14, "" }, -- Beschreibungs-/Hinweistext unter Controls
+	hint     = { UI.FONT.hankenReg,  16, "" }, -- Beschreibungs-/Hinweistext unter Controls
 	eyebrow  = { UI.FONT.hankenMed,  12, "" },
 	tagline  = { UI.FONT.hankenReg,  12, "" },
 
@@ -119,8 +119,8 @@ UI.ROLE = {
 
 	-- Eigener Lumen-Tooltip — eigene Rollen, damit Schriftgröße/Schnitt unabhängig
 	-- justierbar sind (Florian stellt hier selbst ein).
-	tipTitle = { UI.FONT.hankenSemi, 16, "" }, -- Tooltip-Titel / Spell-Name (Gold)
-	tipBody  = { UI.FONT.hankenReg,  14, "" }, -- Tooltip-Text / Spell-Beschreibung
+	tipTitle = { UI.FONT.hankenSemi, 18, "" }, -- Tooltip-Titel / Spell-Name (Gold)
+	tipBody  = { UI.FONT.hankenReg,  16, "" }, -- Tooltip-Text / Spell-Beschreibung
 }
 
 -- FontString auf eine Rolle setzen. Gibt das FontString zurück (chainbar).
