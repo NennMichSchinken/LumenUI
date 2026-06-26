@@ -704,6 +704,7 @@ local function buildAuras(d, stack)
 
 	auraCat(d, stack, "hotsOwn",    "HoTs",                 false)
 	auraCat(d, stack, "defensives", "Defensives & Externe", false)
+	auraCat(d, stack, "major",      "Major CDs",            false)
 	auraCat(d, stack, "debuffs",    "Debuffs",              true)
 
 	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Auras-Screen grau + gesperrt
@@ -719,6 +720,7 @@ end
 local TRACK_CATS = {
 	{ typ = "hot", label = "HoTs",                 desc = "Eigene Heilung über Zeit als Icon am Frame." },
 	{ typ = "def", label = "Defensives & Externe", desc = "Eigene Defensiven. Externe Schutzzauber anderer zeigt Lumen ohnehin automatisch." },
+	{ typ = "major", label = "Major CDs", desc = "Große Schadens- und Ressourcen-Cooldowns deiner Klasse" },
 }
 
 local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) or 0 end

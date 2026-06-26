@@ -153,6 +153,7 @@ local FAKE_DEBUFF = {
 local AURA_CATS = {
 	{ key = "hotsOwn",    filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
 	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
+	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_HOTS },
 	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
 -- Debuff-Filter-Modi (Blizzard-Standard): "raid" = Blizzards kuratierte raid-relevante
@@ -314,6 +315,15 @@ local DEF_DEFAULTS = {
 	-- Evoker (Class deckt Obsidian Scales/Renewing Blaze)
 	[1468] = { 357170, 363534 },                     -- Preservation: Time Dilation, Rewind
 }
+local MAJOR_DEFAULTS = {
+	[65]   = { 31884 },       -- Holy Paladin: Zornige Vergeltung (Flügel)
+	[105]  = { 102558, 29166 },-- Resto Druid: Inkarnation: Baum des Lebens, Anregen
+	[256]  = { 10060, 246287 },-- Disc Priest: Seele der Macht, Evangelismus
+	[257]  = { 10060, 265202 },-- Holy Priest: Seele der Macht, Gotteshymne
+	[270]  = { 322118, 325197 },-- MW Monk: Yu'lon beschwören, Chi-Ji beschwören
+	[264]  = { 114052, 16191 }, -- Resto Shaman: Aszendenz, Manatutem
+	[1468] = { 375087 },      -- Pres Evoker: Drachenwut
+}
 
 local frames = {}            -- Nicht-Secure-Pool für Preview/Test
 local container
@@ -352,6 +362,7 @@ local function whitelistFor(spec)
 	ensure(HOT_DEFAULTS[spec], "hot")
 	ensure(DEF_DEFAULTS[spec], "def")
 	ensure(DEF_CLASS[SPEC_CLASS[spec]], "def")   -- klassenweite Defensiven
+	ensure(MAJOR_DEFAULTS[spec], "major")
 	return s
 end
 
