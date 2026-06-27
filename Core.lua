@@ -19,6 +19,31 @@ local defaults = {
 			fillColor      = { r = 0.20, g = 0.60, b = 0.30 },
 			healPrediction = true,
 
+			-- Hintergrund & Transparenz (geteilt — Tab „Base"). Alpha 0..1.
+			bgColor         = { r = 0.11, g = 0.11, b = 0.11 }, -- Frame-Hintergrundfarbe (war fest 0.11)
+			bgAlpha         = 1,                                -- Deckkraft des Hintergrunds
+			healthAlpha     = 1,                                -- Deckkraft NUR der Lebensbalken-Füllung
+			shieldAlpha     = 1,                                -- Deckkraft des Schild-Overlays
+			healAbsorbAlpha = 1,                                -- Deckkraft des Heilabsorb-Overlays
+			-- Textur für Schild/Healabsorb. Default = gekacheltes Lumen-Muster (wie bisher);
+			-- jede andere Wahl (LSM/Blizzard) wird als glatte Füllung gestreckt (Raidframes.lua).
+			-- WICHTIG: Keys müssen zu SHIELD_PATTERN/HEALABS_PATTERN in Modules/Raidframes.lua passen.
+			shieldTexture     = "Lumen Schild",
+			healAbsorbTexture = "Lumen Heilabsorb",
+
+			-- Text-Optik (geteilt — Tab „Base"): Farbe + Umrandung sind Geschmackswahl und
+			-- gelten für Raid UND Party gleich. Größe/Position/Anzeigen liegen PRO KONTEXT
+			-- (raid/party, weil von der Frame-Größe abhängig). nameClassColor überschreibt nameColor.
+			nameClassColor    = false,
+			nameColor         = { r = 1, g = 1, b = 1 },
+			nameOutline       = "outline",
+			healthTextColor   = { r = 1, g = 1, b = 1 },
+			healthTextOutline = "outline",
+
+			-- Frame-Sichtbarkeit: Gruppen-Frame auch alleine zeigen (Default aus -> alleine
+			-- kein Frame; an -> immer sichtbar). Setzt das SecureGroupHeader-Attribut showSolo.
+			showWhenSolo = false,
+
 			-- Schilde (eigene Texturen, immer sichtbar bei Schild)
 			absorbStyle     = "Blizzard",         -- Blizzard | Flach
 			healAbsorbStyle = "Blizzard",         -- Blizzard | Flach
@@ -74,21 +99,21 @@ local defaults = {
 			--              "horizontal" = Mitglieder nebeneinander, Gruppen untereinander.
 			-- raid = Schlachtzug (IsInRaid), party = 5er-Gruppe/Dungeon. Eigene Position UND
 			-- eigene Text-Einstellungen je Kontext (Frames sind unterschiedlich groß).
+			-- PRO KONTEXT bleiben nur größen-/positionsabhängige Felder + Anzeigen/Typ.
+			-- Farbe/Umrandung von Name & HP liegen geteilt oben (Base).
 			raid = {
 				width = 114, height = 60, spacing = 6, orientation = "vertical",
 				point = "CENTER", x = 0, y = -120,
 				showName = true, nameSize = 12, namePoint = "TOPLEFT", nameX = 4, nameY = -3,
-				nameColor = { r = 1, g = 1, b = 1 }, nameOutline = "outline",
 				healthTextType = "Aktuell", healthTextSize = 16, healthTextPoint = "CENTER",
-				healthTextX = 0, healthTextY = 0, healthTextColor = { r = 1, g = 1, b = 1 }, healthTextOutline = "outline",
+				healthTextX = 0, healthTextY = 0,
 			},
 			party = {
 				width = 114, height = 60, spacing = 6, orientation = "vertical",
 				point = "CENTER", x = 0, y = -120,
 				showName = true, nameSize = 12, namePoint = "TOPLEFT", nameX = 4, nameY = -3,
-				nameColor = { r = 1, g = 1, b = 1 }, nameOutline = "outline",
 				healthTextType = "Aktuell", healthTextSize = 16, healthTextPoint = "CENTER",
-				healthTextX = 0, healthTextY = 0, healthTextColor = { r = 1, g = 1, b = 1 }, healthTextOutline = "outline",
+				healthTextX = 0, healthTextY = 0,
 			},
 
 			-- Aura-Indikatoren (Icon-System; Phase 1: eigene HoTs). Das Layout (Anker,
@@ -109,6 +134,13 @@ local defaults = {
 				},
 				defensives = {
 					enabled = false, anchor = "TOPRIGHT", grow = "LEFT", spacing = 2, maxIcons = 3,
+					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
+				},
+				-- Major CDs (große Klassen-Cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
+				-- Raidframes.lua). Default-Anker TOPLEFT = die letzte freie Ecke (HoTs=BOTTOMLEFT,
+				-- Defensives=TOPRIGHT, Debuffs=BOTTOMRIGHT) -> kollisionsfrei beim Anschalten.
+				major = {
+					enabled = false, anchor = "TOPLEFT", grow = "RIGHT", spacing = 2, maxIcons = 3,
 					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
 				},
 				debuffs = {
@@ -152,6 +184,9 @@ local TEXT_FIELDS = {
 	"healthTextType", "healthTextSize", "healthTextPoint", "healthTextX", "healthTextY",
 	"healthTextColor", "healthTextOutline",
 }
+-- v3: Text-OPTIK (Farbe + Umrandung) wandert von raid/party zurück in die geteilte Ebene
+-- (Geschmackswahl, für beide Kontexte gleich). Größe/Position/Anzeigen bleiben pro Kontext.
+local SHARED_TEXT_FIELDS = { "nameColor", "nameOutline", "healthTextColor", "healthTextOutline" }
 
 -- Einmalige Migration: alte flache Werte in raid + party übernehmen, damit bestehende
 -- Profile beim Umstieg auf das Kontext-Modell nicht zurückgesetzt werden.
@@ -195,6 +230,27 @@ local function migrateLayout(rf)
 				end
 			end
 			for _, k in ipairs(TEXT_FIELDS) do rf[k] = nil end
+		end
+	end
+	-- v3: Text-Optik (Farbe/Umrandung) von raid/party -> geteilt. Quelle = raid (sonst party);
+	-- bei bestehenden Profilen sind beide Kontexte ohnehin meist identisch.
+	if not rf._textSharedMigrated then
+		rf._textSharedMigrated = true
+		local src = rf.raid or rf.party
+		if src then
+			-- src[k] liefert NUR einen Wert, wenn der Nutzer ihn pro Kontext angepasst hatte
+			-- (raid-Defaults haben diese Felder nicht mehr). Kein rf[k]==nil-Guard: der würde
+			-- wegen AceDBs Default-Metatable nie greifen und die Anpassung verwerfen.
+			for _, k in ipairs(SHARED_TEXT_FIELDS) do
+				local v = src[k]
+				if v ~= nil then
+					if type(v) == "table" then rf[k] = { r = v.r, g = v.g, b = v.b } else rf[k] = v end
+				end
+			end
+		end
+		for _, ctx in ipairs({ "raid", "party" }) do
+			local t = rf[ctx]
+			if t then for _, k in ipairs(SHARED_TEXT_FIELDS) do t[k] = nil end end
 		end
 	end
 end

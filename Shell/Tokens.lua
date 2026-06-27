@@ -89,6 +89,21 @@ UI.FONT = {
 	hankenBold   = FP .. "HankenGrotesk-Bold.ttf",
 }
 
+-- Font-Warm-up: Beim KALTSTART rendert der ERSTE SetFont je custom-TTF-Pfad leer, bis der
+-- Client-Glyph-Cache den Font aufgebaut hat (nach /reload ist er aus der Vorsitzung noch warm
+-- -> Text da, Kaltstart -> unsichtbar). Hier jeden Pfad einmal auf einer versteckten,
+-- gerenderten FontString „anfassen" -> Cache ist warm, BEVOR die Shell je gebaut wird.
+do
+	local warm = UIParent:CreateFontString(nil, "BACKGROUND")
+	-- WICHTIG: SetFont MUSS vor SetText kommen — SetText auf einer FontString ohne Font
+	-- wirft „Font not set" und würde den Rest von Tokens.lua abbrechen. Alles pcall-gekapselt,
+	-- damit das Warm-up NIE das Laden gefährdet.
+	for _, path in pairs(UI.FONT) do
+		if pcall(warm.SetFont, warm, path, 12, "") then pcall(warm.SetText, warm, "Aa") end
+	end
+	warm:Hide()
+end
+
 -- Rollen → { Pfad, Größe, Flags }. Größen aus typography.css.
 UI.ROLE = {
 	wordmark = { UI.FONT.cinzelSemi, 30, "" }, -- LUMEN
@@ -126,7 +141,11 @@ UI.ROLE = {
 -- FontString auf eine Rolle setzen. Gibt das FontString zurück (chainbar).
 function UI:SetFont(fs, role, color)
 	local r = self.ROLE[role] or self.ROLE.body
-	fs:SetFont(r[1], r[2], r[3])
+	-- Fallback: scheitert der custom-TTF-SetFont (Kaltstart, Datei noch nicht bereit),
+	-- lieber der Standardfont in gleicher Größe als unsichtbarer Text.
+	if not fs:SetFont(r[1], r[2], r[3]) then
+		fs:SetFont(STANDARD_TEXT_FONT, r[2], r[3])
+	end
 	if color then fs:SetTextColor(color.r, color.g, color.b, color.a or 1) end
 	return fs
 end
@@ -244,8 +263,9 @@ UI.WIDGET = {
 	spSearchH      = 32,  -- Höhe des Suchfelds
 	spRowH         = 32,  -- Höhe einer Picker-Listenzeile
 	spVisibleRows  = 7,   -- gleichzeitig sichtbare Zeilen (Rest scrollt)
-	spScrollW      = 4,   -- Breite des Picker-Scrollbalkens
+	spScrollW      = 4,   -- Breite des Picker-Scrollbalkens (auch von W.Select genutzt)
 	spScrollGap    = 6,   -- Abstand Liste <-> Scrollbalken
+	selectMaxRows  = 8,   -- W.Select: max. gleichzeitig sichtbare Optionen (Rest scrollt)
 
 	-- Confirm-Dialog (modaler Bestätigungs-Popup; dunkelt die Shell dahinter ab).
 	confirmW      = 460, -- Karten-Breite
@@ -295,7 +315,12 @@ UI.LAYOUT = {
 	},
 	lebensbalken = {
 		afterTexture = 22,  -- Balken-Textur-Reihe -> Klassenfarbe-Reihe
-		afterClass   = 52,  -- Klassenfarbe-Reihe -> nächste Kategorie
+		afterClass   = 22,  -- Klassenfarbe-Reihe -> „Name in Klassenfarbe"-Reihe
+		afterNameCC  = 52,  -- „Name in Klassenfarbe"-Reihe -> nächste Kategorie
+	},
+	transparenz = {
+		afterColor = 30,    -- Hintergrundfarbe-Reihe (kurz) -> Deckkraft-Slider (hoch): Höhensprung
+		afterAlpha = 52,    -- Deckkraft-Slider-Reihe -> nächste Kategorie
 	},
 	sort = {
 		afterMode = 22,     -- „Sortieren nach" -> Prioritäts-Card

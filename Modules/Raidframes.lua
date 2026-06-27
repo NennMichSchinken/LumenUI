@@ -45,6 +45,27 @@ local SHIELD_OVL_TEX = T .. "blizzard-shield"      -- 256x40, deckend, Diagonals
 local HEALABS_TEX    = T .. "blizzard-absorb.png"  -- 256x128, halbtransparent, Heilabsorb-Muster
 local STRIPE_TEX_W   = 256                          -- Texturbreite beider Streifentexturen (für TexCoord-Tiling)
 local HEALABS_TEX_H  = 128                           -- blizzard-absorb: 256x128 (vertikal kachelbar, Zweierpotenz)
+-- Schild-/Healabsorb-Textur-Auswahl: diese Pattern-Keys = das gekachelte Lumen-Muster (fester
+-- Pixelgröße, secret-/clip-sicher wie bisher). JEDE andere Wahl (LSM-/Blizzard-Statusbar) wird
+-- als glatte Füllung über den Absorb-Bereich gestreckt. Die Clips bleiben unangetastet.
+local SHIELD_PATTERN  = "Lumen Schild"
+local HEALABS_PATTERN = "Lumen Heilabsorb"
+-- Schild-/Healabsorb-Texturen. Render-Spec je Eintrag: pattern = gekacheltes Lumen-Streifen-
+-- Muster (default, unveränderter Look). Eigene Lumen-Schild-Texturen kommen später dazu (Florian)
+-- -> hier einfach erweitern. (Blizzards Schild besteht aus mehreren Atlanten + Kanten und wird
+-- erst später korrekt zusammengebaut.) Zusätzlich kommen LibSharedMedia-Texturen anderer Addons
+-- dazu (siehe *TextureValues + resolveTexSpec) -> die werden als glatte Füllung gestreckt.
+local SHIELD_TEX_SPEC  = { [SHIELD_PATTERN]  = { pattern = true } }
+local HEALABS_TEX_SPEC = { [HEALABS_PATTERN] = { pattern = true } }
+-- Resolver: bekannter Key -> seine Spec; LSM-/Datei-Key -> gepoolte {texKey}-Füllung (kein
+-- Garbage pro Relayout); nil -> Pattern-Default.
+local fillSpecCache = {}
+local function resolveTexSpec(key, specTable, patternKey)
+	if not key then return specTable[patternKey] end
+	local s = specTable[key]; if s then return s end
+	local fs = fillSpecCache[key]; if not fs then fs = { texKey = key }; fillSpecCache[key] = fs end
+	return fs
+end
 
 local CLASS_DISPELS = {
 	PRIEST  = { Magic = true, Disease = true },
@@ -85,6 +106,21 @@ function Raidframes:TextureValues()
 	local LSM = getLSM()
 	if LSM then for _, n in ipairs(LSM:List("statusbar")) do t[n] = n end end
 	return t
+end
+-- Schild-/Healabsorb-Dropdown: das gekachelte Lumen-Muster zuerst + alle Statusbar-Texturen
+-- (Lumen/Blizzard/LSM), die als glatte Füllung nutzbar sind.
+-- Schild/Healabsorb-Dropdown = Lumen-Einträge + alle LibSharedMedia-Statusbar-Texturen
+-- (andere Addons) -> „haben Leute mehr". Bewusst OHNE Lumens Lebensbalken-Gradients.
+local function withLSM(t)
+	local LSM = getLSM()
+	if LSM then for _, n in ipairs(LSM:List("statusbar")) do t[n] = n end end
+	return t
+end
+function Raidframes:ShieldTextureValues()
+	local t = {}; for k in pairs(SHIELD_TEX_SPEC) do t[k] = k end; return withLSM(t)
+end
+function Raidframes:HealAbsorbTextureValues()
+	local t = {}; for k in pairs(HEALABS_TEX_SPEC) do t[k] = k end; return withLSM(t)
 end
 
 -- Heilvorhersage-Calculator (12.0). Einer, wird je Einheit gefüttert.
@@ -439,6 +475,8 @@ function Raidframes:ResetWhitelist(specID, typ)
 	end
 	if typ == "hot" then
 		restore(HOT_DEFAULTS[specID])
+	elseif typ == "major" then
+		restore(MAJOR_DEFAULTS[specID])
 	else
 		restore(DEF_DEFAULTS[specID])
 		restore(DEF_CLASS[SPEC_CLASS[specID]])
@@ -660,6 +698,22 @@ local function makeStripe(clipParent, spanFrame, stripeTex, vTile)
 	s:SetTexture(stripeTex, "REPEAT", vTile and "REPEAT" or "CLAMP")
 	s:SetAllPoints(spanFrame)
 	return s
+end
+-- Streifen-Textur in ApplyConfig setzen. patternKey -> gekacheltes Lumen-Muster (REPEAT, feste
+-- Pixelgröße wie bisher; vCoord/vRepeat steuern die vertikale Kachelung). Jede andere Wahl ->
+-- als glatte Füllung gestreckt (CLAMP, 0..1) -> beliebige LSM-/Blizzard-Statusbar nutzbar. Der
+-- Clip begrenzt in beiden Fällen auf den Absorb-Anteil (unverändert).
+local function applyStripeTex(stripe, spec, patternTex, L, vCoord, vRepeat)
+	if not spec or spec.pattern then
+		stripe:SetTexture(patternTex, "REPEAT", vRepeat and "REPEAT" or "CLAMP")
+		stripe:SetTexCoord(0, L.width / STRIPE_TEX_W, 0, vCoord)
+	elseif spec.atlas then
+		stripe:SetTexCoord(0, 1, 0, 1)          -- SetAtlas setzt eigene Coords; vorher zurücksetzen
+		pcall(stripe.SetAtlas, stripe, spec.atlas, false)
+	else
+		stripe:SetTexture(FetchTexture(spec.texKey or ""))
+		stripe:SetTexCoord(0, 1, 0, 1)
+	end
 end
 
 -- ----- Aura-Indikatoren (Phase 1): Icon-Pool, Anker, Auto-Fit-Größe -----
@@ -989,10 +1043,12 @@ function Raidframes:ApplyConfig(f)
 	-- Schild vertikal voll (0..1, CLAMP) wie bisher — die 40px-Textur ist keine Zweierpotenz,
 	-- vertikales REPEAT zeigte eine Naht. Healabsorb (128px, Zweierpotenz) auch vertikal in
 	-- fester Pixelgröße -> X-Muster wird nicht mehr gestreckt.
-	local txW = L.width / STRIPE_TEX_W
-	f.shieldStripe:SetTexCoord(0, txW, 0, 1)
-	f.backfillStripe:SetTexCoord(0, txW, 0, 1)
-	f.healStripe:SetTexCoord(0, txW, 0, L.height / HEALABS_TEX_H)
+	-- Schild (Forward + Backfill) + Healabsorb: Lumen-Muster gekachelt ODER gewählte Textur
+	-- gestreckt (siehe applyStripeTex). Clips bleiben unangetastet.
+	local sSpec = resolveTexSpec(d.shieldTexture, SHIELD_TEX_SPEC, SHIELD_PATTERN)
+	applyStripeTex(f.shieldStripe,   sSpec, SHIELD_OVL_TEX, L, 1, false)
+	applyStripeTex(f.backfillStripe, sSpec, SHIELD_OVL_TEX, L, 1, false)
+	applyStripeTex(f.healStripe, resolveTexSpec(d.healAbsorbTexture, HEALABS_TEX_SPEC, HEALABS_PATTERN), HEALABS_TEX, L, L.height / HEALABS_TEX_H, true)
 
 	if ns.Style then
 		local t = d.healthTexture
@@ -1000,9 +1056,20 @@ function Raidframes:ApplyConfig(f)
 		elseif t == "Lumen Soft" then ns.Style:SetDepth(f.overlay, 0.55)
 		else ns.Style:SetDepth(f.overlay, 0) end
 	end
+	-- Hintergrund-Farbe + Deckkraft (geteilt). Die Lebensbalken-Deckkraft wird NICHT hier
+	-- gesetzt: f.health:SetAlpha würde auf die Clip-Kinder (Schild/Heilabsorb/Vorhersage)
+	-- durchschlagen. Stattdessen render-zeitig als Alpha-Argument von SetStatusBarColor.
+	local bg = d.bgColor or {}
+	f.bg:SetColorTexture(bg.r or 0.11, bg.g or 0.11, bg.b or 0.11, d.bgAlpha or 1)
+	-- Deckkraft der Absorb-Overlays (Schild = Forward+Backfill-Streifen, Heilabsorb = Streifen).
+	local sa = d.shieldAlpha or 1
+	f.shieldStripe:SetAlpha(sa); f.backfillStripe:SetAlpha(sa)
+	f.healStripe:SetAlpha(d.healAbsorbAlpha or 1)
+
+	-- Farbe + Umrandung sind GETEILT (d), Größe/Position/Anzeigen pro Kontext (L).
 	f.name:SetShown(L.showName)
-	applyText(f.name, f, L.namePoint, L.nameX, L.nameY, L.nameSize, L.nameColor, L.nameOutline)
-	applyText(f.htext, f, L.healthTextPoint, L.healthTextX, L.healthTextY, L.healthTextSize, L.healthTextColor, L.healthTextOutline)
+	applyText(f.name, f, L.namePoint, L.nameX, L.nameY, L.nameSize, d.nameColor, d.nameOutline)
+	applyText(f.htext, f, L.healthTextPoint, L.healthTextX, L.healthTextY, L.healthTextSize, d.healthTextColor, d.healthTextOutline)
 		applyText(f.aggroText, f, d.aggroTextPoint, d.aggroTextX, d.aggroTextY, d.aggroTextSize, nil, d.aggroTextOutline)
 	f.eT:ClearAllPoints(); f.eT:SetPoint("TOPLEFT"); f.eT:SetPoint("TOPRIGHT"); f.eT:SetHeight(2)
 	f.eB:ClearAllPoints(); f.eB:SetPoint("BOTTOMLEFT"); f.eB:SetPoint("BOTTOMRIGHT"); f.eB:SetHeight(2)
@@ -1054,12 +1121,14 @@ function Raidframes:RenderLive(f)
 	setSegments(f, maxH, UnitHealth(u), incoming, absorb, healAbs)
 
 	local _, class = UnitClass(u)
+	local ha = d.healthAlpha or 1   -- nur die Lebensbalken-Füllung dimmen (4. Alpha-Arg)
 	local hasDispel, dr, dg, dbb
 	if d.dispelEnabled then hasDispel, dr, dg, dbb = self:GetDispel(u, d) end
 	if hasDispel and d.dispelMode == "recolor" then
-		f.health:SetStatusBarColor(dr, dg, dbb)
+		f.health:SetStatusBarColor(dr, dg, dbb, ha)
 	else
-		f.health:SetStatusBarColor(fillRGB(d, class))
+		local fr, fg, fb = fillRGB(d, class)
+		f.health:SetStatusBarColor(fr, fg, fb, ha)
 	end
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
@@ -1074,6 +1143,9 @@ function Raidframes:RenderLive(f)
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
+	-- Name in Klassenfarbe (geteilt): überschreibt die konfigurierte nameColor (Klasse ist
+	-- nur hier bekannt). Aus -> applyText in ApplyConfig hat die konfigurierte Farbe gesetzt.
+	if d.nameClassColor then f.name:SetTextColor(classColor(class)) end
 
 	local t = L.healthTextType
 	if t == "Keine" then
@@ -1113,10 +1185,12 @@ function Raidframes:RenderFake(f)
 		dr, dg, dbb = dispelCol(d, fk.dispel)
 		hasDispel = true
 	end
+	local ha = d.healthAlpha or 1
 	if hasDispel and d.dispelMode == "recolor" then
-		f.health:SetStatusBarColor(dr, dg, dbb)
+		f.health:SetStatusBarColor(dr, dg, dbb, ha)
 	else
-		f.health:SetStatusBarColor(fillRGB(d, fk.class))
+		local fr, fg, fb = fillRGB(d, fk.class)
+		f.health:SetStatusBarColor(fr, fg, fb, ha)
 	end
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
@@ -1124,6 +1198,7 @@ function Raidframes:RenderFake(f)
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(fk.name) end
+	if d.nameClassColor then f.name:SetTextColor(classColor(fk.class)) end
 
 	local t = L.healthTextType
 	if t == "Keine" then f.htext:SetText("")
@@ -1430,7 +1505,7 @@ local function buildHeader()
 	header:SetAttribute("showRaid", true)
 	header:SetAttribute("showParty", true)
 	header:SetAttribute("showPlayer", true)
-	header:SetAttribute("showSolo", true)   -- solo sieht man den eigenen Frame (gut zum Live-Testen)
+	header:SetAttribute("showSolo", db().showWhenSolo and true or false)   -- Option: Frame auch alleine zeigen
 	header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
 	header:SetAttribute("sortMethod", "INDEX")
 	applyHeaderLayout()
@@ -1453,6 +1528,11 @@ function Raidframes:LayoutLive()
 	--  * "role"  -> groupBy ASSIGNEDROLE, sortMethod NAME, groupingOrder = Prioritätsliste
 	--               + ",NONE" (sonst fielen Einheiten ohne zugewiesene Rolle raus).
 	local d = db()
+	-- „Frame auch alleine anzeigen" live nachziehen (Toggle wirkt OOC sofort).
+	local wantSolo = d.showWhenSolo and true or false
+	if header:GetAttribute("showSolo") ~= wantSolo then
+		header:SetAttribute("showSolo", wantSolo)
+	end
 	-- Rollen-Sortierung gilt im Dungeon/Party immer; im Raid nur, wenn ausdrücklich
 	-- aktiviert (feste Raids baut man oft selbst nach Gruppe). isRaidContext() trennt das.
 	local byRole = (d.sortMode == "role") and (not isRaidContext() or d.sortApplyRaid)

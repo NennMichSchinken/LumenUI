@@ -101,17 +101,7 @@ local function vset(ctx, key)
 		local t = rf(); t[ctx] = t[ctx] or {}; t[ctx][key] = v; relayout()
 	end
 end
-local function cget(ctx, key)
-	return function()
-		local c = (rf()[ctx] or {})[key] or {}
-		return c.r or 1, c.g or 1, c.b or 1
-	end
-end
-local function cset(ctx, key)
-	return function(r, g, b)
-		local t = rf(); t[ctx] = t[ctx] or {}; t[ctx][key] = { r = r, g = g, b = b }; relayout()
-	end
-end
+-- (Per-Kontext-Farb-Helfer entfernt: Text-Farben liegen jetzt GETEILT in Base, siehe tcget/tcset.)
 
 -- Top-Level-Keys (Base-Tab; liegen direkt unter rf(), nicht im Kontext).
 local function tget(key) return function() return rf()[key] end end
@@ -136,15 +126,17 @@ local function aset(cat, key)
 end
 
 -- Balken-Texturen aus Raidframes:TextureValues() -> sortierte {value,label}-Liste.
-local function textureOptions()
-	local vals = (ns.Raidframes and ns.Raidframes:TextureValues()) or {}
+local function texOptsFrom(vals)
 	local list = {}
-	for k in pairs(vals) do list[#list + 1] = k end
+	for k in pairs(vals or {}) do list[#list + 1] = k end
 	table.sort(list)
 	local opts = {}
 	for _, k in ipairs(list) do opts[#opts + 1] = { value = k, label = k } end
 	return opts
 end
+local function textureOptions() return texOptsFrom(ns.Raidframes and ns.Raidframes:TextureValues()) end
+local function shieldTexOptions() return texOptsFrom(ns.Raidframes and ns.Raidframes:ShieldTextureValues()) end
+local function healAbsorbTexOptions() return texOptsFrom(ns.Raidframes and ns.Raidframes:HealAbsorbTextureValues()) end
 
 -- Einzelnes Dropdown RASTERBÜNDIG: Zelle 1 eines 3-Spalten-Rasters, damit ALLE
 -- Dropdowns exakt gleich (1 Spalte) breit sind. sideFn(select) darf rechts neben
@@ -221,14 +213,11 @@ local function buildRaid(d, stack, ctx)
 
 	-- Unter-Box (untitelt — der Master darüber benennt sie): Umrandung/Position /
 	-- Größe·X·Y / Farbe.
+	-- Farbe + Umrandung liegen GETEILT im Base-Tab („Text"). Hier nur Position + Größe.
 	local boxN = sName:subgroup()
 	local nr1, nc1 = W.Row(d, 3, { height = fieldH })
-	local nameOutline = W.Select(nc1[1], { label = "Namens-Umrandung", options = OUTLINE_OPTS, get = vget(ctx, "nameOutline"), set = vset(ctx, "nameOutline") })
-	nameOutline:SetAllPoints(nc1[1])
-	local namePos = W.Select(nc1[2], { label = "Namensposition", options = POINT_OPTS, get = vget(ctx, "namePoint"), set = vset(ctx, "namePoint") })
-	namePos:SetAllPoints(nc1[2])
-	local swName = W.ColorSwatch(nc1[3], { label = "Farbe", field = true, get = cget(ctx, "nameColor"), set = cset(ctx, "nameColor") })
-	swName:SetPoint("TOPLEFT", nc1[3], "TOPLEFT", 0, 0)
+	local namePos = W.Select(nc1[1], { label = "Namensposition", options = POINT_OPTS, get = vget(ctx, "namePoint"), set = vset(ctx, "namePoint") })
+	namePos:SetAllPoints(nc1[1])
 	boxN:place(nr1, fieldH, R.row)
 
 	local nr2, nc2 = W.Row(d, 3, { height = M.sliderH })
@@ -242,7 +231,7 @@ local function buildRaid(d, stack, ctx)
 	boxN:close()
 	sName:close()
 
-	for _, w in ipairs({ nameOutline, namePos, nameSize, nameX, nameY, swName }) do nameDeps[#nameDeps + 1] = w end
+	for _, w in ipairs({ namePos, nameSize, nameX, nameY }) do nameDeps[#nameDeps + 1] = w end
 	refreshName()
 
 	-- ===== Text — HP-Anzeige ===============================================
@@ -265,14 +254,11 @@ local function buildRaid(d, stack, ctx)
 	sHP:place(hMaster, fieldH, R.afterCheck)
 
 	-- Unter-Box (untitelt): Umrandung/Position / Größe·X·Y / Farbe.
+	-- Farbe + Umrandung liegen GETEILT im Base-Tab („Text"). Hier nur Position + Größe.
 	local boxH = sHP:subgroup()
 	local hr1, hc1 = W.Row(d, 3, { height = fieldH })
-	local hpOutline = W.Select(hc1[1], { label = "HP-Text-Umrandung", options = OUTLINE_OPTS, get = vget(ctx, "healthTextOutline"), set = vset(ctx, "healthTextOutline") })
-	hpOutline:SetAllPoints(hc1[1])
-	local hpPos = W.Select(hc1[2], { label = "HP-Textposition", options = POINT_OPTS, get = vget(ctx, "healthTextPoint"), set = vset(ctx, "healthTextPoint") })
-	hpPos:SetAllPoints(hc1[2])
-	local swHP = W.ColorSwatch(hc1[3], { label = "Farbe", field = true, get = cget(ctx, "healthTextColor"), set = cset(ctx, "healthTextColor") })
-	swHP:SetPoint("TOPLEFT", hc1[3], "TOPLEFT", 0, 0)
+	local hpPos = W.Select(hc1[1], { label = "HP-Textposition", options = POINT_OPTS, get = vget(ctx, "healthTextPoint"), set = vset(ctx, "healthTextPoint") })
+	hpPos:SetAllPoints(hc1[1])
 	boxH:place(hr1, fieldH, R.row)
 
 	local hr2, hc2 = W.Row(d, 3, { height = M.sliderH })
@@ -286,7 +272,7 @@ local function buildRaid(d, stack, ctx)
 	boxH:close()
 	sHP:close()
 
-	for _, w in ipairs({ hpOutline, hpPos, hpSize, hpX, hpY, swHP }) do hpDeps[#hpDeps + 1] = w end
+	for _, w in ipairs({ hpPos, hpSize, hpX, hpY }) do hpDeps[#hpDeps + 1] = w end
 	refreshHP()
 
 	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Raid/Group-Screen grau + gesperrt
@@ -352,6 +338,10 @@ local function buildBase(d, stack)
 		end,
 	})
 	cbEnabled:SetPoint("LEFT", enRow, "LEFT", 0, 0)
+	local cbSolo = W.Checkbox(enRow, { label = "Frames auch alleine anzeigen",
+		tooltip = "Zeigt den Gruppen-Frame auch, wenn du nicht in einer Gruppe bist.",
+		get = tget("showWhenSolo"), set = tset("showWhenSolo") })
+	cbSolo:SetPoint("LEFT", cbEnabled, "RIGHT", L.general.checkRowGap, 0)
 	stack:place(enRow, M.checkBox, L.base.toggleToSection)
 
 	-- Alles Weitere läuft in ein gate-bares Body-Frame: bei „aus" gedimmt + gesperrt
@@ -364,30 +354,75 @@ local function buildBase(d, stack)
 	-- ===== Lebensbalken ====================================================
 	local sBar = stack:section("Lebensbalken")
 
-	-- Reihe 1: Balken-Textur (rasterbündig) + Heilvorhersage daneben.
-	gridSelect(d, sBar, L.lebensbalken.afterTexture,
-		{ label = "Balken-Textur", options = textureOptions(), get = tget("healthTexture"), set = tset("healthTexture") },
-		function(sel)
-			local cbHealPred = W.Checkbox(d, { label = "Heilvorhersage (eingehende Heilung)",
-				get = tget("healPrediction"), set = tset("healPrediction") })
-			cbHealPred:SetPoint("LEFT", sel._control, "RIGHT", L.general.sideGap, 0)
-		end)
+	-- Reihe 1: Balken-Textur | Schild-Textur | Healabsorb-Textur (3 Dropdowns, je mit Zeilen-
+	-- begrenzung + Mausrad-Vorschau). Default „Lumen …" = Streifen-Muster, sonst LSM/Blizzard.
+	local WHEEL_HINT = "Tipp: Mausrad über dem Dropdown blättert live durch die Texturen (Vorschau)."
+	local tr1, tc1 = W.Row(d, 3, { height = fieldH })
+	W.Select(tc1[1], { label = "Balken-Textur", options = textureOptions(), wheelPreview = true, tooltip = WHEEL_HINT, get = tget("healthTexture"), set = tset("healthTexture") }):SetAllPoints(tc1[1])
+	W.Select(tc1[2], { label = "Schild-Textur", options = shieldTexOptions(), wheelPreview = true, tooltip = WHEEL_HINT, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(tc1[2])
+	W.Select(tc1[3], { label = "Healabsorb-Textur", options = healAbsorbTexOptions(), wheelPreview = true, tooltip = WHEEL_HINT, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(tc1[3])
+	sBar:place(tr1, fieldH, R.row)
 
-	-- Reihe 2: Klassenfarbe (Master) + Füllfarbe.
+	-- Checkbox-Versatz, um eine Checkbox vertikal aufs Control-Band (Swatch/Select) einer
+	-- Field-Reihe auszurichten (Label oben, Control unten -> Box mittig ins untere 40er-Band).
+	local fillOff = -(M.fieldGap + (M.controlH - M.checkBox) / 2)
+
+	-- Reihe 2: Heilvorhersage + Klassenfarbe (Checks) + Füllfarbe + Hintergrundfarbe (Swatches).
 	local fillDeps = {}
 	local function refreshFill()
 		local editable = not rf().useClassColor
 		for _, w in ipairs(fillDeps) do w:SetWidgetEnabled(editable) end
 	end
-	local barTogRow = CreateFrame("Frame", nil, d)
-	local cbClass = W.Checkbox(barTogRow, { label = "Klassenfarbe als Füllfarbe", get = tget("useClassColor"),
+	local r2, c2 = W.Row(d, 4, { height = fieldH })
+	local cbHealPred = W.Checkbox(c2[1], { label = "Heilvorhersage",
+		tooltip = "Eingehende Heilung als Vorschau am Lebensbalken.", get = tget("healPrediction"), set = tset("healPrediction") })
+	cbHealPred:SetPoint("TOPLEFT", c2[1], "TOPLEFT", 0, fillOff)
+	local cbClass = W.Checkbox(c2[2], { label = "Klassenfarbe als Füllfarbe", get = tget("useClassColor"),
 		set = function(v) rf().useClassColor = v; relayout(); refreshFill() end })
-	cbClass:SetPoint("LEFT", barTogRow, "LEFT", 0, 0)
-	local swFill = W.ColorSwatch(barTogRow, { label = "Füllfarbe", get = tcget("fillColor"), set = tcset("fillColor") })
-	swFill:SetPoint("LEFT", cbClass, "RIGHT", L.general.checkRowGap, 0)
-	sBar:place(barTogRow, M.checkBox, L.lebensbalken.afterClass)
-	sBar:close()
+	cbClass:SetPoint("TOPLEFT", c2[2], "TOPLEFT", 0, fillOff)
+	local swFill = W.ColorSwatch(c2[3], { label = "Füllfarbe", field = true, get = tcget("fillColor"), set = tcset("fillColor") })
+	swFill:SetPoint("TOPLEFT", c2[3], "TOPLEFT", 0, 0)
+	local swBg = W.ColorSwatch(c2[4], { label = "Hintergrundfarbe", field = true, get = tcget("bgColor"), set = tcset("bgColor") })
+	swBg:SetPoint("TOPLEFT", c2[4], "TOPLEFT", 0, 0)
+	sBar:place(r2, fieldH, R.row)
 	fillDeps[1] = swFill; refreshFill()
+
+	-- Unter-Box „Transparenz": 2×2 Deckkraft-Slider (Hintergrund/Lebensbalken · Schild/Healabsorb).
+	local boxT = sBar:subgroup({ title = "Transparenz" })
+	local trA, tcA = W.Row(d, 2, { height = M.sliderH })
+	W.Slider(tcA[1], { label = "Hintergrund-Deckkraft", min = 0, max = 100, unit = " %", get = pctget("bgAlpha"), set = pctset("bgAlpha") }):SetAllPoints(tcA[1])
+	W.Slider(tcA[2], { label = "Lebensbalken-Deckkraft", min = 0, max = 100, unit = " %", get = pctget("healthAlpha"), set = pctset("healthAlpha") }):SetAllPoints(tcA[2])
+	boxT:place(trA, M.sliderH, R.row)
+	local trB, tcB = W.Row(d, 2, { height = M.sliderH })
+	W.Slider(tcB[1], { label = "Schild-Deckkraft", min = 0, max = 100, unit = " %", get = pctget("shieldAlpha"), set = pctset("shieldAlpha") }):SetAllPoints(tcB[1])
+	W.Slider(tcB[2], { label = "Healabsorb-Deckkraft", min = 0, max = 100, unit = " %", get = pctget("healAbsorbAlpha"), set = pctset("healAbsorbAlpha") }):SetAllPoints(tcB[2])
+	boxT:place(trB, M.sliderH, R.tight)
+	boxT:close()
+	sBar:close()
+
+	-- ===== Text (GETEILT: Farbe + Umrandung gelten für Raid & Gruppe gleich) =====
+	local sText = stack:section("Text")
+	local nameColDeps = {}
+	local function refreshNameCol()
+		local on = not rf().nameClassColor
+		for _, w in ipairs(nameColDeps) do w:SetWidgetEnabled(on) end
+	end
+	-- Reihe 1: Name in Klassenfarbe (Check) | Namens-Umrandung | HP-Umrandung.
+	local txR1, txc1 = W.Row(d, 3, { height = fieldH })
+	local cbNameCC = W.Checkbox(txc1[1], { label = "Name in Klassenfarbe", get = tget("nameClassColor"),
+		set = function(v) rf().nameClassColor = v; relayout(); refreshNameCol() end })
+	cbNameCC:SetPoint("TOPLEFT", txc1[1], "TOPLEFT", 0, fillOff)
+	W.Select(txc1[2], { label = "Namens-Umrandung", options = OUTLINE_OPTS, get = tget("nameOutline"), set = tset("nameOutline") }):SetAllPoints(txc1[2])
+	W.Select(txc1[3], { label = "HP-Umrandung", options = OUTLINE_OPTS, get = tget("healthTextOutline"), set = tset("healthTextOutline") }):SetAllPoints(txc1[3])
+	sText:place(txR1, fieldH, R.row)
+	-- Reihe 2: Namensfarbe | HP-Text-Farbe (Field-Swatches).
+	local txR2, txc2 = W.Row(d, 3, { height = fieldH })
+	local swName = W.ColorSwatch(txc2[1], { label = "Namensfarbe", field = true, get = tcget("nameColor"), set = tcset("nameColor") })
+	swName:SetPoint("TOPLEFT", txc2[1], "TOPLEFT", 0, 0)
+	W.ColorSwatch(txc2[2], { label = "HP-Text-Farbe", field = true, get = tcget("healthTextColor"), set = tcset("healthTextColor") }):SetPoint("TOPLEFT", txc2[2], "TOPLEFT", 0, 0)
+	sText:place(txR2, fieldH, R.tight)
+	sText:close()
+	nameColDeps[1] = swName; refreshNameCol()
 
 	-- ===== Dispel-Anzeige ==================================================
 	local sDispel = stack:section("Dispel-Anzeige")
