@@ -711,6 +711,24 @@ function ns.SetupOptions()
 						disabled = function() return rf().useClassColor end,
 					},
 					healPrediction = { type = "toggle", order = 24, name = "Heilvorhersage (eingehende Heilung)" },
+					nameClassColor = {
+						type = "toggle", order = 24.5, name = "Name in Klassenfarbe",
+						desc = "Färbt den Namens-Text in der Klassenfarbe der Einheit (überschreibt die je Kontext eingestellte Namensfarbe).",
+					},
+					bgHead = { type = "header", order = 24.6, name = "Hintergrund & Transparenz" },
+					bgColor = {
+						type = "color", order = 24.7, name = "Hintergrundfarbe",
+						get = getColor, set = setColor,
+					},
+					bgAlpha = {
+						type = "range", order = 24.8, name = "Hintergrund-Deckkraft",
+						min = 0, max = 1, step = 0.05, isPercent = true,
+					},
+					healthAlpha = {
+						type = "range", order = 24.9, name = "Lebensbalken-Deckkraft",
+						desc = "Nur die Lebensbalken-Füllung wird durchsichtig — Schild und Heilabsorb bleiben voll sichtbar.",
+						min = 0, max = 1, step = 0.05, isPercent = true,
+					},
 					dispelHead = { type = "header", order = 25, name = "Dispel-Anzeige" },
 					dispelEnabled = {
 						type = "toggle", order = 25.1, width = "full",

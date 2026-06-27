@@ -104,7 +104,8 @@ function W.Slider(parent, o)
 
 	local cap = UI.FS(f, "sliderCap", C.gold300)
 	cap:SetText(o.label or "")
-	cap:SetPoint("TOP", f, "TOP", 0, -2)
+	cap:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -2)
+	cap:SetJustifyH("LEFT")
 
 	-- Track-Reihe: [min] —— track —— [max]
 	local row = CreateFrame("Frame", nil, f)
@@ -221,12 +222,18 @@ function W.Slider(parent, o)
 	box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
 	local function onUpd() commit(valFromCursor()) end
-	track:SetScript("OnMouseDown", function(self)
-		self:SetScript("OnUpdate", onUpd)
-		commit(valFromCursor())
-	end)
-	track:SetScript("OnMouseUp", function(self) self:SetScript("OnUpdate", nil) end)
-	track:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
+	local function beginDrag() track:SetScript("OnUpdate", onUpd); commit(valFromCursor()) end
+	local function endDrag() track:SetScript("OnUpdate", nil) end
+	track:SetScript("OnMouseDown", beginDrag)
+	track:SetScript("OnMouseUp", endDrag)
+	track:SetScript("OnHide", endDrag)
+	-- Thumb selbst greifbar machen: am Anschlag (0/100 %) ragt das Viereck zur Hälfte über
+	-- den Track hinaus — dieser Teil war bisher tot (nur der Track war klickbar). Mouse-enabled
+	-- + 2px größere Trefferfläche (rein klickbar, optisch unverändert) -> leicht zu greifen.
+	thumb:EnableMouse(true)
+	thumb:SetHitRectInsets(-2, -2, -2, -2)
+	thumb:SetScript("OnMouseDown", beginDrag)
+	thumb:SetScript("OnMouseUp", endDrag)
 	-- Track-Breite steht erst nach dem Layout fest -> bei Größenänderung neu zeichnen.
 	track:SetScript("OnSizeChanged", function() visual(cur) end)
 
@@ -347,14 +354,33 @@ function W.Select(parent, o)
 			item._txt:SetTextColor(tc.r, tc.g, tc.b)
 		end
 	end
+	-- Optionen in eine SCROLL-Liste: bei vielen Einträgen (z.B. Balken-/Schild-Texturen aus
+	-- anderen Addons/LSM) nur N Zeilen sichtbar + Mausrad/Scrollbalken, statt das Menü über
+	-- den ganzen Schirm zu ziehen. Kurze Listen (<= maxRows) zeigen alles, ohne Scrollbalken.
+	local maxRows = M.selectMaxRows
+	local stride  = rowH + gap
+	local needScr = #opts > maxRows
+	local visN    = needScr and maxRows or math.max(1, #opts)
+	local listH   = math.max(rowH, visN * stride - gap)
+
+	local sf = CreateFrame("ScrollFrame", nil, menu)
+	sf:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad)
+	sf:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -(pad + (needScr and (M.spScrollW + M.spScrollGap) or 0)), pad)
+	sf:EnableMouseWheel(needScr)
+	local child = CreateFrame("Frame", nil, sf)
+	child:SetSize(1, 1)
+	sf:SetScrollChild(child)
+	sf:SetScript("OnSizeChanged", function(self2, w) child:SetWidth(w or self2:GetWidth() or 1) end)
+
+	local items = {}
 	local prev
 	for _, op in ipairs(opts) do
-		local item = CreateFrame("Button", nil, menu)
+		local item = CreateFrame("Button", nil, child)
 		item:SetHeight(rowH)
-		item:SetPoint("LEFT", menu, "LEFT", pad, 0)
-		item:SetPoint("RIGHT", menu, "RIGHT", -pad, 0)
+		item:SetPoint("LEFT", child, "LEFT", 0, 0)
+		item:SetPoint("RIGHT", child, "RIGHT", 0, 0)
 		if prev then item:SetPoint("TOP", prev, "BOTTOM", 0, -gap)
-		else item:SetPoint("TOP", menu, "TOP", 0, -pad) end
+		else item:SetPoint("TOP", child, "TOP", 0, 0) end
 		local wash = item:CreateTexture(nil, "BACKGROUND")
 		wash:SetAllPoints(item)
 		wash:SetColorTexture(0, 0, 0, 0)
@@ -377,20 +403,73 @@ function W.Select(parent, o)
 			closeMenu()
 			if o.set then o.set(cur) end
 		end)
+		items[#items + 1] = item
 		prev = item
 	end
-	menu:SetHeight(#opts * rowH + (#opts - 1) * gap + pad * 2)
-	menu._paintItem = paintItem
+	child:SetHeight(math.max(1, #opts * stride - gap))
+	menu:SetHeight(listH + pad * 2)
+	menu._paintItem, menu._items = paintItem, items
+
+	-- Scrollbalken (nur wenn nötig) — Muster aus W.SpellPicker: Mausrad + ziehbarer Thumb.
+	if needScr then
+		local sbTrack = CreateFrame("Frame", nil, menu)
+		sbTrack:SetWidth(M.spScrollW)
+		sbTrack:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -pad)
+		sbTrack:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -pad, pad)
+		local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
+		trackTex:SetAllPoints(sbTrack); UI.SetColor(trackTex, C.ink700)
+		local sth = CreateFrame("Frame", nil, sbTrack)
+		sth:SetWidth(M.spScrollW); sth:EnableMouse(true)
+		local sthTex = sth:CreateTexture(nil, "OVERLAY"); sthTex:SetAllPoints(sth)
+		local function paintThumb(a) sthTex:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, a) end
+		paintThumb(0.55)
+		local function updateBar()
+			local range = sf:GetVerticalScrollRange() or 0
+			local h = sf:GetHeight() or 1
+			if range <= 0.5 or h <= 1 then sth:Hide(); return end
+			sth:Show()
+			local total = h + range
+			local th = math.max(20, (h / total) * h)
+			sth:SetHeight(th)
+			local p = (sf:GetVerticalScroll() or 0) / range
+			sth:ClearAllPoints(); sth:SetPoint("TOP", sbTrack, "TOP", 0, -p * (h - th))
+		end
+		local function scrollBy(dd)
+			local range = sf:GetVerticalScrollRange() or 0
+			sf:SetVerticalScroll(math.max(0, math.min(range, (sf:GetVerticalScroll() or 0) - dd))); updateBar()
+		end
+		sf:SetScript("OnMouseWheel", function(_, dd) scrollBy(dd * stride * 2) end)
+		sf:SetScript("OnScrollRangeChanged", updateBar)
+		sth:SetScript("OnMouseDown", function(self2)
+			local _, cy = GetCursorPosition()
+			local sc = sbTrack:GetEffectiveScale() or 1
+			self2._grabOff = (sth:GetTop() or 0) - (cy / (sc ~= 0 and sc or 1))
+			self2:SetScript("OnUpdate", function()
+				local _, cy2 = GetCursorPosition()
+				local s2 = sbTrack:GetEffectiveScale(); if not s2 or s2 == 0 then return end
+				cy2 = cy2 / s2
+				local top, h = sbTrack:GetTop(), sf:GetHeight() or 1
+				local denom = h - (sth:GetHeight() or 0)
+				if not top or denom <= 0 then return end
+				local rel = math.max(0, math.min(1, (top - (cy2 + (self2._grabOff or 0))) / denom))
+				sf:SetVerticalScroll(rel * (sf:GetVerticalScrollRange() or 0)); updateBar()
+			end)
+		end)
+		sth:SetScript("OnMouseUp", function(self2) self2:SetScript("OnUpdate", nil) end)
+		sth:SetScript("OnHide", function(self2) self2:SetScript("OnUpdate", nil) end)
+		sth:SetScript("OnEnter", function() paintThumb(0.85) end)
+		sth:SetScript("OnLeave", function() paintThumb(0.55) end)
+		menu._updateBar = updateBar
+	end
 
 	local function openMenu()
 		menu:ClearAllPoints()
 		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -6)
 		menu:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -6)
 		-- Zeilen-Optik auf den aktuellen Stand bringen (Gold-Balken auf gewählter Zeile)
-		for _, item in ipairs({ menu:GetChildren() }) do
-			if item._bar then menu._paintItem(item, false) end
-		end
+		for _, item in ipairs(menu._items) do menu._paintItem(item, false) end
 		closer:Show(); menu:Show()
+		if menu._updateBar then menu._updateBar() end
 		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
 	end
 
@@ -407,10 +486,47 @@ function W.Select(parent, o)
 	end)
 	btn:HookScript("OnHide", closeMenu)
 
+	-- Fast-Preview (OPT-IN über o.wheelPreview — nur Textur-Dropdowns): Mausrad über dem
+	-- GESCHLOSSENEN Dropdown blättert live durch die Optionen (statt die Shell zu scrollen).
+	-- Ohne wheelPreview konsumiert der Button das Rad NICHT -> die Shell scrollt normal.
+	-- Throttle: Label sofort, aber das Profil-Schreiben (o.set -> Relayout) leading-edge +
+	-- gedrosselt -> max ~alle 50 ms ein Re-Render; der zuletzt gewählte Wert landet immer im Profil.
+	if o.wheelPreview then
+		local PREVIEW_THROTTLE = 0.05
+		local lastApply, pendingVal, scheduled = 0, nil, false
+		local function cycle(delta)
+			if #opts == 0 then return end
+			local idx = 1
+			for i, op in ipairs(opts) do if op.value == cur then idx = i; break end end
+			idx = math.max(1, math.min(#opts, idx - delta)) -- Rad hoch = vorige, runter = nächste Option
+			local v = opts[idx].value
+			if v == cur then return end
+			cur = v; refreshLabel()
+			local now = GetTime()
+			if now - lastApply >= PREVIEW_THROTTLE then
+				lastApply = now; pendingVal = nil
+				if o.set then o.set(v) end
+			else
+				pendingVal = v
+				if not scheduled then
+					scheduled = true
+					C_Timer.After(PREVIEW_THROTTLE - (now - lastApply), function()
+						scheduled = false; lastApply = GetTime()
+						local p = pendingVal; pendingVal = nil
+						if p ~= nil and o.set then o.set(p) end
+					end)
+				end
+			end
+		end
+		btn:EnableMouseWheel(true)
+		btn:SetScript("OnMouseWheel", function(_, delta) if not menu:IsShown() then cycle(delta) end end)
+	end
+
 	f.SetValueExternal = function(_, v) cur = v; refreshLabel() end
 	f.SetWidgetEnabled = function(_, on)
 		f:SetAlpha(on and 1 or 0.35)
 		btn:EnableMouse(on)
+		if o.wheelPreview then btn:EnableMouseWheel(on) end
 		if not on and menu:IsShown() then closeMenu() end
 	end
 	return f
