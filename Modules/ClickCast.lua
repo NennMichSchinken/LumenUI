@@ -1,23 +1,23 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Modul: Click-Cast (Phase 2)
+--  Lumen — Module: Click-Cast (Phase 2)
 --
---  Zwei Pfade, EINE Bindings-Liste (pro Spec), getrennt über binding.hovercast:
---   1. KLICK auf Frame (Clique-Stil): Maustaste (+Modifier) auf einem Secure-
---      Unit-Button -> Aktion auf dessen Unit. Attribute werden je Button gesetzt
---      (NUR außer Kampf; im Kampf via PLAYER_REGEN_ENABLED nachgeholt).
---   2. HOVERCAST (VuhDo-Stil): Tastatur-Taste, während die Maus über einer Unit
---      schwebt -> Aktion auf @mouseover. Ein globaler Secure-Button hält die
---      Aktionen; ein SecureHandler-State-Driver routet die Tasten via
---      SetBindingClick nur, solange [@mouseover,exists] gilt.
+--  Two paths, ONE bindings list (per spec), separated via binding.hovercast:
+--   1. CLICK on frame (Clique style): mouse button (+modifier) on a secure
+--      unit button -> action on its unit. Attributes are set per button
+--      (ONLY out of combat; in combat caught up via PLAYER_REGEN_ENABLED).
+--   2. HOVERCAST (VuhDo style): keyboard key while the mouse hovers over a unit
+--      -> action on @mouseover. A global secure button holds the actions;
+--      a SecureHandler state driver routes the keys via SetBindingClick only
+--      while [@mouseover,exists] holds.
 --
---  Secret-/Taint-sicher (12.0.7-Muster, mit bewährtem Vorgehen abgeglichen):
---   * Spell/Dispel/Rez laufen IMMER über @mouseover-Makrotext — beim Klick liegt
---     die Maus über der Unit, beim Hover sowieso -> ein Pfad für beides.
---   * "target"/"togglemenu" sind gated -> über UN-gated "click" an versteckte
---     SecureActionButton-Proxys geroutet (sonst Drop bzw. ADDON_ACTION_FORBIDDEN).
---   * Bindings nur außer Kampf schreiben.
+--  Secret/taint-safe (12.0.7 pattern, checked against a proven approach):
+--   * Spell/dispel/rez ALWAYS run via @mouseover macrotext — on a click the
+--     mouse is over the unit, on hover anyway -> one path for both.
+--   * "target"/"togglemenu" are gated -> routed via UN-gated "click" to hidden
+--     SecureActionButton proxies (otherwise dropped resp. ADDON_ACTION_FORBIDDEN).
+--   * Only write bindings out of combat.
 -- ===========================================================================
 
 local CC = {}
@@ -38,7 +38,7 @@ local format, concat = string.format, table.concat
 local sort = table.sort
 
 -- ---------------------------------------------------------------------------
---  Konstanten: Maustasten / Modifier (für das Options-Dropdown) + Anzeige
+--  Constants: mouse buttons / modifiers (for the options dropdown) + display
 -- ---------------------------------------------------------------------------
 local KEY_DISPLAY = {
 	BUTTON1 = "Linksklick", BUTTON2 = "Rechtsklick", BUTTON3 = "Mittlere Maustaste",
@@ -46,8 +46,8 @@ local KEY_DISPLAY = {
 }
 local MOD_DISPLAY = { SHIFT = "Shift", CTRL = "Strg", ALT = "Alt", META = "Meta" }
 
--- Maustaste und Modifier GETRENNT (Options: Maustasten-Dropdown + optionaler
--- Modifier-Schalter mit Shift/Strg/Alt). Gespeichert wird kombiniert in b.key.
+-- Mouse button and modifier SEPARATE (options: mouse-button dropdown + optional
+-- modifier toggle with Shift/Ctrl/Alt). Stored combined in b.key.
 -- Localized display tables — filled IN PLACE on locale-ready (stable references,
 -- because they are exported as CC.* and captured by FormatKey at module load).
 local T = ns.T
@@ -69,7 +69,7 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 end
 
 -- ---------------------------------------------------------------------------
---  Klassen-Presets (Dispel / Rez) — IDs, Name nur als Fallback.
+--  Class presets (dispel / rez) — IDs, name only as fallback.
 -- ---------------------------------------------------------------------------
 local DISPEL_SPELLS = {
 	{ id = 527,    class = "PRIEST" },   -- Purify
@@ -98,7 +98,7 @@ local REZ_BY_CLASS = {
 }
 
 -- ---------------------------------------------------------------------------
---  DB-Zugriff
+--  DB access
 -- ---------------------------------------------------------------------------
 local function ccDB() return ns.Lumen and ns.Lumen.db and ns.Lumen.db.profile.clickCast end
 
@@ -113,7 +113,7 @@ function CC:CurrentSpecName()
 	return "Keine Spec"
 end
 
--- Alle Specs der Spielerklasse (für das Spec-Auswahl-Dropdown der Options).
+-- All specs of the player's class (for the spec-selection dropdown of the options).
 function CC:GetSpecList()
 	local out = {}
 	local n = GetNumSpecializations and GetNumSpecializations() or 0
@@ -124,10 +124,10 @@ function CC:GetSpecList()
 	return out
 end
 
--- Bindings-Liste einer Spec (default = AKTIVE Spec; die Options geben eine andere
--- Spec mit, um sie zu bearbeiten ohne die Live-Spec zu wechseln). create=true legt
--- sie an und belegt sie einmalig mit den Defaults (Links=Ziel, Rechts=Menü). Löschen
--- lässt eine leere Tabelle zurück -> es wird NICHT neu vorbelegt.
+-- Bindings list of a spec (default = ACTIVE spec; the options pass a different
+-- spec to edit it without switching the live spec). create=true creates it and
+-- seeds it once with the defaults (left=target, right=menu). Deleting leaves an
+-- empty table behind -> it is NOT re-seeded.
 local function getSpec(create, specID)
 	local cc = ccDB(); if not cc then return nil end
 	local id = specID or curSpecID(); if not id then return nil end
@@ -143,9 +143,9 @@ end
 function CC:GetBindings(specID) return getSpec(true, specID) or {} end
 
 -- ---------------------------------------------------------------------------
---  Key-Parsing
+--  Key parsing
 -- ---------------------------------------------------------------------------
--- "ALT-CTRL-SHIFT-KEY" -> modifiers (Run aus "MOD-"), key, isMouse, buttonNum.
+-- "ALT-CTRL-SHIFT-KEY" -> modifiers (run of "MOD-"), key, isMouse, buttonNum.
 local function parseKey(keyStr)
 	if not keyStr or keyStr == "" then return { modifiers = "", key = "", isMouse = false } end
 	local rest, mods = keyStr, ""
@@ -169,8 +169,8 @@ function CC:FormatKey(keyStr)
 	return concat(parts, " + ")
 end
 
--- Maus-Klick-Key in (Modifier-Token, Maustaste) zerlegen bzw. wieder zusammenbauen.
--- Modifier ist EIN Token ("SHIFT"|"CTRL"|"ALT"|""); bei Mehrfach (Altdaten) das erste.
+-- Split a mouse-click key into (modifier token, mouse button) resp. reassemble it.
+-- Modifier is ONE token ("SHIFT"|"CTRL"|"ALT"|""); on multiple (legacy data) the first.
 function CC:KeyParts(keyStr)
 	local p = parseKey(keyStr)
 	local mod = (p.modifiers:gsub("%-$", "")):match("^[^-]+") or ""
@@ -182,9 +182,9 @@ function CC:BuildKey(mod, btn)
 end
 
 -- ---------------------------------------------------------------------------
---  Spell-Auflösung / Makrotext
+--  Spell resolution / macrotext
 -- ---------------------------------------------------------------------------
--- Auf den BASIS-Spell auflösen, damit Talent-/Hero-Talent-Overrides mitcasten.
+-- Resolve to the BASE spell so talent/hero-talent overrides cast along.
 local function resolveSpellName(b)
 	local id = b.spellID
 	if type(id) == "number" and id > 0 and C_Spell then
@@ -236,8 +236,8 @@ local function rezLines(oocOnly)
 end
 
 -- Binding -> actionType ("target"|"togglemenu"|"macro"), macrotext.
--- forHover ergänzt friend/harm-Filter bei Spells. Spell/Dispel/Rez sind IMMER
--- @mouseover-Makros (funktioniert für Klick UND Hover).
+-- forHover adds friend/harm filters for spells. Spell/dispel/rez are ALWAYS
+-- @mouseover macros (works for click AND hover).
 local function resolveBinding(b, forHover)
 	local t = b.type
 	if t == "target" then return "target" end
@@ -261,7 +261,7 @@ local function resolveBinding(b, forHover)
 end
 
 -- ---------------------------------------------------------------------------
---  Aktive Bindings (gefiltert)
+--  Active bindings (filtered)
 -- ---------------------------------------------------------------------------
 local function activeList()
 	local cc = ccDB()
@@ -274,13 +274,13 @@ local function activeList()
 end
 
 -- ===========================================================================
---  KLICK-PFAD — Attribute je Secure-Button
+--  CLICK PATH — attributes per secure button
 -- ===========================================================================
-local buttons = setmetatable({}, { __mode = "k" })   -- registrierte Secure-Buttons
-local applyDirty = false                              -- im Kampf aufgeschoben?
+local buttons = setmetatable({}, { __mode = "k" })   -- registered secure buttons
+local applyDirty = false                              -- deferred during combat?
 
 local function getProxy(button, kind)   -- kind = "togglemenu" | "target"
-	-- Menü-Proxy teilen wir mit Raidframes (gleiche Konfiguration) -> kein Doppel-Frame.
+	-- We share the menu proxy with Raidframes (same configuration) -> no double frame.
 	if kind == "togglemenu" and ns.RF_GetMenuProxy then return ns.RF_GetMenuProxy(button) end
 	local store = (kind == "target") and "_ccTargetProxy" or "_ccMenuProxy"
 	local p = button[store]
@@ -297,10 +297,10 @@ local function getProxy(button, kind)   -- kind = "togglemenu" | "target"
 	return p
 end
 
--- Benannter Proxy für den „nur außerhalb Kampf"-Pfad (Menü): ein /click-Makro mit
--- [nocombat]-Bedingung drückt diesen Proxy -> die secure togglemenu-Aktion läuft NUR
--- außerhalb des Kampfes, im Kampf passiert nichts (kein versehentliches Menü in M+).
--- Braucht einen globalen Namen (für /click); pro Button einmalig + wiederverwendet.
+-- Named proxy for the "out of combat only" path (menu): a /click macro with a
+-- [nocombat] condition presses this proxy -> the secure togglemenu action runs ONLY
+-- out of combat, in combat nothing happens (no accidental menu in M+).
+-- Needs a global name (for /click); created once per button + reused.
 local namedCount = 0
 local function getNamedProxy(button, kind)   -- kind = "togglemenu" | "target"
 	local store = (kind == "target") and "_ccNTgtProxy" or "_ccNMenuProxy"
@@ -311,7 +311,7 @@ local function getNamedProxy(button, kind)   -- kind = "togglemenu" | "target"
 		p:SetSize(1, 1); p:SetAlpha(0); p:EnableMouse(false)
 		p:RegisterForClicks("AnyUp", "AnyDown")
 		p:SetAttribute("type", kind)
-		p:SetAttribute("type1", kind)            -- /click ohne Tastenangabe = LeftButton
+		p:SetAttribute("type1", kind)            -- /click without a button = LeftButton
 		p:SetAttribute("useparent-unit", true)
 		p:SetAttribute("useOnKeyDown", false)
 		button[store] = p
@@ -333,8 +333,8 @@ local function applyClick(button, parsed, aType, macrotext, b)
 	local typeAttr = prefix .. "type" .. suffix
 	if aType == "togglemenu" then
 		if b and b.oocOnly then
-			-- Menü nur außerhalb Kampf: /click [nocombat] auf den benannten Proxy. Die
-			-- togglemenu-Aktion läuft secure über den Proxy, /click + [nocombat] ist ungated.
+			-- Menu out of combat only: /click [nocombat] on the named proxy. The
+			-- togglemenu action runs secure via the proxy, /click + [nocombat] is ungated.
 			button:SetAttribute(typeAttr, "macro"); rec(button, typeAttr)
 			local mt = prefix .. "macrotext" .. suffix
 			button:SetAttribute(mt, "/click [nocombat] " .. getNamedProxy(button, "togglemenu"):GetName()); rec(button, mt)
@@ -345,7 +345,7 @@ local function applyClick(button, parsed, aType, macrotext, b)
 		end
 	elseif aType == "target" then
 		if suffix == "1" and prefix == "" then
-			-- Plain Linksklick zielt nativ (Default-ClickBinding) -> direkt lassen.
+			-- Plain left click targets natively (default click binding) -> leave as is.
 			button:SetAttribute(typeAttr, "target"); rec(button, typeAttr)
 		else
 			button:SetAttribute(typeAttr, "click"); rec(button, typeAttr)
@@ -359,13 +359,13 @@ local function applyClick(button, parsed, aType, macrotext, b)
 	end
 end
 
--- Click-Cast übernimmt im aktivierten Zustand die volle Kontrolle: Wildcards
--- neutralisieren, modifizierte Klicks ohne Bindung machen nichts (Clique-Modell).
--- Belegte Tasten überschreiben das danach.
--- SICHERE DEFAULTS: Linksklick = "target" (natives Anvisieren), Rechtsklick = WoW-
--- Einheitenmenü (über den geteilten Menü-Proxy, da "togglemenu" 12.0.7-gated ist).
--- So bleibt die Standard-Belegung (Links=Ziel, Rechts=Menü) immer erhalten, BIS der
--- Nutzer BUTTON1/BUTTON2 selbst belegt -> kein versehentliches Aussperren.
+-- When enabled, Click-Cast takes full control: neutralize wildcards, modified
+-- clicks without a binding do nothing (Clique model). Assigned keys override that
+-- afterwards.
+-- SAFE DEFAULTS: left click = "target" (native targeting), right click = WoW unit
+-- menu (via the shared menu proxy, since "togglemenu" is 12.0.7-gated).
+-- This keeps the standard mapping (left=target, right=menu) intact UNTIL the user
+-- assigns BUTTON1/BUTTON2 themselves -> no accidental lockout.
 local function applyEnabled(button)
 	button:SetAttribute("*type1", nil); rec(button, "*type1")
 	button:SetAttribute("*type2", nil); rec(button, "*type2")
@@ -389,11 +389,11 @@ local function applyToButton(button)
 	if ccDB() and ccDB().enabled then
 		applyEnabled(button)
 	elseif ns.RF_ApplyDefaultClicks then
-		ns.RF_ApplyDefaultClicks(button)   -- Phase-1-Defaults zurück (Links=Ziel, Rechts=Menü)
+		ns.RF_ApplyDefaultClicks(button)   -- restore phase-1 defaults (left=target, right=menu)
 	end
 end
 
--- Naht aus Raidframes: jeder erzeugte Secure-Button meldet sich hier an.
+-- Seam from Raidframes: every created secure button registers here.
 function ns.CC_RegisterButton(button)
 	buttons[button] = true
 	button._ccApplied = button._ccApplied or {}
@@ -401,22 +401,22 @@ function ns.CC_RegisterButton(button)
 end
 
 -- ===========================================================================
---  HOVERCAST-PFAD — globaler Secure-Button + State-Driver
+--  HOVERCAST PATH — global secure button + state driver
 -- ===========================================================================
 local hoverBtn, driver
 local lastHoverCount = 0
 local HOVER_BTN_NAME = "LumenCCHover"
 
--- Hovercast ist P2 (siehe Shell/Screens.lua CC_HOVERCAST): die Secure-Tasten-Treiber-Mechanik
--- gibt die Taste in 12.0.7 nicht mehr sauber frei -> belegte Hovercast-Taste blockiert die
--- Aktionsleiste. Bis zur 12.1.0-Nacharbeit deaktiviert; vorhandene Hovercast-Bindings bleiben
--- im Profil, werden aber NICHT angewendet (applyHover legt alles still). Zum Reaktivieren: true.
+-- Hovercast is P2 (see Shell/Screens.lua CC_HOVERCAST): the secure key-driver mechanism
+-- no longer releases the key cleanly in 12.0.7 -> an assigned hovercast key blocks the
+-- action bar. Disabled until the 12.1.0 rework; existing hovercast bindings stay in the
+-- profile but are NOT applied (applyHover silences everything). To re-enable: true.
 local HOVERCAST_ENABLED = false
 
 local function buildHoverFrames()
 	if hoverBtn then return end
 	hoverBtn = CreateFrame("Button", HOVER_BTN_NAME, UIParent, "SecureActionButtonTemplate")
-	hoverBtn:RegisterForClicks("AnyUp", "AnyDown")   -- Tasten-Down/Up beide abdecken
+	hoverBtn:RegisterForClicks("AnyUp", "AnyDown")   -- cover both key down/up
 	hoverBtn:EnableMouse(false)
 	hoverBtn:SetSize(1, 1); hoverBtn:SetAlpha(0)
 	hoverBtn:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -400, 200)
@@ -424,8 +424,8 @@ local function buildHoverFrames()
 
 	driver = CreateFrame("Frame", "LumenCCDriver", UIParent, "SecureHandlerStateTemplate")
 	driver:SetFrameRef("hb", hoverBtn)
-	-- Solange [@mouseover,exists]: die konfigurierten Tasten auf den Hover-Button
-	-- routen (Override-Binding). Verlässt die Maus die Unit: alle Overrides lösen.
+	-- While [@mouseover,exists]: route the configured keys to the hover button
+	-- (override binding). When the mouse leaves the unit: clear all overrides.
 	driver:SetAttribute("_onstate-mo", [[
 		if newstate == "1" then
 			self:RunAttribute("hover_set")
@@ -446,8 +446,8 @@ end
 
 local function applyHover()
 	if not HOVERCAST_ENABLED then
-		-- Geparkt: sicherstellen, dass nichts hängen bleibt (Treiber + Override-Bindings lösen),
-		-- dann nichts neu aufsetzen -> belegte Hovercast-Bindings blockieren keine Tasten.
+		-- Parked: make sure nothing stays stuck (clear driver + override bindings),
+		-- then set up nothing new -> assigned hovercast bindings block no keys.
 		if driver then
 			UnregisterStateDriver(driver, "mo")
 			pcall(function() driver:Execute("self:ClearBindings()") end)
@@ -492,7 +492,7 @@ local function applyHover()
 end
 
 -- ===========================================================================
---  Anwenden / Events / öffentliche API
+--  Apply / events / public API
 -- ===========================================================================
 function CC:ApplyBindings()
 	if not ccDB() then return end
@@ -501,10 +501,10 @@ function CC:ApplyBindings()
 	applyHover()
 end
 
--- Options ruft das nach jeder Änderung.
+-- Options calls this after every change.
 function ns.CC_Apply() CC:ApplyBindings() end
 
--- Spell-Liste (Klassen-/Spec-Zauber, nicht passiv) für das Options-Dropdown.
+-- Spell list (class/spec spells, not passive) for the options dropdown.
 function CC:GetClassSpells()
 	local out = {}
 	if not (C_SpellBook and Enum and Enum.SpellBookSpellBank) then return out end
@@ -524,8 +524,8 @@ function CC:GetClassSpells()
 						local n = spellName(sid)
 						if n then
 							local icon = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)
-							-- "Friendly" = auf Freunde/sich selbst wirkbar (hilfreich ODER nicht
-							-- schädlich). API fehlt -> nicht filtern (friendly=true). Best-effort.
+							-- "Friendly" = castable on friends/self (helpful OR not harmful).
+							-- API missing -> don't filter (friendly=true). Best-effort.
 							local helpful, harmful
 							if C_SpellBook.IsSpellBookItemHelpful then
 								local ok, v = pcall(C_SpellBook.IsSpellBookItemHelpful, si, bank); if ok then helpful = v end
@@ -546,12 +546,12 @@ function CC:GetClassSpells()
 	return out
 end
 
--- Auren-Quelle für den Tracking-/Whitelist-Picker (B4): castbare Zauberbuch-Spells
--- (über GetClassSpells) PLUS nur die TATSÄCHLICH GEWÄHLTEN Talente des aktiven
--- Talentbaums (declutter — nicht der ganze Baum). So sind Talent-Auren wie
--- "Verschmelzung" auswählbar, ohne die Liste mit ungewählten Talenten zu überladen.
--- Dedupe über spellId. Limit: C_Traits liefert nur die AKTIVE Spec -> beim Bearbeiten
--- anderer Specs steht nur das Zauberbuch zur Verfügung (kuratierte Defaults decken die ab).
+-- Aura source for the tracking/whitelist picker (B4): castable spellbook spells
+-- (via GetClassSpells) PLUS only the ACTUALLY CHOSEN talents of the active talent
+-- tree (declutter — not the whole tree). This makes talent auras selectable
+-- without overloading the list with unchosen talents.
+-- Dedupe via spellId. Limit: C_Traits only returns the ACTIVE spec -> when editing
+-- other specs only the spellbook is available (curated defaults cover those).
 function CC:GetAuraSpells()
 	local out, seen = {}, {}
 	local function add(sid, name, icon)
@@ -561,9 +561,9 @@ function CC:GetAuraSpells()
 		icon = icon or (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid))
 		out[#out + 1] = { id = sid, name = name, icon = icon }
 	end
-	-- 1. Castbare Zauberbuch-Spells (wie Click-Cast, ohne Passive)
+	-- 1. Castable spellbook spells (like Click-Cast, without passives)
 	for _, s in ipairs(self:GetClassSpells()) do add(s.id, s.name, s.icon) end
-	-- 2. Nur GEWÄHLTE Talente des aktiven Configs (Talent-Auren inkl. passiver Buffs)
+	-- 2. Only CHOSEN talents of the active config (talent auras incl. passive buffs)
 	if C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_Traits then
 		local cfg   = C_ClassTalents.GetActiveConfigID()
 		local cinfo = cfg and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(cfg)
@@ -578,7 +578,7 @@ function CC:GetAuraSpells()
 				if nodes then
 					for _, nodeID in ipairs(nodes) do
 						local node = C_Traits.GetNodeInfo(cfg, nodeID)
-						if node and (node.activeRank or 0) > 0 then   -- nur tatsächlich gewählte
+						if node and (node.activeRank or 0) > 0 then   -- only actually chosen
 							local entryID = node.activeEntry and node.activeEntry.entryID
 							if entryID then fromEntry(entryID)
 							elseif node.entryIDs then for _, e in ipairs(node.entryIDs) do fromEntry(e) end end
@@ -592,7 +592,7 @@ function CC:GetAuraSpells()
 	return out
 end
 
--- CRUD auf einer bestimmten Spec (Options gibt die bearbeitete Spec mit).
+-- CRUD on a specific spec (options pass the edited spec).
 function CC:AddBinding(specID, binding)
 	local list = getSpec(true, specID); if not list then return end
 	if binding.enabled == nil then binding.enabled = true end
@@ -605,7 +605,7 @@ function CC:RemoveBinding(specID, index)
 	self:ApplyBindings()
 end
 
--- Dropdown-Helfer für Options.
+-- Dropdown helpers for options.
 CC.MOUSE_BUTTON_VALUES  = MOUSE_BUTTON_VALUES
 CC.MOUSE_BUTTON_SORTING = MOUSE_BUTTON_SORTING
 CC.MOD_VALUES           = MOD_VALUES

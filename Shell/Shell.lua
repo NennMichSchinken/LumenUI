@@ -1,30 +1,30 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Suite-Shell (Phase 1: Optisches Gerüst)
---  Eigene gerunte Config-Optik nach dem Lumen Design System (siehe Shell/Tokens).
---  Phase 1 = Chrome (Header/Nav/Tabs/Footer/Rune) + Dummy-Inhalt zum Look-Check.
---  Läuft PARALLEL zur bestehenden AceConfig (die bleibt auf /lumen). Aufruf der
---  Shell während der Entwicklung: /lumen shell.
---  Widget-Toolkit + echte Screens folgen in Phase 2/3.
+--  Lumen — Suite-Shell (phase 1: visual scaffold)
+--  Own runed config look following the Lumen design system (see Shell/Tokens).
+--  Phase 1 = chrome (header/nav/tabs/footer/rune) + dummy content for a look check.
+--  Runs IN PARALLEL to the existing AceConfig (which stays on /lumen). Calling the
+--  Shell during development: /lumen shell.
+--  Widget toolkit + real screens follow in phase 2/3.
 -- ===========================================================================
 
 local UI = ns.UI
 local C, L, S, PANEL = UI.C, UI.line, UI.S, UI.PANEL
-local T = ns.T   -- Lokalisierung: T("english") -> Anzeige in der aktiven Sprache
+local T = ns.T   -- localization: T("english") -> display in the active language
 
 local Shell = {}
 ns.Shell = Shell
 
 -- ---------------------------------------------------------------------------
---  Kleine Bau-Helfer — die Primitive liegen jetzt zentral in Tokens (ns.UI),
---  damit Shell-Chrome UND Widget-Toolkit dieselben nutzen (DRY).
+--  Small build helpers — the primitives now live centrally in Tokens (ns.UI),
+--  so Shell chrome AND widget toolkit use the same ones (DRY).
 -- ---------------------------------------------------------------------------
 local setColor, fill, border, FS = UI.SetColor, UI.Fill, UI.Border, UI.FS
 
 -- ---------------------------------------------------------------------------
 --  Rune-Ornament (concentric circles + rotated square + radiating ticks),
---  vektoriell über CreateLine. Eckenmarke, low-opacity.
+--  vector-drawn via CreateLine. Corner mark, low-opacity.
 -- ---------------------------------------------------------------------------
 local function runeLine(holder, x1, y1, x2, y2, a)
 	local ln = holder:CreateLine(nil, "ARTWORK")
@@ -54,13 +54,13 @@ local function drawRune(parent, point, ox, oy, scaleF, alpha)
 	runeCircle(holder, 60 * s, 40, a)
 	runeCircle(holder, 43 * s, 36, a)
 	runeCircle(holder, 20 * s, 28, a)
-	-- rotiertes Quadrat (Diamant) — Eckpunkte bei ±30
+	-- rotated square (diamond) — corner points at ±30
 	local q = 30 * s
 	runeLine(holder, 0, q, q, 0, a)
 	runeLine(holder, q, 0, 0, -q, a)
 	runeLine(holder, 0, -q, -q, 0, a)
 	runeLine(holder, -q, 0, 0, q, a)
-	-- 8 radiale Ticks (von r=60 nach r=70)
+	-- 8 radial ticks (from r=60 to r=70)
 	for i = 0, 7 do
 		local ang = (i / 8) * math.pi * 2
 		local cx, cy = math.cos(ang), math.sin(ang)
@@ -70,7 +70,7 @@ local function drawRune(parent, point, ox, oy, scaleF, alpha)
 end
 
 -- ---------------------------------------------------------------------------
---  Nav-Item (linke Rail) — aktiv: 3px Gold-Bar links + Gold-Wash + Gold-Label.
+--  Nav item (left rail) — active: 3px gold bar on the left + gold wash + gold label.
 -- ---------------------------------------------------------------------------
 local function makeNavItem(parent, label)
 	local b = CreateFrame("Button", nil, parent)
@@ -78,7 +78,7 @@ local function makeNavItem(parent, label)
 	b:SetPoint("LEFT", parent, "LEFT", 0, 0)
 	b:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
 
-	-- Gold-Wash, der nach rechts ausläuft (Gold links -> transparent rechts).
+	-- Gold wash fading to the right (gold left -> transparent right).
 	local wash = b:CreateTexture(nil, "BACKGROUND")
 	wash:SetAllPoints(b)
 	wash:SetColorTexture(1, 1, 1, 1)
@@ -87,7 +87,7 @@ local function makeNavItem(parent, label)
 		CreateColor(C.gold500.r, C.gold500.g, C.gold500.b, 0.00))
 	wash:Hide()
 
-	-- Gold-Balken links, volle Höhe des Menüpunkts.
+	-- Gold bar on the left, full height of the menu item.
 	local barL = b:CreateTexture(nil, "ARTWORK")
 	barL:SetWidth(3)
 	barL:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
@@ -122,8 +122,8 @@ local function makeNavItem(parent, label)
 		local col = on and C.gold250 or (self._soon and C.textFaint or C.textBody)
 		self._txt:SetTextColor(col.r, col.g, col.b)
 	end
-	-- Coming-soon-Modus: Text gedämpft (kein Chip — ausgegraut + Hover-Tooltip reicht,
-	-- ein Dauer-Chip wäre doppelt), nie aktiv hervorgehoben.
+	-- Coming-soon mode: text muted (no chip — greyed out + hover tooltip is enough,
+	-- a permanent chip would be redundant), never highlighted as active.
 	function b:SetComingSoon(on)
 		self._soon = on
 		if on then self._txt:SetTextColor(C.textFaint.r, C.textFaint.g, C.textFaint.b) end
@@ -132,7 +132,7 @@ local function makeNavItem(parent, label)
 end
 
 -- ---------------------------------------------------------------------------
---  Tab (Pill) — aktiv: Gold-Border + Gold-Label + feiner Wash.
+--  Tab (pill) — active: gold border + gold label + subtle wash.
 -- ---------------------------------------------------------------------------
 local function makeTab(parent, label)
 	local b = CreateFrame("Button", nil, parent)
@@ -140,23 +140,23 @@ local function makeTab(parent, label)
 	txt:SetText(label)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 	b:SetHeight(36)
-	-- Breite aus der String-Breite. Beim ersten Spielstart ist die Custom-Font-Breite
-	-- teils noch 0 (Tabs winzig) -> Fit() misst neu, sobald das Panel sichtbar ist
-	-- (OnShow ruft es). Anker LEFT->prev RIGHT ziehen die Positionen automatisch nach.
+	-- Width from the string width. On the first game start the custom-font width is
+	-- sometimes still 0 (tabs tiny) -> Fit() re-measures once the panel is visible
+	-- (OnShow calls it). Anchors LEFT->prev RIGHT pull the positions along automatically.
 	function b:Fit() self:SetWidth(math.floor(txt:GetStringWidth() + 44 + 0.5)) end
 	b:Fit()
 
-	-- gefüllte Card-Fläche (inaktiv) — wie Prototyp (surface-card).
+	-- filled card surface (inactive) — like the prototype (surface-card).
 	local base = b:CreateTexture(nil, "BACKGROUND")
 	base:SetAllPoints(b); setColor(base, C.ink600)
-	-- aktiver Gold-Gradient (oben heller, fadet nach unten) -> "Fade".
+	-- active gold gradient (lighter on top, fades downward) -> "fade".
 	local grad = b:CreateTexture(nil, "ARTWORK")
 	grad:SetAllPoints(b); grad:SetColorTexture(1, 1, 1, 1)
 	grad:SetGradient("VERTICAL",
 		CreateColor(C.gold500.r, C.gold500.g, C.gold500.b, 0.00),
 		CreateColor(C.gold500.r, C.gold500.g, C.gold500.b, 0.16))
 	grad:Hide()
-	-- Borders auf OVERLAY (ÜBER dem Gradient) -> aktiver Tab behält rundum den Rahmen.
+	-- Borders on OVERLAY (ABOVE the gradient) -> active tab keeps the frame all around.
 	local edges = border(b, L.soft, 1, "OVERLAY")
 	b._txt, b._grad, b._edges = txt, grad, edges
 
@@ -179,25 +179,25 @@ local function makeTab(parent, label)
 		for _, e in ipairs(self._edges) do setColor(e, ec) end
 		local tc = on and C.gold250 or C.textBody
 		self._txt:SetTextColor(tc.r, tc.g, tc.b)
-		-- KEIN Schnitt-Wechsel aktiv/inaktiv: SemiBold vs Medium haben verschiedene Glyphen-
-		-- Breiten -> der zentrierte Text würde im fixen Button „springen" (die Breite wurde
-		-- einmalig per Fit() mit dem tab-Rollen-Font = hankenMed gemessen). Der aktive Tab
-		-- hebt sich über Gold-Farbe + Gradient + kräftigeren Rahmen ab; der Schnitt bleibt
-		-- konstant (hankenMed), damit nichts springt.
+		-- NO weight change active/inactive: SemiBold vs Medium have different glyph
+		-- widths -> the centered text would "jump" in the fixed-width button (the width
+		-- was measured once via Fit() with the tab-role font = hankenMed). The active tab
+		-- stands out via gold color + gradient + a stronger frame; the weight stays
+		-- constant (hankenMed) so nothing jumps.
 	end
 	return b
 end
 
 -- ---------------------------------------------------------------------------
---  Close-X (oben rechts) — zwei Gold-Linien, Hover hellt auf. Passt zur
---  Line-SVG-Iconografie des Design-Systems (✕-Unicode ist im Font nicht sicher).
+--  Close X (top right) — two gold lines, hover brightens. Fits the line-SVG
+--  iconography of the design system (✕ unicode is not reliable in the font).
 -- ---------------------------------------------------------------------------
 local function makeCloseButton(parent, onClick)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(34, 34)
 	local radius = 15
 
-	-- Runde Hover-Fläche (kreisförmig via Alpha-Maske), erst beim Hovern sichtbar.
+	-- Round hover surface (circular via alpha mask), visible only on hover.
 	local hoverFill = b:CreateTexture(nil, "BACKGROUND")
 	hoverFill:SetSize(radius * 2, radius * 2); hoverFill:SetPoint("CENTER", b, "CENTER", 0, 0)
 	hoverFill:SetTexture([[Interface\Buttons\WHITE8X8]])
@@ -208,7 +208,7 @@ local function makeCloseButton(parent, onClick)
 	hoverFill:AddMaskTexture(mask)
 	hoverFill:Hide()
 
-	-- Dünner Gold-Ring (wie die Eck-Runen) — immer sichtbar, macht es zur Rune.
+	-- Thin gold ring (like the corner runes) — always visible, makes it a rune.
 	local ring, seg, prevX, prevY = {}, 32, nil, nil
 	for i = 0, seg do
 		local ang = (i / seg) * math.pi * 2
@@ -224,7 +224,7 @@ local function makeCloseButton(parent, onClick)
 		prevX, prevY = x, y
 	end
 
-	-- X im Zentrum.
+	-- X in the center.
 	local g7 = 7
 	local function arm(x1, y1, x2, y2)
 		local ln = b:CreateLine(nil, "OVERLAY")
@@ -250,10 +250,10 @@ local function makeCloseButton(parent, onClick)
 end
 
 -- ===========================================================================
---  Aufbau des Panels (einmalig)
+--  Building the panel (once)
 -- ===========================================================================
--- soon = true: Modul noch nicht fertig -> Nav-Eintrag gedämpft + „Coming soon"-Chip,
--- Klick zeigt nur die Coming-soon-Platzhalterseite (keine Tabs, keine Aktivierung).
+-- soon = true: module not ready yet -> nav entry muted + "Coming soon" chip,
+-- click only shows the coming-soon placeholder page (no tabs, no activation).
 local SECTIONS = {
 	{ "Global",      { "Base", "Profile" } },
 	{ "Click-Cast",  { "Bindings" } },
@@ -279,25 +279,25 @@ function Shell:Build()
 	f:SetScript("OnDragStart", f.StartMoving)
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
 	f:Hide()
-	tinsert(UISpecialFrames, "LumenShellFrame") -- ESC schließt
+	tinsert(UISpecialFrames, "LumenShellFrame") -- ESC closes
 	self._frame = f
 
-	-- Select-Popover an diesem (nicht-geclippten) Panel floaten lassen, sonst
-	-- schneidet der Content-ScrollFrame sie ab. Sammelliste setzt RenderContent.
+	-- Float the select popover on this (non-clipped) panel, otherwise the content
+	-- ScrollFrame clips it. RenderContent sets the collection list.
 	if ns.W and ns.W.SetMenuHost then ns.W.SetMenuHost(f) end
 
-	-- Beim Anzeigen den aktuellen Tab neu aufbauen: der erste Render in Build läuft
-	-- noch versteckt (Größen unaufgelöst) -> manche Zellen (z.B. die erste Dispel-
-	-- Farbe) landen falsch, bis man den Tab wechselt. Re-Render im sichtbaren Zustand.
+	-- On show, rebuild the current tab: the first render in Build runs still hidden
+	-- (sizes unresolved) -> some cells (e.g. the first dispel color) land wrong until
+	-- you switch tabs. Re-render in the visible state.
 	f:SetScript("OnShow", function()
-		-- Tabs neu vermessen: bei der ersten Anzeige nach Spielstart war die Font-Breite
-		-- evtl. noch 0 (Tabs winzig). Anker ziehen die Positionen automatisch nach.
+		-- Re-measure tabs: on the first show after game start the font width was maybe
+		-- still 0 (tabs tiny). Anchors pull the positions along automatically.
 		if Shell._tabButtons then for _, t in ipairs(Shell._tabButtons) do if t.Fit then t:Fit() end end end
 		if Shell._section then Shell:RenderContent() end
 	end)
 
 	fill(f, C.ink850, "BACKGROUND")
-	-- Radial-Glow-Approx: vertikaler Gradient (oben heller) als Overlay.
+	-- Radial-glow approximation: vertical gradient (lighter on top) as an overlay.
 	local glow = f:CreateTexture(nil, "BACKGROUND", nil, 1)
 	glow:SetAllPoints(f)
 	glow:SetColorTexture(1, 1, 1, 1)
@@ -307,7 +307,7 @@ function Shell:Build()
 	glow:SetAlpha(0.6)
 	border(f, L.mid, 1)
 
-	-- Rune-Ecken (low-opacity Ornament)
+	-- Rune corners (low-opacity ornament)
 	drawRune(f, "TOPLEFT",      80,  -80, 1, 0.40)
 	drawRune(f, "TOPRIGHT",    -80,  -80, 1, 0.40)
 	drawRune(f, "BOTTOMRIGHT", -80,   80, 1, 0.40)
@@ -323,7 +323,7 @@ function Shell:Build()
 	hsep:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", 0, 0); setColor(hsep, L.divider)
 
 	local word = FS(header, "wordmark", C.gold300)
-	word:SetText(UI.Track("LUMEN", "  ")) -- tracking-Emulation
+	word:SetText(UI.Track("LUMEN", "  ")) -- tracking emulation
 	word:SetPoint("CENTER", header, "CENTER", 0, 8)
 	local tag = FS(header, "tagline", C.textMuted)
 	tag:SetText(UI.Track("a focused ui suite", " "))
@@ -338,7 +338,7 @@ function Shell:Build()
 	fsep:SetHeight(1); fsep:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
 	fsep:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0); setColor(fsep, L.divider)
 
-	-- Close-X oben rechts in der Ecke.
+	-- Close X in the top-right corner.
 	local closeBtn = makeCloseButton(f, function() Shell:Hide() end)
 	closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -14)
 	closeBtn:SetFrameLevel(f:GetFrameLevel() + 50)
@@ -357,7 +357,7 @@ function Shell:Build()
 	main:SetPoint("TOPLEFT", nav, "TOPRIGHT", 0, 0)
 	main:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
 
-	-- Vertikaler Nav-Divider: auf MAIN (zeichnet über nav + dessen Buttons), linke Kante.
+	-- Vertical nav divider: on MAIN (draws over nav + its buttons), left edge.
 	local nsep = main:CreateTexture(nil, "OVERLAY")
 	nsep:SetWidth(1); nsep:SetPoint("TOPLEFT", main, "TOPLEFT", 0, 0)
 	nsep:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0); setColor(nsep, L.divider)
@@ -368,9 +368,9 @@ function Shell:Build()
 	tabStrip:SetPoint("TOPLEFT", main, "TOPLEFT", S.panelGutter, -22)
 	tabStrip:SetPoint("TOPRIGHT", main, "TOPRIGHT", -S.panelGutter, -22)
 
-	-- Content-Bereich: scrollbar (Screens sind höher als die feste Content-Höhe).
-	-- ScrollFrame + Scroll-Child; die Screens bauen in den Child. Schlanke
-	-- Gold-Scrollleiste rechts im Gutter (Mausrad + ziehbarer Thumb).
+	-- Content area: scrollable (screens are taller than the fixed content height).
+	-- ScrollFrame + scroll child; the screens build into the child. Slim gold
+	-- scrollbar on the right in the gutter (mouse wheel + draggable thumb).
 	local scroll = CreateFrame("ScrollFrame", nil, main)
 	scroll:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -26)
 	scroll:SetPoint("BOTTOMRIGHT", main, "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
@@ -381,12 +381,12 @@ function Shell:Build()
 	scrollChild:SetSize(1, 1)
 	scroll:SetScrollChild(scrollChild)
 	self._scrollChild = scrollChild
-	self._content = scrollChild -- Kompat: Screens ankern in diesen Child
+	self._content = scrollChild -- compat: screens anchor into this child
 
-	-- Scroll-Child folgt der Breite des ScrollFrames (Pflicht, sonst 0 breit).
+	-- Scroll child follows the width of the ScrollFrame (mandatory, else 0 wide).
 	scroll:SetScript("OnSizeChanged", function(self2, w) scrollChild:SetWidth(w or self2:GetWidth() or 1) end)
 
-	-- Scrollleiste (rechts neben dem ScrollFrame, im Panel-Gutter).
+	-- Scrollbar (to the right of the ScrollFrame, in the panel gutter).
 	local sbTrack = CreateFrame("Frame", nil, main)
 	sbTrack:SetWidth(S.scrollBarW)
 	sbTrack:SetPoint("TOPLEFT", scroll, "TOPRIGHT", S.scrollBarGap, 0)
@@ -394,8 +394,8 @@ function Shell:Build()
 	local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
 	trackTex:SetAllPoints(sbTrack); setColor(trackTex, C.ink700)
 
-	-- Thumb über TOP (= horizontal mittig) angekoppelt, Breite separat -> auf Hover
-	-- verbreiterbar (besser greifbar). Höhe/Position setzt updateBar.
+	-- Thumb anchored via TOP (= horizontally centered), width separate -> can widen
+	-- on hover (easier to grab). updateBar sets height/position.
 	local thumb = CreateFrame("Frame", nil, sbTrack)
 	thumb:SetWidth(S.scrollBarW)
 	thumb:EnableMouse(true)
@@ -428,8 +428,8 @@ function Shell:Build()
 	scroll:SetScript("OnMouseWheel", function(_, d) scrollBy(d * 48) end)
 	scroll:SetScript("OnScrollRangeChanged", updateBar)
 
-	-- Thumb ziehen: beim Anpacken den Greif-Offset (Cursor↔Thumb-Oberkante) merken,
-	-- damit der Thumb nicht zur Cursor-Mitte springt (fühlte sich „hakelig" an).
+	-- Drag the thumb: on grab, remember the grab offset (cursor↔thumb top edge) so
+	-- the thumb doesn't jump to the cursor center (felt "janky").
 	local function thumbDrag()
 		local _, cy = GetCursorPosition()
 		local sc = sbTrack:GetEffectiveScale()
@@ -478,12 +478,12 @@ function Shell:Build()
 	self._tabStrip = tabStrip
 	self._tabButtons = {}
 
-	-- Erststand
-	Shell:SelectSection(3) -- Raidframes (wie Prototyp-Default)
+	-- Initial state
+	Shell:SelectSection(3) -- Raidframes (like the prototype default)
 	return f
 end
 
--- Tab-Strip für die aktuelle Sektion neu bauen.
+-- Rebuild the tab strip for the current section.
 function Shell:RebuildTabs(sectionIndex)
 	for _, t in ipairs(self._tabButtons) do t:Hide(); t:SetParent(nil) end
 	wipe(self._tabButtons)
@@ -498,8 +498,8 @@ function Shell:RebuildTabs(sectionIndex)
 		self._tabButtons[i] = tb
 		prev = tb
 	end
-	-- Eine Frame später neu vermessen: beim allerersten Aufbau (Panel noch versteckt /
-	-- Fonts evtl. nicht fertig) liefert GetStringWidth 0 -> winzige Tabs.
+	-- Re-measure one frame later: on the very first build (panel still hidden /
+	-- fonts maybe not ready) GetStringWidth returns 0 -> tiny tabs.
 	C_Timer.After(0, function()
 		for _, t in ipairs(self._tabButtons) do if t.Fit then t:Fit() end end
 	end)
@@ -509,10 +509,10 @@ end
 function Shell:SelectSection(index)
 	self._section = index
 	local sec = SECTIONS[index]
-	-- Coming-soon-Module nie aktiv hervorheben (sie bleiben gedämpft + Chip).
+	-- Never highlight coming-soon modules as active (they stay muted + chip).
 	for i, nb in ipairs(self._navButtons) do nb:SetActive(i == index and not sec.soon) end
 	if sec.soon then
-		-- Keine Tabs, keine Tab-Auswahl — direkt die Platzhalterseite rendern.
+		-- No tabs, no tab selection — render the placeholder page directly.
 		for _, t in ipairs(self._tabButtons) do t:Hide(); t:SetParent(nil) end
 		wipe(self._tabButtons)
 		self._tab = nil
@@ -529,9 +529,9 @@ function Shell:SelectTab(index)
 end
 
 -- ---------------------------------------------------------------------------
---  Layout-Stack: stapelt Widgets von oben nach unten in einen Holder. `place`
---  = volle Breite (TOPLEFT/RIGHT), `placeLeft` = links bündig mit eigener Breite
---  (für schmale Felder). Screens (Shell/Screens.lua) bauen ausschließlich darüber.
+--  Layout stack: stacks widgets top to bottom into a holder. `place`
+--  = full width (TOPLEFT/RIGHT), `placeLeft` = left-aligned with own width
+--  (for narrow fields). Screens (Shell/Screens.lua) build exclusively on top of it.
 -- ---------------------------------------------------------------------------
 local function newStack(holder)
 	local y = -4
@@ -555,31 +555,31 @@ local function newStack(holder)
 	function stack:y() return y end
 	function stack:height() return -y + S.panelGutter end
 
-	-- Box-Primitiv: zeichnet eine Karte (Hintergrund + Gold-Hairline [+ optional
-	-- Header-Leiste mit Gold-Akzent + Titel]) an Position `topY`, anchored an `holder`
-	-- mit Außen-Einzug `outerPad`; Reihen werden zusätzlich um `pad` eingerückt. Gibt
-	-- einen INNEREN Stapler zurück (place/placeLeft/gap/y/subgroup/close). `close()`
-	-- setzt die Box-Höhe und liefert den Boden-iy; der Aufrufer rückt seinen Cursor
-	-- weiter. So nutzen section (Haupt-Karte mit Header) UND subgroup (hellere Unter-
-	-- Box ohne Header) EXAKT denselben Code (DRY; verschachtelbar).
+	-- Box primitive: draws a card (background + gold hairline [+ optional header bar
+	-- with gold accent + title]) at position `topY`, anchored to `holder` with outer
+	-- indent `outerPad`; rows are additionally indented by `pad`. Returns an INNER
+	-- stacker (place/placeLeft/gap/y/subgroup/close). `close()` sets the box height
+	-- and returns the bottom iy; the caller advances its cursor. This way section
+	-- (main card with header) AND subgroup (lighter sub-box without header) use
+	-- EXACTLY the same code (DRY; nestable).
 	local function makeBox(topY, o)
 		local M = UI.WIDGET
 		local outerPad, pad = o.outerPad or 0, o.pad
 
 		local panel = CreateFrame("Frame", nil, holder)
-		-- Karte als Hintergrund-Ebene: Frame-Level auf Holder-Niveau, damit die später
-		-- erzeugten Inhalts-Frames (Geschwister, NICHT Kinder der Karte) darüber rendern.
+		-- Card as background layer: frame level at holder level so the later-created
+		-- content frames (siblings, NOT children of the card) render above it.
 		panel:SetFrameLevel(holder:GetFrameLevel())
 		panel:SetPoint("TOPLEFT", holder, "TOPLEFT", outerPad, topY)
 		panel:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -outerPad, topY)
 		fill(panel, o.fill)
-		-- Rahmen auf OVERLAY: die Header-Leiste (hbar, ARTWORK) liegt sonst ÜBER dem
-		-- Rahmen und überdeckt die dünne Gold-Linie oben + rechts im Header-Bereich.
+		-- Frame on OVERLAY: the header bar (hbar, ARTWORK) would otherwise sit ABOVE the
+		-- frame and cover the thin gold line on top + right in the header area.
 		border(panel, o.border, 1, "OVERLAY")
 
-		-- Header: schwer (Sektion = Gold-Leiste + Akzent + Cinzel-Titel) | leicht
-		-- (Unter-Box = nur kleines Gold-Label) | keiner (oben = Innenabstand `pad`,
-		-- symmetrisch zur Unterkante).
+		-- Header: heavy (section = gold bar + accent + Cinzel title) | light
+		-- (sub-box = only a small gold label) | none (top = inner padding `pad`,
+		-- symmetric to the bottom edge).
 		local headerH, topInset = 0, pad
 		if o.title and o.titleStyle == "light" then
 			headerH, topInset = M.subgroupTitleH, 0
@@ -589,7 +589,7 @@ local function newStack(holder)
 			panel._title = t
 		elseif o.title then
 			headerH, topInset = M.sectionHeaderH, (o.afterHeader or 0)
-			-- Header-Leiste (leicht heller) + feine Trennlinie darunter + Gold-Akzent links.
+			-- Header bar (slightly lighter) + fine divider below it + gold accent on the left.
 			local hbar = panel:CreateTexture(nil, "ARTWORK")
 			hbar:SetHeight(headerH)
 			hbar:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
@@ -611,7 +611,7 @@ local function newStack(holder)
 			panel._title = titleFS
 		end
 
-		local rowPad = outerPad + pad -- Reihen-Einzug der Box IM holder
+		local rowPad = outerPad + pad -- row indent of the box WITHIN holder
 		local inner, iy, pending = {}, topY - headerH - topInset, nil
 		local function anchor(widget, h, full)
 			if pending then iy = iy - pending end
@@ -626,10 +626,10 @@ local function newStack(holder)
 		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); pending = gap or 22 end
 		function inner.gap(_, dy) iy = iy - (dy or 8) end
 		function inner.y() return iy end
-		-- Verschachtelte hellere Unter-Box an der aktuellen Position; gleiche API.
+		-- Nested lighter sub-box at the current position; same API.
 		function inner.subgroup(_, o2)
 			o2 = o2 or {}
-			if pending then iy = iy - pending; pending = nil end -- Pending VOR der Box anwenden
+			if pending then iy = iy - pending; pending = nil end -- apply pending BEFORE the box
 			local sub = makeBox(iy, {
 				outerPad = rowPad, pad = M.subgroupPad,
 				fill = C.ink520, border = L.faint,
@@ -637,24 +637,24 @@ local function newStack(holder)
 			})
 			local rawClose = sub.close
 			function sub.close()
-				iy = rawClose()                    -- Cursor an die Box-Unterkante
-				pending = o2.gap or M.subgroupGap  -- Gap als pending -> fällt am Eltern-close weg (symmetrisches Karten-Ende)
+				iy = rawClose()                    -- cursor to the box bottom edge
+				pending = o2.gap or M.subgroupGap  -- gap as pending -> dropped at the parent close (symmetric card end)
 				return sub._panel
 			end
 			return sub
 		end
 		function inner.close()
-			local bottom = iy - pad -- Boden = letzte Reihe + Innenabstand (Trailing-Gap fällt weg)
-			panel:SetHeight(topY - bottom) -- topY/bottom = negative Offsets -> Differenz = Höhe
+			local bottom = iy - pad -- bottom = last row + inner padding (trailing gap dropped)
+			panel:SetHeight(topY - bottom) -- topY/bottom = negative offsets -> difference = height
 			return bottom
 		end
 		inner._panel = panel
 		return inner
 	end
 
-	-- Sektions-Karte (Konzept A): Box mit Header + Titel an der aktuellen Stack-
-	-- Position. :close() finalisiert die Kartenhöhe UND rückt den äußeren Stack um
-	-- Karte + sectionGap weiter (subgroups rücken stattdessen ihren Eltern-Cursor).
+	-- Section card (concept A): box with header + title at the current stack
+	-- position. :close() finalizes the card height AND advances the outer stack by
+	-- card + sectionGap (subgroups instead advance their parent cursor).
 	function stack:section(title)
 		local M = UI.WIDGET
 		local inner = makeBox(y, {
@@ -674,18 +674,18 @@ local function newStack(holder)
 	return stack
 end
 
--- Screens (Shell/Screens.lua) brauchen denselben Stapler für eigene Sub-Frames
--- (z.B. der Base-Screen baut seinen gate-baren Body über einen eigenen Stack).
+-- Screens (Shell/Screens.lua) need the same stacker for their own sub-frames
+-- (e.g. the Base screen builds its gateable body via its own stack).
 Shell.NewStack = newStack
 
--- Inhalt für aktuelle Sektion/Tab rendern: echter Screen (Shell/Screens.lua) wenn
--- registriert, sonst die Widget-Galerie (Phase-2-Fallback). Danach Scroll-Child-
--- Höhe setzen, nach oben scrollen, Scrollleiste aktualisieren.
+-- Render content for the current section/tab: real screen (Shell/Screens.lua) if
+-- registered, otherwise the widget gallery (phase-2 fallback). Then set the scroll
+-- child height, scroll to top, update the scrollbar.
 function Shell:RenderContent(keepScroll)
 	local prevScroll = (keepScroll and self._scroll and self._scroll:GetVerticalScroll()) or 0
 	local holderParent = self._scrollChild
 	if self._screen then self._screen:Hide(); self._screen:SetParent(nil); self._screen = nil end
-	-- Popover des vorigen Screens (am Panel-Host) freigeben, dann frische Liste setzen.
+	-- Release the previous screen's popovers (on the panel host), then set a fresh list.
 	if self._popovers then
 		for _, fr in ipairs(self._popovers) do fr:Hide(); fr:SetParent(nil) end
 	end
@@ -705,8 +705,8 @@ function Shell:RenderContent(keepScroll)
 		local key = sec[1] .. "/" .. (sec[2][self._tab] or "")
 		local builder = ns.Screens and ns.Screens[key]
 		if builder then
-			-- Builder defensiv kapseln: ein Screen-Fehler soll NICHT die ganze Shell
-			-- leeren (sonst nur ein leerer Tab ohne Hinweis). Fehler in den Chat drucken.
+			-- Wrap the builder defensively: a screen error must NOT empty the whole Shell
+			-- (otherwise just an empty tab without a hint). Print the error to chat.
 			local ok, err = pcall(builder, d, stack)
 			if not ok and ns.Lumen then
 				ns.Lumen:Print("|cffD66A5CShell-Fehler in " .. key .. ":|r " .. tostring(err))
@@ -720,8 +720,8 @@ function Shell:RenderContent(keepScroll)
 	d:SetHeight(h)
 	holderParent:SetHeight(h)
 	if self._scroll then
-		-- Beim erzwungenen Neuaufbau (z.B. Rollen-Umsortierung) die Scrollposition
-		-- halten, sonst nach oben springen.
+		-- On a forced rebuild (e.g. role reordering) keep the scroll position,
+		-- otherwise it jumps to the top.
 		local range = self._scroll:GetVerticalScrollRange() or 0
 		self._scroll:SetVerticalScroll(math.max(0, math.min(range, prevScroll)))
 	end
@@ -729,14 +729,14 @@ function Shell:RenderContent(keepScroll)
 end
 
 -- ---------------------------------------------------------------------------
---  Widget-Galerie (Phase 2): zeigt das komplette Toolkit (Divider, Slider,
---  Select, Checkbox, GroupPanel, Buttons, Card) live bedienbar — damit Florian
---  Look UND Feel in-game beurteilen kann. Sandbox-Daten (noch nicht db-verdrahtet).
+--  Widget gallery (phase 2): shows the complete toolkit (divider, slider,
+--  select, checkbox, GroupPanel, buttons, card) live-operable — so Florian can
+--  judge look AND feel in-game. Sandbox data (not yet db-wired).
 -- ---------------------------------------------------------------------------
 local W = ns.W
 local M = UI.WIDGET
 
--- Sandbox-State, damit die Widgets interaktiv reagieren (kein db-Schreiben).
+-- Sandbox state so the widgets react interactively (no db writes).
 local demo = {
 	breite = 114, hoehe = 60, abstand = 2,
 	ausrichtung = "vertical",
@@ -765,7 +765,7 @@ function Shell:Gallery(d, stack)
 	-- 1) Section-Divider
 	place(W.SectionDivider(d, secName .. " · " .. tabName), M.dividerH, 24)
 
-	-- 2) Drei Slider nebeneinander (row3)
+	-- 2) Three sliders side by side (row3)
 	local sliderRow, cells = W.Row(d, 3, { height = M.sliderH })
 	W.Slider(cells[1], { label = "Breite", min = 40, max = 240, value = demo.breite, unit = " px",
 		get = g("breite"), set = s("breite") }):SetAllPoints(cells[1])
@@ -775,7 +775,7 @@ function Shell:Gallery(d, stack)
 		get = g("abstand"), set = s("abstand") }):SetAllPoints(cells[3])
 	place(sliderRow, M.sliderH, 22)
 
-	-- 3) Zwei Dropdowns (Ausrichtung + Umrandung) als 2er-Reihe
+	-- 3) Two dropdowns (alignment + outline) as a 2-column row
 	local fieldH = M.controlH + M.fieldGap
 	local ddRow, ddCells = W.Row(d, 2, { height = fieldH })
 	W.Select(ddCells[1], { label = "Ausrichtung", options = ALIGN_OPTS,
@@ -784,7 +784,7 @@ function Shell:Gallery(d, stack)
 		get = g("outline"), set = s("outline") }):SetAllPoints(ddCells[2])
 	place(ddRow, fieldH, 24)
 
-	-- 4) Checkbox-Reihe
+	-- 4) Checkbox row
 	local cbRow = CreateFrame("Frame", nil, d)
 	local cb1 = W.Checkbox(cbRow, { label = "Name anzeigen", get = g("nameShow"), set = s("nameShow") })
 	cb1:SetPoint("LEFT", cbRow, "LEFT", 0, 0)
@@ -792,7 +792,7 @@ function Shell:Gallery(d, stack)
 	cb2:SetPoint("LEFT", cb1, "RIGHT", 28, 0)
 	place(cbRow, M.checkBox, 26)
 
-	-- 5) GroupPanel mit Header-Right-Toggle + Inhalt
+	-- 5) GroupPanel with header-right toggle + content
 	local panel, pc = W.GroupPanel(d, { title = "HoTs" })
 	panel._headerRightAnchor(W.Checkbox(panel, { label = "Anzeigen", get = g("hotsOn"), set = s("hotsOn") }))
 	local pcSlider = W.Slider(pc, { label = "Namensgröße", min = 6, max = 30, value = demo.nameSize,
@@ -801,7 +801,7 @@ function Shell:Gallery(d, stack)
 	pcSlider:SetWidth(320)
 	place(panel, -M.groupContentY + M.sliderH + S.cardPad, 24)
 
-	-- 6) Button-Reihe (primary / ghost / danger)
+	-- 6) Button row (primary / ghost / danger)
 	local btnRow = CreateFrame("Frame", nil, d)
 	local pb = W.Button(btnRow, { text = "Übernehmen", variant = "primary" })
 	pb:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
@@ -811,7 +811,7 @@ function Shell:Gallery(d, stack)
 	db:SetPoint("LEFT", gb, "RIGHT", 12, 0)
 	place(btnRow, M.buttonH, 22)
 
-	-- 7) Card mit IconTile + Text (Signatur-Surface)
+	-- 7) Card with IconTile + text (signature surface)
 	local card = W.Card(d)
 	local tile = W.IconTile(card, { size = 52, letter = "L" })
 	tile:SetPoint("LEFT", card, "LEFT", S.cardPad, 0)
@@ -823,18 +823,18 @@ function Shell:Gallery(d, stack)
 		.. "Card, IconTile — alle auf den Design-Tokens und pixel-gesnappten Borders.")
 	place(card, 92, 22)
 
-	-- 8) Hinweis
+	-- 8) Hint
 	local hint = FS(d, "caption", C.textFaint)
 	hint:SetText("Phase 2 — Widget-Toolkit (live bedienbar, noch Sandbox-Daten). "
 		.. "/lumen öffnet weiterhin die klassische Konfiguration.")
 	hint:SetPoint("TOPLEFT", d, "TOPLEFT", 0, stack:y())
-	stack:gap(M.hintH) -- den Hinweis-Block in die Höhe einrechnen
+	stack:gap(M.hintH) -- account for the hint block in the height
 end
 
 -- ---------------------------------------------------------------------------
---  Coming-soon-Platzhalter: zentrierte Karte (Cinzel-Gold-Titel + Hinweis) für
---  Module, die es noch nicht gibt (Unitframes/Nameplates/QoL). Wird von
---  RenderContent für `soon`-Sektionen statt eines echten Screens aufgerufen.
+--  Coming-soon placeholder: centered card (Cinzel-gold title + hint) for
+--  modules that don't exist yet (Unitframes/Nameplates/QoL). Called by
+--  RenderContent for `soon` sections instead of a real screen.
 -- ---------------------------------------------------------------------------
 function Shell:ComingSoon(d, stack, name)
 	stack:gap(70)
