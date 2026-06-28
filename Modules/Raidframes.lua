@@ -543,6 +543,15 @@ local function classColor(class)
 	return 0.6, 0.6, 0.6
 end
 
+-- Aggro-Kontext aktiv? Mit aggroInstanceOnly (Standard) nur in Dungeon/Raid —
+-- sonst läge solo/Open World fast dauerhaft das Overlay an. instanceType ist nicht
+-- secret, im Kampf gefahrlos lesbar.
+local function aggroContextActive(d)
+	if not d.aggroInstanceOnly then return true end
+	local _, it = IsInInstance()
+	return it == "party" or it == "raid"
+end
+
 -- Tank? Primär die zugewiesene Gruppenrolle. Ist KEINE zugewiesen ("NONE"/nil —
 -- z.B. solo oder Gruppe ohne Rollencheck), für den SPIELER selbst auf die Spec-
 -- Rolle zurückfallen (sonst zeigt z.B. ein Wächter-Druide solo das Aggro-Overlay).
@@ -1183,7 +1192,7 @@ function Raidframes:RenderLive(f)
 	end
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
-	if d.aggroEnabled then
+	if d.aggroEnabled and aggroContextActive(d) then
 		-- Tanks ausnehmen: sie sollen Aggro haben -> kein Dauer-Rot.
 		local st = (not unitIsTank(u)) and UnitThreatSituation and UnitThreatSituation(u) or nil
 		self:SetAggro(f, st)

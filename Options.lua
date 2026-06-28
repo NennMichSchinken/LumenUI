@@ -760,6 +760,12 @@ function ns.SetupOptions()
 						type = "toggle", order = 30.1, width = "full",
 						name = "Aggro-Warnung anzeigen (Tanks ausgenommen)",
 					},
+					aggroInstanceOnly = {
+						type = "toggle", order = 30.2, width = "full",
+						name = "Nur in Dungeon/Raid",
+						desc = "Zeigt die Aggro-Warnung nur in Instanzen (Dungeon/Raid). Aus = überall, auch solo/Open World.",
+						disabled = function() return not rf().aggroEnabled end,
+					},
 
 					-- Block: hat Aggro (rot, Status 3)
 					aggroAggroHead = { type = "header", order = 31, name = "Hat Aggro (rot)" },

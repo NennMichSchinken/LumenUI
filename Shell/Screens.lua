@@ -494,6 +494,11 @@ local function buildBase(d, stack)
 	local cbAggro = W.Checkbox(agRow, { label = "Aggro-Warnung anzeigen (Tanks ausgenommen)",
 		get = tget("aggroEnabled"), set = function(v) rf().aggroEnabled = v; relayout(); refreshAggro() end })
 	cbAggro:SetPoint("LEFT", agRow, "LEFT", 0, 0)
+	local cbAggroInst = W.Checkbox(agRow, { label = "Nur in Dungeon/Raid",
+		tooltip = "Zeigt die Aggro-Warnung nur in Instanzen (Dungeon/Raid). Aus = überall, auch solo/Open World.",
+		get = tget("aggroInstanceOnly"), set = tset("aggroInstanceOnly") })
+	cbAggroInst:SetPoint("LEFT", cbAggro, "RIGHT", L.general.checkRowGap, 0)
+	aggroAlways[#aggroAlways + 1] = cbAggroInst   -- nur bedienbar, wenn Aggro-Warnung an
 	sAggro:place(agRow, M.checkBox, R.afterCheck)
 
 	-- Eine Aggro-Stufe (rot/gelb) als getitelte Unter-Box: Darstellung | Farbe.
