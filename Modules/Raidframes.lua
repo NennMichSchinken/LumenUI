@@ -1025,7 +1025,7 @@ local function Decorate(f)
 	f.aR:SetPoint("TOPRIGHT"); f.aR:SetPoint("BOTTOMRIGHT"); f.aR:SetWidth(2)
 	f.aggroText = f.aggroLayer:CreateFontString(nil, "OVERLAY")
 	f.aggroText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
-	f.aggroText:SetText("Aggro"); f.aggroText:Hide()
+	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 end
 
 -- Preview-/Test-Host: gewöhnlicher (Nicht-Secure-)Frame, mit direkten Maus-Scripts.
@@ -1864,25 +1864,27 @@ end
 -- Sauberer Rückweg (Blizzard-Frames zurück) erfordert /reload -> nachfragen.
 -- Bevorzugt der Lumen-Confirm-Dialog (Shell-Optik); nur wenn die Shell zu ist
 -- (z.B. Profilwechsel im Hintergrund), Blizzards StaticPopup als Fallback.
-local RELOAD_TITLE = "Raidframes deaktiviert"
-local RELOAD_BODY  = "Lumens Raidframes sind aus. Ein Neuladen der Oberfläche bringt Blizzards Standard-Raidframes zurück."
+-- Texte erst zur Anzeige-Zeit über T() lesen (Sprache steht dann fest).
 StaticPopupDialogs["LUMEN_RAIDFRAMES_RELOAD"] = {
-	text = RELOAD_TITLE .. "\n" .. RELOAD_BODY,
-	button1 = "Jetzt neu laden",
-	button2 = "Später",
+	text = "%s",   -- zur Anzeige-Zeit gefüllt (promptBlizzReload)
+	button1 = "", button2 = "",   -- zur Anzeige-Zeit über T() gesetzt
 	OnAccept = function() ReloadUI() end,
 	timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
 local function promptBlizzReload()
+	local title = ns.T("Raidframes disabled")
+	local body  = ns.T("Lumen's raid frames are off. Reloading the UI brings Blizzard's default raid frames back.")
 	local shellOpen = ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown()
 	if shellOpen and ns.W and ns.W.Confirm then
 		ns.W.Confirm({
-			title = RELOAD_TITLE, body = RELOAD_BODY,
-			confirmText = "Jetzt neu laden", cancelText = "Später",
+			title = title, body = body,
+			confirmText = ns.T("Reload now"), cancelText = ns.T("Later"),
 			onConfirm = function() ReloadUI() end,
 		})
 	else
-		StaticPopup_Show("LUMEN_RAIDFRAMES_RELOAD")
+		local dlg = StaticPopupDialogs["LUMEN_RAIDFRAMES_RELOAD"]
+		dlg.button1, dlg.button2 = ns.T("Reload now"), ns.T("Later")
+		StaticPopup_Show("LUMEN_RAIDFRAMES_RELOAD", title .. "\n" .. body)
 	end
 end
 

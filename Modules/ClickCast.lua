@@ -48,17 +48,25 @@ local MOD_DISPLAY = { SHIFT = "Shift", CTRL = "Strg", ALT = "Alt", META = "Meta"
 
 -- Maustaste und Modifier GETRENNT (Options: Maustasten-Dropdown + optionaler
 -- Modifier-Schalter mit Shift/Strg/Alt). Gespeichert wird kombiniert in b.key.
-local MOUSE_BUTTON_VALUES = {
-	BUTTON1 = "Linksklick", BUTTON2 = "Rechtsklick", BUTTON3 = "Mittlere Maustaste",
-	BUTTON4 = "Maus 4", BUTTON5 = "Maus 5",
-}
+-- Localized display tables — filled IN PLACE on locale-ready (stable references,
+-- because they are exported as CC.* and captured by FormatKey at module load).
+local T = ns.T
+local MOUSE_BUTTON_VALUES = {}
 local MOUSE_BUTTON_SORTING = { "BUTTON1", "BUTTON2", "BUTTON3", "BUTTON4", "BUTTON5" }
-local MOD_VALUES  = { SHIFT = "Shift", CTRL = "Strg", ALT = "Alt" }
+local MOD_VALUES  = {}
 local MOD_SORTING = { "SHIFT", "CTRL", "ALT" }
+local BINDING_TYPES = {}
 
-local BINDING_TYPES = {
-	target = "Ziel", menu = "Menü", spell = "Spell", dispel = "Dispel", rez = "Wiederbeleben",
-}
+ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
+	MOUSE_BUTTON_VALUES.BUTTON1 = T("Left click")
+	MOUSE_BUTTON_VALUES.BUTTON2 = T("Right click")
+	MOUSE_BUTTON_VALUES.BUTTON3 = T("Middle mouse button")
+	MOUSE_BUTTON_VALUES.BUTTON4 = T("Mouse 4")
+	MOUSE_BUTTON_VALUES.BUTTON5 = T("Mouse 5")
+	MOD_VALUES.SHIFT = T("Shift"); MOD_VALUES.CTRL = T("Ctrl"); MOD_VALUES.ALT = T("Alt")
+	BINDING_TYPES.target = T("Target"); BINDING_TYPES.menu = T("Menu")
+	BINDING_TYPES.spell = T("Spell"); BINDING_TYPES.dispel = T("Dispel"); BINDING_TYPES.rez = T("Resurrect")
+end
 
 -- ---------------------------------------------------------------------------
 --  Klassen-Presets (Dispel / Rez) — IDs, Name nur als Fallback.

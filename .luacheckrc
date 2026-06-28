@@ -49,6 +49,8 @@ read_globals = {
     "RegisterStateDriver", "UnregisterStateDriver",
     "RegisterAttributeDriver", "UnregisterAttributeDriver",
     "SetOverrideBindingClick", "ClearOverrideBindings",
+    -- Lokalisierung
+    "GetLocale",
     -- Ace3
     "LibStub",
     -- Optionale Fremd-Addons

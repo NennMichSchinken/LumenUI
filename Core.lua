@@ -182,6 +182,7 @@ local defaults = {
 	-- secret-Auren über ihre Signatur identifizieren (Aura-Whitelist Phase 2). Siehe §10.8.
 	global = {
 		auraSigs = {},
+		language = "auto",   -- UI-Sprache: "auto" (Systemsprache) | "enUS" | "deDE"
 	},
 }
 
@@ -294,6 +295,9 @@ end
 
 function Lumen:OnInitialize()
 	self.db = LibStub("AceDB-3.0"):New("LumenDB", defaults, true)
+	-- 'global' ist ein AceDB-Top-Level-Namespace (db.global), NICHT db.profile.global.
+	if ns.ApplyLocale then ns.ApplyLocale(self.db.global.language) end
+	if ns.RunLocaleReady then ns.RunLocaleReady() end   -- lokalisierte Modul-Konstanten jetzt (nach Sprachwahl) bauen
 	migrateLayout(self.db.profile.raidframes)
 	if ns.SetupOptions then ns.SetupOptions() end
 
@@ -304,7 +308,7 @@ function Lumen:OnInitialize()
 	self:RegisterChatCommand("lumen", "OpenConfig")
 	self:RegisterChatCommand("lu",    "OpenConfig")
 
-	self:Print("geladen. |cffD4A34F/lumen|r öffnet die Einstellungen.")
+	self:Print(ns.T("loaded. |cffD4A34F/lumen|r opens the settings."))
 end
 
 function Lumen:OnEnable()
