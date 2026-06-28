@@ -1,25 +1,25 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Style (ZENTRALE Balken-Optik)
---  Ein Ort für „unseren" Look: Gradient-Textur + Licht-/Schattenschicht.
---  Raidframes nutzen das; Unitframes/Target/Focus später genauso.
---  Anpassungen hier wirken im ganzen Addon.
+--  Lumen — Style (CENTRAL bar look)
+--  One place for "our" look: gradient texture + light/shadow layers.
+--  Raidframes use it; Unitframes/Target/Focus will too, later on.
+--  Adjustments here affect the whole addon.
 -- ===========================================================================
 
 local Style = {}
 ns.Style = Style
 
 local T = "Interface\\AddOns\\Lumen\\Textures\\"
-Style.barTexture     = T .. "lumen-gradient"       -- Standard (kräftig), per Klassenfarbe getönt
-Style.barTextureSoft = T .. "lumen-gradient-soft"  -- Soft (dezent)
-Style.lightOverlay  = T .. "lumen-light"      -- obere Lichtschicht
-Style.shadowOverlay = T .. "lumen-shadow"     -- untere Schattenebene
+Style.barTexture     = T .. "lumen-gradient"       -- default (bold), tinted by class color
+Style.barTextureSoft = T .. "lumen-gradient-soft"  -- soft (subtle)
+Style.lightOverlay  = T .. "lumen-light"      -- top light layer
+Style.shadowOverlay = T .. "lumen-shadow"     -- bottom shadow layer
 
--- Lumen-Balkenoptik auf eine StatusBar anwenden.
---  statusbar      = die StatusBar (bekommt die Gradient-Textur)
---  overlayParent  = Frame, auf dem Licht/Schatten als Tiefenschichten liegen
---                   (über der Füllung, unter Spielstatus wie Schild/Text)
+-- Apply the Lumen bar look to a StatusBar.
+--  statusbar      = the StatusBar (gets the gradient texture)
+--  overlayParent  = frame the light/shadow depth layers sit on
+--                   (above the fill, below game state like shield/text)
 function Style:ApplyBar(statusbar, overlayParent)
 	statusbar:SetStatusBarTexture(self.barTexture)
 	if not overlayParent._lumenDepth then
@@ -35,7 +35,7 @@ function Style:ApplyBar(statusbar, overlayParent)
 	end
 end
 
--- Tiefenschichten-Stärke setzen (1.0 = Standard, ~0.55 = Soft, 0 = aus)
+-- Set depth-layer strength (1.0 = default, ~0.55 = soft, 0 = off)
 function Style:SetDepth(overlayParent, strength)
 	local d = overlayParent._lumenDepth
 	if not d then return end

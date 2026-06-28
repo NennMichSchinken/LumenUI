@@ -134,13 +134,25 @@ local function aset(cat, key)
 	end
 end
 
--- Balken-Texturen aus Raidframes:TextureValues() -> sortierte {value,label}-Liste.
+-- Display labels for Lumen's own texture keys: the VALUE stays the German key
+-- (texture/pattern matching in Raidframes.lua relies on it), only the shown label
+-- is localized. Built on locale-ready (uses T). Other (LSM/Blizzard) textures keep
+-- their own name.
+local TEX_LABELS
+ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
+	TEX_LABELS = {
+		["Lumen Schild"]     = T("Lumen Shield"),
+		["Lumen Heilabsorb"] = T("Lumen Heal-absorb"),
+	}
+end
+
+-- Bar textures from Raidframes:TextureValues() -> sorted {value,label} list.
 local function texOptsFrom(vals)
 	local list = {}
 	for k in pairs(vals or {}) do list[#list + 1] = k end
 	table.sort(list)
 	local opts = {}
-	for _, k in ipairs(list) do opts[#opts + 1] = { value = k, label = k } end
+	for _, k in ipairs(list) do opts[#opts + 1] = { value = k, label = (TEX_LABELS and TEX_LABELS[k]) or k } end
 	return opts
 end
 local function textureOptions() return texOptsFrom(ns.Raidframes and ns.Raidframes:TextureValues()) end

@@ -1,11 +1,11 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Edit-Modus
---  Bewegliche Lumen-Elemente bekommen ein Drag-Overlay mit Label.
---  Sichtbar/ziehbar, wenn ENTWEDER der manuelle Schalter (Allgemein) an ist
---  ODER WoWs eigener Edit-Modus läuft (ein Ort für alles).
---  Module melden ihr Frame per :Register an.
+--  Lumen — Edit Mode
+--  Movable Lumen elements get a drag overlay with a label.
+--  Visible/draggable when EITHER the manual switch (Global) is on
+--  OR WoW's own Edit Mode is running (one place for everything).
+--  Modules register their frame via :Register.
 -- ===========================================================================
 
 local EditMode = { manual = false, blizzard = false, active = false, items = {} }
@@ -61,19 +61,19 @@ function EditMode:Register(frame, label, save)
 	if self.active then self.items[frame].overlay:Show() end
 end
 
-function EditMode:Toggle(on)            -- manueller Schalter (Allgemein)
+function EditMode:Toggle(on)            -- manual switch (Global)
 	self.manual = on and true or false
 	self:_refresh()
 end
 
-function EditMode:SetBlizzard(on)       -- WoW-Edit-Modus
+function EditMode:SetBlizzard(on)       -- WoW Edit Mode
 	self.blizzard = on and true or false
 	self:_refresh()
 end
 
 function EditMode:IsActive() return self.manual end
 
--- An WoWs Edit-Modus andocken: Lumen-Rahmen erscheinen dort als beweglich.
+-- Hook into WoW's Edit Mode: Lumen frames show up there as movable.
 local hookFrame = CreateFrame("Frame")
 hookFrame:RegisterEvent("PLAYER_LOGIN")
 hookFrame:SetScript("OnEvent", function()
