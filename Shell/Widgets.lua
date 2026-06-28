@@ -15,6 +15,7 @@ local ADDON, ns = ...
 
 local UI = ns.UI
 local C, L, S, M = UI.C, UI.line, UI.S, UI.WIDGET
+local T = ns.T   -- Lokalisierung: T("english") -> Anzeige in der aktiven Sprache
 
 local W = {}
 ns.W = W
@@ -304,7 +305,7 @@ function W.Select(parent, o)
 	local function refreshLabel()
 		local t = labelFor(cur)
 		if t then lbl:SetText(t); lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
-		else lbl:SetText(o.placeholder or "Auswählen"); lbl:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b) end
+		else lbl:SetText(o.placeholder or T("Select")); lbl:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b) end
 	end
 	refreshLabel()
 
@@ -625,7 +626,7 @@ function W.SpellPicker(parent, o)
 	local bEdges = UI.Border(btn, L.mid, 1, "OVERLAY")
 	local bTxt = UI.FS(btn, "btn", C.gold300)
 	bTxt:SetFont(UI.FONT.hankenSemi, 16, "")
-	bTxt:SetText(o.text or "+ Hinzufügen")
+	bTxt:SetText(o.text or T("+ Add"))
 	-- Mit o.icon (gewählter Spell): Icon links + Text linksbündig daneben; sonst zentriert.
 	if o.icon then
 		local bIcon = btn:CreateTexture(nil, "ARTWORK")
@@ -886,9 +887,9 @@ local function buildConfirm()
 	body:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -14)
 	body:SetJustifyH("LEFT"); body:SetWordWrap(true)
 
-	local okBtn = W.Button(card, { text = "Bestätigen", variant = "danger", width = M.confirmBtnW })
+	local okBtn = W.Button(card, { text = T("Confirm"), variant = "danger", width = M.confirmBtnW })
 	okBtn:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -M.confirmPad, M.confirmPad)
-	local cancelBtn = W.Button(card, { text = "Abbrechen", variant = "ghost", width = M.confirmBtnW })
+	local cancelBtn = W.Button(card, { text = T("Cancel"), variant = "ghost", width = M.confirmBtnW })
 	cancelBtn:SetPoint("RIGHT", okBtn, "LEFT", -M.confirmBtnGap, 0)
 
 	confirmDlg = { overlay = overlay, card = card, title = title, body = body, ok = okBtn, cancel = cancelBtn }
@@ -899,8 +900,8 @@ function W.Confirm(o)
 	local dlg = confirmDlg or buildConfirm()
 	dlg.title:SetText(o.title or "Bist du sicher?")
 	dlg.body:SetText(o.body or "")
-	dlg.ok._txt:SetText(o.confirmText or "Bestätigen")
-	dlg.cancel._txt:SetText(o.cancelText or "Abbrechen")
+	dlg.ok._txt:SetText(o.confirmText or T("Confirm"))
+	dlg.cancel._txt:SetText(o.cancelText or T("Cancel"))
 	local function doCancel()
 		dlg.overlay:Hide()
 		if o.onCancel then o.onCancel() end
@@ -959,11 +960,11 @@ function W.ImportDialog(o)
 
 	local title = UI.FS(card, "sectionHead", C.gold300)
 	title:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
-	title:SetText("Profil importieren")
+	title:SetText(T("Import profile"))
 	y = y - 36
 
 	-- Profilname (für „Profil erstellen"; „Aktuelles überschreiben" ignoriert ihn).
-	local nameIn = W.TextInput(card, { label = "Profilname", placeholder = "Name für neues Profil …" })
+	local nameIn = W.TextInput(card, { label = T("Profile name"), placeholder = T("Name for new profile …") })
 	nameIn:ClearAllPoints()
 	nameIn:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
 	nameIn:SetPoint("TOPRIGHT", card, "TOPRIGHT", -pad, y)
@@ -971,7 +972,7 @@ function W.ImportDialog(o)
 
 	local lbl = UI.FS(card, "fieldLabel", C.gold250)
 	lbl:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
-	lbl:SetText("Was übernehmen:")
+	lbl:SetText(T("What to import:"))
 	y = y - 28
 
 	-- Modul-Häkchen (alle default an).
@@ -988,8 +989,8 @@ function W.ImportDialog(o)
 	-- Layout-Häkchen (nur wenn der Code Positionen enthält; default aus).
 	local withLayout = false
 	if o.hasLayout then
-		local chk = W.Checkbox(card, { label = "Layout-Positionen mit übernehmen",
-			tooltip = "An = die Frame-Positionen des Absenders übernehmen. Aus = deine aktuellen Positionen bleiben.",
+		local chk = W.Checkbox(card, { label = T("Also import layout positions"),
+			tooltip = T("On = take the sender's frame positions. Off = your current positions stay."),
 			get = function() return withLayout end, set = function(v) withLayout = v end })
 		chk:ClearAllPoints(); chk:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
 		y = y - (M.checkBox + 12)
@@ -998,7 +999,7 @@ function W.ImportDialog(o)
 	y = y - 10
 
 	-- Aktionen: „Profil erstellen" (primary, braucht Namen) | „Aktuelles überschreiben".
-	local createBtn = W.Button(card, { text = "Profil erstellen", variant = "primary",
+	local createBtn = W.Button(card, { text = T("Create profile"), variant = "primary",
 		onClick = function()
 			local name = (nameIn:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
 			if name == "" then nameIn._edit:SetFocus(); return end -- Name ist Pflicht
@@ -1006,7 +1007,7 @@ function W.ImportDialog(o)
 			if o.onCreate then o.onCreate(name, selected, withLayout) end
 		end })
 	createBtn:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
-	local overBtn = W.Button(card, { text = "Aktuelles überschreiben", variant = "ghost",
+	local overBtn = W.Button(card, { text = T("Overwrite current"), variant = "ghost",
 		onClick = function() close(); if o.onOverwrite then o.onOverwrite(selected, withLayout) end end })
 	overBtn:SetPoint("LEFT", createBtn, "RIGHT", M.confirmBtnGap, 0)
 	y = y - M.buttonH
@@ -1325,7 +1326,7 @@ function W.KeybindButton(parent, o)
 	end
 	local function refresh()
 		if listening then
-			lbl:SetText("Drücke eine Taste …")
+			lbl:SetText(T("Press a key …"))
 			lbl:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b)
 		else
 			lbl:SetText(fmt(cur))
@@ -1511,9 +1512,9 @@ local function buildColorPicker()
 
 	-- ---- Buttons ----
 	-- Übernehmen + Abbrechen unten links gruppiert, kleiner fester Abstand (cpBtnGap).
-	local okBtn = W.Button(cp, { text = "Übernehmen", variant = "primary" })
+	local okBtn = W.Button(cp, { text = T("Apply"), variant = "primary" })
 	okBtn:SetPoint("BOTTOMLEFT", cp, "BOTTOMLEFT", pad, pad)
-	local cancelBtn = W.Button(cp, { text = "Abbrechen", variant = "ghost" })
+	local cancelBtn = W.Button(cp, { text = T("Cancel"), variant = "ghost" })
 	cancelBtn:SetPoint("LEFT", okBtn, "RIGHT", M.cpBtnGap, 0)
 
 	-- ---- State + Logik ----

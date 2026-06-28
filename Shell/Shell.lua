@@ -11,6 +11,7 @@ local ADDON, ns = ...
 
 local UI = ns.UI
 local C, L, S, PANEL = UI.C, UI.line, UI.S, UI.PANEL
+local T = ns.T   -- Lokalisierung: T("english") -> Anzeige in der aktiven Sprache
 
 local Shell = {}
 ns.Shell = Shell
@@ -102,7 +103,7 @@ local function makeNavItem(parent, label)
 	b:SetScript("OnEnter", function(self)
 		if self._soon then
 			if ns.W and ns.W.ShowTextTip then
-				ns.W.ShowTextTip(self, "Coming soon", "Dieses Modul ist noch in Arbeit und wird in einer späteren Version freigeschaltet.")
+				ns.W.ShowTextTip(self, T("Coming soon"), T("This module is still in progress and will be unlocked in a later version."))
 			end
 		elseif not self._active then
 			self._txt:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b)
@@ -854,7 +855,7 @@ function Shell:ComingSoon(d, stack, name)
 	body:SetJustifyH("CENTER"); body:SetWordWrap(true)
 	body:SetPoint("TOPLEFT", card, "TOPLEFT", 28, -84)
 	body:SetPoint("TOPRIGHT", card, "TOPRIGHT", -28, -84)
-	body:SetText("Das Modul „" .. (name or "?") .. "“ ist noch in Arbeit und wird in einer späteren Version freigeschaltet.")
+	body:SetText(T("The \"%s\" module is still in progress and will be unlocked in a later version."):format(name or "?"))
 end
 
 -- ===========================================================================

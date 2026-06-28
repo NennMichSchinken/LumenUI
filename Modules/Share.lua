@@ -101,17 +101,17 @@ end
 
 function Share:Decode(str)
 	if not (AceSerializer and LibDeflate) then return nil, "Bibliotheken fehlen" end
-	if type(str) ~= "string" then return nil, "leer" end
+	if type(str) ~= "string" then return nil, ns.T("empty") end
 	str = str:gsub("%s+", "")           -- Zeilenumbrüche/Leerzeichen vom Kopieren entfernen
-	if str == "" then return nil, "leer" end
+	if str == "" then return nil, ns.T("empty") end
 	local decoded = LibDeflate:DecodeForPrint(str)
-	if not decoded then return nil, "ungültiger Code" end
+	if not decoded then return nil, ns.T("invalid code") end
 	local decompressed = LibDeflate:DecompressDeflate(decoded)
-	if not decompressed then return nil, "Dekomprimierung fehlgeschlagen" end
+	if not decompressed then return nil, ns.T("decompression failed") end
 	local ok, payload = AceSerializer:Deserialize(decompressed)
-	if not ok or type(payload) ~= "table" then return nil, "Code beschädigt" end
-	if payload.addon ~= "Lumen" then return nil, "kein Lumen-Code" end
-	if type(payload.modules) ~= "table" then return nil, "keine Moduldaten" end
+	if not ok or type(payload) ~= "table" then return nil, ns.T("corrupt code") end
+	if payload.addon ~= "Lumen" then return nil, ns.T("not a Lumen code") end
+	if type(payload.modules) ~= "table" then return nil, ns.T("no module data") end
 	return payload
 end
 
