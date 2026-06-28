@@ -94,14 +94,22 @@ UI.FONT = {
 -- -> Text da, Kaltstart -> unsichtbar). Hier jeden Pfad einmal auf einer versteckten,
 -- gerenderten FontString „anfassen" -> Cache ist warm, BEVOR die Shell je gebaut wird.
 do
-	local warm = UIParent:CreateFontString(nil, "BACKGROUND")
-	-- WICHTIG: SetFont MUSS vor SetText kommen — SetText auf einer FontString ohne Font
-	-- wirft „Font not set" und würde den Rest von Tokens.lua abbrechen. Alles pcall-gekapselt,
-	-- damit das Warm-up NIE das Laden gefährdet.
+	-- Glyphen, die die UI real nutzt (deutsche Labels inkl. Umlaute/ß + Ziffern + Zeichen).
+	-- Pro Font EINE bleibende, voll-transparente FontString — NICHT :Hide(): eine versteckte
+	-- FontString rendert nie, also würden ihre Glyphen nie rasterisiert (genau das war der
+	-- Kaltstart-Bug: bei /reload ist der Client-Glyph-Cache aus der Vorsitzung warm, beim
+	-- echten Spielstart kalt -> der erste SetText, z.B. der primäre „Übernehmen"-Button im
+	-- Color-Picker (hankenBold), maß 0 Breite und blieb unsichtbar). Sichtbar (alpha 0) im
+	-- Bildschirm verankert (off-screen würde gecullt -> keine Rasterung), rendert einmal beim
+	-- ersten Frame und hält den Cache warm, BEVOR Shell/Color-Picker je gebaut werden.
+	-- WICHTIG: SetFont MUSS vor SetText kommen (SetText ohne Font wirft „Font not set").
+	local GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 %+-#/.,()"
 	for _, path in pairs(UI.FONT) do
-		if pcall(warm.SetFont, warm, path, 12, "") then pcall(warm.SetText, warm, "Aa") end
+		local warm = UIParent:CreateFontString(nil, "BACKGROUND")
+		warm:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 4, 4)
+		warm:SetAlpha(0)
+		if pcall(warm.SetFont, warm, path, 16, "") then pcall(warm.SetText, warm, GLYPHS) end
 	end
-	warm:Hide()
 end
 
 -- Rollen → { Pfad, Größe, Flags }. Größen aus typography.css.
@@ -314,6 +322,7 @@ UI.LAYOUT = {
 		toggleToSection = 16,   -- Checkbox -> erste Sektions-Karte (unten weniger, näher dran)
 	},
 	lebensbalken = {
+		afterTexHint = 10,  -- Textur-Reihe -> Mausrad/Such-Hinweis (eng darunter)
 		afterTexture = 22,  -- Balken-Textur-Reihe -> Klassenfarbe-Reihe
 		afterClass   = 22,  -- Klassenfarbe-Reihe -> „Name in Klassenfarbe"-Reihe
 		afterNameCC  = 52,  -- „Name in Klassenfarbe"-Reihe -> nächste Kategorie

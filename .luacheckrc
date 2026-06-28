@@ -21,6 +21,7 @@ read_globals = {
     "CreateFrame", "UIParent", "InCombatLockdown", "GetCursorPosition",
     "STANDARD_TEXT_FONT", "GameFontNormal",
     "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip", "ColorPickerFrame",
+    "ADDONS", -- lokalisierter GlobalString (ESC-Menü „Addons")
     -- Einheiten / Leben
     "UnitExists", "UnitName", "UnitClass", "UnitThreatSituation", "UnitGroupRolesAssigned",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",

@@ -355,13 +355,15 @@ local function buildBase(d, stack)
 	local sBar = stack:section("Lebensbalken")
 
 	-- Reihe 1: Balken-Textur | Schild-Textur | Healabsorb-Textur (3 Dropdowns, je mit Zeilen-
-	-- begrenzung + Mausrad-Vorschau). Default „Lumen …" = Streifen-Muster, sonst LSM/Blizzard.
-	local WHEEL_HINT = "Tipp: Mausrad über dem Dropdown blättert live durch die Texturen (Vorschau)."
+	-- begrenzung + Mausrad-Vorschau + Suchfeld). Default „Lumen …" = Streifen-Muster, sonst LSM/Blizzard.
 	local tr1, tc1 = W.Row(d, 3, { height = fieldH })
-	W.Select(tc1[1], { label = "Balken-Textur", options = textureOptions(), wheelPreview = true, tooltip = WHEEL_HINT, get = tget("healthTexture"), set = tset("healthTexture") }):SetAllPoints(tc1[1])
-	W.Select(tc1[2], { label = "Schild-Textur", options = shieldTexOptions(), wheelPreview = true, tooltip = WHEEL_HINT, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(tc1[2])
-	W.Select(tc1[3], { label = "Healabsorb-Textur", options = healAbsorbTexOptions(), wheelPreview = true, tooltip = WHEEL_HINT, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(tc1[3])
-	sBar:place(tr1, fieldH, R.row)
+	W.Select(tc1[1], { label = "Balken-Textur", options = textureOptions(), wheelPreview = true, search = true, get = tget("healthTexture"), set = tset("healthTexture") }):SetAllPoints(tc1[1])
+	W.Select(tc1[2], { label = "Schild-Textur", options = shieldTexOptions(), wheelPreview = true, search = true, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(tc1[2])
+	W.Select(tc1[3], { label = "Healabsorb-Textur", options = healAbsorbTexOptions(), wheelPreview = true, search = true, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(tc1[3])
+	sBar:place(tr1, fieldH, L.lebensbalken.afterTexHint)
+	-- Sichtbarer Hinweis (statt Hover-Tooltip) zur Mausrad-Vorschau + zum Suchfeld der Textur-Dropdowns.
+	local texHint = W.Hint(d, "Mausrad über einem Textur-Dropdown blättert live durch die Texturen (Vorschau). Im geöffneten Menü filtert das Suchfeld am Kopf.")
+	sBar:place(texHint, M.hintH, R.row)
 
 	-- Checkbox-Versatz, um eine Checkbox vertikal aufs Control-Band (Swatch/Select) einer
 	-- Field-Reihe auszurichten (Label oben, Control unten -> Box mittig ins untere 40er-Band).
@@ -641,19 +643,40 @@ end
 --  „Anzeigen" ist der Master: aus -> alle übrigen Controls ausgegraut. „Auto-Fit"
 --  graut zusätzlich die beiden Größen-Slider. `isDebuff` blendet den Filter ein.
 -- ---------------------------------------------------------------------------
+-- Innen/Außen-Optionen (kontextabhängiger Segment-Schalter): false = Icons IM Frame,
+-- true = Reihe komplett nach außen ausgelagert (neben/über/unter dem Frame).
+local PLACE_OPTS = { { value = false, label = "Innen" }, { value = true, label = "Außen" } }
+local CTX_OPTS   = { { value = "Raid", label = "Raid" }, { value = "Party", label = "Gruppe" } }
+
 local function auraCat(d, stack, cat, label, isDebuff)
 	local fieldH = M.controlH + M.fieldGap
 	local R = L.rhythm
 	local s = stack:section(label)
 
-	local deps = {}             -- nur an „Anzeigen" gekoppelt
-	local szRaidW, szPartyW     -- zusätzlich an „Auto-Fit" gekoppelt
+	-- Kontext-Zustand DIESER Karte: welchen Kontext die Platzierungs-Box zeigt/speichert.
+	-- „Menge & Verhalten" ist geteilt und davon unberührt. Default Raid (Label macht's eindeutig).
+	local ctx = "Raid"
+	local function cget(base) return function() return aget(cat, base .. ctx)() end end
+	local function cset(base) return function(v) aset(cat, base .. ctx)(v) end end
+
+	local deps = {}            -- an „Anzeigen" gekoppelt (alle Controls außer Master + Größe)
+	local placeRefresh = {}    -- Platzierungs-Controls: Wert beim Kontextwechsel neu ziehen
+	local sizeW                -- Größen-Slider (zusätzlich an „Auto-Fit" gekoppelt)
+
 	local function refresh()
 		local on = aget(cat, "enabled")() and true or false
 		for _, w in ipairs(deps) do w:SetWidgetEnabled(on) end
-		local sz = on and not aget(cat, "autoFit")()
-		if szRaidW  then szRaidW:SetWidgetEnabled(sz and true or false) end
-		if szPartyW then szPartyW:SetWidgetEnabled(sz and true or false) end
+		if sizeW then sizeW:SetWidgetEnabled(on and not aget(cat, "autoFit")()) end
+	end
+	local function switchCtx(v)
+		ctx = v
+		for _, fn in ipairs(placeRefresh) do fn() end
+	end
+	-- Platzierungs-Control: an „Anzeigen" koppeln + beim Kontextwechsel auf den neuen Wert ziehen.
+	local function place(widget, getter)
+		deps[#deps + 1] = widget
+		placeRefresh[#placeRefresh + 1] = function() if widget.SetValueExternal then widget:SetValueExternal(getter()) end end
+		return widget
 	end
 
 	-- „Anzeigen" (Master) — frei in der Karte, ÜBER den Unter-Boxen.
@@ -663,63 +686,60 @@ local function auraCat(d, stack, cat, label, isDebuff)
 	cbOn:SetPoint("LEFT", mRow, "LEFT", 0, 0)
 	s:place(mRow, M.checkBox, R.afterCheck)
 
-	-- ── Unter-Box A: Platzierung & Menge ─────────────────────────────────
-	local boxA = s:subgroup()
+	-- ── Unter-Box A: Menge & Verhalten (GETEILT für Raid + Gruppe) ───────
+	local boxA = s:subgroup({ title = "Menge & Verhalten" })
+	local a1, ac = W.Row(d, 2, { height = M.sliderH })
+	local maxW = W.Slider(ac[1], { label = "Max. Icons", min = 1, max = 8, get = aget(cat, "maxIcons"), set = aset(cat, "maxIcons") })
+	maxW:SetAllPoints(ac[1])
+	local spaceW = W.Slider(ac[2], { label = "Abstand", min = 0, max = 20, unit = " px", get = aget(cat, "spacing"), set = aset(cat, "spacing") })
+	spaceW:SetAllPoints(ac[2])
+	deps[#deps + 1] = maxW; deps[#deps + 1] = spaceW
+	boxA:place(a1, M.sliderH, R.row)
 
-	-- Reihe: Position | Wachstum | (Filter bei Debuffs, sonst Cooldown-Swipe).
-	local r1, c1 = W.Row(d, 3, { height = fieldH })
-	local anchorW = W.Select(c1[1], { label = "Position (Anker)", options = POINT_OPTS, get = aget(cat, "anchor"), set = aset(cat, "anchor") })
-	anchorW:SetAllPoints(c1[1])
-	local growW = W.Select(c1[2], { label = "Wachstumsrichtung", options = GROW_OPTS, get = aget(cat, "grow"), set = aset(cat, "grow") })
-	growW:SetAllPoints(c1[2])
-	deps[#deps + 1] = anchorW; deps[#deps + 1] = growW
+	-- Auto-Fit + Cooldown-Swipe (zwei Checkboxen nebeneinander).
+	local a2, ac2 = W.Row(d, 2, { height = M.checkBox })
+	local cbFit = W.Checkbox(ac2[1], { label = "Auto-Fit (Größe aus Frame-Höhe)", get = aget(cat, "autoFit"),
+		set = function(v) aset(cat, "autoFit")(v); refresh() end })
+	cbFit:SetPoint("LEFT", ac2[1], "LEFT", 0, 0)
+	local cbSwipe = W.Checkbox(ac2[2], { label = "Cooldown-Swipe", get = aget(cat, "showSwipe"), set = aset(cat, "showSwipe") })
+	cbSwipe:SetPoint("LEFT", ac2[2], "LEFT", 0, 0)
+	deps[#deps + 1] = cbFit; deps[#deps + 1] = cbSwipe
+	boxA:place(a2, M.checkBox, isDebuff and R.row or R.tight)
+
 	if isDebuff then
-		local filterW = W.Select(c1[3], { label = "Filter", options = AURA_FILTER_OPTS,
+		local a3, ac3 = W.Row(d, 2, { height = fieldH })
+		local filterW = W.Select(ac3[1], { label = "Filter", options = AURA_FILTER_OPTS,
 			tooltip = "Welche Debuffs gezeigt werden. Raid-relevant = Blizzards Standard-Auswahl.",
 			get = aget(cat, "filterMode"), set = aset(cat, "filterMode") })
-		filterW:SetAllPoints(c1[3])
+		filterW:SetAllPoints(ac3[1])
 		deps[#deps + 1] = filterW
-	else
-		-- Cooldown-Swipe sitzt bei den Dropdowns (vertikal mittig in der Zeile).
-		local cbSwipe = W.Checkbox(c1[3], { label = "Cooldown-Swipe", get = aget(cat, "showSwipe"), set = aset(cat, "showSwipe") })
-		cbSwipe:SetPoint("LEFT", c1[3], "LEFT", 0, 0)
-		deps[#deps + 1] = cbSwipe
+		boxA:place(a3, fieldH, R.tight)
 	end
-	boxA:place(r1, fieldH, R.row)
-
-	-- Reihe: Abstand | Max. Icons | (bei Debuffs Cooldown-Swipe, da Filter oben sitzt).
-	local r2, c2 = W.Row(d, 3, { height = M.sliderH })
-	local spaceW = W.Slider(c2[1], { label = "Abstand", min = 0, max = 20, unit = " px", get = aget(cat, "spacing"), set = aset(cat, "spacing") })
-	spaceW:SetAllPoints(c2[1])
-	local maxW = W.Slider(c2[2], { label = "Max. Icons", min = 1, max = 8, get = aget(cat, "maxIcons"), set = aset(cat, "maxIcons") })
-	maxW:SetAllPoints(c2[2])
-	deps[#deps + 1] = spaceW; deps[#deps + 1] = maxW
-	if isDebuff then
-		local cbSwipe = W.Checkbox(c2[3], { label = "Cooldown-Swipe", get = aget(cat, "showSwipe"), set = aset(cat, "showSwipe") })
-		cbSwipe:SetPoint("LEFT", c2[3], "LEFT", 0, 0)
-		deps[#deps + 1] = cbSwipe
-	end
-	boxA:place(r2, M.sliderH, R.tight)
 	boxA:close()
 
-	-- ── Unter-Box B: Auto-Fit & Größe ────────────────────────────────────
-	local boxB = s:subgroup()
+	-- ── Unter-Box B: Platzierung & Größe (PRO KONTEXT — Raid/Gruppe-Schalter) ──
+	local boxB = s:subgroup({ title = "Platzierung & Größe" })
+	-- Raid|Gruppe-Schalter im Box-Header rechts: schaltet NUR diese Box, lokal (kein Hochscrollen).
+	local ctxSeg = W.Segment(boxB._panel, { options = CTX_OPTS, get = function() return ctx end, set = switchCtx, width = 150, cellH = 26 })
+	ctxSeg:SetPoint("TOPRIGHT", boxB._panel, "TOPRIGHT", -M.subgroupPad, -10)
+	ctxSeg:SetFrameLevel(boxB._panel:GetFrameLevel() + 5)
+	deps[#deps + 1] = ctxSeg
 
-	-- Auto-Fit vorne (Gruppen-Kopf der Größen). Checkbox -> Slider = afterCheck.
-	local fRow = CreateFrame("Frame", nil, d)
-	local cbFit = W.Checkbox(fRow, { label = "Auto-Fit (Größe aus Frame-Höhe)", get = aget(cat, "autoFit"),
-		set = function(v) aset(cat, "autoFit")(v); refresh() end })
-	cbFit:SetPoint("LEFT", fRow, "LEFT", 0, 0)
-	deps[#deps + 1] = cbFit
-	boxB:place(fRow, M.checkBox, R.afterCheck)
+	-- Reihe: Anker | Wachstum | Innen/Außen (alle controlH-basiert -> aligned).
+	local b1, bc = W.Row(d, 3, { height = fieldH })
+	place(W.Select(bc[1], { label = "Position (Anker)", options = POINT_OPTS, get = cget("anchor"), set = cset("anchor") }), cget("anchor")):SetAllPoints(bc[1])
+	place(W.Select(bc[2], { label = "Wachstumsrichtung", options = GROW_OPTS, get = cget("grow"), set = cset("grow") }), cget("grow")):SetAllPoints(bc[2])
+	place(W.Segment(bc[3], { label = "Platzierung", options = PLACE_OPTS, get = cget("outside"), set = cset("outside") }), cget("outside")):SetAllPoints(bc[3])
+	boxB:place(b1, fieldH, R.row)
 
-	-- Reihe: Größe (Raid) | Größe (Gruppe) | (frei) — nur aktiv ohne Auto-Fit.
-	local r3, c3 = W.Row(d, 3, { height = M.sliderH })
-	szRaidW = W.Slider(c3[1], { label = "Größe (Raid)", min = 8, max = 48, unit = " px", get = aget(cat, "sizeRaid"), set = aset(cat, "sizeRaid") })
-	szRaidW:SetAllPoints(c3[1])
-	szPartyW = W.Slider(c3[2], { label = "Größe (Gruppe)", min = 8, max = 48, unit = " px", get = aget(cat, "sizeParty"), set = aset(cat, "sizeParty") })
-	szPartyW:SetAllPoints(c3[2])
-	boxB:place(r3, M.sliderH, R.tight)
+	-- Reihe: Versatz X | Versatz Y | Größe (alle Slider).
+	local b2, bc2 = W.Row(d, 3, { height = M.sliderH })
+	place(W.Slider(bc2[1], { label = "Versatz X", min = -80, max = 80, unit = " px", get = cget("offX"), set = cset("offX") }), cget("offX")):SetAllPoints(bc2[1])
+	place(W.Slider(bc2[2], { label = "Versatz Y", min = -80, max = 80, unit = " px", get = cget("offY"), set = cset("offY") }), cget("offY")):SetAllPoints(bc2[2])
+	sizeW = W.Slider(bc2[3], { label = "Größe", min = 8, max = 80, unit = " px", get = cget("size"), set = cset("size") })
+	sizeW:SetAllPoints(bc2[3])
+	placeRefresh[#placeRefresh + 1] = function() sizeW:SetValueExternal(cget("size")()) end
+	boxB:place(b2, M.sliderH, R.tight)
 	boxB:close()
 
 	s:close()
@@ -733,9 +753,10 @@ end
 local function buildAuras(d, stack)
 	stack:gap(L.base.topToToggle)
 	local intro = W.Hint(d, "Aura-Indikatoren am Frame: eigene HoTs, Defensives & Externe, Debuffs. "
-		.. "Jede Kategorie hat eigenen Anker, Wachstum und Größe. Welche Spells getrackt werden, "
-		.. "regelt der Tab \"Tracking\". Im Testmodus (Tab \"Base\") zur Vorschau sichtbar.")
-	stack:place(intro, M.hintH, L.auras.afterIntro)
+		.. "Menge & Verhalten gelten für Raid und Gruppe; Platzierung & Größe stellst du pro Kontext "
+		.. "ein (Raid/Gruppe-Schalter in der Karte). Welche Spells getrackt werden, regelt der Tab "
+		.. "\"Tracking\". Im Testmodus (Tab \"Base\") zur Vorschau sichtbar.", L.tracking.introH)
+	stack:place(intro, L.tracking.introH, L.auras.afterIntro)
 
 	auraCat(d, stack, "hotsOwn",    "HoTs",                 false)
 	auraCat(d, stack, "defensives", "Defensives & Externe", false)

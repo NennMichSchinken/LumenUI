@@ -330,8 +330,13 @@ function W.Select(parent, o)
 
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
 
+	-- Forward-Deklaration: das optionale Suchfeld (o.search) wird weiter unten gebaut,
+	-- closeMenu muss seinen Fokus aber schon räumen können.
+	local search, searchPH
+
 	local function closeMenu()
 		menu:Hide(); closer:Hide()
+		if search then search:ClearFocus() end
 		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
 	end
 	closer:SetScript("OnClick", closeMenu)
@@ -357,14 +362,36 @@ function W.Select(parent, o)
 	-- Optionen in eine SCROLL-Liste: bei vielen Einträgen (z.B. Balken-/Schild-Texturen aus
 	-- anderen Addons/LSM) nur N Zeilen sichtbar + Mausrad/Scrollbalken, statt das Menü über
 	-- den ganzen Schirm zu ziehen. Kurze Listen (<= maxRows) zeigen alles, ohne Scrollbalken.
+	-- Mit o.search bekommt der Kopf ein Echtzeit-Suchfeld (Typeahead, Muster aus W.SpellPicker):
+	-- die Liste filtert live, die Höhe bleibt fix bei maxRows. Nur Textur-Dropdowns setzen das;
+	-- Schild-/Healabsorb-Dropdowns erben es über dieselbe Komponente (Feature 3 → 4).
 	local maxRows = M.selectMaxRows
 	local stride  = rowH + gap
-	local needScr = #opts > maxRows
+	local needScr = (#opts > maxRows) or (o.search and true) or false
 	local visN    = needScr and maxRows or math.max(1, #opts)
 	local listH   = math.max(rowH, visN * stride - gap)
+	local headerH = o.search and (M.spSearchH + 8) or 0
+
+	-- Suchfeld (typeahead) — nur mit o.search. Filtert die einmal gebauten Optionen live.
+	if o.search then
+		search = CreateFrame("EditBox", nil, menu)
+		search:SetHeight(M.spSearchH)
+		search:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad)
+		search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -pad)
+		UI.Fill(search, C.ink700)
+		UI.Border(search, L.soft, 1, "OVERLAY")
+		search:SetFont(UI.FONT.hankenMed, 14, "")
+		search:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		search:SetTextInsets(10, 10, 0, 0)
+		search:SetAutoFocus(false)
+		searchPH = UI.FS(search, "label", C.textMuted)
+		searchPH:SetText("Textur suchen …")
+		searchPH:SetPoint("LEFT", search, "LEFT", 10, 0)
+	end
 
 	local sf = CreateFrame("ScrollFrame", nil, menu)
-	sf:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad)
+	if search then sf:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -8)
+	else sf:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad) end
 	sf:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -(pad + (needScr and (M.spScrollW + M.spScrollGap) or 0)), pad)
 	sf:EnableMouseWheel(needScr)
 	local child = CreateFrame("Frame", nil, sf)
@@ -373,14 +400,11 @@ function W.Select(parent, o)
 	sf:SetScript("OnSizeChanged", function(self2, w) child:SetWidth(w or self2:GetWidth() or 1) end)
 
 	local items = {}
-	local prev
 	for _, op in ipairs(opts) do
 		local item = CreateFrame("Button", nil, child)
 		item:SetHeight(rowH)
 		item:SetPoint("LEFT", child, "LEFT", 0, 0)
 		item:SetPoint("RIGHT", child, "RIGHT", 0, 0)
-		if prev then item:SetPoint("TOP", prev, "BOTTOM", 0, -gap)
-		else item:SetPoint("TOP", child, "TOP", 0, 0) end
 		local wash = item:CreateTexture(nil, "BACKGROUND")
 		wash:SetAllPoints(item)
 		wash:SetColorTexture(0, 0, 0, 0)
@@ -395,6 +419,7 @@ function W.Select(parent, o)
 		itxt:SetPoint("LEFT", item, "LEFT", 12, 0)
 		itxt:SetText(op.label)
 		item._wash, item._txt, item._val, item._bar = wash, itxt, op.value, bar
+		item._search = (op.label or ""):lower() -- Filtergrundlage (kleingeschrieben)
 		item:SetScript("OnEnter", function(self) paintItem(self, true) end)
 		item:SetScript("OnLeave", function(self) paintItem(self, false) end)
 		item:SetScript("OnClick", function(self)
@@ -404,17 +429,53 @@ function W.Select(parent, o)
 			if o.set then o.set(cur) end
 		end)
 		items[#items + 1] = item
-		prev = item
 	end
-	child:SetHeight(math.max(1, #opts * stride - gap))
-	menu:SetHeight(listH + pad * 2)
+	menu:SetHeight(listH + headerH + pad * 2)
 	menu._paintItem, menu._items = paintItem, items
+
+	-- „keine Treffer"-Hinweis (nur bei aktiver Suche relevant).
+	local emptyFS = UI.FS(menu, "label", C.textMuted)
+	emptyFS:SetText("(keine Treffer)")
+	if search then emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
+	else emptyFS:SetPoint("TOP", menu, "TOP", 0, -(pad + 16)) end
+	emptyFS:Hide()
+
+	-- Sichtbare (gefilterte) Zeilen oben→unten neu verankern. Ohne Suche zeigt das schlicht
+	-- alle Optionen (q == "") — verhaltensgleich zur vorherigen statischen Anker-Kette.
+	local function relayout()
+		local q = (search and (search:GetText() or ""):lower()) or ""
+		local shown, prevItem = 0, nil
+		for _, item in ipairs(items) do
+			if q == "" or item._search:find(q, 1, true) then
+				shown = shown + 1
+				item:ClearAllPoints()
+				item:SetPoint("LEFT", child, "LEFT", 0, 0)
+				item:SetPoint("RIGHT", child, "RIGHT", 0, 0)
+				if prevItem then item:SetPoint("TOP", prevItem, "BOTTOM", 0, -gap)
+				else item:SetPoint("TOP", child, "TOP", 0, 0) end
+				item:Show(); prevItem = item
+			else
+				item:Hide()
+			end
+		end
+		child:SetHeight(math.max(1, shown * stride - gap))
+		sf:SetVerticalScroll(0)
+		emptyFS:SetShown(shown == 0)
+		if menu._updateBar then menu._updateBar() end
+	end
+	menu._relayout = relayout
+
+	if search then
+		search:SetScript("OnTextChanged", function() searchPH:SetShown((search:GetText() or "") == ""); relayout() end)
+		search:SetScript("OnEscapePressed", function(self2) self2:ClearFocus(); closeMenu() end)
+		search:SetScript("OnEnterPressed", function(self2) self2:ClearFocus() end)
+	end
 
 	-- Scrollbalken (nur wenn nötig) — Muster aus W.SpellPicker: Mausrad + ziehbarer Thumb.
 	if needScr then
 		local sbTrack = CreateFrame("Frame", nil, menu)
 		sbTrack:SetWidth(M.spScrollW)
-		sbTrack:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -pad)
+		sbTrack:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -(pad + headerH))
 		sbTrack:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -pad, pad)
 		local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
 		trackTex:SetAllPoints(sbTrack); UI.SetColor(trackTex, C.ink700)
@@ -462,15 +523,19 @@ function W.Select(parent, o)
 		menu._updateBar = updateBar
 	end
 
+	relayout() -- Initial-Layout (zeigt alle Optionen; menu._updateBar ist jetzt gesetzt).
+
 	local function openMenu()
 		menu:ClearAllPoints()
 		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -6)
 		menu:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -6)
 		-- Zeilen-Optik auf den aktuellen Stand bringen (Gold-Balken auf gewählter Zeile)
 		for _, item in ipairs(menu._items) do menu._paintItem(item, false) end
+		if search then search:SetText(""); searchPH:Show(); relayout() end
 		closer:Show(); menu:Show()
 		if menu._updateBar then menu._updateBar() end
 		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
+		if search then search:SetFocus() end
 	end
 
 	btn:SetScript("OnClick", function()
@@ -993,6 +1058,103 @@ function W.Checkbox(parent, o)
 	return b
 end
 
+-- ---------------------------------------------------------------------------
+--  Segment — kompakter Mehrfach-Umschalter (gold-gefüllte aktive Zelle). EINE
+--  Komponente, mehrfach genutzt: Raid|Gruppe-Kontextschalter UND Innen|Außen.
+--  o = { label?, options = {{value,label},…} (oder Strings), get, set, value,
+--        width?, cellH? }. Mit label -> Label oben (wie Select/Slider), Leiste
+--  darunter auf controlH. Ohne label -> nur die Leiste (Höhe cellH, z.B. kompakter
+--  Header-Schalter). Gleichbreite Zellen via OnSizeChanged (Breite erst nach Layout).
+-- ---------------------------------------------------------------------------
+function W.Segment(parent, o)
+	local opts = normOptions(o.options or {})
+	local n = math.max(1, #opts)
+	local f = CreateFrame("Frame", nil, parent)
+	if o.width then f:SetWidth(o.width) end
+
+	local cellH = o.cellH or CONTROL_H
+	local topY = 0
+	if o.label then
+		local _, yo = fieldLabel(f, o.label); topY = yo
+		f:SetHeight(cellH - topY)
+	else
+		f:SetHeight(cellH)
+	end
+
+	local bar = CreateFrame("Frame", nil, f)
+	bar:SetHeight(cellH)
+	bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
+	bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
+	UI.Fill(bar, C.ink700)
+	UI.Border(bar, L.mid, 1, "OVERLAY")
+	f._control = bar
+
+	-- Nicht `(get() or value)` — get() darf legitim `false` liefern (z.B. Innen/Außen mit
+	-- value=false als Default „Innen"); das `or` würde den false-Wert verschlucken -> keine Zelle
+	-- aktiv. Daher explizit auf nil prüfen.
+	local cur = o.get and o.get()
+	if cur == nil then cur = o.value end
+	local cells = {}
+	local function paint()
+		for _, c in ipairs(cells) do
+			local active = (c._val == cur)
+			if active then
+				UI.SetColor(c._fill, C.gold500)
+				c._txt:SetTextColor(C.onGold.r, C.onGold.g, C.onGold.b)
+			else
+				c._fill:SetColorTexture(0, 0, 0, 0)
+				c._txt:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b)
+			end
+		end
+	end
+	for i, op in ipairs(opts) do
+		local cell = CreateFrame("Button", nil, bar)
+		local fill = cell:CreateTexture(nil, "BACKGROUND")
+		fill:SetAllPoints(cell); fill:SetColorTexture(0, 0, 0, 0)
+		local txt = UI.FS(cell, "selectText", C.textMuted)
+		txt:SetPoint("CENTER", cell, "CENTER", 0, 0)
+		txt:SetText(op.label); txt:SetWordWrap(false)
+		if i > 1 then -- 1px Trenner an der linken Kante (zwischen den Zellen)
+			local div = cell:CreateTexture(nil, "OVERLAY")
+			div:SetWidth(1)
+			div:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
+			div:SetPoint("BOTTOMLEFT", cell, "BOTTOMLEFT", 0, 0)
+			UI.SetColor(div, L.mid)
+		end
+		cell._fill, cell._txt, cell._val = fill, txt, op.value
+		cell:SetScript("OnEnter", function() if cell._val ~= cur then txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b) end end)
+		cell:SetScript("OnLeave", function() if cell._val ~= cur then txt:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b) end end)
+		cell:SetScript("OnClick", function()
+			if cur == cell._val then return end
+			cur = cell._val; paint()
+			if o.set then o.set(cur) end
+		end)
+		cells[i] = cell
+	end
+
+	-- Gleichbreite Zellen erst beim Layout (Breite ist beim Bauen noch 0).
+	bar:SetScript("OnSizeChanged", function(self2, w)
+		w = w or self2:GetWidth() or 0
+		if w <= 0 then return end
+		local cw = w / n
+		for i, c in ipairs(cells) do
+			c:ClearAllPoints()
+			c:SetPoint("TOP", bar, "TOP", 0, 0)
+			c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
+			c:SetPoint("LEFT", bar, "LEFT", (i - 1) * cw, 0)
+			c:SetWidth(cw)
+		end
+	end)
+	paint()
+
+	f.SetValueExternal = function(_, v) cur = v; paint() end
+	f.SetWidgetEnabled = function(_, on)
+		f:SetAlpha(on and 1 or 0.35)
+		for _, c in ipairs(cells) do c:EnableMouse(on) end
+	end
+	return f
+end
+
 -- ===========================================================================
 --  Color-Picker (eigenes Popover im Lumen-Stil statt Blizzards ColorPickerFrame)
 --  HSV-Modell: SV-Feld (Sättigung x / Helligkeit y) + Farbton-Leiste + Vorschau +
@@ -1368,6 +1530,21 @@ function W.Button(parent, o)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 
 	b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
+
+	-- Kaltstart-Garantie: Wird der Button SICHTBAR und hat sein Text noch 0 Breite (Glyph-Cache
+	-- war beim Bauen kalt -> v.a. der primäre „Übernehmen" im lazy gebauten Color-Picker),
+	-- Schnitt + Text nach EINEM Frame (jetzt sichtbar -> Glyphen rasterisiert) einmal neu setzen.
+	if (o.text or "") ~= "" then
+		b:HookScript("OnShow", function()
+			if (txt:GetStringWidth() or 0) > 0 then return end
+			C_Timer.After(0, function()
+				if (txt:GetStringWidth() or 0) > 0 then return end
+				if txt:SetFont(v.font, BTN_SIZE, "") == false then UI:SetFont(txt, "btn") end
+				txt:SetText(o.text)
+				b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
+			end)
+		end)
+	end
 
 	b:SetScript("OnEnter", function()
 		paintBg(true)
