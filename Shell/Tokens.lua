@@ -355,6 +355,19 @@ UI.LAYOUT = {
 		emptyH      = 30,   -- Höhe der „(keine Spells)"-Zeile bei leerer Liste
 		afterList   = 18,   -- Liste -> Aktions-Buttons (Picker + Reset)
 	},
+	clickcast = {           -- Click-Cast-Tab (Maus-Bindings + Hovercast)
+		topToHead    = 30,  -- Tab-Strip -> Master-Schalter
+		afterMaster  = 22,  -- Master -> Spec-Dropdown
+		afterSpec    = 8,   -- Spec-Dropdown -> Aktive-Spec-Hinweis
+		afterCaption = 18,  -- Hinweis -> „Nur hilfreiche Zauber"-Checkbox
+		afterHelpful = 26,  -- Checkbox -> erste Sektionskarte
+		introH       = 50,  -- Höhe des Hovercast-Intro-Hinweises
+		afterIntro   = 14,  -- Intro -> erste Binding-Box
+		headToRow    = 14,  -- Box-Kopf (Summary + Entfernen) -> Reihe 1
+		betweenRows  = 14,  -- Reihe -> nächste Reihe innerhalb einer Box
+		afterList    = 8,   -- letzte Box -> „+ hinzufügen"-Button
+		emptyH       = 30,  -- Höhe der „(keine Bindings)"-Zeile
+	},
 }
 
 -- Panel-Maße (Design 1500×1060). Auf dem Bildschirm via SetScale verkleinert.
@@ -392,18 +405,29 @@ function UI.Border(frame, col, thick, layer)
 		edges[#edges + 1] = t
 		return t
 	end
-	local top = mk();   PixelUtil.SetHeight(top, thick)
-	PixelUtil.SetPoint(top, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-	PixelUtil.SetPoint(top, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-	local bot = mk();   PixelUtil.SetHeight(bot, thick)
-	PixelUtil.SetPoint(bot, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-	PixelUtil.SetPoint(bot, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-	local left = mk();  PixelUtil.SetWidth(left, thick)
-	PixelUtil.SetPoint(left, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-	PixelUtil.SetPoint(left, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-	local right = mk(); PixelUtil.SetWidth(right, thick)
-	PixelUtil.SetPoint(right, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-	PixelUtil.SetPoint(right, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	local top, bot, left, right = mk(), mk(), mk(), mk()
+	-- Pixel-Snap der Kanten. WICHTIG: muss NACH dem finalen Layout erneut laufen — zur
+	-- Bauzeit (im RenderContent, vor gesetzter Scrollposition) steht die absolute Position
+	-- noch nicht, dann landet die 1px-Linie zwischen zwei Pixeln und verschwindet bis zum
+	-- nächsten Scroll (der bekannte Tab-/Dropdown-Border-Bug). Daher: sofort + einen Frame
+	-- später (C_Timer.After 0, nach dem Layout-Pass) + bei jeder Größenänderung neu snappen.
+	local function snap()
+		PixelUtil.SetHeight(top, thick)
+		PixelUtil.SetPoint(top, "TOPLEFT", frame, "TOPLEFT", 0, 0)
+		PixelUtil.SetPoint(top, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+		PixelUtil.SetHeight(bot, thick)
+		PixelUtil.SetPoint(bot, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+		PixelUtil.SetPoint(bot, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+		PixelUtil.SetWidth(left, thick)
+		PixelUtil.SetPoint(left, "TOPLEFT", frame, "TOPLEFT", 0, 0)
+		PixelUtil.SetPoint(left, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+		PixelUtil.SetWidth(right, thick)
+		PixelUtil.SetPoint(right, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+		PixelUtil.SetPoint(right, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	end
+	snap()
+	C_Timer.After(0, snap)
+	frame:HookScript("OnSizeChanged", snap)
 	return edges
 end
 

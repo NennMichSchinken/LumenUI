@@ -289,6 +289,28 @@ local function getProxy(button, kind)   -- kind = "togglemenu" | "target"
 	return p
 end
 
+-- Benannter Proxy für den „nur außerhalb Kampf"-Pfad (Menü): ein /click-Makro mit
+-- [nocombat]-Bedingung drückt diesen Proxy -> die secure togglemenu-Aktion läuft NUR
+-- außerhalb des Kampfes, im Kampf passiert nichts (kein versehentliches Menü in M+).
+-- Braucht einen globalen Namen (für /click); pro Button einmalig + wiederverwendet.
+local namedCount = 0
+local function getNamedProxy(button, kind)   -- kind = "togglemenu" | "target"
+	local store = (kind == "target") and "_ccNTgtProxy" or "_ccNMenuProxy"
+	local p = button[store]
+	if not p then
+		namedCount = namedCount + 1
+		p = CreateFrame("Button", "LumenCCProxy" .. namedCount, button, "SecureActionButtonTemplate")
+		p:SetSize(1, 1); p:SetAlpha(0); p:EnableMouse(false)
+		p:RegisterForClicks("AnyUp", "AnyDown")
+		p:SetAttribute("type", kind)
+		p:SetAttribute("type1", kind)            -- /click ohne Tastenangabe = LeftButton
+		p:SetAttribute("useparent-unit", true)
+		p:SetAttribute("useOnKeyDown", false)
+		button[store] = p
+	end
+	return p
+end
+
 local function rec(button, name) button._ccApplied[#button._ccApplied + 1] = name end
 
 local function clearButton(button)
@@ -297,14 +319,22 @@ local function clearButton(button)
 	else button._ccApplied = {} end
 end
 
-local function applyClick(button, parsed, aType, macrotext)
+local function applyClick(button, parsed, aType, macrotext, b)
 	local prefix = parsed.modifiers:lower()
 	local suffix = tostring(parsed.buttonNum)
 	local typeAttr = prefix .. "type" .. suffix
 	if aType == "togglemenu" then
-		button:SetAttribute(typeAttr, "click"); rec(button, typeAttr)
-		local cb = prefix .. "clickbutton" .. suffix
-		button:SetAttribute(cb, getProxy(button, "togglemenu")); rec(button, cb)
+		if b and b.oocOnly then
+			-- Menü nur außerhalb Kampf: /click [nocombat] auf den benannten Proxy. Die
+			-- togglemenu-Aktion läuft secure über den Proxy, /click + [nocombat] ist ungated.
+			button:SetAttribute(typeAttr, "macro"); rec(button, typeAttr)
+			local mt = prefix .. "macrotext" .. suffix
+			button:SetAttribute(mt, "/click [nocombat] " .. getNamedProxy(button, "togglemenu"):GetName()); rec(button, mt)
+		else
+			button:SetAttribute(typeAttr, "click"); rec(button, typeAttr)
+			local cb = prefix .. "clickbutton" .. suffix
+			button:SetAttribute(cb, getProxy(button, "togglemenu")); rec(button, cb)
+		end
 	elseif aType == "target" then
 		if suffix == "1" and prefix == "" then
 			-- Plain Linksklick zielt nativ (Default-ClickBinding) -> direkt lassen.
@@ -340,7 +370,7 @@ local function applyEnabled(button)
 			local p = parseKey(b.key)
 			if p.isMouse and p.buttonNum and p.buttonNum <= 5 then
 				local aType, macrotext = resolveBinding(b, false)
-				if aType then applyClick(button, p, aType, macrotext) end
+				if aType then applyClick(button, p, aType, macrotext, b) end
 			end
 		end
 	end
@@ -368,6 +398,12 @@ end
 local hoverBtn, driver
 local lastHoverCount = 0
 local HOVER_BTN_NAME = "LumenCCHover"
+
+-- Hovercast ist P2 (siehe Shell/Screens.lua CC_HOVERCAST): die Secure-Tasten-Treiber-Mechanik
+-- gibt die Taste in 12.0.7 nicht mehr sauber frei -> belegte Hovercast-Taste blockiert die
+-- Aktionsleiste. Bis zur 12.1.0-Nacharbeit deaktiviert; vorhandene Hovercast-Bindings bleiben
+-- im Profil, werden aber NICHT angewendet (applyHover legt alles still). Zum Reaktivieren: true.
+local HOVERCAST_ENABLED = false
 
 local function buildHoverFrames()
 	if hoverBtn then return end
@@ -401,6 +437,17 @@ local function clearHoverAttrs()
 end
 
 local function applyHover()
+	if not HOVERCAST_ENABLED then
+		-- Geparkt: sicherstellen, dass nichts hängen bleibt (Treiber + Override-Bindings lösen),
+		-- dann nichts neu aufsetzen -> belegte Hovercast-Bindings blockieren keine Tasten.
+		if driver then
+			UnregisterStateDriver(driver, "mo")
+			pcall(function() driver:Execute("self:ClearBindings()") end)
+		end
+		if hoverBtn then clearHoverAttrs() end
+		lastHoverCount = 0
+		return
+	end
 	buildHoverFrames()
 	UnregisterStateDriver(driver, "mo")
 	pcall(function() driver:Execute("self:ClearBindings()") end)

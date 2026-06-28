@@ -890,6 +890,262 @@ local function buildTracking(d, stack)
 	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Screen grau + gesperrt
 end
 
+-- ===========================================================================
+--  Click-Cast-Screen — Maus-Bindings („Klick auf Frame") + Hovercast (Tastatur)
+--  in EINEM Tab, zwei Sektionskarten. Verdrahtet gegen ns.ClickCast (Datenmodell
+--  + Apply bleiben im Modul). Spell-Auswahl über W.SpellPicker (echte Typeahead-
+--  Suche), Hovercast-Taste über W.KeybindButton. „Nur außerhalb Kampf" jetzt auch
+--  für Menü (löst versehentliche Menüs im Kampf — wirkt nur auf Lumens Frames).
+-- ===========================================================================
+local function cc() return ns.Lumen.db.profile.clickCast end
+local function CCm() return ns.ClickCast end
+local function ccApply() if CCm() then CCm():ApplyBindings() end end
+
+local ccSelectedSpec  -- welche Spec bearbeitet wird (entkoppelt von der Live-Spec)
+
+-- Hovercast ist P2: Die Secure-Tasten-Treiber-Mechanik (Taste nur beim Hovern aktiv,
+-- sonst normale Aktionsleiste) gibt die Taste in 12.0.7 nicht mehr sauber frei -> belegte
+-- Hovercast-Taste blockiert die Aktionsleiste. Bis zur 12.1.0-Nacharbeit (ggf. robusterer
+-- EllesmereUI-Ansatz) Sektion ausgeblendet; Code + Datenmodell bleiben. ClickCast.lua legt
+-- vorhandene Hovercast-Bindings parallel „schlafend" (applyHover ist dann ein No-op).
+local CC_HOVERCAST = false
+
+local CC_MOD_OPTS = {
+	{ value = "",      label = "Kein" },
+	{ value = "SHIFT", label = "Shift" },
+	{ value = "CTRL",  label = "Strg" },
+	{ value = "ALT",   label = "Alt" },
+}
+local CC_ACTION_OPTS = {
+	{ value = "target", label = "Ziel" },
+	{ value = "menu",   label = "Menü" },
+	{ value = "spell",  label = "Spell" },
+	{ value = "dispel", label = "Dispel" },
+	{ value = "rez",    label = "Wiederbeleben" },
+}
+local function ccMouseOpts()
+	local opts, m = {}, CCm()
+	if m then for _, k in ipairs(m.MOUSE_BUTTON_SORTING) do
+		opts[#opts + 1] = { value = k, label = m.MOUSE_BUTTON_VALUES[k] }
+	end end
+	return opts
+end
+-- Spec-Dropdown mit Icon (FontStrings rendern |T..|t inline, wie der AceConfig-Tab).
+local function ccSpecOpts()
+	local opts, m = {}, CCm()
+	if m then for _, s in ipairs(m:GetSpecList()) do
+		local lbl = (s.icon and ("|T" .. s.icon .. ":14:14:0:0|t  ") or "") .. (s.name or "?")
+		opts[#opts + 1] = { value = s.id, label = lbl }
+	end end
+	return opts
+end
+-- Spell-Kandidaten für den Picker (Klassen-Zauberbuch, optional auf hilfreiche gefiltert).
+local function ccSpellFetch()
+	local out, m = {}, CCm()
+	if not m then return out end
+	local onlyHelpful = cc().helpfulOnly
+	for _, s in ipairs(m:GetClassSpells()) do
+		if (not onlyHelpful) or s.friendly then out[#out + 1] = s end
+	end
+	return out
+end
+
+-- Eine Binding-Box (hellere Unter-Box mit Kopfzeile „Taste → Aktion" + Entfernen).
+-- s = Stapler der Sektionskarte; b = Bindung; isHover = Hovercast (Tastatur).
+local function ccBindingBox(d, s, b, isHover, spec)
+	local LC = L.clickcast
+	local fieldH = M.controlH + M.fieldGap
+	local box = s:subgroup()
+
+	-- Kopf: NUR die Keycap (kombinierte Taste/Maustaste) + „Entfernen". Spell-Name/Icon
+	-- bewusst NICHT hier — der Picker-Button unten zeigt sie schon (sonst doppelt).
+	local hd = CreateFrame("Frame", nil, d)
+	hd:SetHeight(M.controlH)
+
+	-- Keycap: quadratisch (min controlH×controlH), DUNKLER + kräftigerer Gold-Rand +
+	-- ZENTRIERTER Text -> liest sich als „Taste", nicht als Dropdown (heller, chevron, linksbündig).
+	local cap = CreateFrame("Frame", nil, hd)
+	cap:SetHeight(M.controlH)
+	cap:SetPoint("LEFT", hd, "LEFT", 0, 0)
+	UI.Fill(cap, C.ink850)
+	UI.Border(cap, UI.line.strong, 1, "OVERLAY")
+	local capTxt = UI.FS(cap, "selectText", C.gold300)
+	capTxt:SetPoint("CENTER", cap, "CENTER", 0, 0)
+	capTxt:SetText((CCm() and CCm():FormatKey(b.key)) or "—")
+	cap:SetWidth(math.max(M.controlH, math.ceil(capTxt:GetStringWidth()) + 20))
+
+	local rm = W.Button(hd, { text = "Entfernen", variant = "danger", width = M.trackRemoveW,
+		onClick = function()
+			local idx
+			for i, x in ipairs(CCm():GetBindings(spec)) do if x == b then idx = i; break end end
+			if idx then CCm():RemoveBinding(spec, idx) end
+			ns.Shell:RenderContent(true)
+		end })
+	rm:ClearAllPoints(); rm:SetPoint("RIGHT", hd, "RIGHT", 0, 0)
+	box:place(hd, M.controlH, LC.headToRow)
+
+	-- Reihe 1: Klick = [Maustaste | Aktion | Modifier]; Hover = [Taste | Aktion | —].
+	local r1, c1 = W.Row(d, 3, { height = fieldH })
+	if isHover then
+		local kb = W.KeybindButton(c1[1], { label = "Taste",
+			format = function(k) return (CCm() and CCm():FormatKey(k)) or k end,
+			get = function() return b.key end,
+			set = function(v) b.key = v; ccApply(); ns.Shell:RenderContent(true) end })
+		kb:SetAllPoints(c1[1])
+	else
+		local mb = W.Select(c1[1], { label = "Maustaste", options = ccMouseOpts(),
+			get = function() local _, btn = CCm():KeyParts(b.key); return (btn ~= "" and btn) or "BUTTON1" end,
+			set = function(v) local mod = CCm():KeyParts(b.key); b.key = CCm():BuildKey(mod, v); ccApply(); ns.Shell:RenderContent(true) end })
+		mb:SetAllPoints(c1[1])
+	end
+	local act = W.Select(c1[2], { label = "Aktion", options = CC_ACTION_OPTS,
+		get = function() return b.type end,
+		set = function(v) b.type = v; ccApply(); ns.Shell:RenderContent(true) end })
+	act:SetAllPoints(c1[2])
+	if not isHover then
+		local mod = W.Select(c1[3], { label = "Modifier", options = CC_MOD_OPTS,
+			get = function() local m = CCm():KeyParts(b.key); return m or "" end,
+			set = function(v) local _, btn = CCm():KeyParts(b.key); b.key = CCm():BuildKey(v, (btn ~= "" and btn) or "BUTTON1"); ccApply(); ns.Shell:RenderContent(true) end })
+		mod:SetAllPoints(c1[3])
+	end
+	box:place(r1, fieldH, LC.betweenRows)
+
+	-- Reihe 2 (nur Aktion „Spell"): Spell-Picker (suchbar/scrollbar).
+	if b.type == "spell" then
+		local spIcon = b.spellID and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(b.spellID) or nil
+		local picker = W.SpellPicker(d, {
+			text = b.spell or "Spell wählen …", icon = spIcon, width = M.spW,
+			fetch = ccSpellFetch,
+			onPick = function(id)
+				b.spellID = id
+				b.spell = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or b.spell
+				ccApply(); ns.Shell:RenderContent(true)
+			end,
+		})
+		box:placeLeft(picker, M.buttonH, LC.betweenRows)
+	end
+
+	-- Reihe 3: Checkboxen. Klick: nur „Nur außerhalb Kampf" (außer Aktion = Ziel).
+	-- Hover: „Nur Freundlich"/„Nur Feindlich" (nur Spell) + „Nur außerhalb Kampf".
+	local defs = {}
+	if isHover and b.type == "spell" then
+		defs[#defs + 1] = { label = "Nur Freundlich", tooltip = "Nur auf freundliche Units wirken.",
+			get = function() return b.hoverFriendly end, set = function(v) b.hoverFriendly = v; ccApply() end }
+		defs[#defs + 1] = { label = "Nur Feindlich", tooltip = "Nur auf feindliche Units wirken.",
+			get = function() return b.hoverEnemy end, set = function(v) b.hoverEnemy = v; ccApply() end }
+	end
+	if b.type ~= "target" then
+		defs[#defs + 1] = { label = "Nur außerhalb Kampf",
+			tooltip = (b.type == "menu") and "Verhindert versehentliche Menüs im Kampf — wirkt nur auf Lumens Frames." or "Nur außerhalb des Kampfes auslösen.",
+			get = function() return b.oocOnly end, set = function(v) b.oocOnly = v; ccApply() end }
+	end
+	if #defs > 0 then
+		local cr = CreateFrame("Frame", nil, d)
+		cr:SetHeight(M.checkBox)
+		local prev
+		for _, dc in ipairs(defs) do
+			local chk = W.Checkbox(cr, dc)
+			chk:ClearAllPoints()
+			if prev then chk:SetPoint("LEFT", prev, "RIGHT", L.general.checkRowGap, 0)
+			else chk:SetPoint("LEFT", cr, "LEFT", 0, 0) end
+			prev = chk
+		end
+		box:place(cr, M.checkBox, 0)
+	end
+
+	box:close()
+end
+
+local function buildClickCast(d, stack)
+	local LC = L.clickcast
+	local m = CCm()
+	local spec = ccSelectedSpec
+	if not spec and m then spec = m:CurrentSpecID(); ccSelectedSpec = spec end
+
+	-- Master (frei über allem) — wie „Raidframes aktiviert".
+	local outerStack = stack
+	local body
+	stack:gap(LC.topToHead)
+	local mRow = CreateFrame("Frame", nil, d)
+	local cbMaster = W.Checkbox(mRow, { label = "Click-Cast aktiviert",
+		tooltip = "Übernimmt die Klicks auf die Raidframe-Buttons. Aus = WoW-Standard (Links = Ziel, Rechts = Menü).",
+		get = function() return cc().enabled end,
+		set = function(v) cc().enabled = v; ccApply(); applyModuleGate(body, v) end })
+	cbMaster:SetPoint("LEFT", mRow, "LEFT", 0, 0)
+	stack:place(mRow, M.checkBox, LC.afterMaster)
+
+	-- Alles Weitere in ein gate-bares Body-Frame (bei „aus" gedimmt + gesperrt).
+	body = CreateFrame("Frame", nil, d)
+	local bstack = ns.Shell.NewStack(body)
+	d, stack = body, bstack
+
+	-- Spec-Auswahl (entkoppelt von der Live-Spec) — rasterbündig in Spalte 1.
+	local sr, sc = W.Row(d, 3, { height = M.controlH + M.fieldGap })
+	W.Select(sc[1], { label = "Spec (bearbeiten)", options = ccSpecOpts(), placeholder = "Keine Spec",
+		tooltip = "Welche Spec du hier bearbeitest. Im Spiel gelten automatisch die Bindings deiner aktiven Spec.",
+		get = function() return ccSelectedSpec end,
+		set = function(v) ccSelectedSpec = v; ns.Shell:RenderContent(true) end }):SetAllPoints(sc[1])
+	stack:place(sr, M.controlH + M.fieldGap, LC.afterSpec)
+
+	local specHint = W.Hint(d, "Aktive Spec im Spiel:  " .. ((m and m:CurrentSpecName()) or "?")
+		.. "  —  es gelten automatisch die Bindings deiner aktiven Spec.", 22)
+	stack:place(specHint, 22, LC.afterCaption)
+
+	local hRow = CreateFrame("Frame", nil, d)
+	hRow:SetHeight(M.checkBox)
+	local cbHelpful = W.Checkbox(hRow, { label = "Nur hilfreiche Zauber zur Auswahl anzeigen",
+		tooltip = "Beschränkt die Spell-Liste auf Zauber, die du auf dich/Verbündete wirken kannst. Aus = alle Zauber.",
+		get = function() return cc().helpfulOnly end, set = function(v) cc().helpfulOnly = v end })
+	cbHelpful:SetPoint("LEFT", hRow, "LEFT", 0, 0)
+	stack:place(hRow, M.checkBox, LC.afterHelpful)
+
+	local bindings = (m and m:GetBindings(spec)) or {}
+
+	-- ===== Klick auf Frame =================================================
+	local sClick = stack:section("Klick auf Frame")
+	local anyClick = false
+	for _, b in ipairs(bindings) do
+		if not b.hovercast then anyClick = true; ccBindingBox(d, sClick, b, false, spec) end
+	end
+	if not anyClick then
+		sClick:place(W.Hint(d, "(keine Bindings)"), LC.emptyH, LC.afterList)
+	end
+	local addClick = W.Button(d, { text = "+ Klick-Binding hinzufügen", variant = "ghost",
+		onClick = function()
+			if m then m:AddBinding(spec, { key = "BUTTON3", type = "spell" }) end
+			ns.Shell:RenderContent(true)
+		end })
+	sClick:placeLeft(addClick, M.buttonH, 0)
+	sClick:close()
+
+	-- ===== Hovercast (Mouseover) — P2, bis 12.1.0 ausgeblendet (siehe CC_HOVERCAST) =====
+	if CC_HOVERCAST then
+		local sHover = stack:section("Hovercast (Mouseover)")
+		local intro = W.Hint(d, "Taste drücken, während die Maus über einer Unit schwebt — die Aktion geht auf "
+			.. "die gehoverte Unit, ohne Klick. Die Taste wirkt nur beim Hovern; sonst macht sie ihr normales Ding.", LC.introH)
+		sHover:place(intro, LC.introH, LC.afterIntro)
+		local anyHover = false
+		for _, b in ipairs(bindings) do
+			if b.hovercast then anyHover = true; ccBindingBox(d, sHover, b, true, spec) end
+		end
+		if not anyHover then
+			sHover:place(W.Hint(d, "(keine Bindings)"), LC.emptyH, LC.afterList)
+		end
+		local addHover = W.Button(d, { text = "+ Hovercast-Taste hinzufügen", variant = "ghost",
+			onClick = function()
+				if m then m:AddBinding(spec, { hovercast = true, type = "spell", hoverFriendly = true }) end
+				ns.Shell:RenderContent(true)
+			end })
+		sHover:placeLeft(addHover, M.buttonH, 0)
+		sHover:close()
+	end
+
+	outerStack:place(body, bstack:height(), 0)
+	applyModuleGate(body, cc().enabled) -- Click-Cast aus -> alles unter dem Master grau + gesperrt
+end
+
+ns.Screens["Click-Cast/Bindings"] = buildClickCast
+
 ns.Screens["Raidframes/Base"]     = buildBase
 ns.Screens["Raidframes/Raid"]     = function(d, stack) buildRaid(d, stack, "raid") end
 ns.Screens["Raidframes/Group"]    = function(d, stack) buildRaid(d, stack, "party") end
