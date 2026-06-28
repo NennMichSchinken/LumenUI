@@ -2,8 +2,9 @@
 ## Title: Lumen
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## Author: NennMichSchinken
-## Version: 0.9.82
+## Version: 0.9.83
 ## SavedVariables: LumenDB
+## OptionalDeps: MiniCC
 ## X-Website: https://github.com/NennMichSchinken
 
 embeds.xml
@@ -17,5 +18,6 @@ Shell\Shell.lua
 Modules\Raidframes.lua
 Modules\ClickCast.lua
 Modules\Share.lua
+Modules\MiniCC.lua
 Options.lua
 GameMenu.lua

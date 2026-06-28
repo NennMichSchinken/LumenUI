@@ -3,7 +3,7 @@ local ADDON, ns = ...
 -- ===========================================================================
 --  Lumen — Suite-Shell Widget-Toolkit (Phase 2)
 --  Wiederverwendbare Bausteine nach dem Lumen Design System (Shell/Tokens).
---  Vorbild-API: EllesmereUIs WidgetFactory (`:Slider/:Dropdown/:Toggle(parent,
+--  Muster: eine Widget-Factory (`:Slider/:Dropdown/:Toggle(parent,
 --  …, get, set)`), Look 1:1 aus dem Prototyp (components/core/*.jsx).
 --
 --  Konvention: jedes Widget ist SELBST-DIMENSIONIERT (kennt seine Höhe) und

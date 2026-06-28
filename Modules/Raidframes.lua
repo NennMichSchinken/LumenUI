@@ -1,9 +1,9 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Modul: Raidframes (v0.9 — secret-sicher, nach EllesmereUI-Muster)
+--  Lumen — Modul: Raidframes (v0.9 — secret-sicher, secret-sicheres 12.0-Muster)
 --
---  Bestätigtes 12.0-Vorgehen (mit EllesmereUI abgeglichen):
+--  Bestätigtes secret-sicheres 12.0-Vorgehen:
 --   * maxHealth IMMER aus calc:GetMaximumHealth() — UnitHealthMax ist secret.
 --   * Rohe Werte (UnitHealth/UnitGetTotalAbsorbs/...HealAbsorbs/...IncomingHeals)
 --     direkt an StatusBar:SetValue() — die Bar verträgt secret.
@@ -264,8 +264,8 @@ local function learnUnitSigs(u)
 end
 
 -- ---- HoT-/Defensiv-Whitelist (Phase 2 / Stufe B2+B3) -----------------------
--- Kuratierte Standard-Spells je Heiler-Spec (spellID), an EllesmereUIs Liste als
--- Benchmark ausgerichtet (eigenständig nachgebaut). Werden lazy in
+-- Kuratierte Standard-Spells je Heiler-Spec (spellID), eigenständig
+-- zusammengestellt. Werden lazy in
 -- db.profile.raidframes.auras.whitelist[specID] geseedet (HoTs Typ "hot",
 -- Defensiven Typ "def"). Im Whitelist-Editor (B4) pro Spec anpassbar.
 local HOT_DEFAULTS = {
@@ -489,7 +489,7 @@ end
 -- Rückgabe nil = (noch) nicht auflösbar (z.B. im Kampf vor dem ersten OOC-Lernen).
 -- Manche Auren werden mit einer ANDEREN spellId angewendet als der getrackten
 -- (Cast-ID != Aura-ID). Hier auf die in der Whitelist geführte Haupt-ID mappen.
--- (Muster + Earth-Shield-Beispiel an EllesmereUI orientiert.)
+-- (Beispiel: Earth Shield — Cast-ID weicht von der Aura-ID ab.)
 local PRIMARY_BY_ALT = {
 	[383648] = 974,   -- Earth Shield (alternative Aura-ID -> Haupt-ID)
 }
@@ -521,7 +521,7 @@ end
 
 -- Icon einer Aura setzen. aura.icon ist im Kampf secret (12.0), aber StatusBar/Texture-
 -- Setter nehmen secret-Werte NATIV an und rendern sie korrekt — bestätigtes Vorgehen
--- (EllesmereUI: "texture may be SECRET: SetTexture accepts it natively"). Dadurch echte
+-- (eine SECRET-Textur wird von SetTexture nativ akzeptiert). Dadurch echte
 -- Icons auch im Kampf, für EIGENE wie FREMDE Auren (entscheidend für Debuffs). Nur wenn
 -- gar kein Icon vorliegt (nil) der Zahnrad-Fallback.
 local function applyAuraIcon(ic, aura)
@@ -541,6 +541,23 @@ local function classColor(class)
 	local c = RAID_CLASS_COLORS[class]
 	if c then return c.r, c.g, c.b end
 	return 0.6, 0.6, 0.6
+end
+
+-- Tank? Primär die zugewiesene Gruppenrolle. Ist KEINE zugewiesen ("NONE"/nil —
+-- z.B. solo oder Gruppe ohne Rollencheck), für den SPIELER selbst auf die Spec-
+-- Rolle zurückfallen (sonst zeigt z.B. ein Wächter-Druide solo das Aggro-Overlay).
+-- Für Fremd-Einheiten ohne zugewiesene Rolle bleibt nur die Gruppenrolle.
+local function unitIsTank(u)
+	local r = UnitGroupRolesAssigned and UnitGroupRolesAssigned(u)
+	if r == "TANK" then return true end
+	if r and r ~= "NONE" then return false end
+	if UnitIsUnit and UnitIsUnit(u, "player") then
+		local spec = GetSpecialization and GetSpecialization()
+		if spec and GetSpecializationRole then
+			return GetSpecializationRole(spec) == "TANK"
+		end
+	end
+	return false
 end
 -- Konfigurierte Dispel-Farbe (oder Default) für einen Typ.
 local function dispelCol(d, key)
@@ -761,7 +778,12 @@ end
 -- Läuft beim Rendern (count ist erst dann bekannt).
 local AURA_OUT_GAP = 2 -- kleiner Abstand zwischen Frame-Kante und ausgelagerter („Außen") Icon-Reihe
 local function positionAuraIcons(holder, count)
-	if count < 1 then return end
+	if count < 1 then holder._posCount = 0; return end
+	-- SetPoint-Churn vermeiden (§9.5): Icon-Positionen hängen NUR an count + den
+	-- Layout-Parametern (Anker/Wachstum/Größe/Versatz). Die Parameter ändern sich
+	-- ausschließlich in layoutAuraCat (invalidiert dort _posCount). Bleibt count
+	-- gleich, ist nichts neu zu ankern -> der häufige UNIT_AURA-Pfad spart die Arbeit.
+	if count == holder._posCount then return end
 	local anchor = holder._anchor or "BOTTOMLEFT"
 	local grow   = holder._grow or "RIGHT"
 	local size   = holder._size or 16
@@ -798,6 +820,7 @@ local function positionAuraIcons(holder, count)
 			ic:SetPoint(anchor, holder, anchor, bx + ox + sx + (i - 1) * dirX * step, by + oy + sy + (i - 1) * dirY * step)
 		end
 	end
+	holder._posCount = count
 end
 local function makeAuraIcon(holder)
 	local ic = CreateFrame("Frame", nil, holder)
@@ -841,6 +864,7 @@ local function layoutAuraCat(f, key, cat, size)
 	holder._outside = cat["outside" .. sfx] or false
 	holder._size    = size
 	holder._spacing = cat.spacing or 0
+	holder._posCount = nil   -- Layout-Parameter neu gesetzt -> Positions-Cache verwerfen
 	local maxN = cat.maxIcons or 5
 	for i = 1, maxN do
 		local ic = holder.icons[i] or makeAuraIcon(holder)
@@ -1161,8 +1185,7 @@ function Raidframes:RenderLive(f)
 
 	if d.aggroEnabled then
 		-- Tanks ausnehmen: sie sollen Aggro haben -> kein Dauer-Rot.
-		local isTank = UnitGroupRolesAssigned and UnitGroupRolesAssigned(u) == "TANK"
-		local st = (not isTank) and UnitThreatSituation and UnitThreatSituation(u) or nil
+		local st = (not unitIsTank(u)) and UnitThreatSituation and UnitThreatSituation(u) or nil
 		self:SetAggro(f, st)
 	else
 		self:SetAggro(f, nil)
@@ -1178,7 +1201,7 @@ function Raidframes:RenderLive(f)
 	if t == "Keine" then
 		f.htext:SetText("")
 	elseif t == "Prozent" and UnitHealthPercent then
-		-- ScaleTo100-Kurve -> garantiert NICHT-secret 0..100 (EllesmereUI-Muster).
+		-- ScaleTo100-Kurve -> garantiert NICHT-secret 0..100 (secret-sicheres 12.0-Muster).
 		-- WICHTIG: Ohne Kurve liefert 12.0.7 einen Wert, der bei Arithmetik (p*100)
 		-- im Kampf wirft -> das riss bisher den restlichen RenderLive mit, inklusive
 		-- RenderAurasLive am Funktionsende -> ALLE Auren verschwanden. Mit Kurve ist p
@@ -1409,7 +1432,7 @@ end
 -- Secure Rechtsklick-Menü (12.0.7): ein "togglemenu" direkt auf dem Unit-Button wird
 -- gated (stumm verworfen ohne passende ClickBinding); aus Insecure-Lua öffnen TAINTET
 -- das Menü (geschützte Einträge wie "Fokus setzen" werfen ADDON_ACTION_FORBIDDEN).
--- Lösung (Muster aus EllesmereUI): Rechtsklick über die UN-gated "click"-Action an einen
+-- Lösung (secure-konformes Muster): Rechtsklick über die UN-gated "click"-Action an einen
 -- versteckten SecureActionButton-Proxy routen, der selbst "togglemenu" sicher ausführt.
 -- "useparent-unit" -> der Proxy holt die Unit vom Eltern-Button (header-verwaltet).
 local function getMenuProxy(button)
@@ -1550,7 +1573,7 @@ function Raidframes:LayoutLive()
 	if InCombatLockdown() then secureLayoutDirty = true; return end
 	if not header then buildHeader() end
 	applyHeaderLayout()
-	-- Sortierung über Header-Attribute (secure-konform, EllesmereUI-Muster):
+	-- Sortierung über Header-Attribute (secure-konform):
 	--  * "group" -> kein groupBy, sortMethod INDEX (Raid-Gruppen-/Roster-Reihenfolge).
 	--  * "role"  -> groupBy ASSIGNEDROLE, sortMethod NAME, groupingOrder = Prioritätsliste
 	--               + ",NONE" (sonst fielen Einheiten ohne zugewiesene Rolle raus).
@@ -1588,6 +1611,7 @@ function Raidframes:LayoutLive()
 	else
 		header:Show()
 	end
+	self:NotifyFrameChange()   -- Fremd-Provider (z.B. MiniCC) über neue Frame-Liste informieren
 end
 
 function Raidframes:HideHeader()
@@ -1633,8 +1657,17 @@ end
 -- Dispatcher: Test -> Preview-Frames, sonst -> Secure-Header. Immer nur eine Seite sichtbar.
 function Raidframes:UpdateLayout()
 	if not container then return end
-	dispelCurve = nil   -- Dispel-Farben könnten sich geändert haben -> Curve neu bauen lassen
 	local d = db()
+	-- Modul aus: NICHTS live aufbauen/zeigen. Wichtig, weil Roster-/Welt-Events
+	-- (z.B. PLAYER_ENTERING_WORLD nach /reload) sonst den Header neu bauen und
+	-- zeigen würden, obwohl „Raidframes aktiviert" aus ist.
+	if not d.enabled then
+		self:HideHeader()
+		self:HidePreview()
+		container:Hide()
+		return
+	end
+	dispelCurve = nil   -- Dispel-Farben könnten sich geändert haben -> Curve neu bauen lassen
 	if d.testMode then
 		self:HideHeader()
 		self:LayoutPreview(d)
@@ -1658,6 +1691,190 @@ local function OnUnitEvent(unit)
 	if db().testMode then return end
 	local f = unitToButton[unit]
 	if f and f:IsShown() then Raidframes:RenderLive(f) end
+end
+
+-- ---- Fremd-Provider-Schnittstelle (z.B. MiniCC) ---------------------------
+-- Externe Addons (CD-Tracker) dürfen Icons an unsere Live-Frames andocken.
+-- GetLiveButtons liefert die sichtbaren Secure-Buttons; der Aufrufer iteriert
+-- sofort -> wir geben einen WIEDERVERWENDETEN Scratch-Buffer zurück (keine
+-- Garbage). NotifyFrameChange meldet (debounced auf den nächsten Tick) an
+-- registrierte Callbacks, wenn sich die Frame-Liste geändert hat.
+local liveScratch = {}
+function Raidframes:GetLiveButtons()
+	wipe(liveScratch)
+	if not header then return liveScratch end
+	local n = 0
+	for i = 1, 40 do
+		local btn = header[i]
+		if btn and btn:IsVisible() then
+			local u = btn.unit or btn:GetAttribute("unit")
+			if u and UnitExists(u) then
+				n = n + 1
+				liveScratch[n] = btn
+			end
+		end
+	end
+	return liveScratch
+end
+
+local frameChangeCbs
+local frameChangeQueued = false
+local function fireFrameChange()
+	frameChangeQueued = false
+	if not frameChangeCbs then return end
+	for i = 1, #frameChangeCbs do pcall(frameChangeCbs[i]) end
+end
+function Raidframes:OnFrameChange(cb)
+	frameChangeCbs = frameChangeCbs or {}
+	frameChangeCbs[#frameChangeCbs + 1] = cb
+end
+function Raidframes:NotifyFrameChange()
+	if frameChangeQueued or not frameChangeCbs then return end
+	frameChangeQueued = true
+	C_Timer.After(0, fireFrameChange)   -- erst feuern, wenn die Layout-Positionen final sind
+end
+
+-- ---- Blizzard-Standard-Raidframes unterdrücken ----------------------------
+-- Lumen baut eigene Frames DANEBEN; ohne dies sähen Nur-Lumen-Nutzer doppelt.
+-- Robust + taint-sicher: die geschützten Blizzard-Container auf einen dauerhaft
+-- versteckten Eltern-Frame umhängen (rendern dann NIE, auch im Kampf) + Events
+-- abmelden (kein Doppel-Processing, Performance). Edit-Modus zeigt seine Systeme
+-- beim Betreten erneut an + setzt deren Scale zurück -> Auswahl-Box separat per
+-- Alpha/Scale unsichtbar machen und auf den einschlägigen Events nachziehen.
+-- Reparent/Scale sind im Kampf verboten -> nur OOC bzw. aufgeschoben.
+-- Rückweg (Schalter aus) braucht ein /reload (Events sind abgemeldet) -> Popup.
+local blizzParent                 -- dauerhaft versteckter Eltern-Frame
+local blizzSuppressed = false     -- haben WIR aktuell unterdrückt? (steuert Popup)
+local blizzInit = false           -- Hooks/Watcher nur einmal anhängen
+local blizzHooked = {}            -- SetParent-Hook pro Frame nur einmal
+local blizzLoose  = {}            -- im Kampf nicht umhängbare Frames -> bei Regen nachholen
+
+-- Manager (linke Leiter-/Marker-Leiste) bewusst NICHT anfassen: enthält Leiter-
+-- Werkzeuge (Bereitschaftscheck, Markierungen). Nur die Unit-Container weg.
+local function blizzRaidFrames()
+	local t = { CompactRaidFrameContainer, PartyFrame, _G.CompactPartyFrame }
+	for i = 1, 5 do t[#t + 1] = _G["CompactPartyFrameMember" .. i] end
+	return t
+end
+
+local function blizzResetParent(self, parent)
+	if not blizzSuppressed or parent == blizzParent then return end
+	if InCombatLockdown() and self:IsProtected() then
+		blizzLoose[self] = true            -- im Kampf verboten -> bei PLAYER_REGEN_ENABLED
+	else
+		self:SetParent(blizzParent)
+	end
+end
+
+local function blizzHandleFrame(frame)
+	if not frame then return end
+	frame:UnregisterAllEvents()
+	frame:Hide()
+	if frame:GetParent() ~= blizzParent and not (InCombatLockdown() and frame:IsProtected()) then
+		frame:SetParent(blizzParent)
+	elseif InCombatLockdown() and frame:IsProtected() then
+		blizzLoose[frame] = true
+	end
+	if not blizzHooked[frame] then
+		blizzHooked[frame] = true
+		hooksecurefunc(frame, "SetParent", blizzResetParent)
+		frame:HookScript("OnShow", function(self)
+			if not blizzSuppressed then return end
+			if not InCombatLockdown() then self:Hide() end
+		end)
+	end
+	-- Untergeordnete Bars/Auren ebenfalls stilllegen (kein Doppel-Processing).
+	local hb = frame.healthBar or frame.healthbar or frame.HealthBar
+		or (frame.HealthBarsContainer and frame.HealthBarsContainer.healthBar)
+	if hb then hb:UnregisterAllEvents() end
+end
+
+-- Edit-Modus-Auswahlbox unsichtbar machen (Hiden/Reparent reicht NICHT: der
+-- Edit-Modus erzwingt das Anzeigen seiner Systeme). Scale ist im Kampf verboten.
+local function blizzSuppressOverlay(frame)
+	if not frame then return end
+	pcall(function()
+		frame:SetAlpha(0)
+		if not InCombatLockdown() then frame:SetScale(0.001) end
+		if frame.selectionHighlight and frame.selectionHighlight.SetShown then
+			frame.selectionHighlight:SetShown(false)
+		end
+		if frame.selectionIndicator and frame.selectionIndicator.SetShown then
+			frame.selectionIndicator:SetShown(false)
+		end
+	end)
+end
+
+local function blizzApplyOverlay()
+	if not blizzSuppressed then return end
+	blizzSuppressOverlay(CompactRaidFrameContainer)
+	blizzSuppressOverlay(PartyFrame)
+	blizzSuppressOverlay(_G.CompactPartyFrame)
+end
+
+local function suppressBlizzard()
+	blizzSuppressed = true
+	if not blizzParent then
+		blizzParent = CreateFrame("Frame", "LumenHiddenParent", UIParent)
+		blizzParent:Hide()
+	end
+	for _, f in ipairs(blizzRaidFrames()) do blizzHandleFrame(f) end
+	blizzApplyOverlay()
+
+	if blizzInit then return end
+	blizzInit = true
+	-- Im Kampf aufgeschobene Reparents nachholen.
+	local regen = CreateFrame("Frame")
+	regen:RegisterEvent("PLAYER_REGEN_ENABLED")
+	regen:SetScript("OnEvent", function()
+		if not blizzSuppressed then return end
+		for f in next, blizzLoose do f:SetParent(blizzParent) end
+		wipe(blizzLoose)
+	end)
+	-- Overlay nach Welt-/Edit-Mode-Events neu unterdrücken (re-show + Scale-Reset).
+	local watcher = CreateFrame("Frame")
+	watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+	watcher:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+	watcher:SetScript("OnEvent", function() C_Timer.After(0, blizzApplyOverlay) end)
+	if type(_G.CompactRaidFrameManager_UpdateShown) == "function" then
+		hooksecurefunc("CompactRaidFrameManager_UpdateShown", function()
+			C_Timer.After(0, blizzApplyOverlay)
+		end)
+	end
+	local function hookEM()
+		if not EditModeManagerFrame then return end
+		EditModeManagerFrame:HookScript("OnShow", function() C_Timer.After(0, blizzApplyOverlay) end)
+		hooksecurefunc(EditModeManagerFrame, "Hide", function() C_Timer.After(0, blizzApplyOverlay) end)
+	end
+	if EditModeManagerFrame then hookEM()
+	elseif EventUtil and EventUtil.ContinueOnAddOnLoaded then
+		EventUtil.ContinueOnAddOnLoaded("Blizzard_EditMode", hookEM)
+	end
+end
+
+-- Sauberer Rückweg (Blizzard-Frames zurück) erfordert /reload -> nachfragen.
+-- Bevorzugt der Lumen-Confirm-Dialog (Shell-Optik); nur wenn die Shell zu ist
+-- (z.B. Profilwechsel im Hintergrund), Blizzards StaticPopup als Fallback.
+local RELOAD_TITLE = "Raidframes deaktiviert"
+local RELOAD_BODY  = "Lumens Raidframes sind aus. Ein Neuladen der Oberfläche bringt Blizzards Standard-Raidframes zurück."
+StaticPopupDialogs["LUMEN_RAIDFRAMES_RELOAD"] = {
+	text = RELOAD_TITLE .. "\n" .. RELOAD_BODY,
+	button1 = "Jetzt neu laden",
+	button2 = "Später",
+	OnAccept = function() ReloadUI() end,
+	timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+local function promptBlizzReload()
+	local shellOpen = ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown()
+	if shellOpen and ns.W and ns.W.Confirm then
+		ns.W.Confirm({
+			title = RELOAD_TITLE, body = RELOAD_BODY,
+			confirmText = "Jetzt neu laden", cancelText = "Später",
+			onConfirm = function() ReloadUI() end,
+		})
+	else
+		StaticPopup_Show("LUMEN_RAIDFRAMES_RELOAD")
+	end
 end
 
 function Raidframes:Setup()
@@ -1695,15 +1912,23 @@ function Raidframes:Setup()
 			local L = layoutCtx(); L.point, L.x, L.y = p, x, y
 		end)
 	end
+	container:Hide()   -- Standard = aus; erst Enable() zeigt den Container (sonst Frames trotz „aus")
 end
 
 function Raidframes:Enable()
 	self:Setup()
 	container:Show()
 	self:UpdateLayout()
+	suppressBlizzard()   -- Blizzards Standard-Raidframes verstecken, solange Lumens aktiv sind
 end
 function Raidframes:Disable()
 	if not container then return end
+	-- Hatten WIR Blizzards Frames unterdrückt? Sauberer Rückweg braucht /reload
+	-- (Events sind abgemeldet) -> einmalig fragen. Popup/ReloadUI sind kampf-sicher.
+	if blizzSuppressed then
+		blizzSuppressed = false
+		promptBlizzReload()
+	end
 	-- Container ist Elternframe des Secure-Headers -> Hide im Kampf wäre an geschützten
 	-- Kindern verboten. Im Kampf aufschieben (greift bei RefreshAll/Regen erneut).
 	if InCombatLockdown() then secureLayoutDirty = true; return end

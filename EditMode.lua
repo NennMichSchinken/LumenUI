@@ -4,7 +4,7 @@ local ADDON, ns = ...
 --  Lumen — Edit-Modus
 --  Bewegliche Lumen-Elemente bekommen ein Drag-Overlay mit Label.
 --  Sichtbar/ziehbar, wenn ENTWEDER der manuelle Schalter (Allgemein) an ist
---  ODER WoWs eigener Edit-Modus läuft (wie bei EllesmereUI — ein Ort für alles).
+--  ODER WoWs eigener Edit-Modus läuft (ein Ort für alles).
 --  Module melden ihr Frame per :Register an.
 -- ===========================================================================
 

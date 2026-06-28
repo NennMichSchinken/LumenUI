@@ -906,7 +906,7 @@ local ccSelectedSpec  -- welche Spec bearbeitet wird (entkoppelt von der Live-Sp
 -- Hovercast ist P2: Die Secure-Tasten-Treiber-Mechanik (Taste nur beim Hovern aktiv,
 -- sonst normale Aktionsleiste) gibt die Taste in 12.0.7 nicht mehr sauber frei -> belegte
 -- Hovercast-Taste blockiert die Aktionsleiste. Bis zur 12.1.0-Nacharbeit (ggf. robusterer
--- EllesmereUI-Ansatz) Sektion ausgeblendet; Code + Datenmodell bleiben. ClickCast.lua legt
+-- Ansatz) Sektion ausgeblendet; Code + Datenmodell bleiben. ClickCast.lua legt
 -- vorhandene Hovercast-Bindings parallel „schlafend" (applyHover ist dann ein No-op).
 local CC_HOVERCAST = false
 
