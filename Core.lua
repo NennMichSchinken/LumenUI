@@ -2,7 +2,7 @@ local ADDON, ns = ...
 
 -- ===========================================================================
 --  Lumen — Core
---  Addon (Ace3), zentrale Profile (AceDB), /lumen.
+--  Addon (Ace3), central profiles (AceDB), /lumen.
 -- ===========================================================================
 
 local Lumen = LibStub("AceAddon-3.0"):NewAddon("Lumen", "AceConsole-3.0", "AceEvent-3.0")
@@ -13,49 +13,49 @@ local defaults = {
 		raidframes = {
 			enabled        = true,
 
-			-- Lebensbalken (geteilt — Tab „Base")
+			-- Health bar (shared — "Base" tab)
 			healthTexture  = "Lumen Gradient",
 			useClassColor  = true,
 			fillColor      = { r = 0.20, g = 0.60, b = 0.30 },
 			healPrediction = true,
 
-			-- Hintergrund & Transparenz (geteilt — Tab „Base"). Alpha 0..1.
-			bgColor         = { r = 0.11, g = 0.11, b = 0.11 }, -- Frame-Hintergrundfarbe (war fest 0.11)
-			bgAlpha         = 1,                                -- Deckkraft des Hintergrunds
-			healthAlpha     = 1,                                -- Deckkraft NUR der Lebensbalken-Füllung
-			shieldAlpha     = 1,                                -- Deckkraft des Schild-Overlays
-			healAbsorbAlpha = 1,                                -- Deckkraft des Heilabsorb-Overlays
-			-- Textur für Schild/Healabsorb. Default = gekacheltes Lumen-Muster (wie bisher);
-			-- jede andere Wahl (LSM/Blizzard) wird als glatte Füllung gestreckt (Raidframes.lua).
-			-- WICHTIG: Keys müssen zu SHIELD_PATTERN/HEALABS_PATTERN in Modules/Raidframes.lua passen.
+			-- Background & transparency (shared — "Base" tab). Alpha 0..1.
+			bgColor         = { r = 0.11, g = 0.11, b = 0.11 }, -- frame background color (was fixed 0.11)
+			bgAlpha         = 1,                                -- background opacity
+			healthAlpha     = 1,                                -- opacity of the health bar FILL only
+			shieldAlpha     = 1,                                -- shield overlay opacity
+			healAbsorbAlpha = 1,                                -- heal-absorb overlay opacity
+			-- Texture for shield/heal-absorb. Default = tiled Lumen pattern (as before);
+			-- any other choice (LSM/Blizzard) is stretched as a smooth fill (Raidframes.lua).
+			-- IMPORTANT: keys must match SHIELD_PATTERN/HEALABS_PATTERN in Modules/Raidframes.lua.
 			shieldTexture     = "Lumen Schild",
 			healAbsorbTexture = "Lumen Heilabsorb",
 
-			-- Text-Optik (geteilt — Tab „Base"): Farbe + Umrandung sind Geschmackswahl und
-			-- gelten für Raid UND Party gleich. Größe/Position/Anzeigen liegen PRO KONTEXT
-			-- (raid/party, weil von der Frame-Größe abhängig). nameClassColor überschreibt nameColor.
+			-- Text look (shared — "Base" tab): color + outline are taste choices and apply
+			-- to raid AND party alike. Size/position/show live PER CONTEXT
+			-- (raid/party, because they depend on frame size). nameClassColor overrides nameColor.
 			nameClassColor    = false,
 			nameColor         = { r = 1, g = 1, b = 1 },
 			nameOutline       = "outline",
 			healthTextColor   = { r = 1, g = 1, b = 1 },
 			healthTextOutline = "outline",
 
-			-- Frame-Sichtbarkeit: Gruppen-Frame auch alleine zeigen (Default aus -> alleine
-			-- kein Frame; an -> immer sichtbar). Setzt das SecureGroupHeader-Attribut showSolo.
+			-- Frame visibility: show the group frame even when solo (default off -> no frame
+			-- when alone; on -> always visible). Sets the SecureGroupHeader attribute showSolo.
 			showWhenSolo = false,
 
-			-- Schilde (eigene Texturen, immer sichtbar bei Schild)
+			-- Shields (own textures, always visible when shielded)
 			absorbStyle     = "Blizzard",         -- Blizzard | Flach
 			healAbsorbStyle = "Blizzard",         -- Blizzard | Flach
 			healAbsorbColor = { r = 1, g = 1, b = 1 },
 
-			-- (Name-/HP-Text liegen jetzt PRO KONTEXT in raid/party — siehe unten.)
+			-- (Name/HP text now live PER CONTEXT in raid/party — see below.)
 
-			-- Dispel (secret-sicher: Blizzard-Filter + Color-Curve, funktioniert im Kampf)
+			-- Dispel (secret-safe: Blizzard filter + color curve, works in combat)
 			dispelEnabled = true,
-			dispelMode    = "recolor",          -- "recolor" (Balken einfärben) | "overlay" (Rand+Overlay, Klassenfarbe bleibt)
-			dispelShowAll = false,              -- false = nur was ich dispellen kann; true = alle dispellbaren
-			dispelAlpha   = 0.30,               -- Deckkraft der Overlay-Füllung (nur Modus "overlay")
+			dispelMode    = "recolor",          -- "recolor" (recolor bar) | "overlay" (border+overlay, keeps class color)
+			dispelShowAll = false,              -- false = only what I can dispel; true = all dispellable
+			dispelAlpha   = 0.30,               -- overlay fill opacity (only mode "overlay")
 			dispelColors  = {
 				Magic   = { r = 0.20, g = 0.60, b = 1.00 },
 				Curse   = { r = 0.64, g = 0.19, b = 0.79 },
@@ -63,47 +63,47 @@ local defaults = {
 				Poison  = { r = 0.12, g = 0.69, b = 0.29 },
 			},
 
-			-- Aggro-Warnung (secret-sicher: Threat-API ist NICHT secret, event-getrieben).
-			-- 2-stufig: gelb = Aggro droht (Status 1-2), rot = hat Aggro (Status 3).
+			-- Aggro warning (secret-safe: the threat API is NOT secret, event-driven).
+			-- Two stages: yellow = aggro incoming (status 1-2), red = has aggro (status 3).
 			aggroEnabled = true,
-			-- Aggro nur in Dungeon/Raid zeigen (Standard an): solo/Open World hätte man
-			-- sonst dauerhaft das Overlay, weil man dort fast immer Aggro hat.
+			-- Show aggro only in dungeon/raid (default on): solo/open world would otherwise
+			-- have the overlay permanently, since you almost always have aggro there.
 			aggroInstanceOnly = true,
-			-- Pro Stufe: Darstellung "border" (nur Rand) | "overlay" (Rand + Overlay).
-			-- Text gibt es nur im Overlay-Modus (eigener Toggle). Rot/Gelb nie gleichzeitig
-			-- auf einem Frame -> Text-Optik (Position/Größe) ist GETEILT (unten).
-			aggroColorAggro = { r = 0.90, g = 0.15, b = 0.15 }, -- rot, "hat Aggro" (Status 3)
+			-- Per stage: display "border" (border only) | "overlay" (border + overlay).
+			-- Text only exists in overlay mode (own toggle). Red/yellow never at the same
+			-- time on one frame -> text look (position/size) is SHARED (below).
+			aggroColorAggro = { r = 0.90, g = 0.15, b = 0.15 }, -- red, "has aggro" (status 3)
 			aggroModeAggro  = "overlay",           -- "border" | "overlay"
-			aggroTextAggro  = true,                -- "Aggro"-Text (nur im Overlay-Modus)
-			aggroColorWarn  = { r = 0.95, g = 0.80, b = 0.20 }, -- gelb, "Aggro droht" (Status 1-2)
+			aggroTextAggro  = true,                -- "Aggro" text (only in overlay mode)
+			aggroColorWarn  = { r = 0.95, g = 0.80, b = 0.20 }, -- yellow, "aggro incoming" (status 1-2)
 			aggroModeWarn   = "border",            -- "border" | "overlay"
 			aggroTextWarn   = false,
-			-- Geteilte Darstellung beider Stufen:
-			aggroFillAlpha   = 0.22,               -- Deckkraft des Overlays
+			-- Shared display for both stages:
+			aggroFillAlpha   = 0.22,               -- overlay opacity
 			aggroTextSize    = 12,
 			aggroTextPoint   = "TOP",
 			aggroTextX       = 0,
 			aggroTextY       = -2,
 			aggroTextOutline = "thick",            -- none | outline | thick
 
-			-- Sortierung (global, secure über SecureGroupHeader-Attribute). "group" = nach
-			-- Raid-Gruppe (Default, wie bisher), "role" = nach zugewiesener Rolle in der
-			-- frei umsortierbaren Prioritäts-Reihenfolge. Gilt für Raid UND Party gleich.
+			-- Sorting (global, secure via SecureGroupHeader attributes). "group" = by
+			-- raid group (default, as before), "role" = by assigned role in the freely
+			-- reorderable priority order. Applies to raid AND party alike.
 			sortMode = "group",                    -- "group" | "role"
-			sortRoleOrder = { "TANK", "HEALER", "DAMAGER" },  -- Prioritätsliste (oben = zuerst)
-			sortApplyRaid = false,                 -- Rollen-Sortierung auch im Raid? (Dungeon/Party immer)
+			sortRoleOrder = { "TANK", "HEALER", "DAMAGER" },  -- priority list (top = first)
+			sortApplyRaid = false,                 -- role sorting in raid too? (dungeon/party always)
 
-			-- Test / Beispielgruppe (geteilt)
+			-- Test / sample group (shared)
 			testMode = false,
 			testSize = 5,
 
-			-- Layout + Position + TEXT PRO KONTEXT (Gruppengröße immer fest 5; nie gemischt).
-			-- orientation: "vertical" = Mitglieder untereinander, Gruppen nebeneinander (Standard);
-			--              "horizontal" = Mitglieder nebeneinander, Gruppen untereinander.
-			-- raid = Schlachtzug (IsInRaid), party = 5er-Gruppe/Dungeon. Eigene Position UND
-			-- eigene Text-Einstellungen je Kontext (Frames sind unterschiedlich groß).
-			-- PRO KONTEXT bleiben nur größen-/positionsabhängige Felder + Anzeigen/Typ.
-			-- Farbe/Umrandung von Name & HP liegen geteilt oben (Base).
+			-- Layout + position + TEXT PER CONTEXT (group size always fixed 5; never mixed).
+			-- orientation: "vertical" = members stacked, groups side by side (default);
+			--              "horizontal" = members side by side, groups stacked.
+			-- raid = raid (IsInRaid), party = 5-man group/dungeon. Own position AND own
+			-- text settings per context (frames have different sizes).
+			-- PER CONTEXT only size-/position-dependent fields + show/type remain.
+			-- Color/outline of name & HP live shared above (Base).
 			raid = {
 				width = 114, height = 60, spacing = 6, orientation = "vertical",
 				point = "CENTER", x = 0, y = -120,
@@ -119,17 +119,17 @@ local defaults = {
 				healthTextX = 0, healthTextY = 0,
 			},
 
-			-- Aura-Indikatoren (Icon-System; Phase 1: eigene HoTs). Das Layout (Anker,
-			-- Wachstumsrichtung, Whitelist, Toggles) ist über raid/party GETEILT — nur die
-			-- Icon-Größe ist kontextabhängig: autoFit leitet sie aus der Frame-Höhe ab,
-			-- sonst greifen die expliziten sizeRaid/sizeParty. anchor = einer der 9
-			-- WoW-Punkte (TOPLEFT…BOTTOMRIGHT); grow = RIGHT|LEFT|UP|DOWN.
-			-- Drei Kategorien (HoTs/Defensives/Debuffs), je eigener Anker/Wachstum/Größe. Default:
-			-- nur HoTs an, die übrigen aus + an verschiedene Ecken vorbelegt (kollisionsfrei beim Anschalten).
-			-- Phase 2 (B2/B3): auras.whitelist[specID][spellID] = "hot"|"def" wird LAZY beim
-			-- ersten Betreten einer Spec aus HOT_DEFAULTS ("hot") + DEF_DEFAULTS ("def") geseedet
-			-- (Raidframes.lua, whitelistFor) — bewusst NICHT hier in den Defaults, damit der erste
-			-- Schreib eine echte profil-eigene Tabelle erzeugt (kein Mutieren der geteilten Defaults).
+			-- Aura indicators (icon system; phase 1: own HoTs). The layout (anchor,
+			-- growth direction, whitelist, toggles) is SHARED across raid/party — only the
+			-- icon size is context-dependent: autoFit derives it from the frame height,
+			-- otherwise the explicit sizeRaid/sizeParty apply. anchor = one of the 9
+			-- WoW points (TOPLEFT…BOTTOMRIGHT); grow = RIGHT|LEFT|UP|DOWN.
+			-- Three categories (HoTs/Defensives/Debuffs), each with its own anchor/growth/size. Default:
+			-- only HoTs on, the rest off + pre-placed in different corners (collision-free when enabled).
+			-- Phase 2 (B2/B3): auras.whitelist[specID][spellID] = "hot"|"def" is seeded LAZILY on
+			-- first entering a spec from HOT_DEFAULTS ("hot") + DEF_DEFAULTS ("def")
+			-- (Raidframes.lua, whitelistFor) — deliberately NOT here in the defaults, so the first
+			-- write creates a real profile-owned table (no mutating of the shared defaults).
 			auras = {
 				hotsOwn = {
 					enabled = true,  spacing = 2, maxIcons = 5, autoFit = true, showSwipe = true, hideTooltips = false,
@@ -143,9 +143,9 @@ local defaults = {
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
 				},
-				-- Major CDs (große Klassen-Cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
-				-- Raidframes.lua). Default-Anker TOPLEFT = die letzte freie Ecke (HoTs=BOTTOMLEFT,
-				-- Defensives=TOPRIGHT, Debuffs=BOTTOMRIGHT) -> kollisionsfrei beim Anschalten.
+				-- Major CDs (big class cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
+				-- Raidframes.lua). Default anchor TOPLEFT = the last free corner (HoTs=BOTTOMLEFT,
+				-- Defensives=TOPRIGHT, Debuffs=BOTTOMRIGHT) -> collision-free when enabled.
 				major = {
 					enabled = false, spacing = 2, maxIcons = 3, autoFit = true, showSwipe = true, hideTooltips = false,
 					anchorRaid = "TOPLEFT", anchorParty = "TOPLEFT", growRaid = "RIGHT", growParty = "RIGHT",
@@ -157,54 +157,54 @@ local defaults = {
 					anchorRaid = "BOTTOMRIGHT", anchorParty = "BOTTOMRIGHT", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
-					-- Blizzard-Standard-Filter: "raid" = nur raid-relevante Debuffs (wie Blizzards
-					-- Default), "all" = alle, "dispellable" = nur selbst dispellbare.
+					-- Blizzard default filter: "raid" = only raid-relevant debuffs (like Blizzard's
+					-- default), "all" = all, "dispellable" = only self-dispellable.
 					filterMode = "raid",
 				},
 			},
 		},
 
-		-- Click-Cast (cross-cutting: gilt für alle Unit-Buttons, perspektivisch auch
-		-- Unit Frames/Nameplates). Bindings liegen PRO SPEC (Healer wechseln Specs).
-		-- Eine frisch betretene Spec wird mit Links=Ziel/Rechts=Menü vorbelegt (siehe
-		-- ClickCast.getSpec). Maus-Klick- UND Hovercast-Bindings in EINER Liste,
-		-- getrennt über das Feld binding.hovercast.
+		-- Click-Cast (cross-cutting: applies to all unit buttons, eventually also
+		-- Unit Frames/Nameplates). Bindings live PER SPEC (healers switch specs).
+		-- A freshly entered spec is pre-populated with left=target/right=menu (see
+		-- ClickCast.getSpec). Mouse-click AND hovercast bindings in ONE list,
+		-- separated by the binding.hovercast field.
 		clickCast = {
 			enabled     = false,
-			helpfulOnly = true,   -- Spell-Auswahl auf hilfreiche (auf Freunde wirkbare) Zauber beschränken
+			helpfulOnly = true,   -- limit spell selection to helpful (castable-on-allies) spells
 			specs       = {},     -- [specID] = { { key=, type=, ... }, ... }
 		},
 	},
 
-	-- Global (charakter-übergreifend, nicht profilgebunden): zur Laufzeit gelernte
-	-- Aura-Signaturen pro Spec. Map [specID] = { ["1:0:1:0"] = spellID }. Wird außer
-	-- Kampf passiv gefüllt (spellId dann lesbar) und persistiert -> im Kampf können wir
-	-- secret-Auren über ihre Signatur identifizieren (Aura-Whitelist Phase 2). Siehe §10.8.
+	-- Global (account-wide, not profile-bound): runtime-learned aura signatures per
+	-- spec. Map [specID] = { ["1:0:1:0"] = spellID }. Filled passively out of combat
+	-- (spellId is readable then) and persisted -> in combat we can identify secret
+	-- auras by their signature (aura whitelist phase 2). See §10.8.
 	global = {
 		auraSigs = {},
-		language = "auto",   -- UI-Sprache: "auto" (Systemsprache) | "enUS" | "deDE"
+		language = "auto",   -- UI language: "auto" (system language) | "enUS" | "deDE"
 	},
 }
 
--- Defaults für andere Module sichtbar machen (Share/Import merged darauf, damit fehlende
--- Felder eines importierten Codes sauber mit Lumen-Standards aufgefüllt werden).
+-- Expose the defaults to other modules (Share/Import merges onto them, so missing
+-- fields of an imported code are filled cleanly with Lumen defaults).
 ns.Defaults = defaults
 
--- Name-/HP-Text-Felder, die pro Kontext (raid/party) liegen (für die Migration).
+-- Name/HP text fields that live per context (raid/party) (for the migration).
 local TEXT_FIELDS = {
 	"showName", "nameSize", "namePoint", "nameX", "nameY", "nameColor", "nameOutline",
 	"healthTextType", "healthTextSize", "healthTextPoint", "healthTextX", "healthTextY",
 	"healthTextColor", "healthTextOutline",
 }
--- v3: Text-OPTIK (Farbe + Umrandung) wandert von raid/party zurück in die geteilte Ebene
--- (Geschmackswahl, für beide Kontexte gleich). Größe/Position/Anzeigen bleiben pro Kontext.
+-- v3: text LOOK (color + outline) moves from raid/party back to the shared level
+-- (taste choice, same for both contexts). Size/position/show stay per context.
 local SHARED_TEXT_FIELDS = { "nameColor", "nameOutline", "healthTextColor", "healthTextOutline" }
 
--- Einmalige Migration: alte flache Werte in raid + party übernehmen, damit bestehende
--- Profile beim Umstieg auf das Kontext-Modell nicht zurückgesetzt werden.
+-- One-time migration: carry old flat values into raid + party, so existing profiles
+-- are not reset when moving to the context model.
 local function migrateLayout(rf)
 	if not rf then return end
-	-- v1: Layout/Position -> raid/party
+	-- v1: layout/position -> raid/party
 	if not rf._layoutMigrated then
 		rf._layoutMigrated = true
 		if rf.width or rf.height or rf.spacing or rf.orientation or rf.point then
@@ -223,8 +223,8 @@ local function migrateLayout(rf)
 			rf.point, rf.x, rf.y = nil, nil, nil
 		end
 	end
-	-- v2: Name-/HP-Text -> raid/party (Farben tief kopieren, sonst teilen sich beide Kontexte
-	-- dieselbe Tabelle).
+	-- v2: name/HP text -> raid/party (deep-copy colors, otherwise both contexts share
+	-- the same table).
 	if not rf._textMigrated then
 		rf._textMigrated = true
 		local hasOld = false
@@ -244,15 +244,15 @@ local function migrateLayout(rf)
 			for _, k in ipairs(TEXT_FIELDS) do rf[k] = nil end
 		end
 	end
-	-- v3: Text-Optik (Farbe/Umrandung) von raid/party -> geteilt. Quelle = raid (sonst party);
-	-- bei bestehenden Profilen sind beide Kontexte ohnehin meist identisch.
+	-- v3: text look (color/outline) from raid/party -> shared. Source = raid (else party);
+	-- for existing profiles both contexts are usually identical anyway.
 	if not rf._textSharedMigrated then
 		rf._textSharedMigrated = true
 		local src = rf.raid or rf.party
 		if src then
-			-- src[k] liefert NUR einen Wert, wenn der Nutzer ihn pro Kontext angepasst hatte
-			-- (raid-Defaults haben diese Felder nicht mehr). Kein rf[k]==nil-Guard: der würde
-			-- wegen AceDBs Default-Metatable nie greifen und die Anpassung verwerfen.
+			-- src[k] only returns a value if the user customized it per context
+			-- (raid defaults no longer have these fields). No rf[k]==nil guard: it would
+			-- never trigger due to AceDB's default metatable and would discard the change.
 			for _, k in ipairs(SHARED_TEXT_FIELDS) do
 				local v = src[k]
 				if v ~= nil then
@@ -265,11 +265,11 @@ local function migrateLayout(rf)
 			if t then for _, k in ipairs(SHARED_TEXT_FIELDS) do t[k] = nil end end
 		end
 	end
-	-- v4: Aura-Platzierung (Anker/Wachstum) von geteilt -> pro Kontext (raid/party). Versatz X/Y
-	-- + Innen/Außen sind neu (Default 0/innen). Bestehende geteilte anchor/grow auf BEIDE Kontexte
-	-- hochziehen. pairs() trifft nur kategorie-Tabellen, die der Nutzer wirklich angefasst hat
-	-- (Default-only-Kategorien brauchen nichts -> nutzen die neuen Defaults). Kein cat.x==nil-Guard
-	-- nötig: anchor/grow gibt es in den neuen Defaults nicht mehr -> liefert nur gespeicherte Werte.
+	-- v4: aura placement (anchor/growth) from shared -> per context (raid/party). Offset X/Y
+	-- + inside/outside are new (default 0/inside). Carry existing shared anchor/grow up to BOTH
+	-- contexts. pairs() only hits category tables the user actually touched
+	-- (default-only categories need nothing -> use the new defaults). No cat.x==nil guard
+	-- needed: anchor/grow no longer exist in the new defaults -> only returns saved values.
 	if not rf._auraCtxMigrated then
 		rf._auraCtxMigrated = true
 		local au = rawget(rf, "auras")
@@ -295,11 +295,10 @@ end
 
 function Lumen:OnInitialize()
 	self.db = LibStub("AceDB-3.0"):New("LumenDB", defaults, true)
-	-- 'global' ist ein AceDB-Top-Level-Namespace (db.global), NICHT db.profile.global.
+	-- 'global' is an AceDB top-level namespace (db.global), NOT db.profile.global.
 	if ns.ApplyLocale then ns.ApplyLocale(self.db.global.language) end
-	if ns.RunLocaleReady then ns.RunLocaleReady() end   -- lokalisierte Modul-Konstanten jetzt (nach Sprachwahl) bauen
+	if ns.RunLocaleReady then ns.RunLocaleReady() end   -- build localized module constants now (after language choice)
 	migrateLayout(self.db.profile.raidframes)
-	if ns.SetupOptions then ns.SetupOptions() end
 
 	self.db.RegisterCallback(self, "OnProfileChanged", "RefreshAll")
 	self.db.RegisterCallback(self, "OnProfileCopied",  "RefreshAll")
@@ -329,21 +328,15 @@ function Lumen:RefreshAll()
 	else
 		ns.Raidframes:Disable()
 	end
-	-- Profilwechsel: Click-Cast-Bindings neu anwenden (Bindings sind profilgebunden).
+	-- Profile switch: re-apply Click-Cast bindings (bindings are profile-bound).
 	if ns.ClickCast then ns.ClickCast:ApplyBindings() end
-	-- Ist die Suite-Shell offen, ihre Controls auf die (ggf. neuen) Profilwerte ziehen.
+	-- If the suite shell is open, pull its controls onto the (possibly new) profile values.
 	if ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown() then
 		ns.Shell:RenderContent(true)
 	end
 end
 
-function Lumen:OpenConfig(input)
-	-- /lumen     -> Suite-Shell (Hauptoberfläche; auch der ESC-Menü-Button)
-	-- /lumen ace -> klassische AceConfig (Backup, parallel bestehen lassen)
-	local arg = input and input:lower():gsub("^%s+", ""):gsub("%s+$", "") or ""
-	if arg == "ace" then
-		LibStub("AceConfigDialog-3.0"):Open("Lumen")
-		return
-	end
-	if ns.Shell then ns.Shell:Toggle() else LibStub("AceConfigDialog-3.0"):Open("Lumen") end
+function Lumen:OpenConfig()
+	-- /lumen -> suite shell (the one and only UI; also the ESC-menu button).
+	if ns.Shell then ns.Shell:Toggle() end
 end

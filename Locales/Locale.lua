@@ -1,42 +1,42 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Lokalisierung (schlankes Eigen-System, Anti-Bloat)
---  Der Code nutzt ENGLISCHE Quelltexte als Keys über ns.L. Eine Sprachtabelle
---  (z.B. deDE) überschreibt einzelne Keys; fehlt ein Key, fällt L auf den Key
---  selbst zurück (= das englische Original). Die aktive Sprache wird beim Laden
---  gesetzt (Core:OnInitialize, nach dem Profil) — Wechsel erfordert /reload.
+--  Lumen — Localization (lightweight in-house system, anti-bloat)
+--  The code uses ENGLISH source strings as keys via ns.L. A language table
+--  (e.g. deDE) overrides individual keys; if a key is missing, L falls back to
+--  the key itself (= the English original). The active language is set at load
+--  (Core:OnInitialize, after the profile) — switching requires /reload.
 --
---  Nutzung:  local L = ns.L ;  myLabel = L["Raidframes enabled"]
---  Übersetzen: in Locales/deDE.lua  ns.RegisterLocale("deDE", { ["…"] = "…" })
+--  Usage:  local L = ns.L ;  myLabel = L["Raidframes enabled"]
+--  Translate: in Locales/deDE.lua  ns.RegisterLocale("deDE", { ["…"] = "…" })
 -- ===========================================================================
 
 local registry = {}   -- lang -> { [englishKey] = translated }
-local active = {}      -- aktuell angewandte Übersetzungstabelle (oder leer = Englisch)
+local active = {}      -- currently applied translation table (or empty = English)
 
--- Eine Sprachtabelle registrieren (immer, unabhängig von der Client-Sprache —
--- damit eine manuelle Sprachwahl auch auf anderssprachigen Clients greift).
+-- Register a language table (always, regardless of client language — so a manual
+-- language choice also works on clients of other languages).
 function ns.RegisterLocale(lang, tbl)
 	registry[lang] = tbl
 end
 
--- ns.L: Übersetzung falls vorhanden, sonst der Key selbst (englisches Original).
+-- ns.L: translation if present, otherwise the key itself (English original).
 ns.L = setmetatable({}, { __index = function(_, k) return active[k] or k end })
 
--- ns.T("..."): Funktions-Form (für Dateien, in denen `L` schon vergeben ist).
+-- ns.T("..."): function form (for files where `L` is already taken).
 function ns.T(s) return active[s] or s end
 
--- Sprach-Präferenz ("auto"/"enUS"/"deDE") auf eine konkrete Sprache auflösen und
--- anwenden. "auto" => WoW-Client-Sprache (GetLocale). Unbekannt/enUS => Englisch.
+-- Resolve a language preference ("auto"/"enUS"/"deDE") to a concrete language and
+-- apply it. "auto" => WoW client language (GetLocale). Unknown/enUS => English.
 function ns.ApplyLocale(pref)
 	local lang = (not pref or pref == "auto") and GetLocale() or pref
 	active = registry[lang] or {}
 end
 
--- „Locale-ready"-Register: Modul-Konstanten mit übersetzten Strings (z.B. Dropdown-
--- Optionslisten) werden beim Datei-Laden gebaut — also VOR ApplyLocale. Damit sie die
--- gewählte Sprache (inkl. manueller Override) treffen, registrieren die Dateien hier
--- einen Builder, den Core direkt NACH ApplyLocale (in OnInitialize) ausführt.
+-- "Locale-ready" registry: module constants with translated strings (e.g. dropdown
+-- option lists) are built at file load — i.e. BEFORE ApplyLocale. So they pick up
+-- the chosen language (incl. manual override), files register a builder here that
+-- Core runs right AFTER ApplyLocale (in OnInitialize).
 ns.onLocaleReady = {}
 function ns.RunLocaleReady()
 	for i = 1, #ns.onLocaleReady do ns.onLocaleReady[i]() end

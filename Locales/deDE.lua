@@ -1,15 +1,15 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Deutsche Übersetzung (deDE)
---  Key = englischer Quelltext aus dem Code, Wert = deutsche Anzeige.
---  Wird immer registriert; angewandt nur, wenn die Sprache deDE ist (Auto auf
---  deutschem Client ODER manuell „Deutsch" gewählt). Siehe Locales/Locale.lua.
---  Fehlt ein Key, zeigt Lumen das englische Original (kein Fehler).
+--  Lumen — German translation (deDE)
+--  Key = English source string from the code, value = German display text.
+--  Always registered; applied only when the language is deDE (Auto on a German
+--  client OR "Deutsch" chosen manually). See Locales/Locale.lua.
+--  If a key is missing, Lumen shows the English original (no error).
 -- ===========================================================================
 
 ns.RegisterLocale("deDE", {
-	-- ── Allgemein / Buttons ──────────────────────────────────────────────
+	-- ── General / buttons ──────────────────────────────────────────────
 	["Confirm"] = "Bestätigen",
 	["Cancel"] = "Abbrechen",
 	["Apply"] = "Übernehmen",
@@ -32,7 +32,7 @@ ns.RegisterLocale("deDE", {
 	["Display"] = "Darstellung",
 	["Text"] = "Text",
 
-	-- ── Anker / Richtungen ───────────────────────────────────────────────
+	-- ── Anchors / directions ───────────────────────────────────────────────
 	["Top left"] = "Oben links",
 	["Top"] = "Oben",
 	["Top right"] = "Oben rechts",
@@ -54,7 +54,7 @@ ns.RegisterLocale("deDE", {
 	["Current"] = "Aktuell",
 	["Percent"] = "Prozent",
 
-	-- ── Rollen / Dispel-Typen ────────────────────────────────────────────
+	-- ── Roles / dispel types ────────────────────────────────────────────
 	["Tank"] = "Tank",
 	["Healer"] = "Heiler",
 	["DPS"] = "DPS",
@@ -63,7 +63,7 @@ ns.RegisterLocale("deDE", {
 	["Disease"] = "Krankheit",
 	["Poison"] = "Gift",
 
-	-- ── Sortierung / Test ────────────────────────────────────────────────
+	-- ── Sorting / test ────────────────────────────────────────────────
 	["Raid"] = "Raid",
 	["Group"] = "Gruppe",
 	["Role"] = "Rolle",
@@ -78,7 +78,7 @@ ns.RegisterLocale("deDE", {
 	["Test group size"] = "Test-Gruppengröße",
 	["Test mode — show a sample group (for designing without a real group)"] = "Testmodus — Beispielgruppe anzeigen (zum Designen, ohne echte Gruppe)",
 
-	-- ── Größe & Anordnung / Text ─────────────────────────────────────────
+	-- ── Size & arrangement / text ─────────────────────────────────────────
 	["Size & arrangement"] = "Größe & Anordnung",
 	["Alignment"] = "Ausrichtung",
 	["Vertical — members stacked"] = "Vertikal — Mitglieder untereinander",
@@ -98,7 +98,7 @@ ns.RegisterLocale("deDE", {
 	["HP text X offset"] = "HP-Text X-Versatz",
 	["HP text Y offset"] = "HP-Text Y-Versatz",
 
-	-- ── Base: Lebensbalken ───────────────────────────────────────────────
+	-- ── Base: health bar ───────────────────────────────────────────────
 	["Raidframes enabled"] = "Raidframes aktiviert",
 	["Show frames even when solo"] = "Frames auch alleine anzeigen",
 	["Shows the group frame even when you are not in a group."] = "Zeigt den Gruppen-Frame auch, wenn du nicht in einer Gruppe bist.",
@@ -106,6 +106,8 @@ ns.RegisterLocale("deDE", {
 	["Bar texture"] = "Balken-Textur",
 	["Shield texture"] = "Schild-Textur",
 	["Heal-absorb texture"] = "Healabsorb-Textur",
+	["Lumen Shield"] = "Lumen Schild",
+	["Lumen Heal-absorb"] = "Lumen Heilabsorb",
 	["Scroll the mouse wheel over a texture dropdown to preview textures live. In the open menu, the search box at the top filters."] = "Mausrad über einem Textur-Dropdown blättert live durch die Texturen (Vorschau). Im geöffneten Menü filtert das Suchfeld am Kopf.",
 	["Heal prediction"] = "Heilvorhersage",
 	["Incoming healing previewed on the health bar."] = "Eingehende Heilung als Vorschau am Lebensbalken.",
@@ -118,7 +120,7 @@ ns.RegisterLocale("deDE", {
 	["Shield opacity"] = "Schild-Deckkraft",
 	["Heal-absorb opacity"] = "Healabsorb-Deckkraft",
 
-	-- ── Base: Text (geteilt) ─────────────────────────────────────────────
+	-- ── Base: text (shared) ─────────────────────────────────────────────
 	["Name in class color"] = "Name in Klassenfarbe",
 	["Name outline"] = "Namens-Umrandung",
 	["HP outline"] = "HP-Umrandung",
@@ -227,7 +229,7 @@ ns.RegisterLocale("deDE", {
 	["Ctrl"] = "Strg",
 	["Alt"] = "Alt",
 
-	-- ── Global / Sprache / Edit-Modus ────────────────────────────────────
+	-- ── Global / language / edit mode ────────────────────────────────────
 	["Suite-wide settings. Profiles, export and import of your setup are in the \"Profile\" tab."] = "Suite-weite Einstellungen. Profile, Export und Import deines Setups liegen im Tab „Profile\".",
 	["Language"] = "Sprache",
 	["Interface language"] = "Oberflächensprache",
@@ -260,7 +262,7 @@ ns.RegisterLocale("deDE", {
 	["New profile"] = "Neues Profil",
 	["Enter name …"] = "Name eingeben …",
 
-	-- ── Global / Teilen (Export/Import) ──────────────────────────────────
+	-- ── Global / share (export/import) ──────────────────────────────────
 	["Share — export / import"] = "Teilen — Export / Import",
 	["Export your complete Lumen setup as a code, or take someone else's code — granular per module."] = "Exportiere dein komplettes Lumen-Setup als Code oder übernimm den Code von jemand anderem — granular pro Modul.",
 	["Generate export code"] = "Export-Code erzeugen",
@@ -278,7 +280,7 @@ ns.RegisterLocale("deDE", {
 	["Create profile"] = "Profil erstellen",
 	["Overwrite current"] = "Aktuelles überschreiben",
 
-	-- ── Share: Fehlertexte ───────────────────────────────────────────────
+	-- ── Share: error texts ───────────────────────────────────────────────
 	["empty"] = "leer",
 	["invalid"] = "ungültig",
 	["invalid code"] = "ungültiger Code",
@@ -287,7 +289,7 @@ ns.RegisterLocale("deDE", {
 	["not a Lumen code"] = "kein Lumen-Code",
 	["no module data"] = "keine Moduldaten",
 
-	-- ── Raidframes: Reload-Popup ─────────────────────────────────────────
+	-- ── Raidframes: reload popup ─────────────────────────────────────────
 	["Raidframes disabled"] = "Raidframes deaktiviert",
 	["Lumen's raid frames are off. Reloading the UI brings Blizzard's default raid frames back."] = "Lumens Raidframes sind aus. Ein Neuladen der Oberfläche bringt Blizzards Standard-Raidframes zurück.",
 

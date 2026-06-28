@@ -1,16 +1,17 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Share (Export / Import)
---  Ein Textcode für das ganze Setup (Prinzip WeakAuras/ElvUI). Granular pro
---  Modul + getrennter Schalter für Layout-Positionen.
+--  Lumen — Share (export / import)
+--  One text code for the whole setup (WeakAuras/ElvUI style). Granular per
+--  module + a separate switch for layout positions.
 --
 --  Pipeline:  AceSerializer  ->  LibDeflate (Deflate)  ->  EncodeForPrint
 --
---  Wichtig (AceDB): unveränderte Werte liegen NICHT physisch im Profil, sondern
---  kommen lazy aus den Defaults-Metatables. Der Export ist daher bewusst „sparse"
---  (nur abweichende Werte). Der Import merged das Empfangene deshalb auf eine
---  frische Kopie der Lumen-Defaults — fehlende Felder werden so sauber gefüllt.
+--  Important (AceDB): unchanged values do NOT physically live in the profile,
+--  they come lazily from the defaults metatables. The export is therefore
+--  intentionally "sparse" (only differing values). On import the received data
+--  is merged onto a fresh copy of the Lumen defaults — so missing fields are
+--  filled cleanly.
 -- ===========================================================================
 
 local Share = {}
@@ -21,9 +22,9 @@ local LibDeflate    = LibStub("LibDeflate", true)
 
 local FORMAT_VERSION = 1
 
--- Welche Module exportiert/importiert werden. label = Anzeige im Import-Dialog.
--- Neue Module hier eintragen (und ggf. unten in extractLayout berücksichtigen,
--- falls sie verschiebbare Positionen haben).
+-- Which modules are exported/imported. label = display in the import dialog.
+-- Add new modules here (and consider them below in extractLayout if they have
+-- movable positions).
 local MODULES = {
 	{ key = "raidframes", label = "Raidframes" },
 	{ key = "clickCast",  label = "Click-Cast" },
@@ -31,12 +32,12 @@ local MODULES = {
 
 function Share:GetModules() return MODULES end
 
--- Positions-Felder, die als „Layout" getrennt behandelt werden (eigener
--- Import-Schalter). Bei den Raidframes liegen sie pro Kontext in raid/party.
+-- Position fields treated separately as "layout" (own import switch). For the
+-- raid frames they live per context in raid/party.
 local POS_FIELDS = { "point", "x", "y" }
 local LAYOUT_CTX = { "raid", "party" }
 
--- ---- Hilfen ---------------------------------------------------------------
+-- ---- Helpers --------------------------------------------------------------
 
 local function deepcopy(t)
 	if type(t) ~= "table" then return t end
@@ -45,7 +46,7 @@ local function deepcopy(t)
 	return r
 end
 
--- src tief in dst mischen: Tabellen rekursiv, Skalare überschreiben.
+-- Deep-merge src into dst: tables recursively, scalars overwrite.
 local function deepmerge(dst, src)
 	for k, v in pairs(src) do
 		if type(v) == "table" and type(dst[k]) == "table" then
@@ -57,7 +58,7 @@ local function deepmerge(dst, src)
 	return dst
 end
 
--- private/transiente Felder (Migrations-Flags etc.) aus einer Kopie entfernen.
+-- Remove private/transient fields (migration flags etc.) from a copy.
 local function stripPrivate(t)
 	if type(t) ~= "table" then return end
 	for k in pairs(t) do
@@ -65,7 +66,7 @@ local function stripPrivate(t)
 	end
 end
 
--- Positionen der Raidframes auslesen (über die Metatable, also immer vollständig).
+-- Read raid frame positions (via the metatable, so always complete).
 local function extractLayout(rf)
 	if type(rf) ~= "table" then return nil end
 	local lay = {}
@@ -79,8 +80,8 @@ local function extractLayout(rf)
 	return lay
 end
 
--- Positions-Felder aus einer (sparse) Modul-Kopie entfernen — die Positionen
--- reisen getrennt im layout-Block.
+-- Remove position fields from a (sparse) module copy — positions travel
+-- separately in the layout block.
 local function stripLayout(rfCopy)
 	for _, ctx in ipairs(LAYOUT_CTX) do
 		local c = rfCopy[ctx]
@@ -93,16 +94,16 @@ end
 -- ---- Codec ----------------------------------------------------------------
 
 function Share:Encode(payload)
-	if not (AceSerializer and LibDeflate) then return nil, "Bibliotheken fehlen" end
+	if not (AceSerializer and LibDeflate) then return nil, "libraries missing" end
 	local serialized = AceSerializer:Serialize(payload)
 	local compressed = LibDeflate:CompressDeflate(serialized)
 	return LibDeflate:EncodeForPrint(compressed)
 end
 
 function Share:Decode(str)
-	if not (AceSerializer and LibDeflate) then return nil, "Bibliotheken fehlen" end
+	if not (AceSerializer and LibDeflate) then return nil, "libraries missing" end
 	if type(str) ~= "string" then return nil, ns.T("empty") end
-	str = str:gsub("%s+", "")           -- Zeilenumbrüche/Leerzeichen vom Kopieren entfernen
+	str = str:gsub("%s+", "")           -- strip line breaks/spaces from copying
 	if str == "" then return nil, ns.T("empty") end
 	local decoded = LibDeflate:DecodeForPrint(str)
 	if not decoded then return nil, ns.T("invalid code") end
@@ -119,7 +120,7 @@ end
 
 function Share:Export()
 	local p = ns.Lumen and ns.Lumen.db and ns.Lumen.db.profile
-	if not p then return nil, "kein Profil" end
+	if not p then return nil, "no profile" end
 
 	local payload = { v = FORMAT_VERSION, addon = "Lumen", modules = {}, layout = {} }
 
@@ -141,8 +142,8 @@ end
 
 -- ---- Import ---------------------------------------------------------------
 
--- payload: dekodiert (Share:Decode). selected: { [modKey]=bool }. withLayout:
--- ob die Positionen des Absenders übernommen werden (sonst bleiben die eigenen).
+-- payload: decoded (Share:Decode). selected: { [modKey]=bool }. withLayout:
+-- whether the sender's positions are applied (otherwise yours stay).
 function Share:Import(payload, selected, withLayout)
 	local L = ns.Lumen
 	local p = L and L.db and L.db.profile
@@ -155,12 +156,12 @@ function Share:Import(payload, selected, withLayout)
 		local key = m.key
 		local incoming = payload.modules[key]
 		if incoming and selected[key] then
-			-- Frische Defaults als Basis, Empfangenes drübermischen -> fehlende Felder gefüllt.
+			-- Fresh defaults as base, received data merged on top -> missing fields filled.
 			local merged = deepcopy(defs[key]) or {}
 			deepmerge(merged, incoming)
 
 			if key == "raidframes" then
-				-- Positionen entscheiden: Absender (withLayout) ODER aktuelle behalten.
+				-- Decide positions: sender (withLayout) OR keep current.
 				local keepPos = extractLayout(p.raidframes)
 				local fromCode = payload.layout and payload.layout.raidframes
 				for _, ctx in ipairs(LAYOUT_CTX) do

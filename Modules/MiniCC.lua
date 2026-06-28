@@ -1,23 +1,23 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Modul: MiniCC-Brücke (optional)
---  Meldet unsere Live-Raidframes als Frame-Provider bei MiniCC an, damit MiniCC
---  seine Cooldown-/Defensiv-Icons an unsere Frames anheften kann (wie an Cell/
---  ElvUI/Blizzard). Rein optional: ohne MiniCC passiert nichts.
+--  Lumen — Module: MiniCC bridge (optional)
+--  Registers our live raid frames as a frame provider with MiniCC so MiniCC can
+--  attach its cooldown/defensive icons to our frames (like to Cell/ElvUI/
+--  Blizzard). Purely optional: without MiniCC nothing happens.
 --
---  Mechanik: MiniCC stellt ein stabiles globales API-Objekt `MiniCCApi.v1`
---  bereit. Über :RegisterFrameProvider melden wir uns mit:
---    * GetFrames()            -> Array unserer sichtbaren Secure-Buttons
---    * RegisterRefreshFrames  -> MiniCC gibt uns einen Callback, den wir bei
---                                Änderung der Frame-Liste aufrufen.
---  MiniCC liest die Einheit je Frame über frame.unit bzw. :GetAttribute("unit")
---  und filtert selbst auf sichtbar/erlaubt -> unsere Buttons sind kompatibel.
+--  Mechanism: MiniCC exposes a stable global API object `MiniCCApi.v1`.
+--  Via :RegisterFrameProvider we register with:
+--    * GetFrames()            -> array of our visible secure buttons
+--    * RegisterRefreshFrames  -> MiniCC gives us a callback we invoke when the
+--                                frame list changes.
+--  MiniCC reads the unit per frame via frame.unit or :GetAttribute("unit")
+--  and filters for visible/allowed itself -> our buttons are compatible.
 --
---  Timing: MiniCCApi existiert erst, wenn MiniCCs Api/v1.lua geladen ist. Lade-
---  Reihenfolge ist nicht garantiert -> bei PLAYER_LOGIN versuchen UND auf
---  ADDON_LOADED == "MiniCC" reagieren. Alles defensiv in pcall. KEINE harte
---  .toc-Abhängigkeit (nur registrieren, wenn MiniCC vorhanden ist).
+--  Timing: MiniCCApi only exists once MiniCC's Api/v1.lua has loaded. Load
+--  order is not guaranteed -> try on PLAYER_LOGIN AND react to
+--  ADDON_LOADED == "MiniCC". All defensive in pcall. NO hard .toc dependency
+--  (only register if MiniCC is present).
 -- ===========================================================================
 
 local CreateFrame = CreateFrame
@@ -47,8 +47,8 @@ local function tryRegister()
 end
 
 local watcher = CreateFrame("Frame")
-watcher:RegisterEvent("PLAYER_LOGIN")        -- MiniCC schon geladen (lud vor uns)
-watcher:RegisterEvent("ADDON_LOADED")        -- MiniCC lädt nach uns
+watcher:RegisterEvent("PLAYER_LOGIN")        -- MiniCC already loaded (loaded before us)
+watcher:RegisterEvent("ADDON_LOADED")        -- MiniCC loads after us
 watcher:SetScript("OnEvent", function(self, event, name)
 	if event == "ADDON_LOADED" and name ~= "MiniCC" then return end
 	tryRegister()
