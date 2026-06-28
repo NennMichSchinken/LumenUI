@@ -162,8 +162,11 @@ local function makeTab(parent, label)
 		for _, e in ipairs(self._edges) do setColor(e, ec) end
 		local tc = on and C.gold250 or C.textBody
 		self._txt:SetTextColor(tc.r, tc.g, tc.b)
-		-- aktiv = SemiBold (fontWeight 600), inaktiv = Medium.
-		self._txt:SetFont(on and UI.FONT.hankenSemi or UI.FONT.hankenMed, 18, "")
+		-- KEIN Schnitt-Wechsel aktiv/inaktiv: SemiBold vs Medium haben verschiedene Glyphen-
+		-- Breiten -> der zentrierte Text würde im fixen Button „springen" (die Breite wurde
+		-- einmalig per Fit() mit dem tab-Rollen-Font = hankenMed gemessen). Der aktive Tab
+		-- hebt sich über Gold-Farbe + Gradient + kräftigeren Rahmen ab; der Schnitt bleibt
+		-- konstant (hankenMed), damit nichts springt.
 	end
 	return b
 end
@@ -234,7 +237,7 @@ end
 -- ===========================================================================
 local SECTIONS = {
 	{ "Global",      { "Base", "Profile" } },
-	{ "Click-Cast",  { "Bindings", "Hovercast" } },
+	{ "Click-Cast",  { "Bindings" } },
 	{ "Raidframes",  { "Base", "Raid", "Group", "Auras", "Tracking" } },
 	{ "Unitframes",  { "Base" } },
 	{ "Nameplates",  { "Base" } },

@@ -626,7 +626,19 @@ function W.SpellPicker(parent, o)
 	local bTxt = UI.FS(btn, "btn", C.gold300)
 	bTxt:SetFont(UI.FONT.hankenSemi, 16, "")
 	bTxt:SetText(o.text or "+ Hinzufügen")
-	bTxt:SetPoint("CENTER", btn, "CENTER", 0, 0)
+	-- Mit o.icon (gewählter Spell): Icon links + Text linksbündig daneben; sonst zentriert.
+	if o.icon then
+		local bIcon = btn:CreateTexture(nil, "ARTWORK")
+		bIcon:SetSize(M.trackIcon, M.trackIcon)
+		bIcon:SetPoint("LEFT", btn, "LEFT", 10, 0)
+		bIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		bIcon:SetTexture(o.icon)
+		bTxt:SetPoint("LEFT", bIcon, "RIGHT", 8, 0)
+		bTxt:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
+		bTxt:SetJustifyH("LEFT"); bTxt:SetWordWrap(false)
+	else
+		bTxt:SetPoint("CENTER", btn, "CENTER", 0, 0)
+	end
 	f._control = btn
 
 	-- Popover (Menü + Vollbild-Closer) am nicht-geclippten Host, wie W.Select.
@@ -1151,6 +1163,131 @@ function W.Segment(parent, o)
 	f.SetWidgetEnabled = function(_, on)
 		f:SetAlpha(on and 1 or 0.35)
 		for _, c in ipairs(cells) do c:EnableMouse(on) end
+	end
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  KeybindButton — Tasten-Aufnahme (für Hovercast). Klick -> „Drücke eine Taste …",
+--  die nächste Taste (inkl. Shift/Strg/Alt) wird gebunden; ESC oder Rechtsklick
+--  bricht ab; Mausrad/Maustasten werden ebenfalls aufgenommen. o = { label?, get,
+--  set, width, placeholder?, format? }. get/set arbeiten mit dem WoW-Key-String
+--  ("SHIFT-F", "BUTTON4", "MOUSEWHEELUP" …); format(key) liefert die Anzeige.
+--  Aufbau wie W.Select (Gold-Inset + Label oben), damit es rasterbündig sitzt.
+-- ---------------------------------------------------------------------------
+local KB_IGNORE = { -- reine Modifier-/Unbekannt-Tasten: ignorieren, weiter warten
+	LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true,
+	LALT = true, RALT = true, LMETA = true, RMETA = true, UNKNOWN = true,
+}
+local function kbWithMods(key)
+	-- Reihenfolge so, dass „ALT-CTRL-SHIFT-KEY" entsteht (WoW-Standard).
+	if IsShiftKeyDown()   then key = "SHIFT-" .. key end
+	if IsControlKeyDown() then key = "CTRL-"  .. key end
+	if IsAltKeyDown()     then key = "ALT-"   .. key end
+	return key
+end
+
+function W.KeybindButton(parent, o)
+	local f = CreateFrame("Frame", nil, parent)
+	if o.width then f:SetWidth(o.width) end
+
+	local topY = 0
+	if o.label then
+		local _, yo = fieldLabel(f, o.label); topY = yo
+		f:SetHeight(CONTROL_H - topY)
+	else
+		f:SetHeight(CONTROL_H)
+	end
+
+	local btn = CreateFrame("Button", nil, f)
+	btn:SetHeight(CONTROL_H)
+	btn:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
+	btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
+	btn:RegisterForClicks("AnyUp")
+	btn:EnableKeyboard(false) -- Ruhezustand: KEIN Tastatur-Capture (sonst frisst der Button Laufen/Aktionsleiste)
+	UI.Fill(btn, C.ink700)
+	local edges = UI.Border(btn, L.soft, 1, "OVERLAY")
+	f._control = btn
+
+	local lbl = UI.FS(btn, "selectText", C.gold300)
+	lbl:SetPoint("LEFT", btn, "LEFT", 12, 0)
+	lbl:SetPoint("RIGHT", btn, "RIGHT", -12, 0)
+	lbl:SetJustifyH("LEFT"); lbl:SetWordWrap(false)
+
+	local cur = (o.get and o.get()) or ""
+	local listening = false
+	local function fmt(k)
+		if k == "" then return o.placeholder or "Taste setzen …" end
+		if o.format then return o.format(k) end
+		return k
+	end
+	local function refresh()
+		if listening then
+			lbl:SetText("Drücke eine Taste …")
+			lbl:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b)
+		else
+			lbl:SetText(fmt(cur))
+			local col = (cur ~= "") and C.gold300 or C.textMuted
+			lbl:SetTextColor(col.r, col.g, col.b)
+		end
+	end
+	refresh()
+
+	local function stopListen()
+		if not listening then return end
+		listening = false
+		btn:EnableKeyboard(false)
+		btn:EnableMouseWheel(false)
+		-- Propagation NICHT im selben Tastenevent auf true setzen (würde ein ESC durchreichen
+		-- -> Shell schließt). EINEN Frame später zurücksetzen: dann ist der Ruhezustand sauber
+		-- (propagate=true -> der Button frisst NICHT mehr Laufen/Aktionsleiste), aber das ESC,
+		-- das gerade stopListen ausgelöst hat, bleibt konsumiert.
+		C_Timer.After(0, function() if not listening then btn:SetPropagateKeyboardInput(true) end end)
+		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
+		refresh()
+	end
+	local function startListen()
+		if listening then return end
+		listening = true
+		btn:EnableKeyboard(true)
+		btn:EnableMouseWheel(true)
+		btn:SetPropagateKeyboardInput(false) -- Tasten konsumieren (ESC schließt sonst die Shell)
+		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
+		refresh()
+	end
+	local function commit(key)
+		cur = key
+		stopListen()
+		if o.set then o.set(key) end
+	end
+
+	btn:SetScript("OnClick", function(_, button)
+		if not listening then startListen(); return end
+		if button == "RightButton" then stopListen()
+		elseif button == "LeftButton" then commit(kbWithMods("BUTTON1"))
+		elseif button == "MiddleButton" then commit(kbWithMods("BUTTON3"))
+		elseif button == "Button4" then commit(kbWithMods("BUTTON4"))
+		elseif button == "Button5" then commit(kbWithMods("BUTTON5")) end
+	end)
+	btn:SetScript("OnKeyDown", function(_, key)
+		if not listening then return end
+		if key == "ESCAPE" then stopListen(); return end
+		if KB_IGNORE[key] then return end
+		commit(kbWithMods(key))
+	end)
+	btn:SetScript("OnMouseWheel", function(_, delta)
+		if not listening then return end
+		commit(kbWithMods(delta > 0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN"))
+	end)
+	btn:SetScript("OnEnter", function() if not listening then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end end)
+	btn:SetScript("OnLeave", function() if not listening then for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end end end)
+	btn:HookScript("OnHide", stopListen)
+
+	f.SetValueExternal = function(_, v) cur = v or ""; refresh() end
+	f.SetWidgetEnabled = function(_, on)
+		f:SetAlpha(on and 1 or 0.35)
+		btn:EnableMouse(on)
+		if not on then stopListen() end
 	end
 	return f
 end

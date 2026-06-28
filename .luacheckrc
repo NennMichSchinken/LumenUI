@@ -38,6 +38,7 @@ read_globals = {
     "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents",
     -- Spec / Secure-Bindings (Click-Cast)
     "GetSpecialization", "GetSpecializationInfo", "GetNumSpecializations",
+    "IsShiftKeyDown", "IsControlKeyDown", "IsAltKeyDown",
     "RegisterStateDriver", "UnregisterStateDriver",
     "RegisterAttributeDriver", "UnregisterAttributeDriver",
     "SetOverrideBindingClick", "ClearOverrideBindings",
