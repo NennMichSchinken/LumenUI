@@ -8,6 +8,9 @@ unused_args = false              -- event/handler-Args + implizites 'self' oft u
 -- 'ADDON' steht in jeder Datei als `local ADDON, ns = ...`, aber nur 'ns' wird genutzt (Standard).
 ignore = { "211/ADDON" }
 
+-- Beschreibbare WoW-Globals (wir tragen Einträge ein, nicht nur lesen).
+globals = { "StaticPopupDialogs" }
+
 -- Drittanbieter-Bibliotheken und Werkzeuge nicht prüfen.
 exclude_files = { "Libs/", "tools/" }
 
@@ -22,8 +25,12 @@ read_globals = {
     "STANDARD_TEXT_FONT", "GameFontNormal",
     "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip", "ColorPickerFrame",
     "ADDONS", -- lokalisierter GlobalString (ESC-Menü „Addons")
+    -- Blizzard-Raidframe-Unterdrückung + Reload-Popup
+    "CompactRaidFrameContainer", "PartyFrame", "EventUtil", "ReloadUI",
+    "StaticPopup_Show",
     -- Einheiten / Leben
     "UnitExists", "UnitName", "UnitClass", "UnitThreatSituation", "UnitGroupRolesAssigned",
+    "UnitIsUnit", "GetSpecializationRole",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",
     "UnitGetTotalAbsorbs", "UnitGetTotalHealAbsorbs",
     "UnitGetIncomingHeals", "UnitGetDetailedHealPrediction",
@@ -44,4 +51,6 @@ read_globals = {
     "SetOverrideBindingClick", "ClearOverrideBindings",
     -- Ace3
     "LibStub",
+    -- Optionale Fremd-Addons
+    "MiniCCApi",
 }

@@ -123,7 +123,6 @@ UI.ROLE = {
 	tab      = { UI.FONT.hankenMed,  18, "" },
 	caption  = { UI.FONT.hankenReg,  12, "" },
 	hint     = { UI.FONT.hankenReg,  16, "" }, -- Beschreibungs-/Hinweistext unter Controls
-	eyebrow  = { UI.FONT.hankenMed,  12, "" },
 	tagline  = { UI.FONT.hankenReg,  12, "" },
 
 	-- Widget-Toolkit (Phase 2) — kleine, control-nahe Rollen. Größen auf dem
@@ -325,7 +324,6 @@ UI.LAYOUT = {
 	global = {                  -- Global-Tab (Base = Edit-Modus; Profile = Profile + Export/Import)
 		taH            = 120,   -- Höhe der Export/Import-Textarea
 		afterExportBtn = 14,    -- „Export-Code erzeugen" -> Export-Textarea
-		afterStatus    = 12,    -- Status-Zeile (Code erkannt) -> Modul-Häkchen
 	},
 	lebensbalken = {
 		afterTexHint = 10,  -- Textur-Reihe -> Mausrad/Such-Hinweis (eng darunter)

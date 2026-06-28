@@ -4,7 +4,7 @@ local ADDON, ns = ...
 --  Lumen — Eintrag im ESC-Spielmenü.
 --  Nutzt Blizzards eigene AddButton-API über den InitButtons-Hook: das Spiel
 --  übernimmt Layout + Höhe selbst, dadurch koexistiert es sauber mit anderen
---  Addons (z. B. EllesmereUI) ohne übereinanderliegende Buttons.
+--  Addons ohne übereinanderliegende Buttons.
 --  Der Button wird direkt UNTER „Addons" einsortiert und mit „Addons" optisch
 --  zu einer Gruppe zusammengefasst (Luft oben + unten), analog zur Blizzard-
 --  Sektionierung (layoutIndex sortiert die Buttons, topPadding macht die Lücken).
