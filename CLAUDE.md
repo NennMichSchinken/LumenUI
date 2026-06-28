@@ -1,7 +1,7 @@
 # Lumen — Master-Briefing / Übergabe an Claude Code (CLI)
 
 > **📚 Wissens-Verwaltung (WICHTIG):** Alle **historischen Changelogs** (Versionen v0.9.x) und **tiefen Feature-Spezifikationen** werden ab jetzt **zentral und ausschließlich** unter `E:\Github\Wissen-Datenbank\Lumen_Wissen_Index.md` gepflegt — **nicht mehr in dieser Datei**. Diese `CLAUDE.md` bleibt bewusst schlank: Vision, Arbeitsweise, Design-/Architektur-Regeln, Performance-Vorgaben und ein knapper Ist-Zustand. Für Versionshistorie, externe Ressourcen-Links oder Detail-Specs eines Features → **immer zuerst den Wissens-Index lesen**.
-> **Stand:** Addon-Version **0.9.67** · Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026). MVP-Raidframes-Block KOMPLETT & live bestätigt; aktiv im Aufbau: **Suite-Shell** (`/lumen shell`, parallel zur AceConfig) + neue **Feature-Roadmap** (Major CDs → Transparenzen/Hintergrund → Dropdown-UX, siehe §8 „Nächste Meilensteine"). **Temp `/ldump`-Debugkommando in `Core.lua` — vor Release entfernen.**
+> **Stand:** Addon-Version **0.9.73** · Interface **120007** (Retail-Patch 12.0.7, live seit 16.06.2026). MVP-Raidframes-Block KOMPLETT & live bestätigt; Base-Tab-Umbau + Dropdown-Suchfeld (Feature 1/3/4) live; **Feature 2 (Aura-Positionierung: Versatz X/Y, Innen/Außen, Party/Raid-Kontext, `W.Segment`) live-getestet**. **Hauptoberfläche = Suite-Shell**, jetzt auf **`/lumen`** UND dem ESC-Menü-Button „Lumen" (unter „Addons" gruppiert, Cinzel-Gold-Optik); klassische AceConfig nur noch als Backup via **`/lumen ace`**. **Nächstes Modul: Click-Cast-Shell-Screen.** **Offen:** Aura-Filter-/Tracking-Logik geparkt bis 12.1.0. **Temp `/ldump`-Debugkommando in `Core.lua` — vor Release entfernen.**
 > Sprache der Zusammenarbeit: **Deutsch**. Öffentliche Texte (CurseForge/Wago, Changelogs): **Englisch**.
 > Dieses Dokument ist die nahtlose Fortführung des bisherigen Konzept-/Entwicklungs-Chats. Es ist die einzige Quelle der Wahrheit für Vision, Absprachen und Ist-Zustand. Claude Code soll hier starten.
 
@@ -60,7 +60,7 @@ Weitere Prinzipien:
 
 ## 4. Architektur / Aufbau
 
-* **Suite-Shell:** EINE Einstellungsseite. Links eine kuratierte Modulliste (Baum, z.B. Gruppen „Kern"/„QoL"), rechts die Einstellungen des gewählten Moduls. Perspektivisch eine **Live-Vorschau**, die zeigt, was sich ändert. Erweiterbar — Module kommen nach und nach dazu, ohne die Liste aufzublähen. (**Im Aufbau:** eigene gerunte „Shell"-Optik unter `Shell/`, Phase 1+2 stehen — `/lumen shell`; läuft parallel zur bestehenden AceConfig auf `/lumen`. Details §10.11.)
+* **Suite-Shell:** EINE Einstellungsseite. Links eine kuratierte Modulliste (Baum, z.B. Gruppen „Kern"/„QoL"), rechts die Einstellungen des gewählten Moduls. Perspektivisch eine **Live-Vorschau**, die zeigt, was sich ändert. Erweiterbar — Module kommen nach und nach dazu, ohne die Liste aufzublähen. (Eigene gerunte „Shell"-Optik unter `Shell/` — Hauptoberfläche auf `/lumen` + ESC-Menü-Button; die alte AceConfig läuft als Backup parallel auf `/lumen ace`. Details §10.11.)
 * **Zentrale Profile** in einem „Allgemein"/Profile-Tab (NICHT pro Modul verstreut): an einem Ort wird alles gespeichert. Läuft über **AceDB** (`LumenDB`).
 * **Export (gebaut — v0.9.8, live bestätigt):** EIN Textcode für alles (Prinzip wie WeakAuras/ElvUI), zum Kopieren/Verschicken — via `AceSerializer` + `LibDeflate`. Umgesetzt in `Modules/Share.lua`; UI unten im `Global → Profile`-Tab. Details §10.7.
 * **Import — granular (gebaut — v0.9.8, live bestätigt):** Dialog mit **Häkchen pro Modul** — nur Gewähltes wird eingemischt, abgewählte Module bleiben beim Empfänger unverändert (z.B. „will nur deine Unit Frames, nicht die Raidframes"). Dazu eine separate Ja/Nein-Frage „**Layout-Positionen mitimportieren**" (aus → die aktuellen Positionen des Empfängers bleiben). Damit der granulare Import geht, werden die Settings im Export **pro Modul getrennt** abgelegt; **Layout-Positionen liegen nochmal getrennt**. (Umsetzung: sparse Export + Merge-auf-Defaults beim Import; siehe §10.7.)
@@ -79,6 +79,11 @@ Um eine absolut intuitive, konsistente und schlanke Benutzeroberfläche zu garan
 * **Modul Raidframes:** `Base` | `Raid` | `Group`
 * **Modul Nameplates:** `Base` | `Enemy` | `Friendly`
 * **Modul Unit Frames:** `Base` | `Player` | `Target` | `Focus`
+
+**Was gehört in `Base` vs. die Kontext-Tabs? (verbindliche Aufteilung, seit v0.9.68 live):**
+* **`Base` = geteilte OPTIK/Funktion**, die in allen Kontexten gleich ist (reine Geschmacks-/Stilwahl): Texturen, Klassenfarbe/Füllfarbe, Hintergrund, Transparenzen, **Text-Farbe + -Umrandung**, Dispel, Aggro, Sortierung.
+* **Kontext-Tabs (`Raid`/`Group` bzw. `Player`/`Target`…) = nur, was an der FRAME-GRÖSSE hängt:** Frame-Größe/Position/Ausrichtung, Text-**Größe** + -Position, „Name anzeigen", „HP-Typ".
+* **Merksatz:** *Farbe/Stil = geteilt (Base); Größe/Position = pro Kontext.* (Datenmodell: geteilte Felder top-level unter `db.profile.<modul>`, kontextabhängige unter `…<kontext>`.)
 
 ---
 
@@ -184,7 +189,7 @@ Lumen ist als **Anti-Bloat-/Hochleistungs-UI** konzipiert. Der generierte Lua-Co
 
 ---
 
-## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.67)
+## 10. Aktueller Entwicklungsstand (Ist-Zustand des Codes, v0.9.68)
 
 > Dieser Abschnitt hält nur noch die **aktuelle Dateistruktur** knapp fest. Tiefe Architektur-Details (Render-Stack, Click-Cast, Export/Import, Aura-/Tracking-System, Aggro, Sortierung, Suite-Shell) liegen in den **Memories** (`lumen-*`) und im **Wissens-Index** (`E:\Github\Wissen-Datenbank\Lumen_Wissen_Index.md`). Bei Detailfragen dort nachschlagen, nicht hier nacherzählen.
 
@@ -194,9 +199,9 @@ Lade-Reihenfolge laut `Lumen.toc`: `embeds.xml` → `Core.lua` → `EditMode.lua
 
 | Datei | Zweck (knapp) |
 |---|---|
-| `Lumen.toc` | Addon-Deklaration. `## Interface: 120007`, `## Version: 0.9.67`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`. Lade-Reihenfolge siehe oben. |
+| `Lumen.toc` | Addon-Deklaration. `## Interface: 120007`, `## Version: 0.9.68`, `## SavedVariables: LumenDB`, `## Author: NennMichSchinken`. Lade-Reihenfolge siehe oben. |
 | `embeds.xml` | Lädt die Ace3-Libs aus `Libs/` in korrekter Reihenfolge (inkl. `AceSerializer-3.0` + `LibDeflate` für Export/Import). |
-| `Core.lua` | Ace3-Addon + AceDB (`LumenDB`) mit den Profil-Defaults, Slash-Commands `/lumen` (AceConfig) und `/lumen shell` (Suite-Shell), startet die Module. Exponiert `ns.Defaults`. Enthält noch das temporäre `/ldump`-Debugkommando (vor Release entfernen). |
+| `Core.lua` | Ace3-Addon + AceDB (`LumenDB`) mit den Profil-Defaults, Slash-Commands `/lumen` (Suite-Shell = Hauptoberfläche) und `/lumen ace` (klassische AceConfig als Backup), startet die Module. Exponiert `ns.Defaults`. Enthält noch das temporäre `/ldump`-Debugkommando (vor Release entfernen). |
 | `EditMode.lua` | Generische Registry für verschiebbare Frames: manueller Entsperr-Schalter + Hook in WoWs nativen Edit Mode. Speichert Positionen ins Profil. |
 | `Style.lua` | Zentrales Balken-Stilmodul (`Style:ApplyBar`/`SetDepth`), wiederverwendbar für spätere Unit Frames. Gradient-Texturen + Tiefen-Overlays. |
 | `Modules/Raidframes.lua` | Das MVP-Modul. Secret-sicheres Render (Leben/Schild/Heilabsorb/Heilvorhersage über StatusBars + Clip-Frames), event-getrieben. `Decorate(host)` für Live (Secure-`SecureGroupHeader`) und Test (Nicht-Secure-Pool). Aura-Indikator-System (`AURA_CATS`-Registry inkl. `hotsOwn`/`defensives`/`major`/`debuffs`, Whitelist + Defaults `HOT_/DEF_/MAJOR_DEFAULTS`, Tracking-Editor-API), Aggro (`f.aggroLayer`), secure Rollen-/Gruppen-Sortierung. |
@@ -207,7 +212,7 @@ Lade-Reihenfolge laut `Lumen.toc`: `embeds.xml` → `Core.lua` → `EditMode.lua
 | `Shell/Tokens.lua` | Suite-Shell Design-Tokens (`ns.UI`): Farb-/Gold-Rampen, Schriften/Rollen (`UI:SetFont`), Spacing/Radien, Panel-Maße. **`UI.WIDGET`** = ALLE Widget-Maße zentral, **`UI.ROLE`** = alle Schriftgrößen (der eine Ort zum Feinjustieren). Bau-Primitive `UI.Border/Fill/FS/…`. |
 | `Shell/Widgets.lua` | Widget-Toolkit (`ns.W`): wiederverwendbare Builder (Slider/Select/Checkbox/Button/Card/GroupPanel/IconTile/Row, `SpellPicker`, Tooltips, Confirm-Dialog) auf den Tokens — keine Magic Numbers. |
 | `Shell/Screens.lua` | Die echten Suite-Shell-Screens (Phase 3) ans `db.profile` verdrahtet: Raidframes Base/Raid/Group/Auras/Tracking. Aura-Kategorien inkl. **„Major CDs"** (`auraCat`/`TRACK_CATS`). |
-| `Shell/Shell.lua` | Suite-Shell-Chrome (`ns.Shell`): Singleton-Panel (Header/Nav/Tabs/Footer/Rune-Ecken), `Build/Toggle/SelectSection/SelectTab`. Aufruf `/lumen shell` (parallel zur AceConfig). |
+| `Shell/Shell.lua` | Suite-Shell-Chrome (`ns.Shell`): Singleton-Panel (Header/Nav/Tabs/Footer/Rune-Ecken), `Build/Toggle/SelectSection/SelectTab`. Aufruf `/lumen` + ESC-Menü-Button (AceConfig nur noch via `/lumen ace`). |
 | `Fonts/` | Cinzel (Headings/Wordmark) + Hanken Grotesk (Body/Controls), statische TTF inkl. Umlaute, SIL OFL. |
 | `Libs/` | Ace3-Bibliotheken + `LibDeflate` (siehe §6). |
 | `Textures/` | TGA-Texturen (uncompressed RGBA, ohne Endung referenziert): `lumen-gradient(-soft)`, `lumen-light`/`-shadow`, `shield-combined`, `healabsorb-combined` u.a. |

@@ -129,23 +129,31 @@ local defaults = {
 			-- Schreib eine echte profil-eigene Tabelle erzeugt (kein Mutieren der geteilten Defaults).
 			auras = {
 				hotsOwn = {
-					enabled = true,  anchor = "BOTTOMLEFT", grow = "RIGHT", spacing = 2, maxIcons = 5,
-					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
+					enabled = true,  spacing = 2, maxIcons = 5, autoFit = true, showSwipe = true, hideTooltips = false,
+					anchorRaid = "BOTTOMLEFT", anchorParty = "BOTTOMLEFT", growRaid = "RIGHT", growParty = "RIGHT",
+					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
+					sizeRaid = 16, sizeParty = 22,
 				},
 				defensives = {
-					enabled = false, anchor = "TOPRIGHT", grow = "LEFT", spacing = 2, maxIcons = 3,
-					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
+					enabled = false, spacing = 2, maxIcons = 3, autoFit = true, showSwipe = true, hideTooltips = false,
+					anchorRaid = "TOPRIGHT", anchorParty = "TOPRIGHT", growRaid = "LEFT", growParty = "LEFT",
+					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
+					sizeRaid = 16, sizeParty = 22,
 				},
 				-- Major CDs (große Klassen-Cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
 				-- Raidframes.lua). Default-Anker TOPLEFT = die letzte freie Ecke (HoTs=BOTTOMLEFT,
 				-- Defensives=TOPRIGHT, Debuffs=BOTTOMRIGHT) -> kollisionsfrei beim Anschalten.
 				major = {
-					enabled = false, anchor = "TOPLEFT", grow = "RIGHT", spacing = 2, maxIcons = 3,
-					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
+					enabled = false, spacing = 2, maxIcons = 3, autoFit = true, showSwipe = true, hideTooltips = false,
+					anchorRaid = "TOPLEFT", anchorParty = "TOPLEFT", growRaid = "RIGHT", growParty = "RIGHT",
+					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
+					sizeRaid = 16, sizeParty = 22,
 				},
 				debuffs = {
-					enabled = false, anchor = "BOTTOMRIGHT", grow = "LEFT", spacing = 2, maxIcons = 4,
-					autoFit = true,  sizeRaid = 16, sizeParty = 22, showSwipe = true, hideTooltips = false,
+					enabled = false, spacing = 2, maxIcons = 4, autoFit = true, showSwipe = true, hideTooltips = false,
+					anchorRaid = "BOTTOMRIGHT", anchorParty = "BOTTOMRIGHT", growRaid = "LEFT", growParty = "LEFT",
+					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
+					sizeRaid = 16, sizeParty = 22,
 					-- Blizzard-Standard-Filter: "raid" = nur raid-relevante Debuffs (wie Blizzards
 					-- Default), "all" = alle, "dispellable" = nur selbst dispellbare.
 					filterMode = "raid",
@@ -253,6 +261,32 @@ local function migrateLayout(rf)
 			if t then for _, k in ipairs(SHARED_TEXT_FIELDS) do t[k] = nil end end
 		end
 	end
+	-- v4: Aura-Platzierung (Anker/Wachstum) von geteilt -> pro Kontext (raid/party). Versatz X/Y
+	-- + Innen/Außen sind neu (Default 0/innen). Bestehende geteilte anchor/grow auf BEIDE Kontexte
+	-- hochziehen. pairs() trifft nur kategorie-Tabellen, die der Nutzer wirklich angefasst hat
+	-- (Default-only-Kategorien brauchen nichts -> nutzen die neuen Defaults). Kein cat.x==nil-Guard
+	-- nötig: anchor/grow gibt es in den neuen Defaults nicht mehr -> liefert nur gespeicherte Werte.
+	if not rf._auraCtxMigrated then
+		rf._auraCtxMigrated = true
+		local au = rawget(rf, "auras")
+		if au then
+			for _, cat in pairs(au) do
+				if type(cat) == "table" then
+					local a, g = rawget(cat, "anchor"), rawget(cat, "grow")
+					if a ~= nil then
+						cat.anchorRaid = rawget(cat, "anchorRaid") or a
+						cat.anchorParty = rawget(cat, "anchorParty") or a
+						cat.anchor = nil
+					end
+					if g ~= nil then
+						cat.growRaid = rawget(cat, "growRaid") or g
+						cat.growParty = rawget(cat, "growParty") or g
+						cat.grow = nil
+					end
+				end
+			end
+		end
+	end
 end
 
 function Lumen:OnInitialize()
@@ -295,14 +329,14 @@ function Lumen:RefreshAll()
 end
 
 function Lumen:OpenConfig(input)
-	-- /lumen shell  -> neue Suite-Shell (WIP, Phase 1)
-	-- /lumen        -> klassische AceConfig (parallel bestehen lassen)
+	-- /lumen     -> Suite-Shell (Hauptoberfläche; auch der ESC-Menü-Button)
+	-- /lumen ace -> klassische AceConfig (Backup, parallel bestehen lassen)
 	local arg = input and input:lower():gsub("^%s+", ""):gsub("%s+$", "") or ""
-	if arg == "shell" then
-		if ns.Shell then ns.Shell:Toggle() end
+	if arg == "ace" then
+		LibStub("AceConfigDialog-3.0"):Open("Lumen")
 		return
 	end
-	LibStub("AceConfigDialog-3.0"):Open("Lumen")
+	if ns.Shell then ns.Shell:Toggle() else LibStub("AceConfigDialog-3.0"):Open("Lumen") end
 end
 
 -- DEBUG: dumpt eigene Hilfsauren (Name + spellId) und die getrackte HoT-Whitelist.

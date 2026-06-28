@@ -723,11 +723,15 @@ local function isRaidContext()
 	if d.testMode then return d.testSize ~= 5 end
 	return IsInRaid()
 end
+-- Suffix der kontextabhängigen Aura-Felder (anchorRaid/anchorParty, growRaid/…, sizeRaid/…,
+-- offX/offY, outside) — Position/Größe sind pro Kontext getrennt (wie bei Frame-Größe/Text).
+local function auraCtxSuffix() return isRaidContext() and "Raid" or "Party" end
 -- Icon-Größe einer Kategorie: Auto-Fit -> aus der Frame-Höhe abgeleitet (skaliert also
 -- automatisch zwischen Raid/Gruppe mit), sonst explizit pro Kontext.
 local function auraIconSize(cat, L)
+	local sfx = auraCtxSuffix()
 	if not cat.autoFit then
-		return isRaidContext() and (cat.sizeRaid or 16) or (cat.sizeParty or 22)
+		return cat["size" .. sfx] or (sfx == "Raid" and 16 or 22)
 	end
 	-- Auto-Fit: ~30% der Frame-Höhe, ABER so gedeckelt, dass die volle Reihe/Spalte in
 	-- den Frame passt (kein Überlauf über den Rand bei schmalen/kurzen Frames):
@@ -736,7 +740,7 @@ local function auraIconSize(cat, L)
 	local n  = max(1, cat.maxIcons or 5)
 	local sp = cat.spacing or 0
 	local size = h * 0.30
-	local grow = cat.grow or "RIGHT"
+	local grow = cat["grow" .. sfx] or "RIGHT"
 	if grow == "UP" or grow == "DOWN" then
 		size = min(size, (h - sp * (n - 1)) / n)
 	else
@@ -755,25 +759,43 @@ end
 -- Anker auf der Wachstums-Achse mittig (z.B. „Unten"/„Mitte"), wird die Reihe ZENTRIERT —
 -- und zwar anhand der tatsächlichen Anzahl, also auch bei wechselnder HoT-Zahl mittig.
 -- Läuft beim Rendern (count ist erst dann bekannt).
+local AURA_OUT_GAP = 2 -- kleiner Abstand zwischen Frame-Kante und ausgelagerter („Außen") Icon-Reihe
 local function positionAuraIcons(holder, count)
 	if count < 1 then return end
 	local anchor = holder._anchor or "BOTTOMLEFT"
 	local grow   = holder._grow or "RIGHT"
-	local step   = (holder._size or 16) + (holder._spacing or 0)
+	local size   = holder._size or 16
+	local step   = size + (holder._spacing or 0)
 	local dirX, dirY = 0, 0
 	if grow == "RIGHT" then dirX = 1 elseif grow == "LEFT" then dirX = -1
 	elseif grow == "UP" then dirY = 1 elseif grow == "DOWN" then dirY = -1 end
 	local horiz = (dirX ~= 0)
 	local centerX = horiz and not (strfind(anchor, "LEFT") or strfind(anchor, "RIGHT"))
 	local centerY = (not horiz) and not (strfind(anchor, "TOP") or strfind(anchor, "BOTTOM"))
-	local ix, iy = auraInset(anchor)
+	-- Basis-Versatz: „Innen" = kleiner Inset nach innen (klebt nicht an der Kante);
+	-- „Außen" = die Reihe sitzt komplett JENSEITS der angeankerten Kante (perpendikular
+	-- zur Wachstumsachse) -> neben/über/unter dem Frame, ohne Extra-Frames.
+	local bx, by
+	if holder._outside then
+		bx, by = 0, 0
+		if horiz then
+			if strfind(anchor, "TOP") then by = size + AURA_OUT_GAP
+			elseif strfind(anchor, "BOTTOM") then by = -(size + AURA_OUT_GAP) end
+		else
+			if strfind(anchor, "LEFT") then bx = -(size + AURA_OUT_GAP)
+			elseif strfind(anchor, "RIGHT") then bx = size + AURA_OUT_GAP end
+		end
+	else
+		bx, by = auraInset(anchor)
+	end
+	local ox, oy = holder._offX or 0, holder._offY or 0 -- frei wählbarer X/Y-Versatz (beide Modi)
 	local sx = centerX and (-dirX * (count - 1) * step / 2) or 0
 	local sy = centerY and (-dirY * (count - 1) * step / 2) or 0
 	for i = 1, count do
 		local ic = holder.icons[i]
 		if ic then
 			ic:ClearAllPoints()
-			ic:SetPoint(anchor, holder, anchor, ix + sx + (i - 1) * dirX * step, iy + sy + (i - 1) * dirY * step)
+			ic:SetPoint(anchor, holder, anchor, bx + ox + sx + (i - 1) * dirX * step, by + oy + sy + (i - 1) * dirY * step)
 		end
 	end
 end
@@ -810,8 +832,13 @@ local function layoutAuraCat(f, key, cat, size)
 	end
 	holder:Show()
 	-- Layout-Parameter für die render-zeitige Positionierung (positionAuraIcons) merken.
-	holder._anchor  = cat.anchor or "BOTTOMLEFT"
-	holder._grow    = cat.grow or "RIGHT"
+	-- Anker/Wachstum/Versatz/Innen-Außen sind pro Kontext (Raid/Party) getrennt.
+	local sfx = auraCtxSuffix()
+	holder._anchor  = cat["anchor" .. sfx] or "BOTTOMLEFT"
+	holder._grow    = cat["grow" .. sfx] or "RIGHT"
+	holder._offX    = cat["offX" .. sfx] or 0
+	holder._offY    = cat["offY" .. sfx] or 0
+	holder._outside = cat["outside" .. sfx] or false
 	holder._size    = size
 	holder._spacing = cat.spacing or 0
 	local maxN = cat.maxIcons or 5
