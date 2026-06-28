@@ -66,6 +66,9 @@ local defaults = {
 			-- Aggro-Warnung (secret-sicher: Threat-API ist NICHT secret, event-getrieben).
 			-- 2-stufig: gelb = Aggro droht (Status 1-2), rot = hat Aggro (Status 3).
 			aggroEnabled = true,
+			-- Aggro nur in Dungeon/Raid zeigen (Standard an): solo/Open World hätte man
+			-- sonst dauerhaft das Overlay, weil man dort fast immer Aggro hat.
+			aggroInstanceOnly = true,
 			-- Pro Stufe: Darstellung "border" (nur Rand) | "overlay" (Rand + Overlay).
 			-- Text gibt es nur im Overlay-Modus (eigener Toggle). Rot/Gelb nie gleichzeitig
 			-- auf einem Frame -> Text-Optik (Position/Größe) ist GETEILT (unten).

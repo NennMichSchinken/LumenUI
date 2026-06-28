@@ -1,2 +1,18 @@
 # Lokales Dev-Werkzeug (luacheck-Binary + Runner) — gehört nicht ins Addon-Repo/Package.
 /tools/
+
+# Claude Code / KI-Assistenz — interne Arbeitsdateien, nicht ins öffentliche Repo.
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.mcp.json
+
+# Andere KI-/Editor-Artefakte (vorsorglich).
+.cursor/
+.aider*
+.windsurf/
+
+# OS-/Editor-Müll.
+.DS_Store
+Thumbs.db
+*.swp

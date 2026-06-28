@@ -35,7 +35,7 @@ read_globals = {
     "UnitGetTotalAbsorbs", "UnitGetTotalHealAbsorbs",
     "UnitGetIncomingHeals", "UnitGetDetailedHealPrediction",
     "CreateUnitHealPredictionCalculator", "UnitGUID",
-    "IsInRaid", "IsInGroup", "GetNumGroupMembers", "GetNumSubgroupMembers",
+    "IsInRaid", "IsInGroup", "IsInInstance", "GetNumGroupMembers", "GetNumSubgroupMembers",
     -- Farben / Auren / Zahlen
     "RAID_CLASS_COLORS", "AuraUtil", "CurveConstants",
     "AbbreviateNumbers", "AbbreviateNumbersAlt",
