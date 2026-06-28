@@ -326,6 +326,10 @@ function Lumen:RefreshAll()
 	end
 	-- Profilwechsel: Click-Cast-Bindings neu anwenden (Bindings sind profilgebunden).
 	if ns.ClickCast then ns.ClickCast:ApplyBindings() end
+	-- Ist die Suite-Shell offen, ihre Controls auf die (ggf. neuen) Profilwerte ziehen.
+	if ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown() then
+		ns.Shell:RenderContent(true)
+	end
 end
 
 function Lumen:OpenConfig(input)

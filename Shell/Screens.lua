@@ -1144,6 +1144,218 @@ local function buildClickCast(d, stack)
 	applyModuleGate(body, cc().enabled) -- Click-Cast aus -> alles unter dem Master grau + gesperrt
 end
 
+-- ===========================================================================
+--  Global-Screens — suite-weite Einstellungen (spiegelt den AceConfig-Global-
+--  Knoten). Base = Verschieben/Edit-Modus; Profile = Profilverwaltung (AceDB)
+--  + Teilen (Export/Import, granular pro Modul, via ns.Share).
+-- ===========================================================================
+
+-- Global/Base: „Rahmen entsperren" (Edit-Modus) + „Positionen zurücksetzen".
+local function buildGlobalBase(d, stack)
+	local R = L.rhythm
+
+	stack:gap(L.base.topToToggle)
+	local intro = W.Hint(d, "Suite-weite Einstellungen. Profile, Export und Import deines Setups liegen im Tab \"Profile\".")
+	stack:place(intro, M.hintH, R.row)
+
+	local s = stack:section("Verschieben (Edit-Modus)")
+
+	local togRow = CreateFrame("Frame", nil, d)
+	local cbEdit = W.Checkbox(togRow, { label = "Rahmen entsperren — zeigt alle beweglichen Lumen-Elemente",
+		get = function() return ns.EditMode and ns.EditMode:IsActive() end,
+		set = function(v) if ns.EditMode then ns.EditMode:Toggle(v) end end })
+	cbEdit:SetPoint("LEFT", togRow, "LEFT", 0, 0)
+	s:place(togRow, M.checkBox, R.afterCheck)
+
+	local resetBtn = W.Button(d, { text = "Positionen zurücksetzen", variant = "ghost",
+		onClick = function()
+			W.Confirm({
+				title = "Positionen zurücksetzen?",
+				body = "Setzt die Frame-Positionen (Raid und Gruppe) auf die Standardwerte zurück.",
+				confirmText = "Zurücksetzen", cancelText = "Abbrechen",
+				onConfirm = function()
+					local r = rf()
+					for _, ctx in ipairs({ "raid", "party" }) do
+						local t = r[ctx]; if t then t.point, t.x, t.y = "CENTER", 0, -120 end
+					end
+					relayout()
+				end,
+			})
+		end })
+	s:placeLeft(resetBtn, M.buttonH, R.row)
+
+	local hint = W.Hint(d, "Funktioniert auch über WoWs eigenen Edit-Modus: Lumen-Rahmen werden dort beweglich angezeigt.")
+	s:place(hint, M.hintH, R.tight)
+	s:close()
+end
+
+-- Global/Profile: transienter Zustand (file-local -> überlebt RenderContent-Neuaufbau).
+-- Modul-/Layout-Auswahl lebt im Import-Popup (W.ImportDialog) selbst, nicht hier.
+local shareExport    = ""    -- zuletzt erzeugter Export-Code
+local shareImportRaw = ""    -- eingefügter Import-Text
+local importErr      = nil   -- Fehlertext beim letzten „Importieren" (oder nil)
+
+local function buildGlobalProfile(d, stack)
+	local db = ns.Lumen.db
+	local R = L.rhythm
+	local G = L.global
+	local fieldH = M.controlH + M.fieldGap
+
+	stack:gap(L.base.topToToggle)
+
+	-- Profilnamen als {value,label}-Liste (optional das aktive Profil ausklammern).
+	local function profileOpts(excludeCurrent)
+		local names = db:GetProfiles() or {}
+		table.sort(names)
+		local cur = db:GetCurrentProfile()
+		local opts = {}
+		for _, n in ipairs(names) do
+			if not (excludeCurrent and n == cur) then opts[#opts + 1] = { value = n, label = n } end
+		end
+		return opts
+	end
+
+	-- ===== Profil ==========================================================
+	local s = stack:section("Profil")
+
+	-- Reihe 1: Aktuelles Profil | Kopieren von | Löschen.
+	local r1, c1 = W.Row(d, 3, { height = fieldH })
+	W.Select(c1[1], { label = "Aktuelles Profil", options = profileOpts(false),
+		get = function() return db:GetCurrentProfile() end,
+		set = function(v) db:SetProfile(v); ns.Shell:RenderContent(true) end }):SetAllPoints(c1[1])
+	W.Select(c1[2], { label = "Kopieren von", options = profileOpts(true), placeholder = "Profil wählen …",
+		tooltip = "Übernimmt die Einstellungen eines anderen Profils in dein aktuelles.",
+		get = function() return nil end,
+		set = function(v)
+			W.Confirm({
+				title = "Profil kopieren?",
+				body = "Die Einstellungen aus „" .. v .. "“ werden in dein aktuelles Profil übernommen und überschreiben es.",
+				confirmText = "Kopieren", cancelText = "Abbrechen",
+				onConfirm = function() db:CopyProfile(v); ns.Shell:RenderContent(true) end,
+				onCancel = function() ns.Shell:RenderContent(true) end,
+			})
+		end }):SetAllPoints(c1[2])
+	W.Select(c1[3], { label = "Löschen", options = profileOpts(true), placeholder = "Profil wählen …",
+		tooltip = "Löscht ein anderes Profil endgültig (nicht das aktive).",
+		get = function() return nil end,
+		set = function(v)
+			W.Confirm({
+				title = "Profil löschen?",
+				body = "Das Profil „" .. v .. "“ wird endgültig gelöscht. Das lässt sich nicht rückgängig machen.",
+				confirmText = "Löschen", cancelText = "Abbrechen",
+				onConfirm = function() db:DeleteProfile(v); ns.Shell:RenderContent(true) end,
+				onCancel = function() ns.Shell:RenderContent(true) end,
+			})
+		end }):SetAllPoints(c1[3])
+	s:place(r1, fieldH, R.row)
+
+	-- Reihe 2: Neues Profil (Eingabe) + Erstellen + Zurücksetzen (rechts).
+	local newRow = CreateFrame("Frame", nil, d)
+	newRow:SetHeight(fieldH)
+	local resetBtn = W.Button(newRow, { text = "Zurücksetzen", variant = "danger",
+		onClick = function()
+			W.Confirm({
+				title = "Profil zurücksetzen?",
+				body = "Setzt das aktuelle Profil („" .. db:GetCurrentProfile() .. "“) auf die Lumen-Standardwerte zurück.",
+				confirmText = "Zurücksetzen", cancelText = "Abbrechen",
+				onConfirm = function() db:ResetProfile(); ns.Shell:RenderContent(true) end,
+			})
+		end })
+	resetBtn:ClearAllPoints(); resetBtn:SetPoint("BOTTOMRIGHT", newRow, "BOTTOMRIGHT", 0, 0)
+	local input
+	local createBtn = W.Button(newRow, { text = "Erstellen", variant = "primary",
+		onClick = function()
+			local name = input and (input:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "") or ""
+			if name ~= "" then db:SetProfile(name); ns.Shell:RenderContent(true) end
+		end })
+	createBtn:ClearAllPoints(); createBtn:SetPoint("BOTTOMRIGHT", resetBtn, "BOTTOMLEFT", -12, 0)
+	input = W.TextInput(newRow, { label = "Neues Profil", placeholder = "Name eingeben …",
+		onEnter = function(v)
+			local name = (v or ""):gsub("^%s+", ""):gsub("%s+$", "")
+			if name ~= "" then db:SetProfile(name); ns.Shell:RenderContent(true) end
+		end })
+	input:ClearAllPoints()
+	input:SetPoint("TOPLEFT", newRow, "TOPLEFT", 0, 0)
+	input:SetPoint("BOTTOMRIGHT", createBtn, "BOTTOMLEFT", -16, 0)
+	s:place(newRow, fieldH, R.tight)
+	s:close()
+
+	-- ===== Teilen — Export / Import ========================================
+	local s2 = stack:section("Teilen — Export / Import")
+	local hint = W.Hint(d, "Exportiere dein komplettes Lumen-Setup als Code oder übernimm den Code von jemand anderem — granular pro Modul.")
+	s2:place(hint, M.hintH, R.row)
+
+	-- Export
+	local boxE = s2:subgroup({ title = "Export" })
+	local genBtn = W.Button(d, { text = "Export-Code erzeugen", variant = "ghost",
+		onClick = function()
+			shareExport = (ns.Share and ns.Share:Export()) or ""
+			ns.Shell:RenderContent(true)
+		end })
+	boxE:placeLeft(genBtn, M.buttonH, G.afterExportBtn)
+	local expTA = W.Textarea(d, { height = G.taH, readOnly = true,
+		placeholder = "Noch kein Code — „Export-Code erzeugen“ klicken, dann hier markieren (Strg+A) und kopieren (Strg+C).",
+		get = function() return shareExport end })
+	boxE:place(expTA, G.taH, R.tight)
+	boxE:close()
+
+	-- Import Profil: Code einfügen -> „Importieren" (unten rechts) öffnet das Popup
+	-- (Modul-/Layout-Auswahl + „Profil erstellen"/„Aktuelles überschreiben").
+	local function openImportDialog(payload)
+		local mods = {}
+		for _, mod in ipairs(ns.Share:GetModules()) do
+			if payload.modules[mod.key] then mods[#mods + 1] = mod end
+		end
+		local hasLayout = payload.layout and next(payload.layout) ~= nil
+		W.ImportDialog({
+			modules = mods, hasLayout = hasLayout,
+			onCreate = function(name, sel, withLayout)
+				db:SetProfile(name) -- frisches Profil anlegen + hineinwechseln, dann Auswahl einmischen
+				local ok = ns.Share and ns.Share:Import(payload, sel, withLayout)
+				if ok and ns.Lumen then ns.Lumen:Print("Profil „" .. name .. "“ erstellt und importiert.") end
+				shareImportRaw, importErr = "", nil
+				ns.Shell:RenderContent(true)
+			end,
+			onOverwrite = function(sel, withLayout)
+				local ok = ns.Share and ns.Share:Import(payload, sel, withLayout)
+				if ok and ns.Lumen then ns.Lumen:Print("Import in das aktuelle Profil übernommen.") end
+				shareImportRaw, importErr = "", nil
+				ns.Shell:RenderContent(true)
+			end,
+		})
+	end
+
+	local boxI = s2:subgroup({ title = "Import Profil" })
+	local impTA = W.Textarea(d, { height = G.taH, placeholder = "Profil-Code hier einfügen (Strg+V) …",
+		get = function() return shareImportRaw end,
+		onChange = function(t) shareImportRaw = t end })
+	boxI:place(impTA, G.taH, importErr and R.tight or R.row)
+
+	if importErr then
+		boxI:place(W.Hint(d, "|cffD66A5CCode ungültig: " .. importErr .. " — bitte den kompletten Code einfügen.|r"), M.hintH, R.row)
+	end
+
+	-- „Importieren"-Button unten rechts in der Box (eigene Reihe, rechtsbündig).
+	local btnRow = CreateFrame("Frame", nil, d)
+	btnRow:SetHeight(M.buttonH)
+	local importBtn = W.Button(btnRow, { text = "Importieren", variant = "primary",
+		onClick = function()
+			local raw = shareImportRaw and shareImportRaw:gsub("%s+", "") or ""
+			if not ns.Share or raw == "" then importErr = "leer"; ns.Shell:RenderContent(true); return end
+			local p, err = ns.Share:Decode(shareImportRaw)
+			if not p then importErr = err or "ungültig"; ns.Shell:RenderContent(true); return end
+			importErr = nil
+			openImportDialog(p)
+		end })
+	importBtn:ClearAllPoints(); importBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
+	boxI:place(btnRow, M.buttonH, R.tight)
+	boxI:close()
+	s2:close()
+end
+
+ns.Screens["Global/Base"]    = buildGlobalBase
+ns.Screens["Global/Profile"] = buildGlobalProfile
+
 ns.Screens["Click-Cast/Bindings"] = buildClickCast
 
 ns.Screens["Raidframes/Base"]     = buildBase

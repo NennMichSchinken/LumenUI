@@ -278,6 +278,7 @@ UI.WIDGET = {
 	-- Confirm-Dialog (modaler Bestätigungs-Popup; dunkelt die Shell dahinter ab).
 	confirmW      = 460, -- Karten-Breite
 	confirmH      = 188, -- Karten-Höhe (Titel + 2–3 Zeilen Text + Button-Reihe)
+	importDlgW    = 520, -- Breite des Import-Popups (W.ImportDialog; Höhe wächst mit Inhalt)
 	confirmPad    = 24,  -- Innenabstand der Karte
 	confirmBtnGap = 12,  -- Abstand zwischen Bestätigen/Abbrechen
 	confirmBtnW   = 150, -- feste Button-Breite (Text-Wechsel bricht das Layout nicht)
@@ -320,6 +321,11 @@ UI.LAYOUT = {
 	base = {                    -- Base-Tab: freistehender „Raidframes aktiviert"-Schalter
 		topToToggle    = 30,    -- Tab-Strip -> Checkbox (oben mehr Platz)
 		toggleToSection = 16,   -- Checkbox -> erste Sektions-Karte (unten weniger, näher dran)
+	},
+	global = {                  -- Global-Tab (Base = Edit-Modus; Profile = Profile + Export/Import)
+		taH            = 120,   -- Höhe der Export/Import-Textarea
+		afterExportBtn = 14,    -- „Export-Code erzeugen" -> Export-Textarea
+		afterStatus    = 12,    -- Status-Zeile (Code erkannt) -> Modul-Häkchen
 	},
 	lebensbalken = {
 		afterTexHint = 10,  -- Textur-Reihe -> Mausrad/Such-Hinweis (eng darunter)
@@ -392,10 +398,18 @@ function UI.Fill(parent, col, layer)
 	return t
 end
 
--- 1px-Hairline-Border (4 Kanten) um frame, Gold-at-opacity. Pixel-Snapping via
--- PixelUtil: rechnet die effektive Scale ein -> Linien liegen exakt auf dem
--- physischen Pixelraster und verschwinden NICHT bei skaliertem Panel (SetScale).
--- Gibt die 4 Kanten-Texturen zurück (für späteres Umfärben, z.B. Hover/aktiv).
+-- 1px-Hairline-Border (4 Kanten) um frame, Gold-at-opacity. Gibt die 4 Kanten-
+-- Texturen zurück (für späteres Umfärben, z.B. Hover/aktiv).
+--
+-- WICHTIGE REGEL (hart erlernt, NICHT zurückbauen): NUR die DICKE wird pixel-
+-- gesnappt (PixelUtil.SetHeight/SetWidth -> crisp 1px auch unter SetScale=0.80).
+-- Die POSITION läuft über normales SetPoint(0,0) an die Frame-Kanten. Früher
+-- snappte auch die Position via PixelUtil.SetPoint — das buk aber einen ABSOLUTEN,
+-- positions-abhängigen Offset ein: sobald der Frame DANACH noch verschoben/re-
+-- geankert wurde (placeLeft, neu gesetzte Anker) ODER im ScrollFrame gescrollt
+-- wurde, lag der Offset „daneben" und die 1px-Linie fiel zwischen zwei Pixel ->
+-- verschwand (der wiederkehrende Tab-/Dropdown-/Button-Border-Bug). Plain-Anchor
+-- klebt die Linie IMMER an die Kante -> die ganze Bug-Klasse ist eliminiert.
 function UI.Border(frame, col, thick, layer)
 	thick = thick or 1
 	local edges = {}
@@ -406,28 +420,26 @@ function UI.Border(frame, col, thick, layer)
 		return t
 	end
 	local top, bot, left, right = mk(), mk(), mk(), mk()
-	-- Pixel-Snap der Kanten. WICHTIG: muss NACH dem finalen Layout erneut laufen — zur
-	-- Bauzeit (im RenderContent, vor gesetzter Scrollposition) steht die absolute Position
-	-- noch nicht, dann landet die 1px-Linie zwischen zwei Pixeln und verschwindet bis zum
-	-- nächsten Scroll (der bekannte Tab-/Dropdown-Border-Bug). Daher: sofort + einen Frame
-	-- später (C_Timer.After 0, nach dem Layout-Pass) + bei jeder Größenänderung neu snappen.
-	local function snap()
+	top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+	top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	bot:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+	bot:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+	left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+	right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	-- Dicke pixel-genau (auch wenn die effektive Scale erst nach dem Layout/Show
+	-- final steht -> sofort + ein Frame später + bei Größen-/Sichtbarkeitswechsel).
+	local function snapThickness()
 		PixelUtil.SetHeight(top, thick)
-		PixelUtil.SetPoint(top, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-		PixelUtil.SetPoint(top, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
 		PixelUtil.SetHeight(bot, thick)
-		PixelUtil.SetPoint(bot, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-		PixelUtil.SetPoint(bot, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
 		PixelUtil.SetWidth(left, thick)
-		PixelUtil.SetPoint(left, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-		PixelUtil.SetPoint(left, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
 		PixelUtil.SetWidth(right, thick)
-		PixelUtil.SetPoint(right, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-		PixelUtil.SetPoint(right, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
 	end
-	snap()
-	C_Timer.After(0, snap)
-	frame:HookScript("OnSizeChanged", snap)
+	snapThickness()
+	C_Timer.After(0, snapThickness)
+	frame:HookScript("OnSizeChanged", snapThickness)
+	frame:HookScript("OnShow", snapThickness)
 	return edges
 end
 

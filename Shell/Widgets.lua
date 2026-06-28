@@ -916,6 +916,108 @@ function W.Confirm(o)
 end
 
 -- ---------------------------------------------------------------------------
+--  ImportDialog — modaler Profil-Import-Popup. Reichhaltiger als W.Confirm:
+--  Profilname-Eingabe + Modul-Häkchen (dynamisch, nur die im Code enthaltenen)
+--  + „Layout mit übernehmen" + zwei Aktionen („Profil erstellen" benutzt den
+--  Namen, „Aktuelles überschreiben" ignoriert ihn). Frisch je Aufruf gebaut +
+--  beim Schließen freigegeben (selten geöffnet -> kein Singleton nötig). Aufruf:
+--    W.ImportDialog{ modules = {{key,label}}, hasLayout, onCreate(name,sel,layout),
+--                    onOverwrite(sel,layout), onCancel }
+--  sel = { [modKey] = bool } (alle default an), layout = bool (default aus).
+-- ---------------------------------------------------------------------------
+function W.ImportDialog(o)
+	o = o or {}
+	local pad = M.confirmPad
+	local host = W._menuHost or UIParent
+
+	local overlay = CreateFrame("Button", nil, host)
+	overlay:SetAllPoints(host)
+	overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+	overlay:EnableMouse(true) -- modal: schluckt Klicks auf die abgedunkelte Shell
+	local dim = overlay:CreateTexture(nil, "BACKGROUND")
+	dim:SetAllPoints(overlay)
+	dim:SetColorTexture(0, 0, 0, M.confirmDim)
+
+	local function close() overlay:Hide(); overlay:SetParent(nil) end
+	overlay:SetScript("OnClick", function() close(); if o.onCancel then o.onCancel() end end)
+
+	local card = CreateFrame("Frame", nil, overlay)
+	card:SetFrameStrata("FULLSCREEN_DIALOG")
+	card:SetFrameLevel(overlay:GetFrameLevel() + 10)
+	card:SetWidth(M.importDlgW)
+	card:SetPoint("CENTER", overlay, "CENTER", 0, 0)
+	card:EnableMouse(true) -- Klicks auf die Karte NICHT als „außerhalb" werten
+	UI.Fill(card, C.ink550)
+	UI.Border(card, L.strong, 1, "OVERLAY")
+	local accent = card:CreateTexture(nil, "OVERLAY")
+	accent:SetHeight(3)
+	accent:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
+	accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
+	UI.SetColor(accent, C.gold500)
+
+	local y = -pad - 6
+
+	local title = UI.FS(card, "sectionHead", C.gold300)
+	title:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
+	title:SetText("Profil importieren")
+	y = y - 36
+
+	-- Profilname (für „Profil erstellen"; „Aktuelles überschreiben" ignoriert ihn).
+	local nameIn = W.TextInput(card, { label = "Profilname", placeholder = "Name für neues Profil …" })
+	nameIn:ClearAllPoints()
+	nameIn:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
+	nameIn:SetPoint("TOPRIGHT", card, "TOPRIGHT", -pad, y)
+	y = y - (M.controlH + M.fieldGap) - 18
+
+	local lbl = UI.FS(card, "fieldLabel", C.gold250)
+	lbl:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
+	lbl:SetText("Was übernehmen:")
+	y = y - 28
+
+	-- Modul-Häkchen (alle default an).
+	local selected = {}
+	for _, mod in ipairs(o.modules or {}) do
+		local key = mod.key
+		selected[key] = true
+		local chk = W.Checkbox(card, { label = mod.label,
+			get = function() return selected[key] end, set = function(v) selected[key] = v end })
+		chk:ClearAllPoints(); chk:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
+		y = y - (M.checkBox + 12)
+	end
+
+	-- Layout-Häkchen (nur wenn der Code Positionen enthält; default aus).
+	local withLayout = false
+	if o.hasLayout then
+		local chk = W.Checkbox(card, { label = "Layout-Positionen mit übernehmen",
+			tooltip = "An = die Frame-Positionen des Absenders übernehmen. Aus = deine aktuellen Positionen bleiben.",
+			get = function() return withLayout end, set = function(v) withLayout = v end })
+		chk:ClearAllPoints(); chk:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
+		y = y - (M.checkBox + 12)
+	end
+
+	y = y - 10
+
+	-- Aktionen: „Profil erstellen" (primary, braucht Namen) | „Aktuelles überschreiben".
+	local createBtn = W.Button(card, { text = "Profil erstellen", variant = "primary",
+		onClick = function()
+			local name = (nameIn:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+			if name == "" then nameIn._edit:SetFocus(); return end -- Name ist Pflicht
+			close()
+			if o.onCreate then o.onCreate(name, selected, withLayout) end
+		end })
+	createBtn:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
+	local overBtn = W.Button(card, { text = "Aktuelles überschreiben", variant = "ghost",
+		onClick = function() close(); if o.onOverwrite then o.onOverwrite(selected, withLayout) end end })
+	overBtn:SetPoint("LEFT", createBtn, "RIGHT", M.confirmBtnGap, 0)
+	y = y - M.buttonH
+
+	card:SetHeight(-y + pad)
+
+	overlay:Show(); overlay:Raise()
+	return overlay
+end
+
+-- ---------------------------------------------------------------------------
 --  Tooltip — eigener, im Lumen-Design gestylter Tooltip (ersetzt den Blizzard-
 --  GameTooltip in der GANZEN Shell). Singleton, Strata TOOLTIP (über Popovers).
 --  Zwei Modi über EINE Karte: Spell (Icon + Name + C_Spell-Beschreibung) ODER
@@ -1597,6 +1699,132 @@ function W.Hint(parent, text, height)
 	fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
 	fs:SetText(text or "")
 	f._fs = fs
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  TextInput — einzeilige Eingabe (Inset-Feld + Gold-Rand, optional Gold-Label
+--  oben, Platzhalter). Für Profilnamen u.ä. o = {label, placeholder, width,
+--  get, onEnter, onChange}. Liefert f mit GetText/SetText/ClearText (+ f._edit).
+-- ---------------------------------------------------------------------------
+function W.TextInput(parent, o)
+	o = o or {}
+	local f = CreateFrame("Frame", nil, parent)
+	if o.width then f:SetWidth(o.width) end
+
+	local topY = 0
+	if o.label then
+		local _, yo = fieldLabel(f, o.label)
+		topY = yo
+		f:SetHeight(CONTROL_H - topY)
+	else
+		f:SetHeight(CONTROL_H)
+	end
+
+	local box = CreateFrame("EditBox", nil, f)
+	box:SetHeight(CONTROL_H)
+	box:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
+	box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
+	UI.Fill(box, C.ink700)
+	UI.Border(box, L.mid, 1, "OVERLAY")
+	box:SetFont(UI.FONT.hankenMed, 15, "")
+	box:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+	box:SetTextInsets(10, 10, 0, 0)
+	box:SetAutoFocus(false)
+	if o.get then box:SetText(o.get() or "") end
+
+	local ph
+	if o.placeholder then
+		ph = UI.FS(box, "label", C.textMuted)
+		ph:SetText(o.placeholder)
+		ph:SetPoint("LEFT", box, "LEFT", 10, 0)
+		ph:SetPoint("RIGHT", box, "RIGHT", -10, 0)
+		ph:SetJustifyH("LEFT")
+		local function upd() ph:SetShown((box:GetText() or "") == "") end
+		box:HookScript("OnTextChanged", upd); upd()
+	end
+
+	box:SetScript("OnEnterPressed", function(self2)
+		self2:ClearFocus()
+		if o.onEnter then o.onEnter(self2:GetText()) end
+	end)
+	box:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
+	if o.onChange then box:HookScript("OnTextChanged", function(self2) o.onChange(self2:GetText()) end) end
+
+	f._edit = box
+	function f:GetText() return box:GetText() end
+	function f:SetText(t) box:SetText(t or "") end
+	function f:ClearText() box:SetText("") end
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  Textarea — mehrzeilige Eingabe (Inset-Box + Gold-Rand) mit scrollbarem
+--  Multi-Line-EditBox. Für Export/Import-Codes. o = {height, width, get,
+--  onChange, readOnly, placeholder}. readOnly = wählbar/kopierbar, aber Tipp-
+--  Änderungen werden zurückgesetzt (Export-Code). Liefert GetText/SetText.
+-- ---------------------------------------------------------------------------
+function W.Textarea(parent, o)
+	o = o or {}
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(o.height or 120)
+	if o.width then f:SetWidth(o.width) end
+	UI.Fill(f, C.ink700)
+	UI.Border(f, L.mid, 1, "OVERLAY")
+
+	local sf = CreateFrame("ScrollFrame", nil, f)
+	sf:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -8)
+	sf:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 8)
+	sf:EnableMouseWheel(true)
+
+	local edit = CreateFrame("EditBox", nil, sf)
+	edit:SetMultiLine(true)
+	edit:SetAutoFocus(false)
+	edit:SetFont(UI.FONT.hankenMed, 14, "")
+	edit:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+	edit:SetWidth(1)
+	edit:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
+	sf:SetScrollChild(edit)
+	sf:SetScript("OnSizeChanged", function(_, w) edit:SetWidth(w or 1) end)
+
+	-- Cursor beim Tippen im Sichtfenster halten + Mausrad scrollt die Box.
+	edit:SetScript("OnCursorChanged", function(_, _, y, _, cursorH)
+		local top = sf:GetVerticalScroll() or 0
+		local viewH = sf:GetHeight() or 1
+		y = -y
+		if y < top then sf:SetVerticalScroll(y)
+		elseif (y + cursorH) > (top + viewH) then sf:SetVerticalScroll((y + cursorH) - viewH) end
+	end)
+	sf:SetScript("OnMouseWheel", function(self2, d)
+		local range = self2:GetVerticalScrollRange() or 0
+		self2:SetVerticalScroll(math.max(0, math.min(range, (self2:GetVerticalScroll() or 0) - d * 24)))
+	end)
+	f:EnableMouse(true)
+	f:SetScript("OnMouseDown", function() edit:SetFocus() end) -- Klick irgendwo in der Box -> fokussieren
+
+	local frozen = (o.get and o.get()) or ""
+	edit:SetText(frozen)
+
+	local ph
+	if o.placeholder then
+		ph = UI.FS(edit, "label", C.textMuted)
+		ph:SetText(o.placeholder)
+		ph:SetPoint("TOPLEFT", edit, "TOPLEFT", 2, -2)
+		local function upd() ph:SetShown((edit:GetText() or "") == "") end
+		edit:HookScript("OnTextChanged", upd); upd()
+	end
+
+	if o.readOnly then
+		edit:HookScript("OnTextChanged", function(self2, user)
+			if user and self2:GetText() ~= frozen then self2:SetText(frozen) end
+		end)
+	elseif o.onChange then
+		edit:HookScript("OnTextChanged", function(self2, user) if user then o.onChange(self2:GetText()) end end)
+	end
+
+	f._edit = edit
+	function f:GetText() return edit:GetText() end
+	function f:SetText(t) frozen = t or ""; edit:SetText(frozen) end
 	return f
 end
 

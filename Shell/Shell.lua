@@ -100,16 +100,32 @@ local function makeNavItem(parent, label)
 
 	b._wash, b._bar, b._txt = wash, barL, txt
 	b:SetScript("OnEnter", function(self)
-		if not self._active then self._txt:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b) end
+		if self._soon then
+			if ns.W and ns.W.ShowTextTip then
+				ns.W.ShowTextTip(self, "Coming soon", "Dieses Modul ist noch in Arbeit und wird in einer späteren Version freigeschaltet.")
+			end
+		elseif not self._active then
+			self._txt:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b)
+		end
 	end)
 	b:SetScript("OnLeave", function(self)
-		if not self._active then self._txt:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b) end
+		if self._soon then
+			if ns.W and ns.W.HideTip then ns.W.HideTip() end
+		elseif not self._active then
+			self._txt:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		end
 	end)
 	function b:SetActive(on)
 		self._active = on
 		self._wash:SetShown(on); self._bar:SetShown(on)
-		local col = on and C.gold250 or C.textBody
+		local col = on and C.gold250 or (self._soon and C.textFaint or C.textBody)
 		self._txt:SetTextColor(col.r, col.g, col.b)
+	end
+	-- Coming-soon-Modus: Text gedämpft (kein Chip — ausgegraut + Hover-Tooltip reicht,
+	-- ein Dauer-Chip wäre doppelt), nie aktiv hervorgehoben.
+	function b:SetComingSoon(on)
+		self._soon = on
+		if on then self._txt:SetTextColor(C.textFaint.r, C.textFaint.g, C.textFaint.b) end
 	end
 	return b
 end
@@ -235,13 +251,15 @@ end
 -- ===========================================================================
 --  Aufbau des Panels (einmalig)
 -- ===========================================================================
+-- soon = true: Modul noch nicht fertig -> Nav-Eintrag gedämpft + „Coming soon"-Chip,
+-- Klick zeigt nur die Coming-soon-Platzhalterseite (keine Tabs, keine Aktivierung).
 local SECTIONS = {
 	{ "Global",      { "Base", "Profile" } },
 	{ "Click-Cast",  { "Bindings" } },
 	{ "Raidframes",  { "Base", "Raid", "Group", "Auras", "Tracking" } },
-	{ "Unitframes",  { "Base" } },
-	{ "Nameplates",  { "Base" } },
-	{ "QoL",         { "Base" } },
+	{ "Unitframes",  {}, soon = true },
+	{ "Nameplates",  {}, soon = true },
+	{ "QoL",         {}, soon = true },
 }
 
 function Shell:Build()
@@ -450,6 +468,7 @@ function Shell:Build()
 		if prev then nb:SetPoint("TOP", prev, "BOTTOM", 0, -2)
 		else nb:SetPoint("TOP", nav, "TOP", 0, -S.s8) end
 		nb._index = i
+		if sec.soon then nb:SetComingSoon(true) end
 		nb:SetScript("OnClick", function() Shell:SelectSection(i) end)
 		self._navButtons[i] = nb
 		prev = nb
@@ -488,8 +507,18 @@ end
 
 function Shell:SelectSection(index)
 	self._section = index
-	for i, nb in ipairs(self._navButtons) do nb:SetActive(i == index) end
-	self:RebuildTabs(index)
+	local sec = SECTIONS[index]
+	-- Coming-soon-Module nie aktiv hervorheben (sie bleiben gedämpft + Chip).
+	for i, nb in ipairs(self._navButtons) do nb:SetActive(i == index and not sec.soon) end
+	if sec.soon then
+		-- Keine Tabs, keine Tab-Auswahl — direkt die Platzhalterseite rendern.
+		for _, t in ipairs(self._tabButtons) do t:Hide(); t:SetParent(nil) end
+		wipe(self._tabButtons)
+		self._tab = nil
+		self:RenderContent()
+	else
+		self:RebuildTabs(index)
+	end
 end
 
 function Shell:SelectTab(index)
@@ -669,17 +698,21 @@ function Shell:RenderContent(keepScroll)
 
 	local stack = newStack(d)
 	local sec = SECTIONS[self._section]
-	local key = sec[1] .. "/" .. (sec[2][self._tab] or "")
-	local builder = ns.Screens and ns.Screens[key]
-	if builder then
-		-- Builder defensiv kapseln: ein Screen-Fehler soll NICHT die ganze Shell
-		-- leeren (sonst nur ein leerer Tab ohne Hinweis). Fehler in den Chat drucken.
-		local ok, err = pcall(builder, d, stack)
-		if not ok and ns.Lumen then
-			ns.Lumen:Print("|cffD66A5CShell-Fehler in " .. key .. ":|r " .. tostring(err))
-		end
+	if sec.soon then
+		self:ComingSoon(d, stack, sec[1])
 	else
-		self:Gallery(d, stack)
+		local key = sec[1] .. "/" .. (sec[2][self._tab] or "")
+		local builder = ns.Screens and ns.Screens[key]
+		if builder then
+			-- Builder defensiv kapseln: ein Screen-Fehler soll NICHT die ganze Shell
+			-- leeren (sonst nur ein leerer Tab ohne Hinweis). Fehler in den Chat drucken.
+			local ok, err = pcall(builder, d, stack)
+			if not ok and ns.Lumen then
+				ns.Lumen:Print("|cffD66A5CShell-Fehler in " .. key .. ":|r " .. tostring(err))
+			end
+		else
+			self:Gallery(d, stack)
+		end
 	end
 
 	local h = stack:height()
@@ -795,6 +828,33 @@ function Shell:Gallery(d, stack)
 		.. "/lumen öffnet weiterhin die klassische Konfiguration.")
 	hint:SetPoint("TOPLEFT", d, "TOPLEFT", 0, stack:y())
 	stack:gap(M.hintH) -- den Hinweis-Block in die Höhe einrechnen
+end
+
+-- ---------------------------------------------------------------------------
+--  Coming-soon-Platzhalter: zentrierte Karte (Cinzel-Gold-Titel + Hinweis) für
+--  Module, die es noch nicht gibt (Unitframes/Nameplates/QoL). Wird von
+--  RenderContent für `soon`-Sektionen statt eines echten Screens aufgerufen.
+-- ---------------------------------------------------------------------------
+function Shell:ComingSoon(d, stack, name)
+	stack:gap(70)
+	local holder = CreateFrame("Frame", nil, d)
+	stack:place(holder, 170, 0)
+
+	local card = CreateFrame("Frame", nil, holder)
+	card:SetSize(440, 170)
+	card:SetPoint("CENTER", holder, "CENTER", 0, 0)
+	fill(card, C.ink600)
+	border(card, L.soft, 1, "OVERLAY")
+
+	local head = FS(card, "section", C.gold300)
+	head:SetText(UI.Track("COMING SOON", " "))
+	head:SetPoint("TOP", card, "TOP", 0, -40)
+
+	local body = FS(card, "hint", C.textMuted)
+	body:SetJustifyH("CENTER"); body:SetWordWrap(true)
+	body:SetPoint("TOPLEFT", card, "TOPLEFT", 28, -84)
+	body:SetPoint("TOPRIGHT", card, "TOPRIGHT", -28, -84)
+	body:SetText("Das Modul „" .. (name or "?") .. "“ ist noch in Arbeit und wird in einer späteren Version freigeschaltet.")
 end
 
 -- ===========================================================================
