@@ -1,28 +1,28 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Suite-Shell Screens (Phase 3: echte, db-verdrahtete Seiten)
---  Ein Builder je Sektion/Tab, registriert in ns.Screens["<Sektion>/<Tab>"].
---  Shell:RenderContent() ruft den Builder; gibt es keinen, fällt es auf die
---  Widget-Galerie zurück. Vorbild-Layout: Prototyp ui_kits/lumen-config/*.jsx.
+--  Lumen — Suite-Shell Screens (phase 3: real, db-wired pages)
+--  One builder per section/tab, registered in ns.Screens["<Section>/<Tab>"].
+--  Shell:RenderContent() calls the builder; if there is none, it falls back to
+--  the widget gallery. Layout reference: prototype ui_kits/lumen-config/*.jsx.
 --
---  Builder-Signatur: function(holder, stack) — `holder` ist der Content-Frame,
---  `stack` der Layout-Stapler aus Shell:NewStack (place / placeLeft / gap / y).
---  Widgets ankern get/set DIREKT ans Profil (kein Zwischenspeicher) + lösen ein
---  Relayout aus, damit Änderungen sofort an den Frames sichtbar sind.
+--  Builder signature: function(holder, stack) — `holder` is the content frame,
+--  `stack` the layout stacker from Shell:NewStack (place / placeLeft / gap / y).
+--  Widgets wire get/set DIRECTLY to the profile (no intermediate store) + trigger
+--  a relayout so changes are immediately visible on the frames.
 -- ===========================================================================
 
 local UI = ns.UI
 local W  = ns.W
 local M, C, L = UI.WIDGET, UI.C, UI.LAYOUT
-local T = ns.T   -- Lokalisierung: T("english") -> Anzeige in der aktiven Sprache
+local T = ns.T   -- localization: T("english") -> display in the active language
 
 ns.Screens = ns.Screens or {}
 
 -- ---------------------------------------------------------------------------
---  Auswahl-Optionen (values = Profil-Keys; labels werden übersetzt). Erst NACH
---  der Sprachwahl bauen (onLocaleReady), sonst stünden hier feste Load-Zeit-
---  Strings — forward-declared, befüllt im Builder unten.
+--  Selection options (values = profile keys; labels are translated). Build only
+--  AFTER the language choice (onLocaleReady), otherwise these would be fixed
+--  load-time strings — forward-declared, filled in the builder below.
 -- ---------------------------------------------------------------------------
 local ALIGN_OPTS, OUTLINE_OPTS, HPTEXT_OPTS, POINT_OPTS, GROW_OPTS
 local AURA_FILTER_OPTS, DISPEL_MODE_OPTS, AGGRO_MODE_OPTS, SORT_MODE_OPTS
@@ -99,7 +99,7 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 end
 
 -- ---------------------------------------------------------------------------
---  Profil-Zugriff (Werte liegen PRO KONTEXT in rf().raid bzw. rf().party).
+--  Profile access (values live PER CONTEXT in rf().raid resp. rf().party).
 -- ---------------------------------------------------------------------------
 local function rf() return ns.Lumen.db.profile.raidframes end
 local function relayout() if ns.Raidframes then ns.Raidframes:UpdateLayout() end end
@@ -110,22 +110,22 @@ local function vset(ctx, key)
 		local t = rf(); t[ctx] = t[ctx] or {}; t[ctx][key] = v; relayout()
 	end
 end
--- (Per-Kontext-Farb-Helfer entfernt: Text-Farben liegen jetzt GETEILT in Base, siehe tcget/tcset.)
+-- (Per-context color helpers removed: text colors now live SHARED in Base, see tcget/tcset.)
 
--- Top-Level-Keys (Base-Tab; liegen direkt unter rf(), nicht im Kontext).
+-- Top-level keys (Base tab; live directly under rf(), not in the context).
 local function tget(key) return function() return rf()[key] end end
 local function tset(key) return function(v) rf()[key] = v; relayout() end end
 local function tcget(key) return function() local c = rf()[key] or {}; return c.r or 1, c.g or 1, c.b or 1 end end
 local function tcset(key) return function(r, g, b) rf()[key] = { r = r, g = g, b = b }; relayout() end end
--- Dispel-Farben liegen verschachtelt in rf().dispelColors[<Typ>].
+-- Dispel colors live nested in rf().dispelColors[<type>].
 local function dcget(typ) return function() local c = (rf().dispelColors or {})[typ] or {}; return c.r or 1, c.g or 1, c.b or 1 end end
 local function dcset(typ) return function(r, g, b) rf().dispelColors = rf().dispelColors or {}; rf().dispelColors[typ] = { r = r, g = g, b = b }; relayout() end end
--- Prozent-Helfer für Alpha-Slider (Profil hält 0..1, Slider zeigt 0..100).
+-- Percent helpers for alpha sliders (profile holds 0..1, slider shows 0..100).
 local function pctget(key) return function() return math.floor((rf()[key] or 0) * 100 + 0.5) end end
 local function pctset(key) return function(v) rf()[key] = v / 100; relayout() end end
 
--- Aura-Werte liegen in rf().auras[<cat>][key]. Set löst RefreshAuras() aus (leicht
--- + kampf-sicher; UpdateLayout würde im Kampf abbrechen — wie der AceConfig-Auras-Tab).
+-- Aura values live in rf().auras[<cat>][key]. Set triggers RefreshAuras() (light
+-- + combat-safe; UpdateLayout would abort in combat — like the AceConfig Auras tab).
 local function aget(cat, key) return function() return ((rf().auras or {})[cat] or {})[key] end end
 local function aset(cat, key)
 	return function(v)
@@ -159,9 +159,9 @@ local function textureOptions() return texOptsFrom(ns.Raidframes and ns.Raidfram
 local function shieldTexOptions() return texOptsFrom(ns.Raidframes and ns.Raidframes:ShieldTextureValues()) end
 local function healAbsorbTexOptions() return texOptsFrom(ns.Raidframes and ns.Raidframes:HealAbsorbTextureValues()) end
 
--- Einzelnes Dropdown RASTERBÜNDIG: Zelle 1 eines 3-Spalten-Rasters, damit ALLE
--- Dropdowns exakt gleich (1 Spalte) breit sind. sideFn(select) darf rechts neben
--- dem Control eine Checkbox ankern (auf Control-Höhe). Gibt das Select zurück.
+-- Single dropdown GRID-ALIGNED: cell 1 of a 3-column grid so ALL dropdowns are
+-- exactly the same (1 column) width. sideFn(select) may anchor a checkbox to the
+-- right of the control (at control height). Returns the select.
 local function gridSelect(d, stack, gap, o, sideFn)
 	local fieldH = M.controlH + M.fieldGap
 	local r, c = W.Row(d, 3, { height = fieldH })
@@ -171,10 +171,10 @@ local function gridSelect(d, stack, gap, o, sideFn)
 	return sel
 end
 
--- Dimmt + sperrt einen Inhalts-Frame im „Modul deaktiviert"-Zustand (gleicher
--- 0.35-Look wie eine ausgegraute Unter-Option). Wiederverwendbar: Base gated sein
--- Body-Frame (Master bleibt bedienbar), Raid/Group/Auras gaten den ganzen Screen.
--- Der Cover-Button schluckt alle Klicks; Mausrad-Scrollen (am ScrollFrame) bleibt.
+-- Dims + locks a content frame in the "module disabled" state (same 0.35 look as
+-- a greyed-out sub-option). Reusable: Base gates its body frame (master stays
+-- operable), Raid/Group/Auras gate the whole screen.
+-- The cover button swallows all clicks; mouse-wheel scrolling (on the ScrollFrame) stays.
 local function applyModuleGate(holder, enabled)
 	if not holder._gateCover then
 		local cover = CreateFrame("Button", nil, holder)
@@ -192,9 +192,9 @@ local function applyModuleGate(holder, enabled)
 end
 
 -- ---------------------------------------------------------------------------
---  RaidScreen — Größe/Anordnung + Name-/HP-Text (Prototyp RaidScreen.jsx).
---  Wird für Raid (ctx="raid") UND Group (ctx="party") genutzt — identische
---  Struktur, nur ein anderer Kontext im Profil.
+--  RaidScreen — size/arrangement + name/HP text (prototype RaidScreen.jsx).
+--  Used for Raid (ctx="raid") AND Group (ctx="party") — identical structure,
+--  just a different context in the profile.
 -- ---------------------------------------------------------------------------
 local function buildRaid(d, stack, ctx)
 	local fieldH = M.controlH + M.fieldGap -- height of a select WITH label
@@ -297,9 +297,9 @@ local function buildRaid(d, stack, ctx)
 	applyModuleGate(d, rf().enabled) -- module off -> whole Raid/Group screen greyed + locked
 end
 
--- Kleiner Pfeil-Button (↑/↓) aus zwei Linien (Font-Glyphen ▲▼ sind unsicher).
--- Hat einen Disabled-Zustand (ausgegraut, nicht klickbar) -> nicht verstecken,
--- damit die Reihen-Positionen stabil bleiben (kein „Springen").
+-- Small arrow button (↑/↓) from two lines (font glyphs ▲▼ are unreliable).
+-- Has a disabled state (greyed out, not clickable) -> don't hide it, so the
+-- row positions stay stable (no "jumping").
 local function arrowButton(parent, dir, onClick)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(20, 18)
@@ -326,7 +326,7 @@ local function arrowButton(parent, dir, onClick)
 	return b
 end
 
--- Rollen-Akzentfarbe (Balken links + dezenter Reihen-Wash) zur klaren Abgrenzung.
+-- Role accent color (bar on the left + subtle row wash) for clear separation.
 local ROLE_ACCENT = {
 	TANK    = { r = 0.40, g = 0.62, b = 0.95 },
 	HEALER  = { r = 0.36, g = 0.78, b = 0.46 },
@@ -334,19 +334,19 @@ local ROLE_ACCENT = {
 }
 
 -- ---------------------------------------------------------------------------
---  BaseScreen — Funktion & Optik des Moduls (spiegelt den AceConfig-Base-Tab):
---  Aktiviert, Lebensbalken, Dispel, Aggro, Sortierung, Test. KEINE Layout-Maße
---  (Breite/Höhe/Ausrichtung) — die liegen in Raid/Group. Wertabhängige Optionen
---  werden ausgegraut (Konvention wie im Aggro-Block des AceConfig).
+--  BaseScreen — function & look of the module (mirrors the AceConfig Base tab):
+--  Enabled, health bar, dispel, aggro, sorting, test. NO layout dimensions
+--  (width/height/alignment) — those live in Raid/Group. Value-dependent options
+--  are greyed out (convention as in the AceConfig aggro block).
 -- ---------------------------------------------------------------------------
 local function buildBase(d, stack)
 	local fieldH = M.controlH + M.fieldGap
 	local R = L.rhythm
 
-	-- ===== Aktiviert (Master — bleibt IMMER bedienbar, außerhalb des Gates) =
+	-- ===== Enabled (master — ALWAYS stays operable, outside the gate) ======
 	local outerStack = stack
-	local body -- forward-declare: die Master-Closure gated dieses Body-Frame
-	stack:gap(L.base.topToToggle) -- oben mehr Luft vor dem Master-Schalter
+	local body -- forward-declare: the master closure gates this body frame
+	stack:gap(L.base.topToToggle) -- more air on top before the master toggle
 	local enRow = CreateFrame("Frame", nil, d)
 	local cbEnabled = W.Checkbox(enRow, {
 		label = T("Raidframes enabled"), get = tget("enabled"),
@@ -363,32 +363,32 @@ local function buildBase(d, stack)
 	cbSolo:SetPoint("LEFT", cbEnabled, "RIGHT", L.general.checkRowGap, 0)
 	stack:place(enRow, M.checkBox, L.base.toggleToSection)
 
-	-- Alles Weitere läuft in ein gate-bares Body-Frame: bei „aus" gedimmt + gesperrt
-	-- (gleicher 0.35-Look wie die Unter-Optionen). Die lokalen Namen d/stack werden
-	-- auf body/bstack umgebogen -> der restliche Base-Code baut unverändert weiter.
+	-- Everything else goes into a gateable body frame: when "off" dimmed + locked
+	-- (same 0.35 look as the sub-options). The local names d/stack are redirected
+	-- to body/bstack -> the rest of the Base code keeps building unchanged.
 	body = CreateFrame("Frame", nil, d)
 	local bstack = ns.Shell.NewStack(body)
 	d, stack = body, bstack
 
-	-- ===== Lebensbalken ====================================================
+	-- ===== Health bar ======================================================
 	local sBar = stack:section(T("Health bar"))
 
-	-- Reihe 1: Balken-Textur | Schild-Textur | Healabsorb-Textur (3 Dropdowns, je mit Zeilen-
-	-- begrenzung + Mausrad-Vorschau + Suchfeld). Default „Lumen …" = Streifen-Muster, sonst LSM/Blizzard.
+	-- Row 1: bar texture | shield texture | heal-absorb texture (3 dropdowns, each with row
+	-- limit + mouse-wheel preview + search field). Default "Lumen …" = stripe pattern, otherwise LSM/Blizzard.
 	local tr1, tc1 = W.Row(d, 3, { height = fieldH })
 	W.Select(tc1[1], { label = T("Bar texture"), options = textureOptions(), wheelPreview = true, search = true, get = tget("healthTexture"), set = tset("healthTexture") }):SetAllPoints(tc1[1])
 	W.Select(tc1[2], { label = T("Shield texture"), options = shieldTexOptions(), wheelPreview = true, search = true, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(tc1[2])
 	W.Select(tc1[3], { label = T("Heal-absorb texture"), options = healAbsorbTexOptions(), wheelPreview = true, search = true, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(tc1[3])
 	sBar:place(tr1, fieldH, L.lebensbalken.afterTexHint)
-	-- Sichtbarer Hinweis (statt Hover-Tooltip) zur Mausrad-Vorschau + zum Suchfeld der Textur-Dropdowns.
+	-- Visible hint (instead of a hover tooltip) for the mouse-wheel preview + search field of the texture dropdowns.
 	local texHint = W.Hint(d, T("Scroll the mouse wheel over a texture dropdown to preview textures live. In the open menu, the search box at the top filters."))
 	sBar:place(texHint, M.hintH, R.row)
 
-	-- Checkbox-Versatz, um eine Checkbox vertikal aufs Control-Band (Swatch/Select) einer
-	-- Field-Reihe auszurichten (Label oben, Control unten -> Box mittig ins untere 40er-Band).
+	-- Checkbox offset to vertically align a checkbox to the control band (swatch/select) of a
+	-- field row (label on top, control below -> box centered into the lower 40px band).
 	local fillOff = -(M.fieldGap + (M.controlH - M.checkBox) / 2)
 
-	-- Reihe 2: Heilvorhersage + Klassenfarbe (Checks) + Füllfarbe + Hintergrundfarbe (Swatches).
+	-- Row 2: heal prediction + class color (checks) + fill color + background color (swatches).
 	local fillDeps = {}
 	local function refreshFill()
 		local editable = not rf().useClassColor
@@ -408,7 +408,7 @@ local function buildBase(d, stack)
 	sBar:place(r2, fieldH, R.row)
 	fillDeps[1] = swFill; refreshFill()
 
-	-- Unter-Box „Transparenz": 2×2 Deckkraft-Slider (Hintergrund/Lebensbalken · Schild/Healabsorb).
+	-- Sub-box "Transparency": 2×2 opacity sliders (background/health bar · shield/heal-absorb).
 	local boxT = sBar:subgroup({ title = T("Transparency") })
 	local trA, tcA = W.Row(d, 2, { height = M.sliderH })
 	W.Slider(tcA[1], { label = T("Background opacity"), min = 0, max = 100, unit = " %", get = pctget("bgAlpha"), set = pctset("bgAlpha") }):SetAllPoints(tcA[1])
@@ -421,14 +421,14 @@ local function buildBase(d, stack)
 	boxT:close()
 	sBar:close()
 
-	-- ===== Text (GETEILT: Farbe + Umrandung gelten für Raid & Gruppe gleich) =====
+	-- ===== Text (SHARED: color + outline apply equally to Raid & Group) =====
 	local sText = stack:section(T("Text"))
 	local nameColDeps = {}
 	local function refreshNameCol()
 		local on = not rf().nameClassColor
 		for _, w in ipairs(nameColDeps) do w:SetWidgetEnabled(on) end
 	end
-	-- Reihe 1: Name in Klassenfarbe (Check) | Namens-Umrandung | HP-Umrandung.
+	-- Row 1: name in class color (check) | name outline | HP outline.
 	local txR1, txc1 = W.Row(d, 3, { height = fieldH })
 	local cbNameCC = W.Checkbox(txc1[1], { label = T("Name in class color"), get = tget("nameClassColor"),
 		set = function(v) rf().nameClassColor = v; relayout(); refreshNameCol() end })
@@ -436,7 +436,7 @@ local function buildBase(d, stack)
 	W.Select(txc1[2], { label = T("Name outline"), options = OUTLINE_OPTS, get = tget("nameOutline"), set = tset("nameOutline") }):SetAllPoints(txc1[2])
 	W.Select(txc1[3], { label = T("HP outline"), options = OUTLINE_OPTS, get = tget("healthTextOutline"), set = tset("healthTextOutline") }):SetAllPoints(txc1[3])
 	sText:place(txR1, fieldH, R.row)
-	-- Reihe 2: Namensfarbe | HP-Text-Farbe (Field-Swatches).
+	-- Row 2: name color | HP text color (field swatches).
 	local txR2, txc2 = W.Row(d, 3, { height = fieldH })
 	local swName = W.ColorSwatch(txc2[1], { label = T("Name color"), field = true, get = tcget("nameColor"), set = tcset("nameColor") })
 	swName:SetPoint("TOPLEFT", txc2[1], "TOPLEFT", 0, 0)
@@ -445,7 +445,7 @@ local function buildBase(d, stack)
 	sText:close()
 	nameColDeps[1] = swName; refreshNameCol()
 
-	-- ===== Dispel-Anzeige ==================================================
+	-- ===== Dispel display ==================================================
 	local sDispel = stack:section(T("Dispel display"))
 
 	local dispelDeps, dispelAlphaW = {}, nil
@@ -454,7 +454,7 @@ local function buildBase(d, stack)
 		for _, w in ipairs(dispelDeps) do w:SetWidgetEnabled(on) end
 		if dispelAlphaW then dispelAlphaW:SetWidgetEnabled(on and rf().dispelMode == "overlay") end
 	end
-	-- Reihe 1: Master + „Alle dispellbaren zeigen" daneben.
+	-- Row 1: master + "Show all dispellable" next to it.
 	local dRow1 = CreateFrame("Frame", nil, d)
 	local cbDispel = W.Checkbox(dRow1, { label = T("Highlight dispellable debuffs (also in combat)"),
 		get = tget("dispelEnabled"), set = function(v) rf().dispelEnabled = v; relayout(); refreshDispel() end })
@@ -464,10 +464,10 @@ local function buildBase(d, stack)
 	cbShowAll:SetPoint("LEFT", cbDispel, "RIGHT", L.general.checkRowGap, 0)
 	sDispel:place(dRow1, M.checkBox, R.afterCheck)
 
-	local boxD = sDispel:subgroup() -- Unter-Box: Typ-Farben / Darstellung-Deckkraft
+	local boxD = sDispel:subgroup() -- sub-box: type colors / display opacity
 
-	-- Reihe 2: Typ-Farben (Magie/Fluch/Krankheit/Gift) — vor der Slider-Reihe, damit
-	-- die Slider-Wertbox unten nicht an den Farben klebt.
+	-- Row 2: type colors (magic/curse/disease/poison) — before the slider row so
+	-- the slider value box below doesn't stick to the colors.
 	local dColRow, dcc = W.Row(d, 4, { height = fieldH })
 	local dispColW = {}
 	for i, t in ipairs(DISPEL_TYPES) do
@@ -477,7 +477,7 @@ local function buildBase(d, stack)
 	end
 	boxD:place(dColRow, fieldH, R.row)
 
-	-- Reihe 3: Darstellung (Spalte 1) + Overlay-Deckkraft (Spalte 2) im Raster.
+	-- Row 3: display (column 1) + overlay opacity (column 2) in the grid.
 	local dr2, dc2 = W.Row(d, 3, { height = M.sliderH })
 	local dispMode = W.Select(dc2[1], { label = T("Display"), options = DISPEL_MODE_OPTS,
 		get = tget("dispelMode"), set = function(v) tset("dispelMode")(v); refreshDispel() end })
@@ -494,12 +494,12 @@ local function buildBase(d, stack)
 	end
 	refreshDispel()
 
-	-- ===== Aggro-Warnung ===================================================
+	-- ===== Aggro warning ===================================================
 	local sAggro = stack:section(T("Aggro warning"))
 
-	local aggroAlways = {}                 -- nur an aggroEnabled gekoppelt
+	local aggroAlways = {}                 -- coupled only to aggroEnabled
 	local aggroAlphaW
-	local aggroTextOpts = {}               -- nur aktiv, wenn Text wirklich angezeigt wird
+	local aggroTextOpts = {}               -- only active when text is actually shown
 	local function refreshAggro()
 		local en = rf().aggroEnabled and true or false
 		for _, w in ipairs(aggroAlways) do w:SetWidgetEnabled(en) end
@@ -517,13 +517,13 @@ local function buildBase(d, stack)
 		tooltip = T("Shows the aggro warning only inside instances (dungeon/raid). Off = everywhere, including solo/open world."),
 		get = tget("aggroInstanceOnly"), set = tset("aggroInstanceOnly") })
 	cbAggroInst:SetPoint("LEFT", cbAggro, "RIGHT", L.general.checkRowGap, 0)
-	aggroAlways[#aggroAlways + 1] = cbAggroInst   -- nur bedienbar, wenn Aggro-Warnung an
+	aggroAlways[#aggroAlways + 1] = cbAggroInst   -- only operable when aggro warning is on
 	sAggro:place(agRow, M.checkBox, R.afterCheck)
 
-	-- Eine Aggro-Stufe (rot/gelb) als getitelte Unter-Box: Darstellung | Farbe.
-	-- Das Darstellung-Dropdown vereint Modus + Text (3 Optionen): „Rand + Overlay +
-	-- Text" = overlay-Modus mit Text. Geschrieben werden weiter die getrennten
-	-- Profil-Felder modeKey + textKey (Datenmodell/Render unverändert).
+	-- One aggro stage (red/yellow) as a titled sub-box: display | color.
+	-- The display dropdown combines mode + text (3 options): "Border + overlay +
+	-- text" = overlay mode with text. The separate profile fields modeKey + textKey
+	-- are still written (data model/render unchanged).
 	local function aggroStage(label, colorKey, modeKey, textKey)
 		local box = sAggro:subgroup({ title = label })
 		local r, c = W.Row(d, 3, { height = fieldH })
@@ -549,9 +549,9 @@ local function buildBase(d, stack)
 	aggroStage(T("Has aggro (red)"),      "aggroColorAggro", "aggroModeAggro", "aggroTextAggro")
 	aggroStage(T("Aggro incoming (yellow)"), "aggroColorWarn",  "aggroModeWarn",  "aggroTextWarn")
 
-	-- Geteilte Text-Darstellung beider Stufen — eigene getitelte Unter-Box.
+	-- Shared text display of both stages — own titled sub-box.
 	local boxShared = sAggro:subgroup({ title = T("Text (both stages)") })
-	-- Reihe 1: Textposition | Text-Umrandung | Overlay-Deckkraft.
+	-- Row 1: text position | text outline | overlay opacity.
 	local ar1, ac1 = W.Row(d, 3, { height = M.sliderH })
 	local agPoint = W.Select(ac1[1], { label = T("Text position"), options = POINT_OPTS, get = tget("aggroTextPoint"), set = tset("aggroTextPoint") })
 	agPoint:SetAllPoints(ac1[1])
@@ -562,7 +562,7 @@ local function buildBase(d, stack)
 	aggroAlphaW:SetAllPoints(ac1[3])
 	boxShared:place(ar1, M.sliderH, R.row)
 
-	-- Reihe 2: Textgröße | Text X-Versatz | Text Y-Versatz.
+	-- Row 2: text size | text X offset | text Y offset.
 	local ar2, ac2 = W.Row(d, 3, { height = M.sliderH })
 	local agSize = W.Slider(ac2[1], { label = T("Text size"), min = 6, max = 28, get = tget("aggroTextSize"), set = tset("aggroTextSize") })
 	agSize:SetAllPoints(ac2[1])
@@ -577,10 +577,10 @@ local function buildBase(d, stack)
 	for _, w in ipairs({ agPoint, agOutline, agSize, agX, agY }) do aggroTextOpts[#aggroTextOpts + 1] = w end
 	refreshAggro()
 
-	-- ===== Sortierung ======================================================
+	-- ===== Sorting =========================================================
 	local sSort = stack:section(T("Sorting"))
 
-	-- Reihe 1: Sortieren nach (rasterbündig) + (bei „Rolle") „Auch im Raid" daneben (Tooltip).
+	-- Row 1: sort by (grid-aligned) + (when "role") "Also in raid" next to it (tooltip).
 	gridSelect(d, sSort, L.sort.afterMode,
 		{ label = T("Sort by"), options = SORT_MODE_OPTS,
 		  get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end },
@@ -598,9 +598,9 @@ local function buildBase(d, stack)
 			o[i], o[j] = o[j], o[i]
 			relayout(); ns.Shell:RenderContent(true)
 		end
-		-- Prioritätsliste: Card genau 1 Spalte breit (bündig mit „Sortieren nach"),
-		-- rollenfarbene Reihen (Akzent-Balken + Wash) + ↑/↓-Pfeile vorne (nicht
-		-- nutzbare ausgegraut, kein Springen).
+		-- Priority list: card exactly 1 column wide (aligned with "Sort by"),
+		-- role-colored rows (accent bar + wash) + ↑/↓ arrows in front (unusable
+		-- ones greyed out, no jumping).
 		local order = rf().sortRoleOrder or {}
 		local pad, rowH = M.sortCardPad, M.sortRowH
 		local cardH = #order * rowH + pad * 2
@@ -640,7 +640,7 @@ local function buildBase(d, stack)
 	end
 	sSort:close()
 
-	-- ===== Test / Beispielgruppe ===========================================
+	-- ===== Test / sample group =============================================
 	local sTest = stack:section(T("Test / sample group"))
 
 	local testSizeW
@@ -656,15 +656,15 @@ local function buildBase(d, stack)
 	sTest:close()
 	refreshTest()
 
-	-- Body in den äußeren Stack einhängen + initial gaten (Modul aus -> alles grau).
+	-- Hook the body into the outer stack + gate initially (module off -> all grey).
 	outerStack:place(body, bstack:height(), 0)
 	applyModuleGate(body, rf().enabled)
 end
 
 -- ---------------------------------------------------------------------------
---  Eine Aura-Kategorie als Sektions-Karte (spiegelt auraCatGroup aus Options.lua).
---  „Anzeigen" ist der Master: aus -> alle übrigen Controls ausgegraut. „Auto-Fit"
---  graut zusätzlich die beiden Größen-Slider. `isDebuff` blendet den Filter ein.
+--  One aura category as a section card (mirrors auraCatGroup from Options.lua).
+--  "Show" is the master: off -> all remaining controls greyed out. "Auto-Fit"
+--  additionally greys out the two size sliders. `isDebuff` shows the filter.
 -- ---------------------------------------------------------------------------
 -- Inside/Outside options (context segment switch): false = icons INSIDE the frame,
 -- true = the row is moved fully outside (next to / above / below the frame).
@@ -679,15 +679,15 @@ local function auraCat(d, stack, cat, label, isDebuff)
 	local R = L.rhythm
 	local s = stack:section(label)
 
-	-- Kontext-Zustand DIESER Karte: welchen Kontext die Platzierungs-Box zeigt/speichert.
-	-- „Menge & Verhalten" ist geteilt und davon unberührt. Default Raid (Label macht's eindeutig).
+	-- Context state of THIS card: which context the placement box shows/saves.
+	-- "Amount & behavior" is shared and unaffected. Default Raid (label makes it clear).
 	local ctx = "Raid"
 	local function cget(base) return function() return aget(cat, base .. ctx)() end end
 	local function cset(base) return function(v) aset(cat, base .. ctx)(v) end end
 
-	local deps = {}            -- an „Anzeigen" gekoppelt (alle Controls außer Master + Größe)
-	local placeRefresh = {}    -- Platzierungs-Controls: Wert beim Kontextwechsel neu ziehen
-	local sizeW                -- Größen-Slider (zusätzlich an „Auto-Fit" gekoppelt)
+	local deps = {}            -- coupled to "Show" (all controls except master + size)
+	local placeRefresh = {}    -- placement controls: re-pull value on context switch
+	local sizeW                -- size slider (additionally coupled to "Auto-Fit")
 
 	local function refresh()
 		local on = aget(cat, "enabled")() and true or false
@@ -698,21 +698,21 @@ local function auraCat(d, stack, cat, label, isDebuff)
 		ctx = v
 		for _, fn in ipairs(placeRefresh) do fn() end
 	end
-	-- Platzierungs-Control: an „Anzeigen" koppeln + beim Kontextwechsel auf den neuen Wert ziehen.
+	-- Placement control: couple to "Show" + pull to the new value on context switch.
 	local function place(widget, getter)
 		deps[#deps + 1] = widget
 		placeRefresh[#placeRefresh + 1] = function() if widget.SetValueExternal then widget:SetValueExternal(getter()) end end
 		return widget
 	end
 
-	-- „Anzeigen" (Master) — frei in der Karte, ÜBER den Unter-Boxen.
+	-- "Show" (master) — free in the card, ABOVE the sub-boxes.
 	local mRow = CreateFrame("Frame", nil, d)
 	local cbOn = W.Checkbox(mRow, { label = T("Show"), get = aget(cat, "enabled"),
 		set = function(v) aset(cat, "enabled")(v); refresh() end })
 	cbOn:SetPoint("LEFT", mRow, "LEFT", 0, 0)
 	s:place(mRow, M.checkBox, R.afterCheck)
 
-	-- ── Unter-Box A: Menge & Verhalten (GETEILT für Raid + Gruppe) ───────
+	-- ── Sub-box A: amount & behavior (SHARED for Raid + Group) ───────────
 	local boxA = s:subgroup({ title = T("Amount & behavior") })
 	local a1, ac = W.Row(d, 2, { height = M.sliderH })
 	local maxW = W.Slider(ac[1], { label = T("Max. icons"), min = 1, max = 8, get = aget(cat, "maxIcons"), set = aset(cat, "maxIcons") })
@@ -722,7 +722,7 @@ local function auraCat(d, stack, cat, label, isDebuff)
 	deps[#deps + 1] = maxW; deps[#deps + 1] = spaceW
 	boxA:place(a1, M.sliderH, R.row)
 
-	-- Auto-Fit + Cooldown-Swipe (zwei Checkboxen nebeneinander).
+	-- Auto-Fit + cooldown swipe (two checkboxes side by side).
 	local a2, ac2 = W.Row(d, 2, { height = M.checkBox })
 	local cbFit = W.Checkbox(ac2[1], { label = T("Auto-fit (size from frame height)"), get = aget(cat, "autoFit"),
 		set = function(v) aset(cat, "autoFit")(v); refresh() end })
@@ -743,22 +743,22 @@ local function auraCat(d, stack, cat, label, isDebuff)
 	end
 	boxA:close()
 
-	-- ── Unter-Box B: Platzierung & Größe (PRO KONTEXT — Raid/Gruppe-Schalter) ──
+	-- ── Sub-box B: placement & size (PER CONTEXT — Raid/Group switch) ──
 	local boxB = s:subgroup({ title = T("Placement & size") })
-	-- Raid|Gruppe-Schalter im Box-Header rechts: schaltet NUR diese Box, lokal (kein Hochscrollen).
+	-- Raid|Group switch on the right of the box header: switches ONLY this box, locally (no scroll up).
 	local ctxSeg = W.Segment(boxB._panel, { options = CTX_OPTS, get = function() return ctx end, set = switchCtx, width = 150, cellH = 26 })
 	ctxSeg:SetPoint("TOPRIGHT", boxB._panel, "TOPRIGHT", -M.subgroupPad, -10)
 	ctxSeg:SetFrameLevel(boxB._panel:GetFrameLevel() + 5)
 	deps[#deps + 1] = ctxSeg
 
-	-- Reihe: Anker | Wachstum | Innen/Außen (alle controlH-basiert -> aligned).
+	-- Row: anchor | growth | inside/outside (all controlH-based -> aligned).
 	local b1, bc = W.Row(d, 3, { height = fieldH })
 	place(W.Select(bc[1], { label = T("Position (anchor)"), options = POINT_OPTS, get = cget("anchor"), set = cset("anchor") }), cget("anchor")):SetAllPoints(bc[1])
 	place(W.Select(bc[2], { label = T("Growth direction"), options = GROW_OPTS, get = cget("grow"), set = cset("grow") }), cget("grow")):SetAllPoints(bc[2])
 	place(W.Segment(bc[3], { label = T("Placement"), options = PLACE_OPTS, get = cget("outside"), set = cset("outside") }), cget("outside")):SetAllPoints(bc[3])
 	boxB:place(b1, fieldH, R.row)
 
-	-- Reihe: Versatz X | Versatz Y | Größe (alle Slider).
+	-- Row: offset X | offset Y | size (all sliders).
 	local b2, bc2 = W.Row(d, 3, { height = M.sliderH })
 	place(W.Slider(bc2[1], { label = T("Offset X"), min = -80, max = 80, unit = " px", get = cget("offX"), set = cset("offX") }), cget("offX")):SetAllPoints(bc2[1])
 	place(W.Slider(bc2[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px", get = cget("offY"), set = cset("offY") }), cget("offY")):SetAllPoints(bc2[2])
@@ -773,8 +773,8 @@ local function auraCat(d, stack, cat, label, isDebuff)
 end
 
 -- ---------------------------------------------------------------------------
---  AurasScreen — Aura-Indikatoren je Kategorie (Prototyp/AceConfig-Auras-Tab).
---  Drei Kategorien: eigene HoTs, Defensives & Externe, Debuffs.
+--  AurasScreen — aura indicators per category (prototype/AceConfig Auras tab).
+--  Three categories: own HoTs, Defensives & External, Debuffs.
 -- ---------------------------------------------------------------------------
 local function buildAuras(d, stack)
 	stack:gap(L.base.topToToggle)
@@ -793,11 +793,11 @@ local function buildAuras(d, stack)
 end
 
 -- ---------------------------------------------------------------------------
---  TrackingScreen — Whitelist-Editor (B4): welche Spells als Aura-Icons getrackt
---  werden (HoTs + eigene Defensiven). Spiegelt den AceConfig-Tab „Tracking".
---  IMMER an die AKTIVE Spec gebunden (Talente/Zauberbuch nur dafür auslesbar;
---  Defaults decken andere Specs ab). Spell-Quelle = ns.ClickCast:GetAuraSpells()
---  (Zauberbuch + gewählte Talente). Kernstück: W.SpellPicker (suchbar + scrollbar).
+--  TrackingScreen — whitelist editor (B4): which spells are tracked as aura icons
+--  (HoTs + own defensives). Mirrors the AceConfig "Tracking" tab.
+--  ALWAYS bound to the ACTIVE spec (talents/spellbook only readable for it;
+--  defaults cover other specs). Spell source = ns.ClickCast:GetAuraSpells()
+--  (spellbook + chosen talents). Core piece: W.SpellPicker (searchable + scrollable).
 -- ---------------------------------------------------------------------------
 local TRACK_CATS
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
@@ -810,12 +810,12 @@ end
 
 local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) or 0 end
 
--- Eine getrackte-Spell-Zeile: Icon + Name + „Entfernen" (danger, rechts).
+-- One tracked-spell row: icon + name + "Remove" (danger, right).
 local function makeTrackRow(parent, e, onRemove)
 	local row = CreateFrame("Frame", nil, parent)
 	row:SetHeight(M.trackRowH)
 	UI.Fill(row, C.ink520)
-	UI.Border(row, UI.line.faint, 1, "OVERLAY") -- L ist hier UI.LAYOUT; Gold-Deckkräfte liegen in UI.line
+	UI.Border(row, UI.line.faint, 1, "OVERLAY") -- L here is UI.LAYOUT; gold opacities live in UI.line
 	local icon = row:CreateTexture(nil, "ARTWORK")
 	icon:SetSize(M.trackIcon, M.trackIcon)
 	icon:SetPoint("LEFT", row, "LEFT", 8, 0)
@@ -829,7 +829,7 @@ local function makeTrackRow(parent, e, onRemove)
 	name:SetPoint("RIGHT", rm, "LEFT", -10, 0)
 	name:SetJustifyH("LEFT"); name:SetWordWrap(false)
 	name:SetText(e.name or (T("Spell") .. " " .. tostring(e.id)))
-	-- Hover: dezenter Wash + eigener Lumen-Spell-Tooltip (wie die Picker-Liste).
+	-- Hover: subtle wash + own Lumen spell tooltip (like the picker list).
 	local hov = UI.Fill(row, C.inkTint, "BORDER"); hov:SetAllPoints(row); hov:SetAlpha(0)
 	row:EnableMouse(true)
 	row:SetScript("OnEnter", function(self2)
@@ -861,7 +861,7 @@ local function buildTracking(d, stack)
 		local desc = W.Hint(d, cat.desc)
 		s:place(desc, M.hintH, L.tracking.afterDesc)
 
-		-- Getrackte Spells als Zeilen (oder „(keine Spells)").
+		-- Tracked spells as rows (or "(no spells)").
 		local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
 		if #entries == 0 then
 			s:place(W.Hint(d, T("(no spells)")), L.tracking.emptyH, L.tracking.afterList)
@@ -876,7 +876,7 @@ local function buildTracking(d, stack)
 			end
 		end
 
-		-- Aktions-Reihe: Spell-Picker (suchbar/scrollbar) + „Standard wiederherstellen".
+		-- Action row: spell picker (searchable/scrollable) + "Restore defaults".
 		local actionRow = CreateFrame("Frame", nil, d)
 		actionRow:SetHeight(M.buttonH)
 		local picker = W.SpellPicker(actionRow, {
@@ -885,7 +885,7 @@ local function buildTracking(d, stack)
 				local out = {}
 				local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
 				for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
-					-- Talent-IDs auf die echte Aura-ID normalisieren -> schon getrackte raus.
+					-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
 					local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
 					if not tracked[rid] then out[#out + 1] = sp end
 				end
@@ -916,27 +916,27 @@ local function buildTracking(d, stack)
 		s:close()
 	end
 
-	applyModuleGate(d, rf().enabled) -- Modul aus -> ganzer Screen grau + gesperrt
+	applyModuleGate(d, rf().enabled) -- module off -> whole screen greyed + locked
 end
 
 -- ===========================================================================
---  Click-Cast-Screen — Maus-Bindings („Klick auf Frame") + Hovercast (Tastatur)
---  in EINEM Tab, zwei Sektionskarten. Verdrahtet gegen ns.ClickCast (Datenmodell
---  + Apply bleiben im Modul). Spell-Auswahl über W.SpellPicker (echte Typeahead-
---  Suche), Hovercast-Taste über W.KeybindButton. „Nur außerhalb Kampf" jetzt auch
---  für Menü (löst versehentliche Menüs im Kampf — wirkt nur auf Lumens Frames).
+--  Click-Cast screen — mouse bindings ("click on frame") + hovercast (keyboard)
+--  in ONE tab, two section cards. Wired against ns.ClickCast (data model + apply
+--  stay in the module). Spell selection via W.SpellPicker (real typeahead search),
+--  hovercast key via W.KeybindButton. "Out of combat only" now also for the menu
+--  (fixes accidental menus in combat — only affects Lumen's frames).
 -- ===========================================================================
 local function cc() return ns.Lumen.db.profile.clickCast end
 local function CCm() return ns.ClickCast end
 local function ccApply() if CCm() then CCm():ApplyBindings() end end
 
-local ccSelectedSpec  -- welche Spec bearbeitet wird (entkoppelt von der Live-Spec)
+local ccSelectedSpec  -- which spec is edited (decoupled from the live spec)
 
--- Hovercast ist P2: Die Secure-Tasten-Treiber-Mechanik (Taste nur beim Hovern aktiv,
--- sonst normale Aktionsleiste) gibt die Taste in 12.0.7 nicht mehr sauber frei -> belegte
--- Hovercast-Taste blockiert die Aktionsleiste. Bis zur 12.1.0-Nacharbeit (ggf. robusterer
--- Ansatz) Sektion ausgeblendet; Code + Datenmodell bleiben. ClickCast.lua legt
--- vorhandene Hovercast-Bindings parallel „schlafend" (applyHover ist dann ein No-op).
+-- Hovercast is P2: the secure key-driver mechanism (key active only on hover,
+-- otherwise the normal action bar) no longer releases the key cleanly in 12.0.7 ->
+-- an assigned hovercast key blocks the action bar. Until the 12.1.0 rework (possibly
+-- a more robust approach) the section is hidden; code + data model stay. ClickCast.lua
+-- keeps existing hovercast bindings "asleep" in parallel (applyHover is then a no-op).
 local CC_HOVERCAST = false
 
 local CC_MOD_OPTS, CC_ACTION_OPTS
@@ -962,7 +962,7 @@ local function ccMouseOpts()
 	end end
 	return opts
 end
--- Spec-Dropdown mit Icon (FontStrings rendern |T..|t inline, wie der AceConfig-Tab).
+-- Spec dropdown with icon (FontStrings render |T..|t inline, like the AceConfig tab).
 local function ccSpecOpts()
 	local opts, m = {}, CCm()
 	if m then for _, s in ipairs(m:GetSpecList()) do
@@ -971,7 +971,7 @@ local function ccSpecOpts()
 	end end
 	return opts
 end
--- Spell-Kandidaten für den Picker (Klassen-Zauberbuch, optional auf hilfreiche gefiltert).
+-- Spell candidates for the picker (class spellbook, optionally filtered to helpful).
 local function ccSpellFetch()
 	local out, m = {}, CCm()
 	if not m then return out end
@@ -982,20 +982,20 @@ local function ccSpellFetch()
 	return out
 end
 
--- Eine Binding-Box (hellere Unter-Box mit Kopfzeile „Taste → Aktion" + Entfernen).
--- s = Stapler der Sektionskarte; b = Bindung; isHover = Hovercast (Tastatur).
+-- One binding box (lighter sub-box with a header "key → action" + remove).
+-- s = stacker of the section card; b = binding; isHover = hovercast (keyboard).
 local function ccBindingBox(d, s, b, isHover, spec)
 	local LC = L.clickcast
 	local fieldH = M.controlH + M.fieldGap
 	local box = s:subgroup()
 
-	-- Kopf: NUR die Keycap (kombinierte Taste/Maustaste) + „Entfernen". Spell-Name/Icon
-	-- bewusst NICHT hier — der Picker-Button unten zeigt sie schon (sonst doppelt).
+	-- Header: ONLY the keycap (combined key/mouse button) + "Remove". Spell name/icon
+	-- deliberately NOT here — the picker button below already shows them (else doubled).
 	local hd = CreateFrame("Frame", nil, d)
 	hd:SetHeight(M.controlH)
 
-	-- Keycap: quadratisch (min controlH×controlH), DUNKLER + kräftigerer Gold-Rand +
-	-- ZENTRIERTER Text -> liest sich als „Taste", nicht als Dropdown (heller, chevron, linksbündig).
+	-- Keycap: square (min controlH×controlH), DARKER + stronger gold border +
+	-- CENTERED text -> reads as a "key", not a dropdown (lighter, chevron, left-aligned).
 	local cap = CreateFrame("Frame", nil, hd)
 	cap:SetHeight(M.controlH)
 	cap:SetPoint("LEFT", hd, "LEFT", 0, 0)
@@ -1016,7 +1016,7 @@ local function ccBindingBox(d, s, b, isHover, spec)
 	rm:ClearAllPoints(); rm:SetPoint("RIGHT", hd, "RIGHT", 0, 0)
 	box:place(hd, M.controlH, LC.headToRow)
 
-	-- Reihe 1: Klick = [Maustaste | Aktion | Modifier]; Hover = [Taste | Aktion | —].
+	-- Row 1: click = [mouse button | action | modifier]; hover = [key | action | —].
 	local r1, c1 = W.Row(d, 3, { height = fieldH })
 	if isHover then
 		local kb = W.KeybindButton(c1[1], { label = T("Key"),
@@ -1042,7 +1042,7 @@ local function ccBindingBox(d, s, b, isHover, spec)
 	end
 	box:place(r1, fieldH, LC.betweenRows)
 
-	-- Reihe 2 (nur Aktion „Spell"): Spell-Picker (suchbar/scrollbar).
+	-- Row 2 (only action "Spell"): spell picker (searchable/scrollable).
 	if b.type == "spell" then
 		local spIcon = b.spellID and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(b.spellID) or nil
 		local picker = W.SpellPicker(d, {
@@ -1057,8 +1057,8 @@ local function ccBindingBox(d, s, b, isHover, spec)
 		box:placeLeft(picker, M.buttonH, LC.betweenRows)
 	end
 
-	-- Reihe 3: Checkboxen. Klick: nur „Nur außerhalb Kampf" (außer Aktion = Ziel).
-	-- Hover: „Nur Freundlich"/„Nur Feindlich" (nur Spell) + „Nur außerhalb Kampf".
+	-- Row 3: checkboxes. Click: only "Out of combat only" (except action = target).
+	-- Hover: "Friendly only"/"Enemy only" (only spell) + "Out of combat only".
 	local defs = {}
 	if isHover and b.type == "spell" then
 		defs[#defs + 1] = { label = T("Friendly only"), tooltip = T("Only act on friendly units."),
@@ -1094,7 +1094,7 @@ local function buildClickCast(d, stack)
 	local spec = ccSelectedSpec
 	if not spec and m then spec = m:CurrentSpecID(); ccSelectedSpec = spec end
 
-	-- Master (frei über allem) — wie „Raidframes aktiviert".
+	-- Master (free above everything) — like "Raidframes enabled".
 	local outerStack = stack
 	local body
 	stack:gap(LC.topToHead)
@@ -1106,12 +1106,12 @@ local function buildClickCast(d, stack)
 	cbMaster:SetPoint("LEFT", mRow, "LEFT", 0, 0)
 	stack:place(mRow, M.checkBox, LC.afterMaster)
 
-	-- Alles Weitere in ein gate-bares Body-Frame (bei „aus" gedimmt + gesperrt).
+	-- Everything else into a gateable body frame (when "off" dimmed + locked).
 	body = CreateFrame("Frame", nil, d)
 	local bstack = ns.Shell.NewStack(body)
 	d, stack = body, bstack
 
-	-- Spec-Auswahl (entkoppelt von der Live-Spec) — rasterbündig in Spalte 1.
+	-- Spec selection (decoupled from the live spec) — grid-aligned in column 1.
 	local sr, sc = W.Row(d, 3, { height = M.controlH + M.fieldGap })
 	W.Select(sc[1], { label = T("Spec (edit)"), options = ccSpecOpts(), placeholder = T("No spec"),
 		tooltip = T("Which spec you edit here. In game, the bindings of your active spec apply automatically."),
@@ -1133,7 +1133,7 @@ local function buildClickCast(d, stack)
 
 	local bindings = (m and m:GetBindings(spec)) or {}
 
-	-- ===== Klick auf Frame =================================================
+	-- ===== Click on frame ==================================================
 	local sClick = stack:section(T("Click on frame"))
 	local anyClick = false
 	for _, b in ipairs(bindings) do
@@ -1150,7 +1150,7 @@ local function buildClickCast(d, stack)
 	sClick:placeLeft(addClick, M.buttonH, 0)
 	sClick:close()
 
-	-- ===== Hovercast (Mouseover) — P2, bis 12.1.0 ausgeblendet (siehe CC_HOVERCAST) =====
+	-- ===== Hovercast (mouseover) — P2, hidden until 12.1.0 (see CC_HOVERCAST) =====
 	if CC_HOVERCAST then
 		local sHover = stack:section(T("Hovercast (mouseover)"))
 		local intro = W.Hint(d, T("Press a key while the mouse hovers over a unit — the action goes to "
@@ -1173,13 +1173,13 @@ local function buildClickCast(d, stack)
 	end
 
 	outerStack:place(body, bstack:height(), 0)
-	applyModuleGate(body, cc().enabled) -- Click-Cast aus -> alles unter dem Master grau + gesperrt
+	applyModuleGate(body, cc().enabled) -- Click-Cast off -> everything below the master greyed + locked
 end
 
 -- ===========================================================================
---  Global-Screens — suite-weite Einstellungen (spiegelt den AceConfig-Global-
---  Knoten). Base = Verschieben/Edit-Modus; Profile = Profilverwaltung (AceDB)
---  + Teilen (Export/Import, granular pro Modul, via ns.Share).
+--  Global screens — suite-wide settings (mirrors the AceConfig Global node).
+--  Base = move/edit mode; Profile = profile management (AceDB)
+--  + sharing (export/import, granular per module, via ns.Share).
 -- ===========================================================================
 
 -- Global/Base: language, "Unlock frames" (Edit Mode) + "Reset positions".
@@ -1245,11 +1245,11 @@ local function buildGlobalBase(d, stack)
 	s:close()
 end
 
--- Global/Profile: transienter Zustand (file-local -> überlebt RenderContent-Neuaufbau).
--- Modul-/Layout-Auswahl lebt im Import-Popup (W.ImportDialog) selbst, nicht hier.
-local shareExport    = ""    -- zuletzt erzeugter Export-Code
-local shareImportRaw = ""    -- eingefügter Import-Text
-local importErr      = nil   -- Fehlertext beim letzten „Importieren" (oder nil)
+-- Global/Profile: transient state (file-local -> survives a RenderContent rebuild).
+-- Module/layout selection lives in the import popup (W.ImportDialog) itself, not here.
+local shareExport    = ""    -- last generated export code
+local shareImportRaw = ""    -- pasted import text
+local importErr      = nil   -- error text from the last "Import" (or nil)
 
 local function buildGlobalProfile(d, stack)
 	local db = ns.Lumen.db
@@ -1259,7 +1259,7 @@ local function buildGlobalProfile(d, stack)
 
 	stack:gap(L.base.topToToggle)
 
-	-- Profilnamen als {value,label}-Liste (optional das aktive Profil ausklammern).
+	-- Profile names as a {value,label} list (optionally excluding the active profile).
 	local function profileOpts(excludeCurrent)
 		local names = db:GetProfiles() or {}
 		table.sort(names)
@@ -1274,7 +1274,7 @@ local function buildGlobalProfile(d, stack)
 	-- ===== Profile =========================================================
 	local s = stack:section(T("Profile"))
 
-	-- Reihe 1: Aktuelles Profil | Kopieren von | Löschen.
+	-- Row 1: current profile | copy from | delete.
 	local r1, c1 = W.Row(d, 3, { height = fieldH })
 	W.Select(c1[1], { label = T("Current profile"), options = profileOpts(false),
 		get = function() return db:GetCurrentProfile() end,
@@ -1305,7 +1305,7 @@ local function buildGlobalProfile(d, stack)
 		end }):SetAllPoints(c1[3])
 	s:place(r1, fieldH, R.row)
 
-	-- Reihe 2: Neues Profil (Eingabe) + Erstellen + Zurücksetzen (rechts).
+	-- Row 2: new profile (input) + create + reset (right).
 	local newRow = CreateFrame("Frame", nil, d)
 	newRow:SetHeight(fieldH)
 	local resetBtn = W.Button(newRow, { text = T("Reset"), variant = "danger",
@@ -1336,7 +1336,7 @@ local function buildGlobalProfile(d, stack)
 	s:place(newRow, fieldH, R.tight)
 	s:close()
 
-	-- ===== Teilen — Export / Import ========================================
+	-- ===== Share — export / import =========================================
 	local s2 = stack:section(T("Share — export / import"))
 	local hint = W.Hint(d, T("Export your complete Lumen setup as a code, or take someone else's code — granular per module."))
 	s2:place(hint, M.hintH, R.row)
@@ -1355,8 +1355,8 @@ local function buildGlobalProfile(d, stack)
 	boxE:place(expTA, G.taH, R.tight)
 	boxE:close()
 
-	-- Import Profil: Code einfügen -> „Importieren" (unten rechts) öffnet das Popup
-	-- (Modul-/Layout-Auswahl + „Profil erstellen"/„Aktuelles überschreiben").
+	-- Import profile: paste code -> "Import" (bottom right) opens the popup
+	-- (module/layout selection + "Create profile"/"Overwrite current").
 	local function openImportDialog(payload)
 		local mods = {}
 		for _, mod in ipairs(ns.Share:GetModules()) do
@@ -1366,7 +1366,7 @@ local function buildGlobalProfile(d, stack)
 		W.ImportDialog({
 			modules = mods, hasLayout = hasLayout,
 			onCreate = function(name, sel, withLayout)
-				db:SetProfile(name) -- frisches Profil anlegen + hineinwechseln, dann Auswahl einmischen
+				db:SetProfile(name) -- create a fresh profile + switch into it, then merge the selection
 				local ok = ns.Share and ns.Share:Import(payload, sel, withLayout)
 				if ok and ns.Lumen then ns.Lumen:Print(T("Profile \"%s\" created and imported."):format(name)) end
 				shareImportRaw, importErr = "", nil
@@ -1391,7 +1391,7 @@ local function buildGlobalProfile(d, stack)
 		boxI:place(W.Hint(d, "|cffD66A5C" .. T("Invalid code: %s — please paste the complete code."):format(importErr) .. "|r"), M.hintH, R.row)
 	end
 
-	-- „Importieren"-Button unten rechts in der Box (eigene Reihe, rechtsbündig).
+	-- "Import" button at the bottom right of the box (own row, right-aligned).
 	local btnRow = CreateFrame("Frame", nil, d)
 	btnRow:SetHeight(M.buttonH)
 	local importBtn = W.Button(btnRow, { text = T("Import"), variant = "primary",

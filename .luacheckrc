@@ -1,34 +1,34 @@
--- luacheck-Konfiguration für Lumen (WoW Retail Addon, Lua 5.1)
--- Aufruf: tools\luacheck.exe .   (oder das Helfer-Skript tools\check.ps1)
+-- luacheck configuration for Lumen (WoW Retail addon, Lua 5.1)
+-- Call: tools\luacheck.exe .   (or the helper script tools\check.ps1)
 
 std = "lua51"
-max_line_length = false          -- lange deutsche Kommentarzeilen sind ok
-unused_args = false              -- event/handler-Args + implizites 'self' oft ungenutzt (WoW-Idiom)
+max_line_length = false          -- long comment lines are ok
+unused_args = false              -- event/handler args + implicit 'self' often unused (WoW idiom)
 
--- 'ADDON' steht in jeder Datei als `local ADDON, ns = ...`, aber nur 'ns' wird genutzt (Standard).
+-- 'ADDON' is in every file as `local ADDON, ns = ...`, but only 'ns' is used (standard).
 ignore = { "211/ADDON" }
 
--- Beschreibbare WoW-Globals (wir tragen Einträge ein, nicht nur lesen).
+-- Writable WoW globals (we add entries, not only read).
 globals = { "StaticPopupDialogs" }
 
--- Drittanbieter-Bibliotheken und Werkzeuge nicht prüfen.
+-- Don't check third-party libraries and tools.
 exclude_files = { "Libs/", "tools/" }
 
--- Globals, die das WoW-/Ace3-Environment bereitstellt (nur lesend genutzt).
--- Neu genutzte API hier ergänzen, sonst meldet luacheck "undefined global".
+-- Globals provided by the WoW/Ace3 environment (used read-only).
+-- Add newly used API here, otherwise luacheck reports "undefined global".
 read_globals = {
-    -- Lua-/WoW-Ergänzungen
+    -- Lua/WoW additions
     "wipe", "hooksecurefunc", "issecretvalue", "securecall",
     "tinsert", "tremove", "UISpecialFrames", "PixelUtil",
-    -- Frames / Core
+    -- Frames / core
     "CreateFrame", "UIParent", "InCombatLockdown", "GetCursorPosition",
     "STANDARD_TEXT_FONT", "GameFontNormal",
     "HideUIPanel", "GameMenuFrame", "EditModeManagerFrame", "GameTooltip", "ColorPickerFrame",
-    "ADDONS", -- lokalisierter GlobalString (ESC-Menü „Addons")
-    -- Blizzard-Raidframe-Unterdrückung + Reload-Popup
+    "ADDONS", -- localized global string (ESC menu "Addons")
+    -- Blizzard raid-frame suppression + reload popup
     "CompactRaidFrameContainer", "PartyFrame", "EventUtil", "ReloadUI",
     "StaticPopup_Show",
-    -- Einheiten / Leben
+    -- Units / health
     "UnitExists", "UnitName", "UnitClass", "UnitThreatSituation", "UnitGroupRolesAssigned",
     "UnitIsUnit", "GetSpecializationRole",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",
@@ -36,23 +36,23 @@ read_globals = {
     "UnitGetIncomingHeals", "UnitGetDetailedHealPrediction",
     "CreateUnitHealPredictionCalculator", "UnitGUID",
     "IsInRaid", "IsInGroup", "IsInInstance", "GetNumGroupMembers", "GetNumSubgroupMembers",
-    -- Farben / Auren / Zahlen
+    -- Colors / auras / numbers
     "RAID_CLASS_COLORS", "AuraUtil", "CurveConstants",
     "AbbreviateNumbers", "AbbreviateNumbersAlt",
     "CreateColor", "Mixin", "GetTime",
     -- Namespaces
     "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum",
     "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents",
-    -- Spec / Secure-Bindings (Click-Cast)
+    -- Spec / secure bindings (click-cast)
     "GetSpecialization", "GetSpecializationInfo", "GetNumSpecializations",
     "IsShiftKeyDown", "IsControlKeyDown", "IsAltKeyDown",
     "RegisterStateDriver", "UnregisterStateDriver",
     "RegisterAttributeDriver", "UnregisterAttributeDriver",
     "SetOverrideBindingClick", "ClearOverrideBindings",
-    -- Lokalisierung
+    -- Localization
     "GetLocale",
     -- Ace3
     "LibStub",
-    -- Optionale Fremd-Addons
+    -- Optional foreign addons
     "MiniCCApi",
 }

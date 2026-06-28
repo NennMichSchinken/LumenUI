@@ -1,17 +1,17 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Modul: Raidframes (v0.9 — secret-sicher, secret-sicheres 12.0-Muster)
+--  Lumen — Module: Raidframes (v0.9 — secret-safe, secret-safe 12.0 pattern)
 --
---  Bestätigtes secret-sicheres 12.0-Vorgehen:
---   * maxHealth IMMER aus calc:GetMaximumHealth() — UnitHealthMax ist secret.
---   * Rohe Werte (UnitHealth/UnitGetTotalAbsorbs/...HealAbsorbs/...IncomingHeals)
---     direkt an StatusBar:SetValue() — die Bar verträgt secret.
---   * Positionierung über CLIP-FRAMES, an die Lebens-Fülltextur verankert.
---     Die Clips erledigen die Mathematik -> nie secret-Werte vergleichen.
+--  Confirmed secret-safe 12.0 approach:
+--   * maxHealth ALWAYS from calc:GetMaximumHealth() — UnitHealthMax is secret.
+--   * Raw values (UnitHealth/UnitGetTotalAbsorbs/...HealAbsorbs/...IncomingHeals)
+--     directly to StatusBar:SetValue() — the bar tolerates secret.
+--   * Positioning via CLIP FRAMES anchored to the health fill texture.
+--     The clips do the math -> never compare secret values.
 --
---  Schichten:  Leben | (im Fehl-Bereich) Vorhersage -> Schild
---                    | (im Füll-Bereich, von rechts) Heilabsorb
+--  Layers:  health | (in the missing area) prediction -> shield
+--                  | (in the filled area, from the right) heal-absorb
 -- ===========================================================================
 
 local Raidframes = {}
@@ -41,24 +41,24 @@ local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
 local AbbrevNum = _G.AbbreviateNumbersAlt or _G.AbbreviateNumbers or tostring
 
 local T = "Interface\\AddOns\\Lumen\\Textures\\"
-local SHIELD_OVL_TEX = T .. "blizzard-shield"      -- 256x40, deckend, Diagonalstreifen + Schattierung
-local HEALABS_TEX    = T .. "blizzard-absorb.png"  -- 256x128, halbtransparent, Heilabsorb-Muster
-local STRIPE_TEX_W   = 256                          -- Texturbreite beider Streifentexturen (für TexCoord-Tiling)
-local HEALABS_TEX_H  = 128                           -- blizzard-absorb: 256x128 (vertikal kachelbar, Zweierpotenz)
--- Schild-/Healabsorb-Textur-Auswahl: diese Pattern-Keys = das gekachelte Lumen-Muster (fester
--- Pixelgröße, secret-/clip-sicher wie bisher). JEDE andere Wahl (LSM-/Blizzard-Statusbar) wird
--- als glatte Füllung über den Absorb-Bereich gestreckt. Die Clips bleiben unangetastet.
+local SHIELD_OVL_TEX = T .. "blizzard-shield"      -- 256x40, opaque, diagonal stripes + shading
+local HEALABS_TEX    = T .. "blizzard-absorb.png"  -- 256x128, semi-transparent, heal-absorb pattern
+local STRIPE_TEX_W   = 256                          -- texture width of both stripe textures (for TexCoord tiling)
+local HEALABS_TEX_H  = 128                           -- blizzard-absorb: 256x128 (vertically tileable, power of two)
+-- Shield/heal-absorb texture choice: these pattern keys = the tiled Lumen pattern (fixed
+-- pixel size, secret/clip-safe as before). ANY other choice (LSM/Blizzard statusbar) is
+-- stretched as a smooth fill over the absorb area. The clips stay untouched.
 local SHIELD_PATTERN  = "Lumen Schild"
 local HEALABS_PATTERN = "Lumen Heilabsorb"
--- Schild-/Healabsorb-Texturen. Render-Spec je Eintrag: pattern = gekacheltes Lumen-Streifen-
--- Muster (default, unveränderter Look). Eigene Lumen-Schild-Texturen kommen später dazu (Florian)
--- -> hier einfach erweitern. (Blizzards Schild besteht aus mehreren Atlanten + Kanten und wird
--- erst später korrekt zusammengebaut.) Zusätzlich kommen LibSharedMedia-Texturen anderer Addons
--- dazu (siehe *TextureValues + resolveTexSpec) -> die werden als glatte Füllung gestreckt.
+-- Shield/heal-absorb textures. Render spec per entry: pattern = tiled Lumen stripe pattern
+-- (default, unchanged look). Own Lumen shield textures come later (Florian) -> just extend
+-- here. (Blizzard's shield consists of several atlases + edges and is only assembled
+-- correctly later.) Additionally, LibSharedMedia textures from other addons are added
+-- (see *TextureValues + resolveTexSpec) -> those are stretched as a smooth fill.
 local SHIELD_TEX_SPEC  = { [SHIELD_PATTERN]  = { pattern = true } }
 local HEALABS_TEX_SPEC = { [HEALABS_PATTERN] = { pattern = true } }
--- Resolver: bekannter Key -> seine Spec; LSM-/Datei-Key -> gepoolte {texKey}-Füllung (kein
--- Garbage pro Relayout); nil -> Pattern-Default.
+-- Resolver: known key -> its spec; LSM/file key -> pooled {texKey} fill (no garbage
+-- per relayout); nil -> pattern default.
 local fillSpecCache = {}
 local function resolveTexSpec(key, specTable, patternKey)
 	if not key then return specTable[patternKey] end
@@ -77,14 +77,14 @@ local CLASS_DISPELS = {
 	MAGE    = { Curse = true },
 	WARLOCK = { Magic = true },
 }
--- Default-Dispel-Farben (Fallback, wenn der Nutzer keine eigenen gesetzt hat).
+-- Default dispel colors (fallback when the user hasn't set their own).
 local DISPEL_DEFAULTS = {
 	Magic   = { r = 0.20, g = 0.60, b = 1.00 },
 	Curse   = { r = 0.64, g = 0.19, b = 0.79 },
 	Disease = { r = 0.55, g = 0.41, b = 0.18 },
 	Poison  = { r = 0.12, g = 0.69, b = 0.29 },
 }
--- Blizzard-Dispel-Typ-Enum-Indizes (für die Color-Curve): 1 Magic, 2 Curse, 3 Disease, 4 Poison.
+-- Blizzard dispel-type enum indices (for the color curve): 1 Magic, 2 Curse, 3 Disease, 4 Poison.
 local C_UnitAuras = C_UnitAuras
 
 local TEXTURES = {
@@ -107,10 +107,10 @@ function Raidframes:TextureValues()
 	if LSM then for _, n in ipairs(LSM:List("statusbar")) do t[n] = n end end
 	return t
 end
--- Schild-/Healabsorb-Dropdown: das gekachelte Lumen-Muster zuerst + alle Statusbar-Texturen
--- (Lumen/Blizzard/LSM), die als glatte Füllung nutzbar sind.
--- Schild/Healabsorb-Dropdown = Lumen-Einträge + alle LibSharedMedia-Statusbar-Texturen
--- (andere Addons) -> „haben Leute mehr". Bewusst OHNE Lumens Lebensbalken-Gradients.
+-- Shield/heal-absorb dropdown: the tiled Lumen pattern first + all statusbar textures
+-- (Lumen/Blizzard/LSM) usable as a smooth fill.
+-- Shield/heal-absorb dropdown = Lumen entries + all LibSharedMedia statusbar textures
+-- (other addons) -> "people have more". Deliberately WITHOUT Lumen's health-bar gradients.
 local function withLSM(t)
 	local LSM = getLSM()
 	if LSM then for _, n in ipairs(LSM:List("statusbar")) do t[n] = n end end
@@ -123,8 +123,8 @@ function Raidframes:HealAbsorbTextureValues()
 	local t = {}; for k in pairs(HEALABS_TEX_SPEC) do t[k] = k end; return withLSM(t)
 end
 
--- Heilvorhersage-Calculator (12.0). Einer, wird je Einheit gefüttert.
--- Liefert secret-sicher maxHealth (UnitHealthMax wäre im Kampf secret).
+-- Heal-prediction calculator (12.0). One, fed per unit.
+-- Provides maxHealth secret-safely (UnitHealthMax would be secret in combat).
 local calc
 local function getCalc()
 	if calc == nil then
@@ -137,7 +137,7 @@ local function getCalc()
 	return calc or nil
 end
 
--- Beispiel-Roster (Testmodus)
+-- Sample roster (test mode)
 local FAKE_MAX = 600000
 local FAKE = {
 	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3, role = "HEALER" },
@@ -162,10 +162,10 @@ local FAKE = {
 	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15, role = "DAMAGER" },
 }
 
-local GROUP_SIZE = 5   -- feste Gruppengröße: Raid-Gruppen & Dungeon-Gruppe sind immer 5 (nie gemischt)
-local DEFAULT_ROLE_ORDER = { "TANK", "HEALER", "DAMAGER" }   -- Fallback-Prioritätsliste
+local GROUP_SIZE = 5   -- fixed group size: raid groups & dungeon group are always 5 (never mixed)
+local DEFAULT_ROLE_ORDER = { "TANK", "HEALER", "DAMAGER" }   -- fallback priority list
 
--- Fake-Icon-Texturen für den Testmodus (Vorschau ohne echte Auren), je Kategorie passend.
+-- Fake icon textures for test mode (preview without real auras), matching each category.
 local FAKE_HOTS      = { 136081, 136085, 236153, 135953, 134914 }
 local FAKE_DEFENSIVE = {
 	"Interface\\Icons\\Spell_Holy_PowerWordShield",
@@ -178,39 +178,39 @@ local FAKE_DEBUFF = {
 	"Interface\\Icons\\Spell_Nature_NullifyDisease",
 }
 
--- Aura-Indikatoren: Kategorien-Registry. filter = Blizzard-Aura-Filter für GetAuraDataByIndex
--- (secret-sicher). subExclude/subInclude verfeinern secret-sicher über IsAuraFilteredOutByInstanceID:
---   subExclude -> nur Auren, die dieser Unterfilter AUSschließt (z.B. "nicht von mir" = fremd).
---   subInclude -> nur Auren, die dieser Unterfilter EINschließt (z.B. externe Defensives).
--- "PLAYER" = selbst gewirkt, "EXTERNAL_DEFENSIVE" = Blizzards kuratierte externe Defensiven.
--- Stufe A (v0.9.11): der "RAID"-Filter = nur im Schlachtzug relevante Hilfsauren
--- (HoTs/Schilde) -> Essen/Flask/Allgemeinbuffs fallen raus. Secret-sicher und auch für
--- fremde Auren nutzbar (Stufe B = exakte Signatur-Whitelist nur für EIGENE HoTs).
+-- Aura indicators: category registry. filter = Blizzard aura filter for GetAuraDataByIndex
+-- (secret-safe). subExclude/subInclude refine secret-safely via IsAuraFilteredOutByInstanceID:
+--   subExclude -> only auras this sub-filter EXCLUDES (e.g. "not from me" = foreign).
+--   subInclude -> only auras this sub-filter INCLUDES (e.g. external defensives).
+-- "PLAYER" = self-cast, "EXTERNAL_DEFENSIVE" = Blizzard's curated external defensives.
+-- Stage A (v0.9.11): the "RAID" filter = only raid-relevant helpful auras
+-- (HoTs/shields) -> food/flask/general buffs drop out. Secret-safe and also usable for
+-- foreign auras (stage B = exact signature whitelist only for OWN HoTs).
 local AURA_CATS = {
 	{ key = "hotsOwn",    filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
 	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
 	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_HOTS },
 	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
--- Debuff-Filter-Modi (Blizzard-Standard): "raid" = Blizzards kuratierte raid-relevante
--- Debuffs (HARMFUL|RAID bzw. RAID_IN_COMBAT), "dispellable" = nur selbst dispellbare,
--- "all" = alle. Secret-sicher über IsAuraFilteredOutByInstanceID (nur Bool).
+-- Debuff filter modes (Blizzard standard): "raid" = Blizzard's curated raid-relevant
+-- debuffs (HARMFUL|RAID resp. RAID_IN_COMBAT), "dispellable" = only self-dispellable,
+-- "all" = all. Secret-safe via IsAuraFilteredOutByInstanceID (only bool).
 local function debuffModeAccept(u, iid, mode, fn)
 	if mode == "none" then return false end
 	if mode == "all" then return true end
-	if not (fn and iid) then return true end   -- kann nicht filtern -> lieber zeigen
+	if not (fn and iid) then return true end   -- can't filter -> rather show
 	if mode == "dispellable" then
 		return not fn(u, iid, "HARMFUL|RAID_PLAYER_DISPELLABLE")
 	end
-	-- "raid" (Default, Blizzard-relevant) + Fallback
+	-- "raid" (default, Blizzard-relevant) + fallback
 	return (not fn(u, iid, "HARMFUL|RAID")) or (not fn(u, iid, "HARMFUL|RAID_IN_COMBAT"))
 end
 
--- ---- Aura-Signatur-Lernen (Phase 2 / Stufe B1) ------------------------------
--- 4-Filter-Fingerprint (RAID, RAID_IN_COMBAT, EXTERNAL_DEFENSIVE, RAID_PLAYER_DISPELLABLE;
--- alle PLAYER|HELPFUL) -> identifiziert NUR selbst gewirkte Auren. Wir LERNEN die Zuordnung
--- Signatur->SpellID selbst (außer Kampf, spellId lesbar) und persistieren in
--- db.global.auraSigs[specID] -> im Kampf (spellId secret) per Signatur nachschlagen.
+-- ---- Aura signature learning (phase 2 / stage B1) ---------------------------
+-- 4-filter fingerprint (RAID, RAID_IN_COMBAT, EXTERNAL_DEFENSIVE, RAID_PLAYER_DISPELLABLE;
+-- all PLAYER|HELPFUL) -> identifies ONLY self-cast auras. We LEARN the mapping
+-- signature->spellID ourselves (out of combat, spellId readable) and persist in
+-- db.global.auraSigs[specID] -> in combat (spellId secret) look up by signature.
 local GetSpecialization     = GetSpecialization
 local GetSpecializationInfo = GetSpecializationInfo
 local function currentSpecID()
@@ -226,19 +226,19 @@ local function auraSig(u, iid)
 	local ric = not fn(u, iid, "PLAYER|HELPFUL|RAID_IN_COMBAT")
 	local ext = not fn(u, iid, "PLAYER|HELPFUL|EXTERNAL_DEFENSIVE")
 	local dsp = not fn(u, iid, "PLAYER|HELPFUL|RAID_PLAYER_DISPELLABLE")
-	-- Nichts Distinktives (Essen/Flask/Allgemeinbuffs passieren keinen der vier Filter) -> raus.
-	-- (B3: ext/dsp wandern VOR den Early-Out, damit auch eigene Defensiven, die zwar nicht
-	-- RAID, aber EXTERNAL_DEFENSIVE/dispellbar sind, lernbar werden.)
+	-- Nothing distinctive (food/flask/general buffs pass none of the four filters) -> out.
+	-- (B3: ext/dsp move BEFORE the early-out so that own defensives which aren't
+	-- RAID but are EXTERNAL_DEFENSIVE/dispellable become learnable too.)
 	if not (r or ric or ext or dsp) then return nil end
 	return (r and "1" or "0") .. ":" .. (ric and "1" or "0") .. ":" .. (ext and "1" or "0") .. ":" .. (dsp and "1" or "0")
 end
--- Bereits gefingerprintete Aura-Instanzen -> jede Instanz nur EINMAL berechnen. Hält die
--- OOC-Steady-State-Kosten faktisch bei einem reinen Aura-Scan. Bei Spec-Wechsel geleert.
+-- Already-fingerprinted aura instances -> compute each instance only ONCE. Keeps the
+-- OOC steady-state cost effectively at a pure aura scan. Cleared on spec change.
 local learnedIID = {}
--- Passiv lernen: NUR außer Kampf (im Kampf null Kosten -> früher Early-Out), die eigenen
--- Auren auf u scannen, neue Signatur->SpellID merken. Aufruf einmal je UNIT_AURA der Unit.
+-- Learn passively: ONLY out of combat (in combat zero cost -> early early-out), scan
+-- the own auras on u, remember new signature->spellID. Called once per UNIT_AURA of the unit.
 local function learnUnitSigs(u)
-	if InCombatLockdown() then return end           -- Hot-Path im Kampf: ein einziger Check
+	if InCombatLockdown() then return end           -- hot path in combat: a single check
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex and ns.Lumen and ns.Lumen.db) then return end
 	local g = ns.Lumen.db.global
 	local store = g and g.auraSigs
@@ -253,7 +253,7 @@ local function learnUnitSigs(u)
 		i = i + 1
 		local iid = aura.auraInstanceID
 		if iid and not issecretvalue(iid) and not learnedIID[iid] then
-			learnedIID[iid] = true                  -- nur neue Instanzen fingerprinten
+			learnedIID[iid] = true                  -- only fingerprint new instances
 			local sid = aura.spellId
 			if sid and not issecretvalue(sid) then
 				local sig = auraSig(u, iid)
@@ -263,11 +263,10 @@ local function learnUnitSigs(u)
 	end
 end
 
--- ---- HoT-/Defensiv-Whitelist (Phase 2 / Stufe B2+B3) -----------------------
--- Kuratierte Standard-Spells je Heiler-Spec (spellID), eigenständig
--- zusammengestellt. Werden lazy in
--- db.profile.raidframes.auras.whitelist[specID] geseedet (HoTs Typ "hot",
--- Defensiven Typ "def"). Im Whitelist-Editor (B4) pro Spec anpassbar.
+-- ---- HoT/defensive whitelist (phase 2 / stage B2+B3) -----------------------
+-- Curated standard spells per healer spec (spellID), compiled independently.
+-- Seeded lazily into db.profile.raidframes.auras.whitelist[specID] (HoTs type "hot",
+-- defensives type "def"). Adjustable per spec in the whitelist editor (B4).
 local HOT_DEFAULTS = {
 	[105]  = { 774, 8936, 33763, 155777, 48438, 439530 },          -- Resto Druid: Rejuv, Regrowth, Lifebloom, Germination, Wild Growth, Symbiotic Blooms
 	[256]  = { 17, 194384, 1253593, 41635 },                       -- Disc Priest: PW:Shield, Atonement, Void Shield, PoM
@@ -277,8 +276,8 @@ local HOT_DEFAULTS = {
 	[65]   = { 156910, 156322, 53563, 1244893, 200025, 431381 },   -- Holy Pala: Beacon of Faith, Eternal Flame, Beacon of Light, Beacon of Savior, Beacon of Virtue, Dawnlight
 	[1468] = { 364343, 366155, 367364, 355941, 376788, 363502, 373267 }, -- Pres Evoker: Echo, Reversion, Echo Reversion, Dream Breath, Echo Dream Breath, Dream Flight, Lifebind
 }
--- specID -> classToken. Für die klassenweiten Defensiv-Defaults (DEF_CLASS) und
--- B4-tauglich (unabhängig von der Live-Klasse).
+-- specID -> classToken. For the class-wide defensive defaults (DEF_CLASS) and
+-- B4-capable (independent of the live class).
 local SPEC_CLASS = {
 	[71]="WARRIOR",[72]="WARRIOR",[73]="WARRIOR",
 	[65]="PALADIN",[66]="PALADIN",[70]="PALADIN",
@@ -294,13 +293,13 @@ local SPEC_CLASS = {
 	[577]="DEMONHUNTER",[581]="DEMONHUNTER",
 	[1467]="EVOKER",[1468]="EVOKER",[1473]="EVOKER",
 }
--- Defensiven (Typ "def"). Externe (auf andere gewirkt) -> über Signatur lernbar, Kampf-Icon
--- sauber. Persönliche Selbst-CDs erscheinen nur auf dem EIGENEN Frame und (noch) nur außer
--- Kampf, wenn sie KEINEN der vier Signatur-Filter passieren (spellId secret); zuverlässig
--- für alle im Kampf käme später über Cast-Events (UNIT_SPELLCAST_SUCCEEDED). Gute Defaults
--- out-of-the-box für JEDE Klasse/Spec (Anti-Bloat: nutzbar ohne Customizing), im B4-Editor
--- pro Spec anpassbar. spellIds live geprüft/zu prüfen — fehlende/falsche melden -> hier fixen.
--- DEF_CLASS = klassenweite Defensiven (alle Specs der Klasse), DEF_DEFAULTS = spec-spezifisch.
+-- Defensives (type "def"). External (cast on others) -> learnable via signature, combat icon
+-- clean. Personal self-CDs appear only on the OWN frame and (for now) only out of combat,
+-- when they pass NONE of the four signature filters (spellId secret); reliable for all in
+-- combat would come later via cast events (UNIT_SPELLCAST_SUCCEEDED). Good defaults
+-- out-of-the-box for EVERY class/spec (anti-bloat: usable without customizing), adjustable
+-- per spec in the B4 editor. spellIds checked/to be checked live — report missing/wrong -> fix here.
+-- DEF_CLASS = class-wide defensives (all specs of the class), DEF_DEFAULTS = spec-specific.
 local DEF_CLASS = {
 	WARRIOR     = { 97462, 23920 },                  -- Rallying Cry, Spell Reflection
 	PALADIN     = { 642, 498, 1022, 1044, 6940 },    -- Divine Shield, Divine Protection, Blessing of Protection/Freedom/Sacrifice
@@ -352,30 +351,30 @@ local DEF_DEFAULTS = {
 	[1468] = { 357170, 363534 },                     -- Preservation: Time Dilation, Rewind
 }
 local MAJOR_DEFAULTS = {
-	[65]   = { 31884 },       -- Holy Paladin: Zornige Vergeltung (Flügel)
-	[105]  = { 102558, 29166 },-- Resto Druid: Inkarnation: Baum des Lebens, Anregen
-	[256]  = { 10060, 246287 },-- Disc Priest: Seele der Macht, Evangelismus
-	[257]  = { 10060, 265202 },-- Holy Priest: Seele der Macht, Gotteshymne
-	[270]  = { 322118, 325197 },-- MW Monk: Yu'lon beschwören, Chi-Ji beschwören
-	[264]  = { 114052, 16191 }, -- Resto Shaman: Aszendenz, Manatutem
-	[1468] = { 375087 },      -- Pres Evoker: Drachenwut
+	[65]   = { 31884 },       -- Holy Paladin: Avenging Wrath (Wings)
+	[105]  = { 102558, 29166 },-- Resto Druid: Incarnation: Tree of Life, Innervate
+	[256]  = { 10060, 246287 },-- Disc Priest: Power Infusion, Evangelism
+	[257]  = { 10060, 265202 },-- Holy Priest: Power Infusion, Divine Hymn
+	[270]  = { 322118, 325197 },-- MW Monk: Invoke Yu'lon, Invoke Chi-Ji
+	[264]  = { 114052, 16191 }, -- Resto Shaman: Ascendance, Mana Tide Totem
+	[1468] = { 375087 },      -- Pres Evoker: Dragonrage
 }
 
-local frames = {}            -- Nicht-Secure-Pool für Preview/Test
+local frames = {}            -- non-secure pool for preview/test
 local container
-local header                 -- SecureGroupHeader (Live-Pfad)
-local secureLayoutDirty = false   -- Layout im Kampf aufgeschoben? -> bei PLAYER_REGEN_ENABLED nachholen
+local header                 -- SecureGroupHeader (live path)
+local secureLayoutDirty = false   -- layout deferred in combat? -> catch up on PLAYER_REGEN_ENABLED
 local playerDispels = {}
-local unitToButton = {}      -- Live-Routing: Unit -> Secure-Button (Preview/Test routet nicht)
+local unitToButton = {}      -- live routing: unit -> secure button (preview/test doesn't route)
 
 local function db() return ns.Lumen.db.profile.raidframes end
 
--- Whitelist der aktiven Spec holen; Defaults (HoT/Def) lazy einmischen.
--- Liegt im Profil (teil-/resetbar). NICHT in den Core-Defaults -> der erste Schreib
--- erzeugt eine echte profil-eigene Tabelle (kein Mutieren der geteilten Defaults).
--- whitelistSeeded[spec][spellID]=true merkt sich bereits ANGEBOTENE Defaults: so kommen
--- echte Neuzugänge (z.B. neue Def-Defaults in einem Update, oder ein altes B2-Profil mit
--- nur HoTs) dazu, ohne vom Nutzer (B4) bewusst entfernte Spells wieder hinzuzufügen.
+-- Get the whitelist of the active spec; merge in defaults (HoT/Def) lazily.
+-- Lives in the profile (partly/resettable). NOT in the core defaults -> the first write
+-- creates a real profile-owned table (no mutating the shared defaults).
+-- whitelistSeeded[spec][spellID]=true remembers already-OFFERED defaults: this way real
+-- additions (e.g. new def defaults in an update, or an old B2 profile with only HoTs)
+-- get added without re-adding spells the user (B4) deliberately removed.
 local function whitelistFor(spec)
 	if spec == 0 then return nil end
 	local A = db().auras
@@ -397,31 +396,31 @@ local function whitelistFor(spec)
 	end
 	ensure(HOT_DEFAULTS[spec], "hot")
 	ensure(DEF_DEFAULTS[spec], "def")
-	ensure(DEF_CLASS[SPEC_CLASS[spec]], "def")   -- klassenweite Defensiven
+	ensure(DEF_CLASS[SPEC_CLASS[spec]], "def")   -- class-wide defensives
 	ensure(MAJOR_DEFAULTS[spec], "major")
 	return s
 end
 
--- Talent -> Aura-Umschreibung (Tracking-Editor). Manche Talente werden im Dropdown
--- mit ihrer TALENT-spellId angeboten (aus C_Traits), legen aber beim Proccen einen
--- Buff mit einer ANDEREN Aura-spellId an -> die Talent-ID matcht dann nie eine Aura.
--- Hier auf die echte Aura-ID mappen, damit "Hinzufügen" zuverlässig funktioniert.
---  * 155675 (Talent "Verschmelzung"/Germination) -> 155777 (Aura "Verjüngung (Verschmelzung)")
+-- Talent -> aura remap (tracking editor). Some talents are offered in the dropdown
+-- with their TALENT spellId (from C_Traits), but on proc create a buff with a DIFFERENT
+-- aura spellId -> the talent ID then never matches an aura.
+-- Map to the real aura ID here so "Add" works reliably.
+--  * 155675 (talent "Germination") -> 155777 (aura "Rejuvenation (Germination)")
 local TALENT_TO_AURA = {
 	[155675] = 155777,
 }
--- Öffentlich: eine getrackte/angebotene spellId auf die tatsächlich auftauchende
--- Aura-ID normalisieren (für Add + Dropdown-Dedupe in Options).
+-- Public: normalize a tracked/offered spellId to the aura ID that actually appears
+-- (for add + dropdown dedupe in options).
 function Raidframes:ResolveTrackId(spellID)
 	return (spellID and TALENT_TO_AURA[spellID]) or spellID
 end
 
 -- ---------------------------------------------------------------------------
---  Whitelist-Editor (B4, Options-Tab "Tracking") — öffentliche API.
---  Arbeitet auf db().auras.whitelist[specID] (spellID -> "hot"|"def"); seedt die
---  Spec lazy über whitelistFor. Reine OOC-Bedienfunktionen (kein Hot-Path).
+--  Whitelist editor (B4, options tab "Tracking") — public API.
+--  Works on db().auras.whitelist[specID] (spellID -> "hot"|"def"); seeds the
+--  spec lazily via whitelistFor. Pure OOC operations (no hot path).
 -- ---------------------------------------------------------------------------
--- Einträge eines Typs ("hot"|"def") einer Spec als {id,name,icon}, alphabetisch.
+-- Entries of a type ("hot"|"def") of a spec as {id,name,icon}, alphabetical.
 function Raidframes:WhitelistEntries(specID, typ)
 	local out = {}
 	if not specID or specID == 0 then return out end
@@ -436,22 +435,22 @@ function Raidframes:WhitelistEntries(specID, typ)
 	table.sort(out, function(a, b) return a.name < b.name end)
 	return out
 end
--- Roh-Map {spellID = "hot"|"def"} einer Spec (für die Picker-Dedupe: schon getrackte
--- Spells aus dem Auswahl-Dropdown ausblenden). Seedt die Spec lazy.
+-- Raw map {spellID = "hot"|"def"} of a spec (for the picker dedupe: hide already-tracked
+-- spells from the selection dropdown). Seeds the spec lazily.
 function Raidframes:WhitelistMap(specID)
 	if not specID or specID == 0 then return {} end
 	return whitelistFor(specID) or {}
 end
--- Spell in die Whitelist aufnehmen.
+-- Add a spell to the whitelist.
 function Raidframes:AddWhitelist(specID, spellID, typ)
 	if not specID or specID == 0 or not spellID then return end
-	spellID = TALENT_TO_AURA[spellID] or spellID   -- Talent-ID -> echte Aura-ID
+	spellID = TALENT_TO_AURA[spellID] or spellID   -- talent ID -> real aura ID
 	local s = whitelistFor(specID); if not s then return end
 	s[spellID] = typ
 	self:RefreshAuras()
 end
--- Spell entfernen. Der seeded-Marker bleibt absichtlich gesetzt -> ein per Default
--- geseedeter Spell kommt NICHT von allein zurück (bewusste Entfernung bleibt bestehen).
+-- Remove a spell. The seeded marker stays set deliberately -> a default-seeded spell
+-- does NOT come back on its own (a deliberate removal persists).
 function Raidframes:RemoveWhitelist(specID, spellID)
 	if not specID or specID == 0 or not spellID then return end
 	local A = db().auras; if not A or not A.whitelist then return end
@@ -459,9 +458,9 @@ function Raidframes:RemoveWhitelist(specID, spellID)
 	s[spellID] = nil
 	self:RefreshAuras()
 end
--- Auf die kuratierten Defaults dieses Typs zurücksetzen: erst alle Einträge des Typs
--- raus (auch vom Nutzer hinzugefügte), dann die Defaults DIREKT wieder eintragen und
--- als geseedet markieren. Unbedingt (kein Seed-Guard) -> bringt ALLE Defaults zurück.
+-- Reset to the curated defaults of this type: first remove all entries of the type
+-- (including user-added ones), then re-add the defaults DIRECTLY and mark them as
+-- seeded. Unconditionally (no seed guard) -> brings back ALL defaults.
 function Raidframes:ResetWhitelist(specID, typ)
 	if not specID or specID == 0 then return end
 	local A = db().auras; if not A then return end
@@ -483,15 +482,15 @@ function Raidframes:ResetWhitelist(specID, typ)
 	end
 	self:RefreshAuras()
 end
--- SpellID einer Aura ermitteln — secret-sicher:
---   * außer Kampf ist aura.spellId direkt lesbar.
---   * im Kampf ist sie secret -> über die (außer Kampf gelernte) Signatur nachschlagen.
--- Rückgabe nil = (noch) nicht auflösbar (z.B. im Kampf vor dem ersten OOC-Lernen).
--- Manche Auren werden mit einer ANDEREN spellId angewendet als der getrackten
--- (Cast-ID != Aura-ID). Hier auf die in der Whitelist geführte Haupt-ID mappen.
--- (Beispiel: Earth Shield — Cast-ID weicht von der Aura-ID ab.)
+-- Determine a spellId of an aura — secret-safe:
+--   * out of combat aura.spellId is directly readable.
+--   * in combat it is secret -> look up via the (out-of-combat learned) signature.
+-- Returns nil = not (yet) resolvable (e.g. in combat before the first OOC learning).
+-- Some auras are applied with a DIFFERENT spellId than the tracked one
+-- (cast ID != aura ID). Map here to the main ID listed in the whitelist.
+-- (Example: Earth Shield — cast ID differs from the aura ID.)
 local PRIMARY_BY_ALT = {
-	[383648] = 974,   -- Earth Shield (alternative Aura-ID -> Haupt-ID)
+	[383648] = 974,   -- Earth Shield (alternative aura ID -> main ID)
 }
 local function resolveSpellId(u, aura, spec)
 	local sid = aura.spellId
@@ -506,8 +505,8 @@ local function resolveSpellId(u, aura, spec)
 	return s and s[sig] or nil
 end
 
--- Whitelist-Typ einer spellId: direkt ODER über den Basis-Zauber (GetBaseSpell), damit
--- talent-/rang-modifizierte Override-IDs auf den getrackten Basis-Spell matchen.
+-- Whitelist type of a spellId: directly OR via the base spell (GetBaseSpell) so that
+-- talent/rank-modified override IDs match the tracked base spell.
 local function wlType(wl, sid)
 	if not (wl and sid) then return nil end
 	local t = wl[sid]
@@ -519,18 +518,18 @@ local function wlType(wl, sid)
 	return nil
 end
 
--- Icon einer Aura setzen. aura.icon ist im Kampf secret (12.0), aber StatusBar/Texture-
--- Setter nehmen secret-Werte NATIV an und rendern sie korrekt — bestätigtes Vorgehen
--- (eine SECRET-Textur wird von SetTexture nativ akzeptiert). Dadurch echte
--- Icons auch im Kampf, für EIGENE wie FREMDE Auren (entscheidend für Debuffs). Nur wenn
--- gar kein Icon vorliegt (nil) der Zahnrad-Fallback.
+-- Set an aura's icon. aura.icon is secret in combat (12.0), but StatusBar/texture
+-- setters accept secret values NATIVELY and render them correctly — confirmed approach
+-- (a SECRET texture is accepted natively by SetTexture). This gives real icons
+-- even in combat, for OWN and FOREIGN auras (crucial for debuffs). Only if no icon
+-- is present at all (nil) the cog fallback.
 local function applyAuraIcon(ic, aura)
 	local tex = aura.icon
 	if tex ~= nil then ic.tex:SetTexture(tex) else ic.tex:SetTexture(136243) end
 end
 
--- Aktiver Layout-/Positions-Kontext: Schlachtzug (raid) vs. 5er-Gruppe/Dungeon (party).
--- Im Testmodus nach Test-Größe (5 = party, sonst raid).
+-- Active layout/position context: raid vs. 5-man group/dungeon (party).
+-- In test mode by test size (5 = party, otherwise raid).
 local function layoutCtx()
 	local d = db()
 	if d.testMode then return (d.testSize == 5) and d.party or d.raid end
@@ -543,19 +542,19 @@ local function classColor(class)
 	return 0.6, 0.6, 0.6
 end
 
--- Aggro-Kontext aktiv? Mit aggroInstanceOnly (Standard) nur in Dungeon/Raid —
--- sonst läge solo/Open World fast dauerhaft das Overlay an. instanceType ist nicht
--- secret, im Kampf gefahrlos lesbar.
+-- Aggro context active? With aggroInstanceOnly (default) only in dungeon/raid —
+-- otherwise the overlay would be on almost permanently solo/open world. instanceType is
+-- not secret, safely readable in combat.
 local function aggroContextActive(d)
 	if not d.aggroInstanceOnly then return true end
 	local _, it = IsInInstance()
 	return it == "party" or it == "raid"
 end
 
--- Tank? Primär die zugewiesene Gruppenrolle. Ist KEINE zugewiesen ("NONE"/nil —
--- z.B. solo oder Gruppe ohne Rollencheck), für den SPIELER selbst auf die Spec-
--- Rolle zurückfallen (sonst zeigt z.B. ein Wächter-Druide solo das Aggro-Overlay).
--- Für Fremd-Einheiten ohne zugewiesene Rolle bleibt nur die Gruppenrolle.
+-- Tank? Primarily the assigned group role. If NONE is assigned ("NONE"/nil —
+-- e.g. solo or group without a role check), fall back to the spec role for the
+-- PLAYER themselves (otherwise e.g. a Guardian druid shows the aggro overlay solo).
+-- For foreign units without an assigned role only the group role remains.
 local function unitIsTank(u)
 	local r = UnitGroupRolesAssigned and UnitGroupRolesAssigned(u)
 	if r == "TANK" then return true end
@@ -568,21 +567,21 @@ local function unitIsTank(u)
 	end
 	return false
 end
--- Konfigurierte Dispel-Farbe (oder Default) für einen Typ.
+-- Configured dispel color (or default) for a type.
 local function dispelCol(d, key)
 	local c = (d.dispelColors and d.dispelColors[key]) or DISPEL_DEFAULTS[key]
 	return c.r or 0.5, c.g or 0.5, c.b or 0.5
 end
--- Grundfarbe des Lebensbalkens: Klassenfarbe oder feste Füllfarbe (KEINE Dispel-Logik mehr).
+-- Base color of the health bar: class color or fixed fill color (NO dispel logic anymore).
 local function fillRGB(d, class)
 	if d.useClassColor then return classColor(class) end
 	local c = d.fillColor or {}
 	return c.r or 0.2, c.g or 0.6, c.b or 0.3
 end
 
--- Dispel-Farb-Curve (12.0): Blizzard wertet den (secret) Dispel-Typ intern gegen die
--- Curve aus und liefert die Farbe -> typ-genau im Kampf, ohne den secret-Wert zu lesen.
--- Wird lazily gebaut und bei Settings-Änderungen invalidiert (siehe UpdateLayout).
+-- Dispel color curve (12.0): Blizzard evaluates the (secret) dispel type internally
+-- against the curve and returns the color -> type-accurate in combat, without reading
+-- the secret value. Built lazily and invalidated on settings changes (see UpdateLayout).
 local dispelCurve
 local function buildDispelCurve()
 	dispelCurve = nil
@@ -594,7 +593,7 @@ local function buildDispelCurve()
 	end
 	local c = C_CurveUtil.CreateColorCurve()
 	c:SetType(Enum.LuaCurveType.Step)
-	pt(c, 0, "Magic")   -- none/Fallback
+	pt(c, 0, "Magic")   -- none/fallback
 	pt(c, 1, "Magic")
 	pt(c, 2, "Curse")
 	pt(c, 3, "Disease")
@@ -619,7 +618,7 @@ local function justifyFor(point)
 	elseif strfind(point, "RIGHT") then return "RIGHT" end
 	return "CENTER"
 end
--- Schrift-Umrandung: gespeicherter Wert -> WoW-SetFont-Flag
+-- Font outline: stored value -> WoW SetFont flag
 local OUTLINE_FLAGS = { none = "", outline = "OUTLINE", thick = "THICKOUTLINE" }
 local function applyText(fs, frame, point, x, y, size, color, outline)
 	point = point or "CENTER"
@@ -634,16 +633,16 @@ end
 local function GetFakeList(size)
 	local list = {}
 	for i = 1, size do list[i] = FAKE[((i - 1) % #FAKE) + 1] end
-	-- Testmodus-Vorschau der Rollen-Sortierung: stabil nach der Prioritätsliste in Buckets
-	-- einsortieren (innerhalb einer Rolle bleibt die Reihenfolge erhalten). Live macht das
-	-- der SecureGroupHeader über groupBy=ASSIGNEDROLE — hier nur die Optik-Vorschau.
+	-- Test-mode preview of role sorting: stably sort into buckets by the priority list
+	-- (within a role the order is preserved). Live this is done by the SecureGroupHeader
+	-- via groupBy=ASSIGNEDROLE — here only the visual preview.
 	local d = db()
 	if d.sortMode == "role" and (size == 5 or d.sortApplyRaid) then
 		local order = d.sortRoleOrder or DEFAULT_ROLE_ORDER
 		local rank = {}
 		for i, r in ipairs(order) do rank[r] = i end
 		local buckets = {}
-		local n = #order + 1   -- letzter Bucket = ohne/unbekannte Rolle
+		local n = #order + 1   -- last bucket = without/unknown role
 		for i = 1, n do buckets[i] = {} end
 		for i = 1, #list do
 			local b = buckets[rank[list[i].role] or n]
@@ -659,17 +658,17 @@ local function GetFakeList(size)
 	return list
 end
 
--- Wiederverwendete Scratch-Farbe (keine Tabelle pro Aufruf im heißen Pfad).
+-- Reused scratch color (no table per call in the hot path).
 local dispelScratch = { r = 1, g = 1, b = 1 }
 
--- Secret-sichere Dispel-Erkennung (12.0):
---  * Filter "HARMFUL|RAID_PLAYER_DISPELLABLE" -> Blizzard liefert nur, was ICH dispellen
---    kann (intern in C++, kein Lua-Vergleich auf secret). "Alle" -> "HARMFUL" + nil-Check.
---  * dispelName ~= nil ist ein secret-sicherer nil-Check (liest den Wert nicht) und sagt,
---    OB ein (typisierter) dispellbarer Debuff anliegt — auch bei secret Boss-Debuffs.
---  * Farbe via GetAuraDispelTypeColor + Curve: Blizzard wertet den secret Typ intern aus
---    und gibt die Farbe zurück -> typ-genau im Kampf, ohne den secret-Wert zu lesen.
--- Rückgabe: hasDispel(bool, secret-frei), r, g, b (ggf. secret -> nur an C++-Setter geben).
+-- Secret-safe dispel detection (12.0):
+--  * filter "HARMFUL|RAID_PLAYER_DISPELLABLE" -> Blizzard returns only what I can dispel
+--    (internally in C++, no Lua compare on secret). "All" -> "HARMFUL" + nil check.
+--  * dispelName ~= nil is a secret-safe nil check (doesn't read the value) and says
+--    WHETHER a (typed) dispellable debuff is present — even for secret boss debuffs.
+--  * color via GetAuraDispelTypeColor + curve: Blizzard evaluates the secret type internally
+--    and returns the color -> type-accurate in combat, without reading the secret value.
+-- Returns: hasDispel(bool, secret-free), r, g, b (possibly secret -> only to C++ setters).
 function Raidframes:GetDispel(u, d)
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
 	if not dispelCurve then buildDispelCurve() end
@@ -679,7 +678,7 @@ function Raidframes:GetDispel(u, d)
 		local aura = C_UnitAuras.GetAuraDataByIndex(u, i, filter)
 		if not aura then break end
 		i = i + 1
-		if aura.dispelName ~= nil then   -- secret-sicher
+		if aura.dispelName ~= nil then   -- secret-safe
 			if dispelCurve and C_UnitAuras.GetAuraDispelTypeColor then
 				local col = C_UnitAuras.GetAuraDispelTypeColor(u, aura.auraInstanceID, dispelCurve)
 				if col then
@@ -688,7 +687,7 @@ function Raidframes:GetDispel(u, d)
 					return true, sc.r, sc.g, sc.b
 				end
 			end
-			-- Fallback (API fehlt): generische Magic-Farbe als „dispellbar"-Hinweis.
+			-- Fallback (API missing): generic magic color as a "dispellable" hint.
 			local r, g, b = dispelCol(d, "Magic")
 			return true, r, g, b
 		end
@@ -705,36 +704,35 @@ local function makeBar(parent, tex, level)
 	return b
 end
 
--- Streifen-Overlay in einem Clip-Frame — MANUELLES TexCoord-Tiling (Blizzards echte
--- Methode), secret-sicher. Hintergrund: SetHorizTile kachelt über eine StatusBar-Füllung
--- NICHT korrekt (es streckt die Textur), und eine MaskTexture folgt der Füllung nicht.
--- Deshalb:
---  * Die Streifentextur wird über das GANZE Frame (spanFrame = f.health) gespannt und per
---    TexCoord in FESTER Pixelgröße gekachelt (REPEAT horizontal; TexCoord in ApplyConfig).
---    Gleicher Ursprung für Forward + Backfill -> die Diagonale läuft nahtlos über die Kante.
---  * clipParent ist ein Clip-Frame, das an die Absorb-FÜLLUNG verankert ist und damit
---    secret-sicher dem SetValue folgt (wie missClip/curClip der Lebensfüllung folgen) ->
---    der Streifen erscheint NUR über dem tatsächlichen Absorb-Anteil.
--- vTile=true -> auch VERTIKAL in fester Pixelgröße kacheln (nur für Zweierpotenz-Höhen wie
--- die 128px-Healabsorb-Textur sauber). vTile=false -> vertikal CLAMP (Schild: 256x40, NICHT
--- Zweierpotenz -> REPEAT zeigte eine Naht; CLAMP streckt die Diagonale, fällt aber nicht auf).
--- Den TexCoord-Faktor (Frame-Größe / Texturgröße) setzt ApplyConfig.
+-- Stripe overlay in a clip frame — MANUAL TexCoord tiling (Blizzard's real method),
+-- secret-safe. Background: SetHorizTile does NOT tile correctly over a StatusBar fill
+-- (it stretches the texture), and a MaskTexture doesn't follow the fill. Therefore:
+--  * The stripe texture is spanned over the WHOLE frame (spanFrame = f.health) and tiled
+--    via TexCoord at FIXED pixel size (REPEAT horizontal; TexCoord in ApplyConfig).
+--    Same origin for forward + backfill -> the diagonal runs seamlessly across the edge.
+--  * clipParent is a clip frame anchored to the absorb FILL and thus follows the SetValue
+--    secret-safely (like missClip/curClip follow the health fill) -> the stripe appears
+--    ONLY over the actual absorb portion.
+-- vTile=true -> also tile VERTICALLY at fixed pixel size (only clean for power-of-two heights
+-- like the 128px heal-absorb texture). vTile=false -> vertical CLAMP (shield: 256x40, NOT a
+-- power of two -> REPEAT showed a seam; CLAMP stretches the diagonal but isn't noticeable).
+-- ApplyConfig sets the TexCoord factor (frame size / texture size).
 local function makeStripe(clipParent, spanFrame, stripeTex, vTile)
 	local s = clipParent:CreateTexture(nil, "ARTWORK", nil, 2)
 	s:SetTexture(stripeTex, "REPEAT", vTile and "REPEAT" or "CLAMP")
 	s:SetAllPoints(spanFrame)
 	return s
 end
--- Streifen-Textur in ApplyConfig setzen. patternKey -> gekacheltes Lumen-Muster (REPEAT, feste
--- Pixelgröße wie bisher; vCoord/vRepeat steuern die vertikale Kachelung). Jede andere Wahl ->
--- als glatte Füllung gestreckt (CLAMP, 0..1) -> beliebige LSM-/Blizzard-Statusbar nutzbar. Der
--- Clip begrenzt in beiden Fällen auf den Absorb-Anteil (unverändert).
+-- Set the stripe texture in ApplyConfig. patternKey -> tiled Lumen pattern (REPEAT, fixed
+-- pixel size as before; vCoord/vRepeat control the vertical tiling). Any other choice ->
+-- stretched as a smooth fill (CLAMP, 0..1) -> any LSM/Blizzard statusbar usable. The clip
+-- limits to the absorb portion in both cases (unchanged).
 local function applyStripeTex(stripe, spec, patternTex, L, vCoord, vRepeat)
 	if not spec or spec.pattern then
 		stripe:SetTexture(patternTex, "REPEAT", vRepeat and "REPEAT" or "CLAMP")
 		stripe:SetTexCoord(0, L.width / STRIPE_TEX_W, 0, vCoord)
 	elseif spec.atlas then
-		stripe:SetTexCoord(0, 1, 0, 1)          -- SetAtlas setzt eigene Coords; vorher zurücksetzen
+		stripe:SetTexCoord(0, 1, 0, 1)          -- SetAtlas sets its own coords; reset first
 		pcall(stripe.SetAtlas, stripe, spec.atlas, false)
 	else
 		stripe:SetTexture(FetchTexture(spec.texKey or ""))
@@ -742,26 +740,26 @@ local function applyStripeTex(stripe, spec, patternTex, L, vCoord, vRepeat)
 	end
 end
 
--- ----- Aura-Indikatoren (Phase 1): Icon-Pool, Anker, Auto-Fit-Größe -----
--- Welcher Kontext bestimmt die explizite Icon-Größe (Auto-Fit aus)? raid vs party.
+-- ----- Aura indicators (phase 1): icon pool, anchor, auto-fit size -----
+-- Which context determines the explicit icon size (auto-fit off)? raid vs party.
 local function isRaidContext()
 	local d = db()
 	if d.testMode then return d.testSize ~= 5 end
 	return IsInRaid()
 end
--- Suffix der kontextabhängigen Aura-Felder (anchorRaid/anchorParty, growRaid/…, sizeRaid/…,
--- offX/offY, outside) — Position/Größe sind pro Kontext getrennt (wie bei Frame-Größe/Text).
+-- Suffix of the context-dependent aura fields (anchorRaid/anchorParty, growRaid/…, sizeRaid/…,
+-- offX/offY, outside) — position/size are separate per context (like frame size/text).
 local function auraCtxSuffix() return isRaidContext() and "Raid" or "Party" end
--- Icon-Größe einer Kategorie: Auto-Fit -> aus der Frame-Höhe abgeleitet (skaliert also
--- automatisch zwischen Raid/Gruppe mit), sonst explizit pro Kontext.
+-- Icon size of a category: auto-fit -> derived from the frame height (so it scales
+-- automatically between raid/group), otherwise explicit per context.
 local function auraIconSize(cat, L)
 	local sfx = auraCtxSuffix()
 	if not cat.autoFit then
 		return cat["size" .. sfx] or (sfx == "Raid" and 16 or 22)
 	end
-	-- Auto-Fit: ~30% der Frame-Höhe, ABER so gedeckelt, dass die volle Reihe/Spalte in
-	-- den Frame passt (kein Überlauf über den Rand bei schmalen/kurzen Frames):
-	-- horizontales Wachstum an der Breite deckeln, vertikales an der Höhe.
+	-- Auto-fit: ~30% of the frame height, BUT capped so the full row/column fits into
+	-- the frame (no overflow past the edge on narrow/short frames):
+	-- cap horizontal growth at the width, vertical at the height.
 	local h, w = L.height or 60, L.width or 114
 	local n  = max(1, cat.maxIcons or 5)
 	local sp = cat.spacing or 0
@@ -774,24 +772,24 @@ local function auraIconSize(cat, L)
 	end
 	return max(8, min(48, floor(size)))
 end
--- Kleiner Versatz nach innen, damit Icons nicht auf der Frame-Kante kleben.
+-- Small inward offset so icons don't stick to the frame edge.
 local function auraInset(point)
 	local I, x, y = 1, 0, 0
 	if strfind(point, "LEFT") then x = I elseif strfind(point, "RIGHT") then x = -I end
 	if strfind(point, "TOP") then y = -I elseif strfind(point, "BOTTOM") then y = I end
 	return x, y
 end
--- Positioniert die SICHTBAREN Icons (count Stück) entlang der Wachstumsrichtung. Liegt der
--- Anker auf der Wachstums-Achse mittig (z.B. „Unten"/„Mitte"), wird die Reihe ZENTRIERT —
--- und zwar anhand der tatsächlichen Anzahl, also auch bei wechselnder HoT-Zahl mittig.
--- Läuft beim Rendern (count ist erst dann bekannt).
-local AURA_OUT_GAP = 2 -- kleiner Abstand zwischen Frame-Kante und ausgelagerter („Außen") Icon-Reihe
+-- Positions the VISIBLE icons (count of them) along the growth direction. If the anchor
+-- is centered on the growth axis (e.g. "Bottom"/"Center"), the row is CENTERED — based
+-- on the actual count, so it stays centered even with a changing HoT count.
+-- Runs at render time (count is only known then).
+local AURA_OUT_GAP = 2 -- small gap between frame edge and the outsourced ("outside") icon row
 local function positionAuraIcons(holder, count)
 	if count < 1 then holder._posCount = 0; return end
-	-- SetPoint-Churn vermeiden (§9.5): Icon-Positionen hängen NUR an count + den
-	-- Layout-Parametern (Anker/Wachstum/Größe/Versatz). Die Parameter ändern sich
-	-- ausschließlich in layoutAuraCat (invalidiert dort _posCount). Bleibt count
-	-- gleich, ist nichts neu zu ankern -> der häufige UNIT_AURA-Pfad spart die Arbeit.
+	-- Avoid SetPoint churn (§9.5): icon positions depend ONLY on count + the layout
+	-- parameters (anchor/growth/size/offset). The parameters change exclusively in
+	-- layoutAuraCat (which invalidates _posCount there). If count stays the same,
+	-- nothing needs re-anchoring -> the frequent UNIT_AURA path saves the work.
 	if count == holder._posCount then return end
 	local anchor = holder._anchor or "BOTTOMLEFT"
 	local grow   = holder._grow or "RIGHT"
@@ -803,9 +801,9 @@ local function positionAuraIcons(holder, count)
 	local horiz = (dirX ~= 0)
 	local centerX = horiz and not (strfind(anchor, "LEFT") or strfind(anchor, "RIGHT"))
 	local centerY = (not horiz) and not (strfind(anchor, "TOP") or strfind(anchor, "BOTTOM"))
-	-- Basis-Versatz: „Innen" = kleiner Inset nach innen (klebt nicht an der Kante);
-	-- „Außen" = die Reihe sitzt komplett JENSEITS der angeankerten Kante (perpendikular
-	-- zur Wachstumsachse) -> neben/über/unter dem Frame, ohne Extra-Frames.
+	-- Base offset: "inside" = small inset inward (doesn't stick to the edge);
+	-- "outside" = the row sits entirely BEYOND the anchored edge (perpendicular to the
+	-- growth axis) -> next to/above/below the frame, without extra frames.
 	local bx, by
 	if holder._outside then
 		bx, by = 0, 0
@@ -819,7 +817,7 @@ local function positionAuraIcons(holder, count)
 	else
 		bx, by = auraInset(anchor)
 	end
-	local ox, oy = holder._offX or 0, holder._offY or 0 -- frei wählbarer X/Y-Versatz (beide Modi)
+	local ox, oy = holder._offX or 0, holder._offY or 0 -- freely chosen X/Y offset (both modes)
 	local sx = centerX and (-dirX * (count - 1) * step / 2) or 0
 	local sy = centerY and (-dirY * (count - 1) * step / 2) or 0
 	for i = 1, count do
@@ -835,11 +833,11 @@ local function makeAuraIcon(holder)
 	local ic = CreateFrame("Frame", nil, holder)
 	ic.bg = ic:CreateTexture(nil, "BACKGROUND")
 	ic.bg:SetAllPoints()
-	ic.bg:SetColorTexture(0, 0, 0, 1)            -- 1px schwarzer Rahmen
+	ic.bg:SetColorTexture(0, 0, 0, 1)            -- 1px black frame
 	ic.tex = ic:CreateTexture(nil, "ARTWORK")
 	ic.tex:SetPoint("TOPLEFT", 1, -1)
 	ic.tex:SetPoint("BOTTOMRIGHT", -1, 1)
-	ic.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)   -- Icon-Standardrand wegschneiden
+	ic.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)   -- cut off the default icon border
 	ic.cd = CreateFrame("Cooldown", nil, ic, "CooldownFrameTemplate")
 	ic.cd:SetAllPoints(ic.tex)
 	ic.cd:SetDrawEdge(false)
@@ -847,9 +845,9 @@ local function makeAuraIcon(holder)
 	ic:Hide()
 	return ic
 end
--- Einen Kategorie-Block layouten: Holder + Icon-Pool an Anker/Größe/Wachstumsrichtung
--- positionieren. Befüllt (Textur/Swipe/Show) wird erst beim Rendern. NUR im Layout-Pfad
--- aufrufen (erzeugt ggf. Frames -> out-of-combat).
+-- Layout a category block: position holder + icon pool at anchor/size/growth direction.
+-- Filling (texture/swipe/show) happens only at render time. Call ONLY in the layout path
+-- (may create frames -> out of combat).
 local function layoutAuraCat(f, key, cat, size)
 	local holder = f.auraHolders[key]
 	if not (cat and cat.enabled) then
@@ -863,8 +861,8 @@ local function layoutAuraCat(f, key, cat, size)
 		f.auraHolders[key] = holder
 	end
 	holder:Show()
-	-- Layout-Parameter für die render-zeitige Positionierung (positionAuraIcons) merken.
-	-- Anker/Wachstum/Versatz/Innen-Außen sind pro Kontext (Raid/Party) getrennt.
+	-- Remember layout parameters for the render-time positioning (positionAuraIcons).
+	-- Anchor/growth/offset/inside-outside are separate per context (raid/party).
 	local sfx = auraCtxSuffix()
 	holder._anchor  = cat["anchor" .. sfx] or "BOTTOMLEFT"
 	holder._grow    = cat["grow" .. sfx] or "RIGHT"
@@ -873,7 +871,7 @@ local function layoutAuraCat(f, key, cat, size)
 	holder._outside = cat["outside" .. sfx] or false
 	holder._size    = size
 	holder._spacing = cat.spacing or 0
-	holder._posCount = nil   -- Layout-Parameter neu gesetzt -> Positions-Cache verwerfen
+	holder._posCount = nil   -- layout params reset -> discard position cache
 	local maxN = cat.maxIcons or 5
 	for i = 1, maxN do
 		local ic = holder.icons[i] or makeAuraIcon(holder)
@@ -885,11 +883,11 @@ local function layoutAuraCat(f, key, cat, size)
 	for i = maxN + 1, #holder.icons do holder.icons[i]:Hide() end
 end
 
--- Dekoriert einen beliebigen Host (Nicht-Secure-Frame für Preview ODER Secure-Button
--- für Live) mit dem kompletten Render-Stack (bg, Leben, Clips, Schilde, Heilabsorb,
--- Overlay, Texte, Dispel-/Maus-Ränder). Erzeugt den Host NICHT und setzt KEINE
--- Maus-/Klick-Scripts — das ist host-spezifisch (Preview: SetScript; Secure: HookScript).
--- So teilen sich Live- und Test-Pfad genau einen Render-Code.
+-- Decorates an arbitrary host (non-secure frame for preview OR secure button for live)
+-- with the complete render stack (bg, health, clips, shields, heal-absorb, overlay, texts,
+-- dispel/mouse borders). Does NOT create the host and sets NO mouse/click scripts — that
+-- is host-specific (preview: SetScript; secure: HookScript).
+-- This way the live and test paths share exactly one render code.
 local function Decorate(f)
 	local base = f:GetFrameLevel()
 
@@ -897,12 +895,12 @@ local function Decorate(f)
 	f.bg:SetAllPoints()
 	f.bg:SetColorTexture(0.11, 0.11, 0.11, 1)
 
-	-- Lebensbalken (Basis; seine Fülltextur steuert die Clips)
+	-- Health bar (base; its fill texture drives the clips)
 	f.health = makeBar(f, WHITE8X8, base + 2)
 	f.health:SetAllPoints(f)
 	local hpTex = f.health:GetStatusBarTexture()
 
-	-- ----- Fehl-Bereich (rechts vom aktuellen Leben): Vorhersage + Schild -----
+	-- ----- Missing area (right of the current health): prediction + shield -----
 	f.missClip = CreateFrame("Frame", nil, f.health)
 	f.missClip:SetFrameLevel(base + 3)
 	f.missClip:SetClipsChildren(true)
@@ -914,10 +912,9 @@ local function Decorate(f)
 	f.predictBar:SetPoint("TOPLEFT", hpTex, "TOPRIGHT", 0, 0)
 	f.predictBar:SetPoint("BOTTOMLEFT", hpTex, "BOTTOMRIGHT", 0, 0)
 
-	-- Schild FORWARD: ab der Leben-Kante in den freien Platz rechts. Die UNSICHTBARE
-	-- StatusBar-Füllung treibt nur die Geometrie (SetValue=Absorb, secret-sicher); der
-	-- shieldClip ist an ihre Füllung verankert und begrenzt das Streifen-Overlay exakt
-	-- auf den Absorb-Anteil.
+	-- Shield FORWARD: from the health edge into the free space on the right. The INVISIBLE
+	-- StatusBar fill only drives the geometry (SetValue=absorb, secret-safe); the shieldClip
+	-- is anchored to its fill and limits the stripe overlay exactly to the absorb portion.
 	f.shieldBar = makeBar(f.missClip, WHITE8X8, base + 4)
 	f.shieldBar:SetStatusBarColor(1, 1, 1, 0)
 	f.shieldBar:SetPoint("TOPLEFT", hpTex, "TOPRIGHT", 0, 0)
@@ -929,10 +926,10 @@ local function Decorate(f)
 	f.shieldClip:SetPoint("BOTTOMRIGHT", f.shieldBar:GetStatusBarTexture(), "BOTTOMRIGHT", 0, 0)
 	f.shieldStripe = makeStripe(f.shieldClip, f.health, SHIELD_OVL_TEX)
 
-	-- Schild BACKFILL: Overschild über gefülltem Leben (Reverse-Fill von rechts). curClip
-	-- begrenzt auf den GEFÜLLTEN Bereich; der backfillClip (an die Backfill-Füllung verankert)
-	-- begrenzt auf den Absorb-Anteil. Forward + Backfill teilen denselben Roh-Absorb -> die
-	-- Clips machen min(absorb,leben) bzw. max(0,absorb-leben) rein visuell.
+	-- Shield BACKFILL: overshield over filled health (reverse fill from the right). curClip
+	-- limits to the FILLED area; the backfillClip (anchored to the backfill fill) limits to
+	-- the absorb portion. Forward + backfill share the same raw absorb -> the clips do
+	-- min(absorb,health) resp. max(0,absorb-health) purely visually.
 	f.curClip = CreateFrame("Frame", nil, f.health)
 	f.curClip:SetFrameLevel(base + 4)
 	f.curClip:SetClipsChildren(true)
@@ -950,15 +947,15 @@ local function Decorate(f)
 	f.backfillClip:SetPoint("BOTTOMRIGHT", f.backfillBar, "BOTTOMRIGHT", 0, 0)
 	f.backfillStripe = makeStripe(f.backfillClip, f.health, SHIELD_OVL_TEX)
 
-	-- ----- Füll-Bereich (über dem aktuellen Leben): Heilabsorb von rechts -----
+	-- ----- Filled area (over the current health): heal-absorb from the right -----
 	f.healClip = CreateFrame("Frame", nil, f.health)
 	f.healClip:SetFrameLevel(base + 5)
 	f.healClip:SetClipsChildren(true)
 	f.healClip:SetPoint("TOPLEFT", f.health, "TOPLEFT", 0, 0)
 	f.healClip:SetPoint("BOTTOMRIGHT", hpTex, "BOTTOMRIGHT", 0, 0)
 
-	-- Heilabsorb: unsichtbare Füllung treibt die Geometrie, healAbsClip begrenzt das
-	-- (halbtransparente) Muster-Overlay auf den Heilabsorb-Anteil.
+	-- Heal-absorb: invisible fill drives the geometry, healAbsClip limits the
+	-- (semi-transparent) pattern overlay to the heal-absorb portion.
 	f.healAbsorbBar = makeBar(f.healClip, WHITE8X8, base + 5)
 	f.healAbsorbBar:SetStatusBarColor(1, 1, 1, 0)
 	f.healAbsorbBar:SetReverseFill(true)
@@ -971,13 +968,13 @@ local function Decorate(f)
 	f.healAbsClip:SetPoint("BOTTOMRIGHT", f.healAbsorbBar, "BOTTOMRIGHT", 0, 0)
 	f.healStripe = makeStripe(f.healAbsClip, f.health, HEALABS_TEX, true)
 
-	-- ----- Overlay (Tiefe, Texte, Maus-Rand) -----
+	-- ----- Overlay (depth, texts, mouse border) -----
 	f.overlay = CreateFrame("Frame", nil, f)
 	f.overlay:SetAllPoints()
 	f.overlay:SetFrameLevel(base + 6)
 	if ns.Style then ns.Style:ApplyBar(f.health, f.overlay) end
 
-	f.auraHolders = {}   -- [catKey] = Holder-Frame mit Icon-Pool (lazy in ApplyConfig)
+	f.auraHolders = {}   -- [catKey] = holder frame with icon pool (lazy in ApplyConfig)
 
 	f.name = f.overlay:CreateFontString(nil, "OVERLAY")
 	f.name:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
@@ -986,8 +983,8 @@ local function Decorate(f)
 	f.htext:SetFont(STANDARD_TEXT_FONT, 16, "OUTLINE")
 	f.htext:SetPoint("CENTER")
 
-	-- Dispel-Overlay (Modus "overlay"): farbiger Rand + leichte Füllung in Dispel-Farbe.
-	-- Weiße Texturen -> Farbe per SetVertexColor (verträgt secret-Werte).
+	-- Dispel overlay (mode "overlay"): colored border + light fill in the dispel color.
+	-- White textures -> color via SetVertexColor (tolerates secret values).
 	f.dFill = f.overlay:CreateTexture(nil, "ARTWORK", nil, 1)
 	f.dFill:SetColorTexture(1, 1, 1, 1); f.dFill:SetAllPoints(f.health); f.dFill:Hide()
 	local function dedge()
@@ -1006,9 +1003,9 @@ local function Decorate(f)
 	end
 	f.eT, f.eB, f.eL, f.eR = edge(), edge(), edge(), edge()
 
-	-- Aggro-Warnung: komplette eigene Schicht mit klar höherem Frame-Level ÜBER den
-	-- Aura-Holdern (die sind Kinder von f.overlay), damit Overlay-Füllung, Rand UND
-	-- "Aggro"-Text über den Aura-Icons liegen. Weiße Texturen -> Farbe per SetVertexColor.
+	-- Aggro warning: a complete own layer with a clearly higher frame level ABOVE the
+	-- aura holders (which are children of f.overlay) so that overlay fill, border AND
+	-- "Aggro" text sit above the aura icons. White textures -> color via SetVertexColor.
 	f.aggroLayer = CreateFrame("Frame", nil, f)
 	f.aggroLayer:SetAllPoints(f)
 	f.aggroLayer:SetFrameLevel(base + 10)
@@ -1028,8 +1025,8 @@ local function Decorate(f)
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 end
 
--- Preview-/Test-Host: gewöhnlicher (Nicht-Secure-)Frame, mit direkten Maus-Scripts.
--- Der Live-Pfad nutzt stattdessen Secure-Buttons (siehe Header-Setup) und HookScript.
+-- Preview/test host: ordinary (non-secure) frame, with direct mouse scripts.
+-- The live path uses secure buttons instead (see header setup) and HookScript.
 local function CreateUnitFrame(i)
 	local f = CreateFrame("Frame", "LumenUnit" .. i, container)
 	Decorate(f)
@@ -1045,8 +1042,8 @@ function Raidframes:SetHighlight(f, on)
 	f.eT:SetShown(on); f.eB:SetShown(on); f.eL:SetShown(on); f.eR:SetShown(on)
 end
 
--- Dispel-Overlay setzen (Modus "overlay"): Rand + Füllung in Dispel-Farbe ein/aus.
--- r,g,b dürfen secret sein -> nur an SetVertexColor (C++) geben.
+-- Set dispel overlay (mode "overlay"): border + fill in the dispel color on/off.
+-- r,g,b may be secret -> only pass to SetVertexColor (C++).
 function Raidframes:SetDispelOverlay(f, on, r, g, b, alpha)
 	if on then
 		f.dFill:SetVertexColor(r, g, b, alpha or 0.3); f.dFill:Show()
@@ -1059,10 +1056,10 @@ function Raidframes:SetDispelOverlay(f, on, r, g, b, alpha)
 	end
 end
 
--- Aggro-Warnung setzen. status = Blizzards UnitThreatSituation (nil/0 = aus, 1-2 = gelb
--- "Aggro droht", 3 = rot "hat Aggro"). Darstellung PRO STUFE: "border" (nur Rand) oder
--- "overlay" (Rand + Füllung); Text nur im Overlay-Modus + eigener Toggle pro Stufe.
--- Threat-Werte sind NICHT secret -> Vergleich/Show im Kampf erlaubt.
+-- Set aggro warning. status = Blizzard's UnitThreatSituation (nil/0 = off, 1-2 = yellow
+-- "aggro incoming", 3 = red "has aggro"). Display PER STAGE: "border" (border only) or
+-- "overlay" (border + fill); text only in overlay mode + own toggle per stage.
+-- Threat values are NOT secret -> compare/show in combat allowed.
 function Raidframes:SetAggro(f, status)
 	if not status or status == 0 then
 		f.aT:Hide(); f.aB:Hide(); f.aL:Hide(); f.aR:Hide()
@@ -1075,12 +1072,12 @@ function Raidframes:SetAggro(f, status)
 	local mode   = isAggro and d.aggroModeAggro  or d.aggroModeWarn
 	local textOn = isAggro and d.aggroTextAggro  or d.aggroTextWarn
 	local r, g, b = c.r, c.g, c.b
-	-- Rand immer (beide Modi enthalten ihn).
+	-- Border always (both modes contain it).
 	f.aT:SetVertexColor(r, g, b, 1); f.aT:Show()
 	f.aB:SetVertexColor(r, g, b, 1); f.aB:Show()
 	f.aL:SetVertexColor(r, g, b, 1); f.aL:Show()
 	f.aR:SetVertexColor(r, g, b, 1); f.aR:Show()
-	-- Füllung + Text nur im Overlay-Modus; Text zusätzlich per Stufen-Toggle.
+	-- Fill + text only in overlay mode; text additionally per stage toggle.
 	if mode == "overlay" then
 		f.aggroFill:SetVertexColor(r, g, b, d.aggroFillAlpha or 0.22); f.aggroFill:Show()
 		if textOn then f.aggroText:SetTextColor(r, g, b, 1); f.aggroText:Show() else f.aggroText:Hide() end
@@ -1094,17 +1091,17 @@ function Raidframes:ApplyConfig(f)
 	local L = layoutCtx()
 	f:SetSize(L.width, L.height)
 	f.health:SetStatusBarTexture(FetchTexture(d.healthTexture))
-	-- Segment-Bars auf Lebensgröße halten (Anker liefern Höhe/Position)
+	-- Keep segment bars at health size (anchors provide height/position)
 	f.predictBar:SetSize(L.width, L.height)
 	f.shieldBar:SetSize(L.width, L.height)
 	f.healAbsorbBar:SetSize(L.width, L.height)
 
-	-- Streifen-Overlays horizontal in FESTER Pixelgröße kacheln (Frame-Breite / Texturbreite).
-	-- Schild vertikal voll (0..1, CLAMP) wie bisher — die 40px-Textur ist keine Zweierpotenz,
-	-- vertikales REPEAT zeigte eine Naht. Healabsorb (128px, Zweierpotenz) auch vertikal in
-	-- fester Pixelgröße -> X-Muster wird nicht mehr gestreckt.
-	-- Schild (Forward + Backfill) + Healabsorb: Lumen-Muster gekachelt ODER gewählte Textur
-	-- gestreckt (siehe applyStripeTex). Clips bleiben unangetastet.
+	-- Tile stripe overlays horizontally at FIXED pixel size (frame width / texture width).
+	-- Shield vertically full (0..1, CLAMP) as before — the 40px texture is not a power of two,
+	-- vertical REPEAT showed a seam. Heal-absorb (128px, power of two) also vertically at
+	-- fixed pixel size -> the X pattern is no longer stretched.
+	-- Shield (forward + backfill) + heal-absorb: Lumen pattern tiled OR chosen texture
+	-- stretched (see applyStripeTex). Clips stay untouched.
 	local sSpec = resolveTexSpec(d.shieldTexture, SHIELD_TEX_SPEC, SHIELD_PATTERN)
 	applyStripeTex(f.shieldStripe,   sSpec, SHIELD_OVL_TEX, L, 1, false)
 	applyStripeTex(f.backfillStripe, sSpec, SHIELD_OVL_TEX, L, 1, false)
@@ -1116,17 +1113,17 @@ function Raidframes:ApplyConfig(f)
 		elseif t == "Lumen Soft" then ns.Style:SetDepth(f.overlay, 0.55)
 		else ns.Style:SetDepth(f.overlay, 0) end
 	end
-	-- Hintergrund-Farbe + Deckkraft (geteilt). Die Lebensbalken-Deckkraft wird NICHT hier
-	-- gesetzt: f.health:SetAlpha würde auf die Clip-Kinder (Schild/Heilabsorb/Vorhersage)
-	-- durchschlagen. Stattdessen render-zeitig als Alpha-Argument von SetStatusBarColor.
+	-- Background color + opacity (shared). The health-bar opacity is NOT set here:
+	-- f.health:SetAlpha would propagate to the clip children (shield/heal-absorb/prediction).
+	-- Instead at render time as the alpha argument of SetStatusBarColor.
 	local bg = d.bgColor or {}
 	f.bg:SetColorTexture(bg.r or 0.11, bg.g or 0.11, bg.b or 0.11, d.bgAlpha or 1)
-	-- Deckkraft der Absorb-Overlays (Schild = Forward+Backfill-Streifen, Heilabsorb = Streifen).
+	-- Opacity of the absorb overlays (shield = forward+backfill stripe, heal-absorb = stripe).
 	local sa = d.shieldAlpha or 1
 	f.shieldStripe:SetAlpha(sa); f.backfillStripe:SetAlpha(sa)
 	f.healStripe:SetAlpha(d.healAbsorbAlpha or 1)
 
-	-- Farbe + Umrandung sind GETEILT (d), Größe/Position/Anzeigen pro Kontext (L).
+	-- Color + outline are SHARED (d), size/position/show per context (L).
 	f.name:SetShown(L.showName)
 	applyText(f.name, f, L.namePoint, L.nameX, L.nameY, L.nameSize, d.nameColor, d.nameOutline)
 	applyText(f.htext, f, L.healthTextPoint, L.healthTextX, L.healthTextY, L.healthTextSize, d.healthTextColor, d.healthTextOutline)
@@ -1136,7 +1133,7 @@ function Raidframes:ApplyConfig(f)
 	f.eL:ClearAllPoints(); f.eL:SetPoint("TOPLEFT"); f.eL:SetPoint("BOTTOMLEFT"); f.eL:SetWidth(2)
 	f.eR:ClearAllPoints(); f.eR:SetPoint("TOPRIGHT"); f.eR:SetPoint("BOTTOMRIGHT"); f.eR:SetWidth(2)
 
-	-- Aura-Indikatoren layouten. Auto-Fit zieht die Icon-Größe aus L.height.
+	-- Layout aura indicators. Auto-fit derives the icon size from L.height.
 	if d.auras then
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
@@ -1146,7 +1143,7 @@ function Raidframes:ApplyConfig(f)
 	end
 end
 
--- Alle Bars teilen die Skala 0..maxH. Werte dürfen secret sein; 0 -> unsichtbar.
+-- All bars share the scale 0..maxH. Values may be secret; 0 -> invisible.
 local function setSegments(f, maxH, healthVal, incoming, absorb, healAbsorb)
 	f.health:SetMinMaxValues(0, maxH);        f.health:SetValue(healthVal)
 	f.predictBar:SetMinMaxValues(0, maxH);    f.predictBar:SetValue(incoming or 0)
@@ -1155,11 +1152,11 @@ local function setSegments(f, maxH, healthVal, incoming, absorb, healAbsorb)
 	f.healAbsorbBar:SetMinMaxValues(0, maxH); f.healAbsorbBar:SetValue(healAbsorb or 0)
 end
 
--- LIVE — secret-sicher (Calculator nur für maxHealth, Rohwerte an die Bars)
+-- LIVE — secret-safe (calculator only for maxHealth, raw values to the bars)
 function Raidframes:RenderLive(f)
 	local u = f.unit
-	-- Secure-Buttons NIE selbst Show/Hide (im Kampf verboten) -> der Header steuert ihre
-	-- Sichtbarkeit. Nur die Nicht-Secure-Preview-Frames blenden wir selbst aus/ein.
+	-- NEVER Show/Hide secure buttons ourselves (forbidden in combat) -> the header controls
+	-- their visibility. Only the non-secure preview frames we hide/show ourselves.
 	if not u or not UnitExists(u) then if not f._secure then f:Hide() end return end
 	if not f._secure then f:Show() end
 	local d = db()
@@ -1181,7 +1178,7 @@ function Raidframes:RenderLive(f)
 	setSegments(f, maxH, UnitHealth(u), incoming, absorb, healAbs)
 
 	local _, class = UnitClass(u)
-	local ha = d.healthAlpha or 1   -- nur die Lebensbalken-Füllung dimmen (4. Alpha-Arg)
+	local ha = d.healthAlpha or 1   -- dim only the health-bar fill (4th alpha arg)
 	local hasDispel, dr, dg, dbb
 	if d.dispelEnabled then hasDispel, dr, dg, dbb = self:GetDispel(u, d) end
 	if hasDispel and d.dispelMode == "recolor" then
@@ -1193,7 +1190,7 @@ function Raidframes:RenderLive(f)
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
 	if d.aggroEnabled and aggroContextActive(d) then
-		-- Tanks ausnehmen: sie sollen Aggro haben -> kein Dauer-Rot.
+		-- Exclude tanks: they're supposed to have aggro -> no permanent red.
 		local st = (not unitIsTank(u)) and UnitThreatSituation and UnitThreatSituation(u) or nil
 		self:SetAggro(f, st)
 	else
@@ -1202,19 +1199,19 @@ function Raidframes:RenderLive(f)
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
-	-- Name in Klassenfarbe (geteilt): überschreibt die konfigurierte nameColor (Klasse ist
-	-- nur hier bekannt). Aus -> applyText in ApplyConfig hat die konfigurierte Farbe gesetzt.
+	-- Name in class color (shared): overrides the configured nameColor (the class is
+	-- only known here). Off -> applyText in ApplyConfig set the configured color.
 	if d.nameClassColor then f.name:SetTextColor(classColor(class)) end
 
 	local t = L.healthTextType
 	if t == "Keine" then
 		f.htext:SetText("")
 	elseif t == "Prozent" and UnitHealthPercent then
-		-- ScaleTo100-Kurve -> garantiert NICHT-secret 0..100 (secret-sicheres 12.0-Muster).
-		-- WICHTIG: Ohne Kurve liefert 12.0.7 einen Wert, der bei Arithmetik (p*100)
-		-- im Kampf wirft -> das riss bisher den restlichen RenderLive mit, inklusive
-		-- RenderAurasLive am Funktionsende -> ALLE Auren verschwanden. Mit Kurve ist p
-		-- bereits 0..100 und non-secret, format ist sicher (keine Arithmetik außen).
+		-- ScaleTo100 curve -> guaranteed NON-secret 0..100 (secret-safe 12.0 pattern).
+		-- IMPORTANT: without the curve 12.0.7 returns a value that throws on arithmetic
+		-- (p*100) in combat -> this used to take down the rest of RenderLive, including
+		-- RenderAurasLive at the function end -> ALL auras disappeared. With the curve p
+		-- is already 0..100 and non-secret, format is safe (no arithmetic outside).
 		local curve = CurveConstants and CurveConstants.ScaleTo100
 		local ok, p = pcall(UnitHealthPercent, u, true, curve)
 		f.htext:SetText((ok and p) and format("%d%%", p) or "")
@@ -1226,7 +1223,7 @@ function Raidframes:RenderLive(f)
 	self:RenderAurasLive(f)
 end
 
--- TESTMODUS — Fake-Zahlen, identischer StatusBar-/Clip-Pfad
+-- TEST MODE — fake numbers, identical StatusBar/clip path
 function Raidframes:RenderFake(f)
 	local fk = f.fake
 	local d = db()
@@ -1238,7 +1235,7 @@ function Raidframes:RenderFake(f)
 	local healAbsorb = (fk.healAbsorb or 0) * FAKE_MAX
 	setSegments(f, FAKE_MAX, hp * FAKE_MAX, incoming, absorb, healAbsorb)
 
-	-- Testmodus: kein echtes Aura-Objekt -> Typ direkt auf konfigurierte Farbe mappen.
+	-- Test mode: no real aura object -> map the type directly to the configured color.
 	local hasDispel, dr, dg, dbb = false
 	if d.dispelEnabled and fk.dispel and (d.dispelShowAll or playerDispels[fk.dispel]) then
 		dr, dg, dbb = dispelCol(d, fk.dispel)
@@ -1267,15 +1264,15 @@ function Raidframes:RenderFake(f)
 	self:RenderAurasFake(f)
 end
 
--- Aura-Icons befüllen — LIVE (secret-sicher: Filter-Scan, Swipe via Duration-Objekt).
--- Holder/Icons sind im Layout-Pfad vorab erzeugt; hier nur Textur/Swipe/Show setzen.
+-- Fill aura icons — LIVE (secret-safe: filter scan, swipe via duration object).
+-- Holder/icons are pre-created in the layout path; here only set texture/swipe/show.
 function Raidframes:RenderAurasLive(f)
 	local u = f.unit
 	local A = db().auras
 	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
-	learnUnitSigs(u)   -- passives Signatur-Lernen (außer Kampf; Groundwork für die Whitelist)
+	learnUnitSigs(u)   -- passive signature learning (out of combat; groundwork for the whitelist)
 	local spec = currentSpecID()
-	local wl   = whitelistFor(spec)   -- Whitelist der aktiven Spec (lazy geseedet)
+	local wl   = whitelistFor(spec)   -- whitelist of the active spec (lazily seeded)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
@@ -1288,7 +1285,7 @@ function Raidframes:RenderAurasLive(f)
 				if not aura then break end
 				i = i + 1
 				local iid = aura.auraInstanceID
-				-- Sub-Filter secret-sicher anwenden (nur Bool-Rückgabe, kein secret-Lesen).
+				-- Apply sub-filter secret-safely (only bool return, no secret read).
 				local subPass = true
 				if c.subExclude or c.subInclude then
 					if iid and fn then
@@ -1298,13 +1295,13 @@ function Raidframes:RenderAurasLive(f)
 						subPass = false
 					end
 				elseif c.harmfulModes then
-					-- Debuffs: Blizzard-Standard-Filter (Alle/Raid-relevant/Dispellbar).
+					-- Debuffs: Blizzard standard filter (all/raid-relevant/dispellable).
 					subPass = debuffModeAccept(u, iid, cat.filterMode, fn)
 				end
-				-- Whitelist: welche Spells diese Kategorie zeigt. sid auch fuer das secret-freie Icon.
-				--  * whitelistOr (Defensives, B3): Filter-Treffer (externe Def) ODER eigene "def"-
-				--    Whitelist; eigene Auren vorab via isFromPlayerOrPlayerPet (12.0.5, nicht secret).
-				--  * sonst (HoTs, B2): nur positiver Whitelist-Treffer zeigt (kein Filter-Fallback).
+				-- Whitelist: which spells this category shows. sid also for the secret-free icon.
+				--  * whitelistOr (defensives, B3): filter hit (external def) OR own "def"
+				--    whitelist; own auras checked first via isFromPlayerOrPlayerPet (12.0.5, not secret).
+				--  * otherwise (HoTs, B2): only a positive whitelist hit shows (no filter fallback).
 				local sid, accept
 				if c.whitelist then
 					if c.whitelistOr then
@@ -1317,14 +1314,14 @@ function Raidframes:RenderAurasLive(f)
 							accept = false
 						end
 					elseif c.ownOnly and not aura.isFromPlayerOrPlayerPet then
-						-- HoTs: nur eigene. Filter ist jetzt "HELPFUL" (zeigt auch Proc-/
-						-- Talent-HoTs ohne PLAYER-Quell-Flag) -> Eigenheit hier separat prüfen.
+						-- HoTs: only own. The filter is now "HELPFUL" (also shows proc/
+						-- talent HoTs without a PLAYER source flag) -> check ownership separately here.
 						accept = false
 					else
-						-- HoTs (whitelist, kein Or): NUR zeigen, wenn die Aura positiv auf einen
-						-- Whitelist-Spell aufgelöst wird. KEIN subPass-Fallback mehr — sonst rutschen
-						-- im Kampf nicht auflösbare Eigenbuffs (Toys/Trinkets/Allgemeinbuffs, die
-						-- Blizzard im Buffrahmen führt) durch, weil der Filter jetzt "HELPFUL" ist.
+						-- HoTs (whitelist, no Or): show ONLY if the aura resolves positively to a
+						-- whitelist spell. NO subPass fallback anymore — otherwise in-combat
+						-- unresolvable self-buffs (toys/trinkets/general buffs that Blizzard
+						-- lists in the buff frame) slip through, because the filter is now "HELPFUL".
 						sid = resolveSpellId(u, aura, spec)
 						accept = (sid ~= nil and subPass and wlType(wl, sid) == c.whitelist) or false
 					end
@@ -1354,7 +1351,7 @@ function Raidframes:RenderAurasLive(f)
 	end
 end
 
--- Aura-Icons befüllen — TESTMODUS (Fake-HoTs mit Beispiel-Swipe; läuft out-of-combat).
+-- Fill aura icons — TEST MODE (fake HoTs with sample swipe; runs out of combat).
 function Raidframes:RenderAurasFake(f)
 	local A = db().auras
 	if not A then return end
@@ -1388,8 +1385,8 @@ function Raidframes:UpdateUnit(f)
 end
 
 -- ===========================================================================
---  PREVIEW / TEST  (Nicht-Secure-Frame-Pool, Fake-Daten) — eigenes SetPoint-Gitter.
---  Bleibt erhalten, damit Florians Screenshot-Schleife voll funktioniert.
+--  PREVIEW / TEST  (non-secure frame pool, fake data) — own SetPoint grid.
+--  Kept so Florian's screenshot loop works fully.
 -- ===========================================================================
 function Raidframes:LayoutPreview(d)
 	local L = layoutCtx()
@@ -1406,10 +1403,10 @@ function Raidframes:LayoutPreview(d)
 		local f = frames[i] or CreateUnitFrame(i)
 		f.fake = list[i]; f.unit = nil
 		local idx   = i - 1
-		local group = floor(idx / GROUP_SIZE)   -- welche 5er-Gruppe
-		local slot  = idx % GROUP_SIZE          -- Position innerhalb der Gruppe
-		-- vertical (Standard): Mitglieder untereinander (slot=Zeile), Gruppen nebeneinander (group=Spalte).
-		-- horizontal: Mitglieder nebeneinander (slot=Spalte), Gruppen untereinander (group=Zeile).
+		local group = floor(idx / GROUP_SIZE)   -- which 5-man group
+		local slot  = idx % GROUP_SIZE          -- position within the group
+		-- vertical (default): members stacked (slot=row), groups side by side (group=column).
+		-- horizontal: members side by side (slot=column), groups stacked (group=row).
 		local col, row
 		if horizontal then col, row = slot, group else col, row = group, slot end
 		f:ClearAllPoints()
@@ -1421,8 +1418,8 @@ function Raidframes:LayoutPreview(d)
 		frames[i]:Hide(); frames[i].unit = nil; frames[i].fake = nil
 	end
 
-	local groups  = max(1, ceil(n / GROUP_SIZE))   -- Anzahl 5er-Gruppen
-	local inGroup = max(1, min(n, GROUP_SIZE))      -- belegte Plätze pro Gruppe
+	local groups  = max(1, ceil(n / GROUP_SIZE))   -- number of 5-man groups
+	local inGroup = max(1, min(n, GROUP_SIZE))      -- occupied slots per group
 	local cols, rows
 	if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
 	container:SetSize(max(1, cols * (w + sp) - sp), max(1, rows * (h + sp) - sp))
@@ -1435,15 +1432,15 @@ function Raidframes:HidePreview()
 end
 
 -- ===========================================================================
---  LIVE  (SecureGroupHeader + SecureUnitButtons) — klickbar/targetbar (Phase 1).
+--  LIVE  (SecureGroupHeader + SecureUnitButtons) — clickable/targetable (phase 1).
 -- ===========================================================================
 
--- Secure Rechtsklick-Menü (12.0.7): ein "togglemenu" direkt auf dem Unit-Button wird
--- gated (stumm verworfen ohne passende ClickBinding); aus Insecure-Lua öffnen TAINTET
--- das Menü (geschützte Einträge wie "Fokus setzen" werfen ADDON_ACTION_FORBIDDEN).
--- Lösung (secure-konformes Muster): Rechtsklick über die UN-gated "click"-Action an einen
--- versteckten SecureActionButton-Proxy routen, der selbst "togglemenu" sicher ausführt.
--- "useparent-unit" -> der Proxy holt die Unit vom Eltern-Button (header-verwaltet).
+-- Secure right-click menu (12.0.7): a "togglemenu" directly on the unit button is
+-- gated (silently dropped without a matching click binding); opening from insecure Lua
+-- TAINTS the menu (protected entries like "Set focus" throw ADDON_ACTION_FORBIDDEN).
+-- Solution (secure-conform pattern): route the right click via the UN-gated "click" action
+-- to a hidden SecureActionButton proxy that safely runs "togglemenu" itself.
+-- "useparent-unit" -> the proxy gets the unit from the parent button (header-managed).
 local function getMenuProxy(button)
 	local proxy = button._lumenMenuProxy
 	if not proxy then
@@ -1451,7 +1448,7 @@ local function getMenuProxy(button)
 		proxy:SetSize(1, 1); proxy:SetAlpha(0); proxy:EnableMouse(false)
 		proxy:RegisterForClicks("AnyUp")
 		proxy:SetAttribute("type", "togglemenu")
-		for i = 1, 5 do proxy:SetAttribute("type" .. i, "togglemenu") end  -- per Button-Suffix aufgelöst
+		for i = 1, 5 do proxy:SetAttribute("type" .. i, "togglemenu") end  -- resolved per button suffix
 		proxy:SetAttribute("useparent-unit", true)
 		proxy:SetAttribute("useOnKeyDown", false)
 		button._lumenMenuProxy = proxy
@@ -1460,9 +1457,9 @@ local function getMenuProxy(button)
 end
 ns.RF_GetMenuProxy = getMenuProxy
 
--- Phase-1-Defaultklicks: Links=Ziel, Rechts=WoW-Menü (über Proxy). Wird beim Erstellen
--- gesetzt UND von ClickCast wiederhergestellt, wenn der Nutzer Click-Cast deaktiviert.
--- NUR außer Kampf aufrufen (Attribute setzen ist geschützt).
+-- Phase-1 default clicks: left=target, right=WoW menu (via proxy). Set on creation
+-- AND restored by ClickCast when the user disables click-cast.
+-- Call ONLY out of combat (setting attributes is protected).
 local function applyDefaultClicks(button)
 	button:SetAttribute("type1", "target")
 	button:SetAttribute("*type1", "target")
@@ -1472,21 +1469,21 @@ local function applyDefaultClicks(button)
 end
 ns.RF_ApplyDefaultClicks = applyDefaultClicks
 
--- Einen vom Header erzeugten Secure-Button einmalig mit unserem Render-Stack + Klick-
--- Verhalten ausstatten. NUR außer Kampf aufrufen (Attribute setzen ist geschützt).
+-- Equip a header-created secure button once with our render stack + click behavior.
+-- Call ONLY out of combat (setting attributes is protected).
 local function styleSecureButton(button)
 	if button._lumenSecured then return end
 	button._lumenSecured = true
 	button._secure = true
 	Decorate(button)
-	-- Klick: Links=Ziel (unmodifiziert hat eine Default-ClickBinding), Rechts=Menü via Proxy.
+	-- Click: left=target (unmodified has a default click binding), right=menu via proxy.
 	button:EnableMouse(true)
 	button:RegisterForClicks("AnyUp")
 	applyDefaultClicks(button)
-	-- Maus-Highlight: HookScript (NICHT SetScript) -> die sicheren Header-Handler bleiben intakt.
+	-- Mouse highlight: HookScript (NOT SetScript) -> the secure header handlers stay intact.
 	button:HookScript("OnEnter", function(self) Raidframes:SetHighlight(self, true) end)
 	button:HookScript("OnLeave", function(self) Raidframes:SetHighlight(self, false) end)
-	-- (Neu-)Zuweisung der Unit: zuverlässiges Per-Button-Signal -> Routing-Map + sofortiger Repaint.
+	-- (Re-)assignment of the unit: reliable per-button signal -> routing map + immediate repaint.
 	button:HookScript("OnAttributeChanged", function(self, name)
 		if name ~= "unit" then return end
 		local u = self:GetAttribute("unit")
@@ -1498,22 +1495,22 @@ local function styleSecureButton(button)
 			self.unit = nil
 		end
 	end)
-	-- Naht für späteres volles Click-Cast (Phase 2): hier dockt die Bindings-Engine an.
+	-- Seam for later full click-cast (phase 2): the bindings engine docks here.
 	if ns.CC_RegisterButton then ns.CC_RegisterButton(button) end
 end
 
--- Header-Layout-Attribute aus dem aktiven Kontext (Orientierung + Abstand). NUR außer Kampf.
+-- Header layout attributes from the active context (orientation + spacing). ONLY out of combat.
 local function applyHeaderLayout()
 	if not header then return end
 	local L = layoutCtx()
 	local sp = L.spacing or 2
 	local horizontal = (L.orientation == "horizontal")
-	-- Innerhalb der 5er-Gruppe wachsen die Mitglieder; perpendicular wachsen die Gruppen.
+	-- Within the 5-man group the members grow; perpendicular the groups grow.
 	local point, xOff, yOff, colAnchor
 	if horizontal then
-		point, xOff, yOff, colAnchor = "LEFT", sp, 0, "TOP"   -- Mitglieder nach rechts, Gruppen nach unten
+		point, xOff, yOff, colAnchor = "LEFT", sp, 0, "TOP"   -- members to the right, groups downward
 	else
-		point, xOff, yOff, colAnchor = "TOP", 0, -sp, "LEFT"  -- Mitglieder nach unten, Gruppen nach rechts
+		point, xOff, yOff, colAnchor = "TOP", 0, -sp, "LEFT"  -- members downward, groups to the right
 	end
 	header:SetAttribute("point", point)
 	header:SetAttribute("xOffset", xOff)
@@ -1529,16 +1526,16 @@ local function applyHeaderLayout()
 	header:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
 end
 
--- Größe/Textur/Text auf alle (vorab erzeugten) Buttons anwenden + belegte rendern. NUR außer Kampf.
+-- Apply size/texture/text to all (pre-created) buttons + render occupied ones. ONLY out of combat.
 local function configureSecureButtons()
 	if not header then return end
 	for i = 1, 40 do
 		local btn = header[i]
 		if btn then
-			Raidframes:ApplyConfig(btn)   -- setzt u.a. SetSize -> im Kampf verboten, hier OOC sicher
-			-- Unit live vom Attribut lesen: Zuweisungen, die beim allerersten Header-Show
-			-- VOR dem Anhängen der OnAttributeChanged-Hooks passierten, sonst erst beim
-			-- nächsten Event sichtbar. Map + btn.unit hier nachziehen.
+			Raidframes:ApplyConfig(btn)   -- sets e.g. SetSize -> forbidden in combat, safe here OOC
+			-- Read the unit live from the attribute: assignments that happened on the very
+			-- first header show BEFORE attaching the OnAttributeChanged hooks would otherwise
+			-- only show on the next event. Catch up map + btn.unit here.
 			local u = btn.unit or btn:GetAttribute("unit")
 			if u and UnitExists(u) then
 				btn.unit = u; unitToButton[u] = btn
@@ -1548,7 +1545,7 @@ local function configureSecureButtons()
 	end
 end
 
--- Header einmalig bauen + 40 Buttons vorab erzeugen (startingIndex-Trick) und dekorieren.
+-- Build the header once + pre-create 40 buttons (startingIndex trick) and decorate them.
 local function buildHeader()
 	if header then return end
 	local L = layoutCtx()
@@ -1556,7 +1553,7 @@ local function buildHeader()
 	header = CreateFrame("Frame", "LumenRaidHeader", container, "SecureGroupHeaderTemplate")
 	header:SetAttribute("template", "SecureUnitButtonTemplate")
 	header:SetAttribute("templateType", "Button")
-	-- initialConfigFunction läuft im Restricted-Env beim Button-Erzeugen -> nur Größe setzen.
+	-- initialConfigFunction runs in the restricted env on button creation -> only set size.
 	header:SetAttribute("initialConfigFunction", ([[
 		self:SetWidth(%d)
 		self:SetHeight(%d)
@@ -1564,7 +1561,7 @@ local function buildHeader()
 	header:SetAttribute("showRaid", true)
 	header:SetAttribute("showParty", true)
 	header:SetAttribute("showPlayer", true)
-	header:SetAttribute("showSolo", db().showWhenSolo and true or false)   -- Option: Frame auch alleine zeigen
+	header:SetAttribute("showSolo", db().showWhenSolo and true or false)   -- option: show frame even when solo
 	header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
 	header:SetAttribute("sortMethod", "INDEX")
 	applyHeaderLayout()
@@ -1582,18 +1579,18 @@ function Raidframes:LayoutLive()
 	if InCombatLockdown() then secureLayoutDirty = true; return end
 	if not header then buildHeader() end
 	applyHeaderLayout()
-	-- Sortierung über Header-Attribute (secure-konform):
-	--  * "group" -> kein groupBy, sortMethod INDEX (Raid-Gruppen-/Roster-Reihenfolge).
-	--  * "role"  -> groupBy ASSIGNEDROLE, sortMethod NAME, groupingOrder = Prioritätsliste
-	--               + ",NONE" (sonst fielen Einheiten ohne zugewiesene Rolle raus).
+	-- Sorting via header attributes (secure-conform):
+	--  * "group" -> no groupBy, sortMethod INDEX (raid group/roster order).
+	--  * "role"  -> groupBy ASSIGNEDROLE, sortMethod NAME, groupingOrder = priority list
+	--               + ",NONE" (otherwise units without an assigned role would drop out).
 	local d = db()
-	-- „Frame auch alleine anzeigen" live nachziehen (Toggle wirkt OOC sofort).
+	-- Catch up "show frame even when solo" live (toggle takes effect immediately OOC).
 	local wantSolo = d.showWhenSolo and true or false
 	if header:GetAttribute("showSolo") ~= wantSolo then
 		header:SetAttribute("showSolo", wantSolo)
 	end
-	-- Rollen-Sortierung gilt im Dungeon/Party immer; im Raid nur, wenn ausdrücklich
-	-- aktiviert (feste Raids baut man oft selbst nach Gruppe). isRaidContext() trennt das.
+	-- Role sorting always applies in dungeon/party; in raid only if explicitly enabled
+	-- (fixed raids are often built by group manually). isRaidContext() separates that.
 	local byRole = (d.sortMode == "role") and (not isRaidContext() or d.sortApplyRaid)
 	local gb = byRole and "ASSIGNEDROLE" or nil
 	local sm = byRole and "NAME" or "INDEX"
@@ -1602,25 +1599,25 @@ function Raidframes:LayoutLive()
 		or (header:GetAttribute("sortMethod") ~= sm)
 		or (header:GetAttribute("groupingOrder") ~= go)
 	if sortChanged then
-		-- REIHENFOLGE WICHTIG: groupingOrder MUSS vor groupBy stehen. Jedes SetAttribute
-		-- triggert sofort SecureGroupHeader_Update; setzt man groupBy zuerst, ist
-		-- groupingOrder dort noch nil -> Blizzard-Fehler. Deshalb groupBy zuletzt.
+		-- ORDER MATTERS: groupingOrder MUST come before groupBy. Each SetAttribute
+		-- immediately triggers SecureGroupHeader_Update; if you set groupBy first,
+		-- groupingOrder is still nil there -> Blizzard error. So groupBy last.
 		header:SetAttribute("groupingOrder", go)
 		header:SetAttribute("sortMethod", sm)
 		header:SetAttribute("groupBy", gb)
 	end
-	-- Buttongröße geändert (z.B. Kontextwechsel Raid<->Party) ODER Sortierung geändert?
-	-- Dann den Header zur Neuanordnung zwingen (Hide/Show) -> sonst rechnet er weiter.
+	-- Button size changed (e.g. context switch raid<->party) OR sorting changed?
+	-- Then force the header to re-arrange (Hide/Show) -> otherwise it keeps computing.
 	local L = layoutCtx()
 	local sizeChanged = (header._appliedW ~= L.width or header._appliedH ~= L.height)
 	header._appliedW, header._appliedH = L.width, L.height
-	configureSecureButtons()   -- ApplyConfig setzt u.a. die Buttongröße
+	configureSecureButtons()   -- ApplyConfig sets e.g. the button size
 	if (sizeChanged or sortChanged) and header:IsShown() then
 		header:Hide(); header:Show()
 	else
 		header:Show()
 	end
-	self:NotifyFrameChange()   -- Fremd-Provider (z.B. MiniCC) über neue Frame-Liste informieren
+	self:NotifyFrameChange()   -- inform foreign providers (e.g. MiniCC) about the new frame list
 end
 
 function Raidframes:HideHeader()
@@ -1629,12 +1626,12 @@ function Raidframes:HideHeader()
 	header:Hide()
 end
 
--- Nur die Aura-Indikatoren neu layouten + rendern (Anker/Wachstum/Größe/Toggles).
--- KAMPF-SICHER: Holder/Icons sind eigene, NICHT-geschützte Frames auf dem Overlay
--- (kein Secure-Template, keine Button-Größe) -> SetPoint/SetSize/CreateFrame darauf
--- sind auch im Kampf erlaubt. Deshalb hier KEIN InCombatLockdown-Defer wie in
--- LayoutLive (das wegen des Secure-Headers abbricht) -> Aura-Einstellungen greifen
--- sofort, auch auf der Zielpuppe im Kampf.
+-- Re-layout + render only the aura indicators (anchor/growth/size/toggles).
+-- COMBAT-SAFE: holder/icons are own, NON-protected frames on the overlay (no secure
+-- template, no button size) -> SetPoint/SetSize/CreateFrame on them are allowed even
+-- in combat. So NO InCombatLockdown defer here like in LayoutLive (which aborts due
+-- to the secure header) -> aura settings take effect immediately, even on the
+-- target dummy in combat.
 function Raidframes:RefreshAuras()
 	if not container then return end
 	local d = db()
@@ -1663,20 +1660,20 @@ function Raidframes:RefreshAuras()
 	end
 end
 
--- Dispatcher: Test -> Preview-Frames, sonst -> Secure-Header. Immer nur eine Seite sichtbar.
+-- Dispatcher: test -> preview frames, otherwise -> secure header. Always only one side visible.
 function Raidframes:UpdateLayout()
 	if not container then return end
 	local d = db()
-	-- Modul aus: NICHTS live aufbauen/zeigen. Wichtig, weil Roster-/Welt-Events
-	-- (z.B. PLAYER_ENTERING_WORLD nach /reload) sonst den Header neu bauen und
-	-- zeigen würden, obwohl „Raidframes aktiviert" aus ist.
+	-- Module off: build/show NOTHING live. Important, because roster/world events
+	-- (e.g. PLAYER_ENTERING_WORLD after /reload) would otherwise rebuild and show
+	-- the header even though "Raidframes enabled" is off.
 	if not d.enabled then
 		self:HideHeader()
 		self:HidePreview()
 		container:Hide()
 		return
 	end
-	dispelCurve = nil   -- Dispel-Farben könnten sich geändert haben -> Curve neu bauen lassen
+	dispelCurve = nil   -- dispel colors may have changed -> have the curve rebuilt
 	if d.testMode then
 		self:HideHeader()
 		self:LayoutPreview(d)
@@ -1702,12 +1699,12 @@ local function OnUnitEvent(unit)
 	if f and f:IsShown() then Raidframes:RenderLive(f) end
 end
 
--- ---- Fremd-Provider-Schnittstelle (z.B. MiniCC) ---------------------------
--- Externe Addons (CD-Tracker) dürfen Icons an unsere Live-Frames andocken.
--- GetLiveButtons liefert die sichtbaren Secure-Buttons; der Aufrufer iteriert
--- sofort -> wir geben einen WIEDERVERWENDETEN Scratch-Buffer zurück (keine
--- Garbage). NotifyFrameChange meldet (debounced auf den nächsten Tick) an
--- registrierte Callbacks, wenn sich die Frame-Liste geändert hat.
+-- ---- Foreign provider interface (e.g. MiniCC) -----------------------------
+-- External addons (CD trackers) may dock icons onto our live frames.
+-- GetLiveButtons returns the visible secure buttons; the caller iterates
+-- immediately -> we return a REUSED scratch buffer (no garbage).
+-- NotifyFrameChange reports (debounced to the next tick) to registered
+-- callbacks when the frame list has changed.
 local liveScratch = {}
 function Raidframes:GetLiveButtons()
 	wipe(liveScratch)
@@ -1740,26 +1737,26 @@ end
 function Raidframes:NotifyFrameChange()
 	if frameChangeQueued or not frameChangeCbs then return end
 	frameChangeQueued = true
-	C_Timer.After(0, fireFrameChange)   -- erst feuern, wenn die Layout-Positionen final sind
+	C_Timer.After(0, fireFrameChange)   -- only fire once the layout positions are final
 end
 
--- ---- Blizzard-Standard-Raidframes unterdrücken ----------------------------
--- Lumen baut eigene Frames DANEBEN; ohne dies sähen Nur-Lumen-Nutzer doppelt.
--- Robust + taint-sicher: die geschützten Blizzard-Container auf einen dauerhaft
--- versteckten Eltern-Frame umhängen (rendern dann NIE, auch im Kampf) + Events
--- abmelden (kein Doppel-Processing, Performance). Edit-Modus zeigt seine Systeme
--- beim Betreten erneut an + setzt deren Scale zurück -> Auswahl-Box separat per
--- Alpha/Scale unsichtbar machen und auf den einschlägigen Events nachziehen.
--- Reparent/Scale sind im Kampf verboten -> nur OOC bzw. aufgeschoben.
--- Rückweg (Schalter aus) braucht ein /reload (Events sind abgemeldet) -> Popup.
-local blizzParent                 -- dauerhaft versteckter Eltern-Frame
-local blizzSuppressed = false     -- haben WIR aktuell unterdrückt? (steuert Popup)
-local blizzInit = false           -- Hooks/Watcher nur einmal anhängen
-local blizzHooked = {}            -- SetParent-Hook pro Frame nur einmal
-local blizzLoose  = {}            -- im Kampf nicht umhängbare Frames -> bei Regen nachholen
+-- ---- Suppress Blizzard's default raid frames ------------------------------
+-- Lumen builds its own frames ALONGSIDE; without this, Lumen-only users would see double.
+-- Robust + taint-safe: reparent the protected Blizzard containers onto a permanently
+-- hidden parent frame (then they NEVER render, even in combat) + unregister events
+-- (no double processing, performance). Edit mode re-shows its systems on entering +
+-- resets their scale -> make the selection box invisible separately via alpha/scale and
+-- catch up on the relevant events.
+-- Reparent/scale are forbidden in combat -> only OOC resp. deferred.
+-- The way back (toggle off) needs a /reload (events are unregistered) -> popup.
+local blizzParent                 -- permanently hidden parent frame
+local blizzSuppressed = false     -- are WE currently suppressing? (controls the popup)
+local blizzInit = false           -- attach hooks/watcher only once
+local blizzHooked = {}            -- SetParent hook per frame only once
+local blizzLoose  = {}            -- frames not reparentable in combat -> catch up on regen
 
--- Manager (linke Leiter-/Marker-Leiste) bewusst NICHT anfassen: enthält Leiter-
--- Werkzeuge (Bereitschaftscheck, Markierungen). Nur die Unit-Container weg.
+-- Deliberately do NOT touch the Manager (left leader/marker bar): it contains leader
+-- tools (ready check, markers). Only remove the unit containers.
 local function blizzRaidFrames()
 	local t = { CompactRaidFrameContainer, PartyFrame, _G.CompactPartyFrame }
 	for i = 1, 5 do t[#t + 1] = _G["CompactPartyFrameMember" .. i] end
@@ -1769,7 +1766,7 @@ end
 local function blizzResetParent(self, parent)
 	if not blizzSuppressed or parent == blizzParent then return end
 	if InCombatLockdown() and self:IsProtected() then
-		blizzLoose[self] = true            -- im Kampf verboten -> bei PLAYER_REGEN_ENABLED
+		blizzLoose[self] = true            -- forbidden in combat -> on PLAYER_REGEN_ENABLED
 	else
 		self:SetParent(blizzParent)
 	end
@@ -1792,14 +1789,14 @@ local function blizzHandleFrame(frame)
 			if not InCombatLockdown() then self:Hide() end
 		end)
 	end
-	-- Untergeordnete Bars/Auren ebenfalls stilllegen (kein Doppel-Processing).
+	-- Also silence child bars/auras (no double processing).
 	local hb = frame.healthBar or frame.healthbar or frame.HealthBar
 		or (frame.HealthBarsContainer and frame.HealthBarsContainer.healthBar)
 	if hb then hb:UnregisterAllEvents() end
 end
 
--- Edit-Modus-Auswahlbox unsichtbar machen (Hiden/Reparent reicht NICHT: der
--- Edit-Modus erzwingt das Anzeigen seiner Systeme). Scale ist im Kampf verboten.
+-- Make the edit-mode selection box invisible (hide/reparent is NOT enough: edit mode
+-- forces showing its systems). Scale is forbidden in combat.
 local function blizzSuppressOverlay(frame)
 	if not frame then return end
 	pcall(function()
@@ -1832,7 +1829,7 @@ local function suppressBlizzard()
 
 	if blizzInit then return end
 	blizzInit = true
-	-- Im Kampf aufgeschobene Reparents nachholen.
+	-- Catch up reparents deferred during combat.
 	local regen = CreateFrame("Frame")
 	regen:RegisterEvent("PLAYER_REGEN_ENABLED")
 	regen:SetScript("OnEvent", function()
@@ -1840,7 +1837,7 @@ local function suppressBlizzard()
 		for f in next, blizzLoose do f:SetParent(blizzParent) end
 		wipe(blizzLoose)
 	end)
-	-- Overlay nach Welt-/Edit-Mode-Events neu unterdrücken (re-show + Scale-Reset).
+	-- Re-suppress the overlay after world/edit-mode events (re-show + scale reset).
 	local watcher = CreateFrame("Frame")
 	watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 	watcher:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
@@ -1861,13 +1858,13 @@ local function suppressBlizzard()
 	end
 end
 
--- Sauberer Rückweg (Blizzard-Frames zurück) erfordert /reload -> nachfragen.
--- Bevorzugt der Lumen-Confirm-Dialog (Shell-Optik); nur wenn die Shell zu ist
--- (z.B. Profilwechsel im Hintergrund), Blizzards StaticPopup als Fallback.
--- Texte erst zur Anzeige-Zeit über T() lesen (Sprache steht dann fest).
+-- A clean way back (Blizzard frames restored) requires /reload -> ask.
+-- Prefer the Lumen confirm dialog (shell look); only if the shell is closed
+-- (e.g. profile switch in the background), Blizzard's StaticPopup as a fallback.
+-- Read texts only at display time via T() (the language is fixed by then).
 StaticPopupDialogs["LUMEN_RAIDFRAMES_RELOAD"] = {
-	text = "%s",   -- zur Anzeige-Zeit gefüllt (promptBlizzReload)
-	button1 = "", button2 = "",   -- zur Anzeige-Zeit über T() gesetzt
+	text = "%s",   -- filled at display time (promptBlizzReload)
+	button1 = "", button2 = "",   -- set at display time via T()
 	OnAccept = function() ReloadUI() end,
 	timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
@@ -1896,7 +1893,7 @@ function Raidframes:Setup()
 	container:RegisterEvent("PLAYER_ENTERING_WORLD")
 	container:RegisterEvent("GROUP_ROSTER_UPDATE")
 	container:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-	container:RegisterEvent("PLAYER_REGEN_ENABLED")   -- Kampfende -> aufgeschobenes Layout nachholen
+	container:RegisterEvent("PLAYER_REGEN_ENABLED")   -- combat end -> catch up deferred layout
 	for _, ev in ipairs(UNIT_EVENTS) do container:RegisterEvent(ev) end
 	container:SetScript("OnEvent", function(_, event, unit)
 		if isUnitEvent(event) then
@@ -1907,7 +1904,7 @@ function Raidframes:Setup()
 				Raidframes:UpdateLayout()
 			end
 		else
-			-- Spec-Wechsel: Signaturen sind spec-scoped -> Skip-Cache leeren (neu lernen).
+			-- Spec change: signatures are spec-scoped -> clear the skip cache (relearn).
 			if event == "PLAYER_SPECIALIZATION_CHANGED" then wipe(learnedIID) end
 			local _, class = UnitClass("player")
 			playerDispels = CLASS_DISPELS[class] or {}
@@ -1919,29 +1916,29 @@ function Raidframes:Setup()
 
 	if ns.EditMode then
 		ns.EditMode:Register(container, "Raidframes", function(p, x, y)
-			-- Position in den AKTIVEN Kontext (raid/party) speichern.
+			-- Save the position into the ACTIVE context (raid/party).
 			local L = layoutCtx(); L.point, L.x, L.y = p, x, y
 		end)
 	end
-	container:Hide()   -- Standard = aus; erst Enable() zeigt den Container (sonst Frames trotz „aus")
+	container:Hide()   -- default = off; only Enable() shows the container (else frames despite "off")
 end
 
 function Raidframes:Enable()
 	self:Setup()
 	container:Show()
 	self:UpdateLayout()
-	suppressBlizzard()   -- Blizzards Standard-Raidframes verstecken, solange Lumens aktiv sind
+	suppressBlizzard()   -- hide Blizzard's default raid frames while Lumen's are active
 end
 function Raidframes:Disable()
 	if not container then return end
-	-- Hatten WIR Blizzards Frames unterdrückt? Sauberer Rückweg braucht /reload
-	-- (Events sind abgemeldet) -> einmalig fragen. Popup/ReloadUI sind kampf-sicher.
+	-- Did WE suppress Blizzard's frames? A clean way back needs /reload
+	-- (events are unregistered) -> ask once. Popup/ReloadUI are combat-safe.
 	if blizzSuppressed then
 		blizzSuppressed = false
 		promptBlizzReload()
 	end
-	-- Container ist Elternframe des Secure-Headers -> Hide im Kampf wäre an geschützten
-	-- Kindern verboten. Im Kampf aufschieben (greift bei RefreshAll/Regen erneut).
+	-- The container is the parent frame of the secure header -> Hide in combat would be
+	-- forbidden on protected children. Defer in combat (takes effect again on RefreshAll/regen).
 	if InCombatLockdown() then secureLayoutDirty = true; return end
 	if header then header:Hide() end
 	container:Hide()

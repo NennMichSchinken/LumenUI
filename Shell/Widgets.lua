@@ -1,29 +1,29 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Suite-Shell Widget-Toolkit (Phase 2)
---  Wiederverwendbare Bausteine nach dem Lumen Design System (Shell/Tokens).
---  Muster: eine Widget-Factory (`:Slider/:Dropdown/:Toggle(parent,
---  …, get, set)`), Look 1:1 aus dem Prototyp (components/core/*.jsx).
+--  Lumen — Suite-Shell widget toolkit (phase 2)
+--  Reusable building blocks following the Lumen design system (Shell/Tokens).
+--  Pattern: a widget factory (`:Slider/:Dropdown/:Toggle(parent,
+--  …, get, set)`), look 1:1 from the prototype (components/core/*.jsx).
 --
---  Konvention: jedes Widget ist SELBST-DIMENSIONIERT (kennt seine Höhe) und
---  nimmt eine Options-Tabelle `o`. Daten kommen über `o.get()`/`o.set(v)`
---  (oder ein statisches `o.value`). Volle Breite = parent über TOPLEFT/RIGHT
---  ankern; feste Breite via `o.width`. Mehrspaltige Reihen baut der Aufrufer
---  mit W.Row(...) (gleichbreite Zellen).
+--  Convention: every widget is SELF-DIMENSIONED (knows its height) and
+--  takes an options table `o`. Data comes via `o.get()`/`o.set(v)`
+--  (or a static `o.value`). Full width = anchor the parent via TOPLEFT/RIGHT;
+--  fixed width via `o.width`. Multi-column rows are built by the caller
+--  with W.Row(...) (equal-width cells).
 -- ===========================================================================
 
 local UI = ns.UI
 local C, L, S, M = UI.C, UI.line, UI.S, UI.WIDGET
-local T = ns.T   -- Lokalisierung: T("english") -> Anzeige in der aktiven Sprache
+local T = ns.T   -- localization: T("english") -> display in the active language
 
 local W = {}
 ns.W = W
 
--- Popover-Host + Sammelliste für Select-Menüs. Selects in einem ScrollFrame würden
--- vom Clipping abgeschnitten -> ihre Menüs floaten an einem nicht-geclippten Host
--- (von der Shell auf das Panel gesetzt). Die Shell übergibt pro Screen eine frische
--- Sammelliste und räumt die vorige beim Tab-Wechsel auf (kein Leak).
+-- Popover host + collection list for select menus. Selects inside a ScrollFrame would
+-- be clipped -> their menus float on a non-clipped host (set by the Shell onto the
+-- panel). The Shell passes a fresh collection list per screen and cleans up the
+-- previous one on tab switch (no leak).
 W._menuHost = nil
 W._popovers = nil
 function W.SetMenuHost(frame) W._menuHost = frame end
@@ -32,14 +32,14 @@ function W.CapturePopovers(list) W._popovers = list end
 local CONTROL_H = M.controlH
 
 -- ---------------------------------------------------------------------------
---  Interne Helfer
+--  Internal helpers
 -- ---------------------------------------------------------------------------
 local function clamp(v, lo, hi)
 	if v < lo then return lo elseif v > hi then return hi else return v end
 end
 
--- Gold-Chevron (nach unten) aus zwei Linien — Unicode ▼ ist im Font nicht sicher
--- (gleiche Begründung wie das Close-X im Chrome).
+-- Gold chevron (pointing down) from two lines — unicode ▼ is not reliable in the
+-- font (same reasoning as the close X in the chrome).
 local function chevron(parent, col)
 	local a = parent:CreateLine(nil, "OVERLAY")
 	local b = parent:CreateLine(nil, "OVERLAY")
@@ -49,20 +49,20 @@ local function chevron(parent, col)
 		b:SetColorTexture(c.r, c.g, c.b, c.a or 1)
 	end
 	setCol(col)
-	-- relativ zum eigenen 12x8-Anker (CENTER)
+	-- relative to its own 12x8 anchor (CENTER)
 	a:SetStartPoint("CENTER", parent, -4, 2); a:SetEndPoint("CENTER", parent, 0, -2)
 	b:SetStartPoint("CENTER", parent, 0, -2); b:SetEndPoint("CENTER", parent, 4, 2)
 	return setCol
 end
 
 -- ---------------------------------------------------------------------------
---  SectionDivider — zentrierte Cinzel-Überschrift mit symmetrisch ausfadenden
---  Gold-Rules. Primärer Seiten-Gliederer. Höhe ~28.
+--  SectionDivider — centered Cinzel heading with symmetrically fading gold
+--  rules. Primary page divider. Height ~28.
 -- ---------------------------------------------------------------------------
 function W.SectionDivider(parent, text, small)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(M.dividerH)
-	local strongA = small and 0.30 or 0.45 -- kleinere Unter-Überschrift = dezentere Linien
+	local strongA = small and 0.30 or 0.45 -- smaller sub-heading = subtler lines
 	local head = UI.FS(f, small and "subDivider" or "sectionHead", small and C.gold250 or C.gold300)
 	head:SetText(text)
 	head:SetPoint("CENTER", f, "CENTER", 0, 0)
@@ -80,8 +80,8 @@ function W.SectionDivider(parent, text, small)
 end
 
 -- ---------------------------------------------------------------------------
---  Field — Gold-Label über einem Control. Gibt (container, contentTopYOffset).
---  Der Aufrufer ankert sein Control bei TOPLEFT/RIGHT, container, ..., 0, yOff.
+--  Field — gold label above a control. Returns (container, contentTopYOffset).
+--  The caller anchors its control at TOPLEFT/RIGHT, container, ..., 0, yOff.
 -- ---------------------------------------------------------------------------
 local function fieldLabel(parent, text)
 	local lbl = UI.FS(parent, "fieldLabel", C.gold250)
@@ -89,13 +89,13 @@ local function fieldLabel(parent, text)
 	lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 	lbl:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
 	lbl:SetJustifyH("LEFT")
-	return lbl, -M.fieldGap -- yOffset für das darunterliegende Control
+	return lbl, -M.fieldGap -- yOffset for the control below
 end
 
 -- ---------------------------------------------------------------------------
---  Slider — Gold-Track, Label oben, Min/Max an den Enden, Wert-Box darunter.
---  Pointer-getrieben (kein natives Slider-Frame). o = {label,min,max,step,
---  get,set,value,unit,width}. Höhe ~80.
+--  Slider — gold track, label on top, min/max at the ends, value box below.
+--  Pointer-driven (no native slider frame). o = {label,min,max,step,
+--  get,set,value,unit,width}. Height ~80.
 -- ---------------------------------------------------------------------------
 function W.Slider(parent, o)
 	local minV, maxV, step = o.min or 0, o.max or 100, o.step or 1
@@ -108,7 +108,7 @@ function W.Slider(parent, o)
 	cap:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -2)
 	cap:SetJustifyH("LEFT")
 
-	-- Track-Reihe: [min] —— track —— [max]
+	-- Track row: [min] —— track —— [max]
 	local row = CreateFrame("Frame", nil, f)
 	row:SetHeight(M.sliderTrackH)
 	row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -M.sliderCapGap)
@@ -144,8 +144,8 @@ function W.Slider(parent, o)
 	tt:SetAllPoints(thumb); UI.SetColor(tt, C.gold500)
 	UI.Border(thumb, { r = 0.10, g = 0.09, b = 0.08, a = 1 }, 2, "OVERLAY")
 
-	-- Wert-Box darunter (zentriert) — editierbare EditBox: anklicken, Zahl
-	-- eintippen, Enter bestätigt (auf Min/Max + Schrittweite geclampt), Esc verwirft.
+	-- Value box below (centered) — editable EditBox: click, type a number,
+	-- Enter confirms (clamped to min/max + step), Esc discards.
 	local box = CreateFrame("EditBox", nil, f)
 	box:SetSize(M.valueBoxW, M.valueBoxH)
 	box:SetPoint("TOP", row, "BOTTOM", 0, -M.valueBoxGap)
@@ -158,7 +158,7 @@ function W.Slider(parent, o)
 
 	local cur = (o.get and o.get()) or o.value or minV
 	local unit = o.unit or ""
-	local typing = false -- true während die EditBox fokussiert ist (kein Clobbern)
+	local typing = false -- true while the EditBox is focused (no clobbering)
 
 	local function visual(v)
 		local ratio = (maxV > minV) and clamp((v - minV) / (maxV - minV), 0, 1) or 0
@@ -189,8 +189,8 @@ function W.Slider(parent, o)
 		if o.set then o.set(v) end
 	end
 
-	-- EditBox: getippten Wert parsen (führende Zahl, auch negativ), runden,
-	-- clampen, übernehmen. Focus färbt den Rand kräftiger.
+	-- EditBox: parse the typed value (leading number, also negative), round,
+	-- clamp, apply. Focus colors the border more strongly.
 	box:SetScript("OnEditFocusGained", function(self)
 		typing = true
 		for _, e in ipairs(boxEdges) do UI.SetColor(e, L.strong) end
@@ -199,11 +199,11 @@ function W.Slider(parent, o)
 	box:SetScript("OnEditFocusLost", function(self)
 		typing = false
 		for _, e in ipairs(boxEdges) do UI.SetColor(e, L.soft) end
-		self:SetText(cur .. unit) -- auf den kanonischen Stand zurücksetzen
+		self:SetText(cur .. unit) -- reset to the canonical state
 	end)
-	-- Live-Clamp auf Max schon beim Tippen: 5555 springt sofort auf den Max-Wert,
-	-- nicht erst bei Enter (Florian-Feedback). userInput-Flag verhindert Rekursion
-	-- mit dem eigenen SetText; Min wird erst bei Enter geclampt (Zwischeneingaben).
+	-- Live clamp to max already while typing: 5555 jumps immediately to the max value,
+	-- not only on Enter (Florian feedback). The userInput flag prevents recursion
+	-- with our own SetText; min is only clamped on Enter (intermediate inputs).
 	box:SetScript("OnTextChanged", function(self, userInput)
 		if not userInput then return end
 		local num = tonumber((self:GetText():gsub("[^%-%d%.]", "")))
@@ -228,19 +228,19 @@ function W.Slider(parent, o)
 	track:SetScript("OnMouseDown", beginDrag)
 	track:SetScript("OnMouseUp", endDrag)
 	track:SetScript("OnHide", endDrag)
-	-- Thumb selbst greifbar machen: am Anschlag (0/100 %) ragt das Viereck zur Hälfte über
-	-- den Track hinaus — dieser Teil war bisher tot (nur der Track war klickbar). Mouse-enabled
-	-- + 2px größere Trefferfläche (rein klickbar, optisch unverändert) -> leicht zu greifen.
+	-- Make the thumb itself grabbable: at the stops (0/100 %) the square sticks out half
+	-- past the track — that part used to be dead (only the track was clickable). Mouse-enabled
+	-- + 2px larger hit area (purely clickable, visually unchanged) -> easy to grab.
 	thumb:EnableMouse(true)
 	thumb:SetHitRectInsets(-2, -2, -2, -2)
 	thumb:SetScript("OnMouseDown", beginDrag)
 	thumb:SetScript("OnMouseUp", endDrag)
-	-- Track-Breite steht erst nach dem Layout fest -> bei Größenänderung neu zeichnen.
+	-- Track width is only known after the layout -> redraw on size change.
 	track:SetScript("OnSizeChanged", function() visual(cur) end)
 
 	visual(cur)
 	f.SetValueExternal = function(_, v) cur = v; visual(v) end
-	-- Ausgrauen + Interaktion sperren (für abhängige Sektionen, z.B. „Name anzeigen" aus).
+	-- Grey out + lock interaction (for dependent sections, e.g. "Show name" off).
 	f.SetWidgetEnabled = function(_, on)
 		f:SetAlpha(on and 1 or 0.35)
 		track:EnableMouse(on)
@@ -251,9 +251,9 @@ function W.Slider(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Select (Dropdown) — Gold-Inset-Header + Popover-Menü. o = {label?,options,
---  get,set,value,width,tile?}. options: Strings ODER {value,label}. Höhe:
---  ohne label = 40, mit label = 62.
+--  Select (dropdown) — gold inset header + popover menu. o = {label?,options,
+--  get,set,value,width,tile?}. options: strings OR {value,label}. Height:
+--  without label = 40, with label = 62.
 -- ---------------------------------------------------------------------------
 local function normOptions(options)
 	local out = {}
@@ -285,7 +285,7 @@ function W.Select(parent, o)
 	btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
 	UI.Fill(btn, C.ink700)
 	local edges = UI.Border(btn, L.soft, 1, "OVERLAY")
-	f._control = btn -- Anker für „Checkbox direkt neben dem Control" (vertikal bündig)
+	f._control = btn -- anchor for "checkbox right next to the control" (vertically aligned)
 
 	local chev = CreateFrame("Frame", nil, btn)
 	chev:SetSize(12, 8)
@@ -309,13 +309,13 @@ function W.Select(parent, o)
 	end
 	refreshLabel()
 
-	-- Popover-Menü (floatet über allem) + Vollbild-Closer für Klick-außerhalb.
-	-- Host = der von der Shell gesetzte, NICHT-geclippte Menü-Host (das Panel);
-	-- nötig, weil Selects im ScrollFrame liegen und dessen Clipping das Popover
-	-- sonst abschneiden würde. Fallback ohne Shell: an f (für Nicht-Scroll-Kontexte).
-	-- Der Host erbt die Panel-Scale (0.74); Anker auf btn funktioniert frame-übergreifend.
-	-- Die Shell sammelt die Popover je Screen ein (W.CapturePopovers) und räumt sie
-	-- beim Neuaufbau auf -> kein Leak trotz Host-Parenting.
+	-- Popover menu (floats above everything) + full-screen closer for click-outside.
+	-- Host = the non-clipped menu host set by the Shell (the panel); needed because
+	-- selects live in the ScrollFrame and its clipping would otherwise cut off the
+	-- popover. Fallback without Shell: on f (for non-scroll contexts).
+	-- The host inherits the panel scale (0.74); anchoring on btn works across frames.
+	-- The Shell collects the popovers per screen (W.CapturePopovers) and cleans them
+	-- up on rebuild -> no leak despite host parenting.
 	local host = W._menuHost or f
 	local closer = CreateFrame("Button", nil, host)
 	closer:SetAllPoints(UIParent)
@@ -331,8 +331,8 @@ function W.Select(parent, o)
 
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
 
-	-- Forward-Deklaration: das optionale Suchfeld (o.search) wird weiter unten gebaut,
-	-- closeMenu muss seinen Fokus aber schon räumen können.
+	-- Forward declaration: the optional search field (o.search) is built further below,
+	-- but closeMenu must already be able to clear its focus.
 	local search, searchPH
 
 	local function closeMenu()
@@ -342,11 +342,11 @@ function W.Select(parent, o)
 	end
 	closer:SetScript("OnClick", closeMenu)
 
-	-- Menü-Zeilen einmalig bauen. Klare Trennung gewählt vs. überfahren:
-	--  • aktive (gewählte) Zeile -> Gold-Balken LINKS + Gold-Text (bleibt sichtbar)
-	--  • überfahrene Zeile       -> warmer Braun-Wash (inkTint) + heller Text
-	-- Der Gold-Balken markiert dauerhaft die Auswahl, der Braun-Wash nur den Hover
-	-- — so sehen Selected und Hover nicht mehr fast gleich aus (Florian-Feedback).
+	-- Build the menu rows once. Clear separation selected vs. hovered:
+	--  • active (selected) row -> gold bar on the LEFT + gold text (stays visible)
+	--  • hovered row           -> warm brown wash (inkTint) + lighter text
+	-- The gold bar marks the selection permanently, the brown wash only the hover
+	-- — so selected and hover no longer look almost the same (Florian feedback).
 	local pad, rowH, gap = 6, 34, 2
 	local function paintItem(item, hovered)
 		local active = (item._val == cur)
@@ -360,12 +360,12 @@ function W.Select(parent, o)
 			item._txt:SetTextColor(tc.r, tc.g, tc.b)
 		end
 	end
-	-- Optionen in eine SCROLL-Liste: bei vielen Einträgen (z.B. Balken-/Schild-Texturen aus
-	-- anderen Addons/LSM) nur N Zeilen sichtbar + Mausrad/Scrollbalken, statt das Menü über
-	-- den ganzen Schirm zu ziehen. Kurze Listen (<= maxRows) zeigen alles, ohne Scrollbalken.
-	-- Mit o.search bekommt der Kopf ein Echtzeit-Suchfeld (Typeahead, Muster aus W.SpellPicker):
-	-- die Liste filtert live, die Höhe bleibt fix bei maxRows. Nur Textur-Dropdowns setzen das;
-	-- Schild-/Healabsorb-Dropdowns erben es über dieselbe Komponente (Feature 3 → 4).
+	-- Options into a SCROLL list: with many entries (e.g. bar/shield textures from
+	-- other addons/LSM) only N rows visible + mouse wheel/scrollbar, instead of dragging
+	-- the menu across the whole screen. Short lists (<= maxRows) show everything, no scrollbar.
+	-- With o.search the header gets a real-time search field (typeahead, pattern from W.SpellPicker):
+	-- the list filters live, the height stays fixed at maxRows. Only texture dropdowns set this;
+	-- shield/heal-absorb dropdowns inherit it via the same component (feature 3 → 4).
 	local maxRows = M.selectMaxRows
 	local stride  = rowH + gap
 	local needScr = (#opts > maxRows) or (o.search and true) or false
@@ -373,7 +373,7 @@ function W.Select(parent, o)
 	local listH   = math.max(rowH, visN * stride - gap)
 	local headerH = o.search and (M.spSearchH + 8) or 0
 
-	-- Suchfeld (typeahead) — nur mit o.search. Filtert die einmal gebauten Optionen live.
+	-- Search field (typeahead) — only with o.search. Filters the once-built options live.
 	if o.search then
 		search = CreateFrame("EditBox", nil, menu)
 		search:SetHeight(M.spSearchH)
@@ -409,7 +409,7 @@ function W.Select(parent, o)
 		local wash = item:CreateTexture(nil, "BACKGROUND")
 		wash:SetAllPoints(item)
 		wash:SetColorTexture(0, 0, 0, 0)
-		-- Gold-Balken links (Auswahl-Marker), volle Zeilenhöhe.
+		-- Gold bar on the left (selection marker), full row height.
 		local bar = item:CreateTexture(nil, "ARTWORK")
 		bar:SetWidth(3)
 		bar:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 0)
@@ -420,7 +420,7 @@ function W.Select(parent, o)
 		itxt:SetPoint("LEFT", item, "LEFT", 12, 0)
 		itxt:SetText(op.label)
 		item._wash, item._txt, item._val, item._bar = wash, itxt, op.value, bar
-		item._search = (op.label or ""):lower() -- Filtergrundlage (kleingeschrieben)
+		item._search = (op.label or ""):lower() -- filter basis (lowercased)
 		item:SetScript("OnEnter", function(self) paintItem(self, true) end)
 		item:SetScript("OnLeave", function(self) paintItem(self, false) end)
 		item:SetScript("OnClick", function(self)
@@ -434,15 +434,15 @@ function W.Select(parent, o)
 	menu:SetHeight(listH + headerH + pad * 2)
 	menu._paintItem, menu._items = paintItem, items
 
-	-- „keine Treffer"-Hinweis (nur bei aktiver Suche relevant).
+	-- "no matches" hint (only relevant with an active search).
 	local emptyFS = UI.FS(menu, "label", C.textMuted)
 	emptyFS:SetText("(keine Treffer)")
 	if search then emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
 	else emptyFS:SetPoint("TOP", menu, "TOP", 0, -(pad + 16)) end
 	emptyFS:Hide()
 
-	-- Sichtbare (gefilterte) Zeilen oben→unten neu verankern. Ohne Suche zeigt das schlicht
-	-- alle Optionen (q == "") — verhaltensgleich zur vorherigen statischen Anker-Kette.
+	-- Re-anchor visible (filtered) rows top→bottom. Without a search this simply shows
+	-- all options (q == "") — behaviorally identical to the previous static anchor chain.
 	local function relayout()
 		local q = (search and (search:GetText() or ""):lower()) or ""
 		local shown, prevItem = 0, nil
@@ -472,7 +472,7 @@ function W.Select(parent, o)
 		search:SetScript("OnEnterPressed", function(self2) self2:ClearFocus() end)
 	end
 
-	-- Scrollbalken (nur wenn nötig) — Muster aus W.SpellPicker: Mausrad + ziehbarer Thumb.
+	-- Scrollbar (only when needed) — pattern from W.SpellPicker: mouse wheel + draggable thumb.
 	if needScr then
 		local sbTrack = CreateFrame("Frame", nil, menu)
 		sbTrack:SetWidth(M.spScrollW)
@@ -524,13 +524,13 @@ function W.Select(parent, o)
 		menu._updateBar = updateBar
 	end
 
-	relayout() -- Initial-Layout (zeigt alle Optionen; menu._updateBar ist jetzt gesetzt).
+	relayout() -- initial layout (shows all options; menu._updateBar is now set).
 
 	local function openMenu()
 		menu:ClearAllPoints()
 		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -6)
 		menu:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -6)
-		-- Zeilen-Optik auf den aktuellen Stand bringen (Gold-Balken auf gewählter Zeile)
+		-- Bring the row look up to date (gold bar on the selected row)
 		for _, item in ipairs(menu._items) do menu._paintItem(item, false) end
 		if search then search:SetText(""); searchPH:Show(); relayout() end
 		closer:Show(); menu:Show()
@@ -552,11 +552,11 @@ function W.Select(parent, o)
 	end)
 	btn:HookScript("OnHide", closeMenu)
 
-	-- Fast-Preview (OPT-IN über o.wheelPreview — nur Textur-Dropdowns): Mausrad über dem
-	-- GESCHLOSSENEN Dropdown blättert live durch die Optionen (statt die Shell zu scrollen).
-	-- Ohne wheelPreview konsumiert der Button das Rad NICHT -> die Shell scrollt normal.
-	-- Throttle: Label sofort, aber das Profil-Schreiben (o.set -> Relayout) leading-edge +
-	-- gedrosselt -> max ~alle 50 ms ein Re-Render; der zuletzt gewählte Wert landet immer im Profil.
+	-- Fast preview (OPT-IN via o.wheelPreview — only texture dropdowns): mouse wheel over the
+	-- CLOSED dropdown cycles live through the options (instead of scrolling the Shell).
+	-- Without wheelPreview the button does NOT consume the wheel -> the Shell scrolls normally.
+	-- Throttle: label immediately, but the profile write (o.set -> relayout) leading-edge +
+	-- throttled -> max ~every 50 ms a re-render; the last chosen value always lands in the profile.
 	if o.wheelPreview then
 		local PREVIEW_THROTTLE = 0.05
 		local lastApply, pendingVal, scheduled = 0, nil, false
@@ -564,7 +564,7 @@ function W.Select(parent, o)
 			if #opts == 0 then return end
 			local idx = 1
 			for i, op in ipairs(opts) do if op.value == cur then idx = i; break end end
-			idx = math.max(1, math.min(#opts, idx - delta)) -- Rad hoch = vorige, runter = nächste Option
+			idx = math.max(1, math.min(#opts, idx - delta)) -- wheel up = previous, down = next option
 			local v = opts[idx].value
 			if v == cur then return end
 			cur = v; refreshLabel()
@@ -599,27 +599,27 @@ function W.Select(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  SpellPicker — Button öffnet ein suchbares, SCROLLBARES Auswahl-Popover.
---  Das ist die „echte Typeahead-Suche": W.Select kann nicht scrollen, hier
---  laufen 30–60 Spells live gefiltert in einer Scroll-Liste (Suchfeld oben +
---  Mausrad/Scrollbalken). o = {
---    text,                 -- Button-Beschriftung („+ Spell hinzufügen")
---    width,                -- Button-Breite (optional, Default M.spBtnW)
---    fetch  = function() return { {id,name,icon}, ... } end,  -- Kandidaten,
---             -- vom Aufrufer bereits dedupliziert/whitelist-gefiltert, alphabetisch.
---    onPick = function(id),  -- gewählter Spell.
+--  SpellPicker — button opens a searchable, SCROLLABLE selection popover.
+--  This is the "real typeahead search": W.Select cannot scroll, here
+--  30–60 spells run live-filtered in a scroll list (search field on top +
+--  mouse wheel/scrollbar). o = {
+--    text,                 -- button label ("+ Add spell")
+--    width,                -- button width (optional, default M.spBtnW)
+--    fetch  = function() return { {id,name,icon}, ... } end,  -- candidates,
+--             -- already deduplicated/whitelist-filtered by the caller, alphabetical.
+--    onPick = function(id),  -- chosen spell.
 --  }
---  Popover floatet am _menuHost (nicht-geclippt, wie W.Select) + wird über
---  W._popovers eingesammelt und beim Tab-Wechsel aufgeräumt (kein Leak).
+--  Popover floats on _menuHost (non-clipped, like W.Select) + is collected via
+--  W._popovers and cleaned up on tab switch (no leak).
 -- ---------------------------------------------------------------------------
 function W.SpellPicker(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(M.buttonH)
 	f:SetWidth(o.width or M.spBtnW)
 
-	local closeMenu -- forward-Deklaration (Zeilen-Klick ruft sie)
+	local closeMenu -- forward declaration (row click calls it)
 
-	-- Auslöser-Button: Inset-Feld mit Gold-Rand + Gold-Text (wie im Mockup).
+	-- Trigger button: inset field with gold border + gold text (like in the mockup).
 	local btn = CreateFrame("Button", nil, f)
 	btn:SetAllPoints(f)
 	UI.Fill(btn, C.ink700)
@@ -627,7 +627,7 @@ function W.SpellPicker(parent, o)
 	local bTxt = UI.FS(btn, "btn", C.gold300)
 	bTxt:SetFont(UI.FONT.hankenSemi, 16, "")
 	bTxt:SetText(o.text or T("+ Add"))
-	-- Mit o.icon (gewählter Spell): Icon links + Text linksbündig daneben; sonst zentriert.
+	-- With o.icon (chosen spell): icon on the left + text left-aligned next to it; otherwise centered.
 	if o.icon then
 		local bIcon = btn:CreateTexture(nil, "ARTWORK")
 		bIcon:SetSize(M.trackIcon, M.trackIcon)
@@ -642,7 +642,7 @@ function W.SpellPicker(parent, o)
 	end
 	f._control = btn
 
-	-- Popover (Menü + Vollbild-Closer) am nicht-geclippten Host, wie W.Select.
+	-- Popover (menu + full-screen closer) on the non-clipped host, like W.Select.
 	local host = W._menuHost or f
 	local closer = CreateFrame("Button", nil, host)
 	closer:SetAllPoints(UIParent)
@@ -661,7 +661,7 @@ function W.SpellPicker(parent, o)
 	local listH = M.spVisibleRows * M.spRowH
 	menu:SetHeight(M.spPad * 2 + M.spSearchH + 8 + listH)
 
-	-- Suchfeld (typeahead) ------------------------------------------------
+	-- Search field (typeahead) -------------------------------------------
 	local search = CreateFrame("EditBox", nil, menu)
 	search:SetHeight(M.spSearchH)
 	search:SetPoint("TOPLEFT", menu, "TOPLEFT", M.spPad, -M.spPad)
@@ -676,7 +676,7 @@ function W.SpellPicker(parent, o)
 	ph:SetText("Spell suchen …")
 	ph:SetPoint("LEFT", search, "LEFT", 10, 0)
 
-	-- Scroll-Liste --------------------------------------------------------
+	-- Scroll list ---------------------------------------------------------
 	local sf = CreateFrame("ScrollFrame", nil, menu)
 	sf:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -8)
 	sf:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -(M.spPad + M.spScrollW + M.spScrollGap), M.spPad)
@@ -691,7 +691,7 @@ function W.SpellPicker(parent, o)
 	emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
 	emptyFS:Hide()
 
-	-- Scrollbalken (Muster aus dem Shell-ScrollFrame: Mausrad + ziehbarer Thumb).
+	-- Scrollbar (pattern from the Shell ScrollFrame: mouse wheel + draggable thumb).
 	local sbTrack = CreateFrame("Frame", nil, menu)
 	sbTrack:SetWidth(M.spScrollW)
 	sbTrack:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -M.spPad, -(M.spPad + M.spSearchH + 8))
@@ -740,7 +740,7 @@ function W.SpellPicker(parent, o)
 	thumb:SetScript("OnEnter", function() paintThumb(0.85) end)
 	thumb:SetScript("OnLeave", function() paintThumb(0.55) end)
 
-	-- Zeilen-Pool (kein Frame-Churn beim Tippen): wiederverwendet, nur Text/Icon neu.
+	-- Row pool (no frame churn while typing): reused, only text/icon refreshed.
 	local rows = {}
 	local function getRow(i)
 		local r = rows[i]
@@ -768,7 +768,7 @@ function W.SpellPicker(parent, o)
 			self2._wash:SetColorTexture(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1)
 			self2._bar:Show()
 			self2._name:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
-			W.ShowSpellTip(self2, self2._id) -- eigener Lumen-Tooltip
+			W.ShowSpellTip(self2, self2._id) -- own Lumen tooltip
 		end)
 		r:SetScript("OnLeave", function(self2)
 			self2._wash:SetColorTexture(0, 0, 0, 0); self2._bar:Hide()
@@ -782,8 +782,8 @@ function W.SpellPicker(parent, o)
 		return r
 	end
 
-	-- Kandidatenliste EINMAL beim Öffnen holen (fetch scannt Zauberbuch + Talente —
-	-- nicht pro Tastendruck wiederholen); Tippen filtert nur diese gecachte Liste.
+	-- Fetch the candidate list ONCE on open (fetch scans spellbook + talents —
+	-- don't repeat per keystroke); typing only filters this cached list.
 	local data = {}
 	local function populate()
 		local q = (search:GetText() or ""):lower()
@@ -814,8 +814,8 @@ function W.SpellPicker(parent, o)
 	local function openMenu()
 		menu:ClearAllPoints()
 		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -6)
-		data = (o.fetch and o.fetch()) or {} -- einmal scannen, dann nur noch filtern
-		search:SetText("") -- OnTextChanged feuert nur bei echter Änderung -> explizit:
+		data = (o.fetch and o.fetch()) or {} -- scan once, then only filter
+		search:SetText("") -- OnTextChanged only fires on a real change -> explicit:
 		ph:Show()
 		populate()
 		closer:Show(); menu:Show()
@@ -844,11 +844,10 @@ function W.SpellPicker(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Confirm — modaler Bestätigungs-Dialog. Dunkelt die Shell ab (Overlay über
---  dem Menü-Host = Panel) und zeigt eine zentrierte Karte mit Titel, Text und
---  zwei Buttons (Bestätigen = danger / Abbrechen = ghost). Klick auf die
---  abgedunkelte Fläche = Abbrechen. Singleton (einmal gebaut, je Aufruf neu
---  konfiguriert, wie der Color-Picker). Aufruf:
+--  Confirm — modal confirmation dialog. Dims the Shell (overlay over the menu
+--  host = panel) and shows a centered card with title, text and two buttons
+--  (confirm = danger / cancel = ghost). Click on the dimmed area = cancel.
+--  Singleton (built once, reconfigured per call, like the color picker). Call:
 --    W.Confirm{ title, body, confirmText, cancelText, onConfirm, onCancel }
 -- ---------------------------------------------------------------------------
 local confirmDlg
@@ -857,7 +856,7 @@ local function buildConfirm()
 	local overlay = CreateFrame("Button", nil, host)
 	overlay:SetAllPoints(host)
 	overlay:SetFrameStrata("FULLSCREEN_DIALOG")
-	overlay:EnableMouse(true) -- schluckt Klicks auf die abgedunkelte Shell (modal)
+	overlay:EnableMouse(true) -- swallows clicks on the dimmed Shell (modal)
 	local dim = overlay:CreateTexture(nil, "BACKGROUND")
 	dim:SetAllPoints(overlay)
 	dim:SetColorTexture(0, 0, 0, M.confirmDim)
@@ -868,10 +867,10 @@ local function buildConfirm()
 	card:SetFrameLevel(overlay:GetFrameLevel() + 10)
 	card:SetSize(M.confirmW, M.confirmH)
 	card:SetPoint("CENTER", overlay, "CENTER", 0, 0)
-	card:EnableMouse(true) -- Klicks auf die Karte NICHT als „außerhalb" werten
+	card:EnableMouse(true) -- don't treat clicks on the card as "outside"
 	UI.Fill(card, C.ink550)
 	UI.Border(card, L.strong, 1, "OVERLAY")
-	local accent = card:CreateTexture(nil, "OVERLAY") -- Gold-Akzent oben (Signatur)
+	local accent = card:CreateTexture(nil, "OVERLAY") -- gold accent on top (signature)
 	accent:SetHeight(3)
 	accent:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
 	accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
@@ -911,20 +910,20 @@ function W.Confirm(o)
 		if o.onConfirm then o.onConfirm() end
 	end)
 	dlg.cancel:SetScript("OnClick", doCancel)
-	dlg.overlay:SetScript("OnClick", doCancel) -- Klick auf die abgedunkelte Fläche = Abbrechen
+	dlg.overlay:SetScript("OnClick", doCancel) -- click on the dimmed area = cancel
 	dlg.overlay:Show()
 	dlg.overlay:Raise()
 end
 
 -- ---------------------------------------------------------------------------
---  ImportDialog — modaler Profil-Import-Popup. Reichhaltiger als W.Confirm:
---  Profilname-Eingabe + Modul-Häkchen (dynamisch, nur die im Code enthaltenen)
---  + „Layout mit übernehmen" + zwei Aktionen („Profil erstellen" benutzt den
---  Namen, „Aktuelles überschreiben" ignoriert ihn). Frisch je Aufruf gebaut +
---  beim Schließen freigegeben (selten geöffnet -> kein Singleton nötig). Aufruf:
+--  ImportDialog — modal profile-import popup. Richer than W.Confirm:
+--  profile-name input + module checkboxes (dynamic, only those present in the code)
+--  + "Also import layout" + two actions ("Create profile" uses the name,
+--  "Overwrite current" ignores it). Built fresh per call + released on close
+--  (rarely opened -> no singleton needed). Call:
 --    W.ImportDialog{ modules = {{key,label}}, hasLayout, onCreate(name,sel,layout),
 --                    onOverwrite(sel,layout), onCancel }
---  sel = { [modKey] = bool } (alle default an), layout = bool (default aus).
+--  sel = { [modKey] = bool } (all default on), layout = bool (default off).
 -- ---------------------------------------------------------------------------
 function W.ImportDialog(o)
 	o = o or {}
@@ -934,7 +933,7 @@ function W.ImportDialog(o)
 	local overlay = CreateFrame("Button", nil, host)
 	overlay:SetAllPoints(host)
 	overlay:SetFrameStrata("FULLSCREEN_DIALOG")
-	overlay:EnableMouse(true) -- modal: schluckt Klicks auf die abgedunkelte Shell
+	overlay:EnableMouse(true) -- modal: swallows clicks on the dimmed Shell
 	local dim = overlay:CreateTexture(nil, "BACKGROUND")
 	dim:SetAllPoints(overlay)
 	dim:SetColorTexture(0, 0, 0, M.confirmDim)
@@ -947,7 +946,7 @@ function W.ImportDialog(o)
 	card:SetFrameLevel(overlay:GetFrameLevel() + 10)
 	card:SetWidth(M.importDlgW)
 	card:SetPoint("CENTER", overlay, "CENTER", 0, 0)
-	card:EnableMouse(true) -- Klicks auf die Karte NICHT als „außerhalb" werten
+	card:EnableMouse(true) -- don't treat clicks on the card as "outside"
 	UI.Fill(card, C.ink550)
 	UI.Border(card, L.strong, 1, "OVERLAY")
 	local accent = card:CreateTexture(nil, "OVERLAY")
@@ -963,7 +962,7 @@ function W.ImportDialog(o)
 	title:SetText(T("Import profile"))
 	y = y - 36
 
-	-- Profilname (für „Profil erstellen"; „Aktuelles überschreiben" ignoriert ihn).
+	-- Profile name (for "Create profile"; "Overwrite current" ignores it).
 	local nameIn = W.TextInput(card, { label = T("Profile name"), placeholder = T("Name for new profile …") })
 	nameIn:ClearAllPoints()
 	nameIn:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
@@ -975,7 +974,7 @@ function W.ImportDialog(o)
 	lbl:SetText(T("What to import:"))
 	y = y - 28
 
-	-- Modul-Häkchen (alle default an).
+	-- Module checkboxes (all default on).
 	local selected = {}
 	for _, mod in ipairs(o.modules or {}) do
 		local key = mod.key
@@ -986,7 +985,7 @@ function W.ImportDialog(o)
 		y = y - (M.checkBox + 12)
 	end
 
-	-- Layout-Häkchen (nur wenn der Code Positionen enthält; default aus).
+	-- Layout checkbox (only if the code contains positions; default off).
 	local withLayout = false
 	if o.hasLayout then
 		local chk = W.Checkbox(card, { label = T("Also import layout positions"),
@@ -998,11 +997,11 @@ function W.ImportDialog(o)
 
 	y = y - 10
 
-	-- Aktionen: „Profil erstellen" (primary, braucht Namen) | „Aktuelles überschreiben".
+	-- Actions: "Create profile" (primary, needs a name) | "Overwrite current".
 	local createBtn = W.Button(card, { text = T("Create profile"), variant = "primary",
 		onClick = function()
 			local name = (nameIn:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
-			if name == "" then nameIn._edit:SetFocus(); return end -- Name ist Pflicht
+			if name == "" then nameIn._edit:SetFocus(); return end -- name is mandatory
 			close()
 			if o.onCreate then o.onCreate(name, selected, withLayout) end
 		end })
@@ -1019,11 +1018,11 @@ function W.ImportDialog(o)
 end
 
 -- ---------------------------------------------------------------------------
---  Tooltip — eigener, im Lumen-Design gestylter Tooltip (ersetzt den Blizzard-
---  GameTooltip in der GANZEN Shell). Singleton, Strata TOOLTIP (über Popovers).
---  Zwei Modi über EINE Karte: Spell (Icon + Name + C_Spell-Beschreibung) ODER
---  Text (Titel + Hinweistext, ohne Icon). Höhe wächst mit dem Text. Schrift über
---  die Rollen tipTitle/tipBody (UI.ROLE) -> zentral justierbar.
+--  Tooltip — own tooltip styled in the Lumen design (replaces the Blizzard
+--  GameTooltip in the WHOLE Shell). Singleton, strata TOOLTIP (above popovers).
+--  Two modes via ONE card: spell (icon + name + C_Spell description) OR
+--  text (title + hint text, without icon). Height grows with the text. Font via
+--  the roles tipTitle/tipBody (UI.ROLE) -> centrally tunable.
 --    W.ShowSpellTip(owner, spellID) · W.ShowTextTip(owner, title, body) · W.HideTip()
 -- ---------------------------------------------------------------------------
 local tipObj
@@ -1033,9 +1032,9 @@ local function buildTip()
 	tip:SetFrameStrata("TOOLTIP")
 	tip:SetWidth(M.tipW)
 	tip:Hide()
-	UI.Fill(tip, C.ink850) -- dunkler als Popover -> klarer Tooltip-Kontrast
+	UI.Fill(tip, C.ink850) -- darker than the popover -> clearer tooltip contrast
 	UI.Border(tip, L.strong, 1, "OVERLAY")
-	local accent = tip:CreateTexture(nil, "OVERLAY") -- Gold-Akzent oben (Signatur)
+	local accent = tip:CreateTexture(nil, "OVERLAY") -- gold accent on top (signature)
 	accent:SetHeight(2)
 	accent:SetPoint("TOPLEFT", tip, "TOPLEFT", 0, 0)
 	accent:SetPoint("TOPRIGHT", tip, "TOPRIGHT", 0, 0)
@@ -1056,7 +1055,7 @@ local function buildTip()
 	return tipObj
 end
 
--- Gemeinsamer Aufbau für beide Modi: icon=nil -> reiner Text-Tooltip.
+-- Shared build for both modes: icon=nil -> pure text tooltip.
 local function applyTip(owner, icon, titleText, bodyText)
 	if not owner then return end
 	local t = tipObj or buildTip()
@@ -1070,14 +1069,14 @@ local function applyTip(owner, icon, titleText, bodyText)
 	t.title:SetPoint("RIGHT", t.tip, "RIGHT", -M.tipPad, 0)
 	if hasIcon then
 		t.title:SetPoint("TOPLEFT", t.icon, "TOPRIGHT", M.tipNameGap, 0)
-		t.title:SetHeight(M.tipIcon); t.title:SetWordWrap(false) -- Name einzeilig neben dem Icon
+		t.title:SetHeight(M.tipIcon); t.title:SetWordWrap(false) -- name single-line next to the icon
 	else
 		t.title:SetPoint("TOPLEFT", t.tip, "TOPLEFT", M.tipPad, -M.tipPad)
 		t.title:SetHeight(0); t.title:SetWordWrap(true)
 	end
 	t.title:SetText(titleText or "")
 
-	-- Kopfhöhe = Icon-Höhe (Spell) bzw. Titel-Höhe (Text); danach optional der Text.
+	-- Header height = icon height (spell) resp. title height (text); then optionally the text.
 	local headH = hasIcon and M.tipIcon or (t.title:GetStringHeight() or 0)
 	t.body:SetShown(hasBody)
 	t.body:ClearAllPoints()
@@ -1109,8 +1108,8 @@ function W.HideTip()
 end
 
 -- ---------------------------------------------------------------------------
---  Checkbox — Gold-Füll-Toggle + Häkchen + Label, klickbare Zeile.
---  o = {label,get,set,value}. Maße aus UI.WIDGET.
+--  Checkbox — gold-fill toggle + checkmark + label, clickable row.
+--  o = {label,get,set,value}. Dimensions from UI.WIDGET.
 -- ---------------------------------------------------------------------------
 function W.Checkbox(parent, o)
 	local BOX = M.checkBox
@@ -1124,9 +1123,9 @@ function W.Checkbox(parent, o)
 	boxbg:SetAllPoints(box); boxbg:SetColorTexture(0, 0, 0, 0)
 	local edges = UI.Border(box, L.mid, 1, "OVERLAY")
 
-	-- Häkchen: Blizzards Check-Textur, entsättigt + ink-getönt -> sauberer als
-	-- selbstgezeichnete Linien (Florian-Feedback). Mittig, leicht über die Box
-	-- hinaus (transparenter Rand der Textur) für gute Proportion.
+	-- Checkmark: Blizzard's check texture, desaturated + ink-tinted -> cleaner than
+	-- self-drawn lines (Florian feedback). Centered, slightly past the box (transparent
+	-- edge of the texture) for good proportion.
 	local check = box:CreateTexture(nil, "OVERLAY")
 	check:SetTexture([[Interface\Buttons\UI-CheckBox-Check]])
 	check:SetDesaturated(true)
@@ -1174,12 +1173,12 @@ function W.Checkbox(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Segment — kompakter Mehrfach-Umschalter (gold-gefüllte aktive Zelle). EINE
---  Komponente, mehrfach genutzt: Raid|Gruppe-Kontextschalter UND Innen|Außen.
---  o = { label?, options = {{value,label},…} (oder Strings), get, set, value,
---        width?, cellH? }. Mit label -> Label oben (wie Select/Slider), Leiste
---  darunter auf controlH. Ohne label -> nur die Leiste (Höhe cellH, z.B. kompakter
---  Header-Schalter). Gleichbreite Zellen via OnSizeChanged (Breite erst nach Layout).
+--  Segment — compact multi-toggle (gold-filled active cell). ONE component,
+--  used multiple times: Raid|Group context switch AND inside|outside.
+--  o = { label?, options = {{value,label},…} (or strings), get, set, value,
+--        width?, cellH? }. With label -> label on top (like Select/Slider), bar
+--  below at controlH. Without label -> only the bar (height cellH, e.g. compact
+--  header switch). Equal-width cells via OnSizeChanged (width only after layout).
 -- ---------------------------------------------------------------------------
 function W.Segment(parent, o)
 	local opts = normOptions(o.options or {})
@@ -1204,9 +1203,9 @@ function W.Segment(parent, o)
 	UI.Border(bar, L.mid, 1, "OVERLAY")
 	f._control = bar
 
-	-- Nicht `(get() or value)` — get() darf legitim `false` liefern (z.B. Innen/Außen mit
-	-- value=false als Default „Innen"); das `or` würde den false-Wert verschlucken -> keine Zelle
-	-- aktiv. Daher explizit auf nil prüfen.
+	-- Not `(get() or value)` — get() may legitimately return `false` (e.g. inside/outside with
+	-- value=false as default "inside"); the `or` would swallow the false value -> no cell
+	-- active. So check for nil explicitly.
 	local cur = o.get and o.get()
 	if cur == nil then cur = o.value end
 	local cells = {}
@@ -1229,7 +1228,7 @@ function W.Segment(parent, o)
 		local txt = UI.FS(cell, "selectText", C.textMuted)
 		txt:SetPoint("CENTER", cell, "CENTER", 0, 0)
 		txt:SetText(op.label); txt:SetWordWrap(false)
-		if i > 1 then -- 1px Trenner an der linken Kante (zwischen den Zellen)
+		if i > 1 then -- 1px separator on the left edge (between the cells)
 			local div = cell:CreateTexture(nil, "OVERLAY")
 			div:SetWidth(1)
 			div:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
@@ -1247,7 +1246,7 @@ function W.Segment(parent, o)
 		cells[i] = cell
 	end
 
-	-- Gleichbreite Zellen erst beim Layout (Breite ist beim Bauen noch 0).
+	-- Equal-width cells only at layout time (width is still 0 at build time).
 	bar:SetScript("OnSizeChanged", function(self2, w)
 		w = w or self2:GetWidth() or 0
 		if w <= 0 then return end
@@ -1271,19 +1270,19 @@ function W.Segment(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  KeybindButton — Tasten-Aufnahme (für Hovercast). Klick -> „Drücke eine Taste …",
---  die nächste Taste (inkl. Shift/Strg/Alt) wird gebunden; ESC oder Rechtsklick
---  bricht ab; Mausrad/Maustasten werden ebenfalls aufgenommen. o = { label?, get,
---  set, width, placeholder?, format? }. get/set arbeiten mit dem WoW-Key-String
---  ("SHIFT-F", "BUTTON4", "MOUSEWHEELUP" …); format(key) liefert die Anzeige.
---  Aufbau wie W.Select (Gold-Inset + Label oben), damit es rasterbündig sitzt.
+--  KeybindButton — key capture (for hovercast). Click -> "Press a key …",
+--  the next key (incl. Shift/Ctrl/Alt) is bound; ESC or right click cancels;
+--  mouse wheel/buttons are captured too. o = { label?, get,
+--  set, width, placeholder?, format? }. get/set work with the WoW key string
+--  ("SHIFT-F", "BUTTON4", "MOUSEWHEELUP" …); format(key) returns the display.
+--  Built like W.Select (gold inset + label on top) so it sits grid-aligned.
 -- ---------------------------------------------------------------------------
-local KB_IGNORE = { -- reine Modifier-/Unbekannt-Tasten: ignorieren, weiter warten
+local KB_IGNORE = { -- pure modifier/unknown keys: ignore, keep waiting
 	LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true,
 	LALT = true, RALT = true, LMETA = true, RMETA = true, UNKNOWN = true,
 }
 local function kbWithMods(key)
-	-- Reihenfolge so, dass „ALT-CTRL-SHIFT-KEY" entsteht (WoW-Standard).
+	-- Order such that "ALT-CTRL-SHIFT-KEY" results (WoW standard).
 	if IsShiftKeyDown()   then key = "SHIFT-" .. key end
 	if IsControlKeyDown() then key = "CTRL-"  .. key end
 	if IsAltKeyDown()     then key = "ALT-"   .. key end
@@ -1307,7 +1306,7 @@ function W.KeybindButton(parent, o)
 	btn:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
 	btn:RegisterForClicks("AnyUp")
-	btn:EnableKeyboard(false) -- Ruhezustand: KEIN Tastatur-Capture (sonst frisst der Button Laufen/Aktionsleiste)
+	btn:EnableKeyboard(false) -- idle state: NO keyboard capture (else the button eats movement/action bar)
 	UI.Fill(btn, C.ink700)
 	local edges = UI.Border(btn, L.soft, 1, "OVERLAY")
 	f._control = btn
@@ -1341,10 +1340,10 @@ function W.KeybindButton(parent, o)
 		listening = false
 		btn:EnableKeyboard(false)
 		btn:EnableMouseWheel(false)
-		-- Propagation NICHT im selben Tastenevent auf true setzen (würde ein ESC durchreichen
-		-- -> Shell schließt). EINEN Frame später zurücksetzen: dann ist der Ruhezustand sauber
-		-- (propagate=true -> der Button frisst NICHT mehr Laufen/Aktionsleiste), aber das ESC,
-		-- das gerade stopListen ausgelöst hat, bleibt konsumiert.
+		-- Do NOT set propagation to true in the same key event (would pass an ESC through
+		-- -> Shell closes). Reset ONE frame later: then the idle state is clean
+		-- (propagate=true -> the button no longer eats movement/action bar), but the ESC
+		-- that just triggered stopListen stays consumed.
 		C_Timer.After(0, function() if not listening then btn:SetPropagateKeyboardInput(true) end end)
 		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
 		refresh()
@@ -1354,7 +1353,7 @@ function W.KeybindButton(parent, o)
 		listening = true
 		btn:EnableKeyboard(true)
 		btn:EnableMouseWheel(true)
-		btn:SetPropagateKeyboardInput(false) -- Tasten konsumieren (ESC schließt sonst die Shell)
+		btn:SetPropagateKeyboardInput(false) -- consume keys (ESC would otherwise close the Shell)
 		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
 		refresh()
 	end
@@ -1396,10 +1395,10 @@ function W.KeybindButton(parent, o)
 end
 
 -- ===========================================================================
---  Color-Picker (eigenes Popover im Lumen-Stil statt Blizzards ColorPickerFrame)
---  HSV-Modell: SV-Feld (Sättigung x / Helligkeit y) + Farbton-Leiste + Vorschau +
---  Hex-Eingabe + Übernehmen/Abbrechen. Singleton (einmal gebaut, wiederverwendet),
---  am Menü-Host (Panel) -> erbt Scale, nicht geclippt. Live-Vorschau über onChange.
+--  Color picker (own popover in Lumen style instead of Blizzard's ColorPickerFrame)
+--  HSV model: SV field (saturation x / value y) + hue bar + preview +
+--  hex input + apply/cancel. Singleton (built once, reused),
+--  on the menu host (panel) -> inherits scale, not clipped. Live preview via onChange.
 -- ===========================================================================
 local function rgb2hsv(r, g, b)
 	local mx, mn = math.max(r, g, b), math.min(r, g, b)
@@ -1430,17 +1429,17 @@ local function toHex(r, g, b)
 	return string.format("%02X%02X%02X", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
 end
 
-local colorPicker -- Singleton-Frame (lazy)
+local colorPicker -- singleton frame (lazy)
 
 local function buildColorPicker()
 	local host = W._menuHost or UIParent
 	local cp = CreateFrame("Frame", nil, host)
 	cp:SetFrameStrata("FULLSCREEN_DIALOG")
-	cp:EnableMouse(true) -- schluckt Klicks (nicht durch zum Closer)
+	cp:EnableMouse(true) -- swallows clicks (not through to the closer)
 	UI.Fill(cp, C.ink850)
 	UI.Border(cp, L.strong, 1, "OVERLAY")
 
-	-- Vollbild-Closer dahinter (Klick ausserhalb = übernehmen/schliessen).
+	-- Full-screen closer behind it (click outside = apply/close).
 	local closer = CreateFrame("Button", nil, host)
 	closer:SetAllPoints(UIParent)
 	closer:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -1450,17 +1449,17 @@ local function buildColorPicker()
 	local pad = M.cpPad
 	cp:SetSize(pad * 2 + M.cpSVW + M.cpGap + M.cpHueW, pad * 3 + M.cpSVH + M.cpPrevH + M.buttonH + 14)
 
-	-- ---- SV-Feld (Sättigung x, Helligkeit y) ----
+	-- ---- SV field (saturation x, value y) ----
 	local sv = CreateFrame("Frame", nil, cp)
 	sv:SetSize(M.cpSVW, M.cpSVH)
 	sv:SetPoint("TOPLEFT", cp, "TOPLEFT", pad, -pad)
 	sv:EnableMouse(true)
-	local svBase = sv:CreateTexture(nil, "BACKGROUND")     -- reine Hue-Farbe
+	local svBase = sv:CreateTexture(nil, "BACKGROUND")     -- pure hue color
 	svBase:SetAllPoints(sv)
-	local svWhite = sv:CreateTexture(nil, "ARTWORK")       -- links weiss -> rechts klar (Sättigung)
+	local svWhite = sv:CreateTexture(nil, "ARTWORK")       -- left white -> right clear (saturation)
 	svWhite:SetAllPoints(sv); svWhite:SetColorTexture(1, 1, 1, 1)
 	svWhite:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 0))
-	local svBlack = sv:CreateTexture(nil, "ARTWORK", nil, 1) -- unten schwarz -> oben klar (Helligkeit)
+	local svBlack = sv:CreateTexture(nil, "ARTWORK", nil, 1) -- bottom black -> top clear (value)
 	svBlack:SetAllPoints(sv); svBlack:SetColorTexture(0, 0, 0, 1)
 	svBlack:SetGradient("VERTICAL", CreateColor(0, 0, 0, 1), CreateColor(0, 0, 0, 0))
 	UI.Border(sv, L.mid, 1, "OVERLAY")
@@ -1468,7 +1467,7 @@ local function buildColorPicker()
 	svMark:SetSize(M.cpMarker, M.cpMarker)
 	UI.Border(svMark, { r = 1, g = 1, b = 1, a = 1 }, 2, "OVERLAY")
 
-	-- ---- Farbton-Leiste (6 Segmente, je vertikaler Gradient) ----
+	-- ---- Hue bar (6 segments, each a vertical gradient) ----
 	local hue = CreateFrame("Frame", nil, cp)
 	hue:SetSize(M.cpHueW, M.cpSVH)
 	hue:SetPoint("TOPLEFT", sv, "TOPRIGHT", M.cpGap, 0)
@@ -1482,7 +1481,7 @@ local function buildColorPicker()
 		seg:SetPoint("TOPRIGHT", hue, "TOPRIGHT", 0, -(i - 1) * segH)
 		seg:SetHeight(segH)
 		local a, c2 = HUES[i], HUES[i + 1]
-		-- oben = a (Segmentstart), unten = c2 -> min(unten)=c2, max(oben)=a
+		-- top = a (segment start), bottom = c2 -> min(bottom)=c2, max(top)=a
 		seg:SetGradient("VERTICAL", CreateColor(c2[1], c2[2], c2[3], 1), CreateColor(a[1], a[2], a[3], 1))
 	end
 	UI.Border(hue, L.mid, 1, "OVERLAY")
@@ -1492,7 +1491,7 @@ local function buildColorPicker()
 	hueMark:SetPoint("RIGHT", hue, "RIGHT", 2, 0)
 	hueMark:SetHeight(3)
 
-	-- ---- Vorschau + Hex ----
+	-- ---- Preview + hex ----
 	local preview = CreateFrame("Frame", nil, cp)
 	preview:SetSize(M.cpPrevH + 14, M.cpPrevH)
 	preview:SetPoint("TOPLEFT", sv, "BOTTOMLEFT", 0, -14)
@@ -1511,13 +1510,13 @@ local function buildColorPicker()
 	hexHash:SetText("#"); hexHash:SetPoint("RIGHT", hexBox, "LEFT", -3, 0)
 
 	-- ---- Buttons ----
-	-- Übernehmen + Abbrechen unten links gruppiert, kleiner fester Abstand (cpBtnGap).
+	-- Apply + cancel grouped at the bottom left, small fixed gap (cpBtnGap).
 	local okBtn = W.Button(cp, { text = T("Apply"), variant = "primary" })
 	okBtn:SetPoint("BOTTOMLEFT", cp, "BOTTOMLEFT", pad, pad)
 	local cancelBtn = W.Button(cp, { text = T("Cancel"), variant = "ghost" })
 	cancelBtn:SetPoint("LEFT", okBtn, "RIGHT", M.cpBtnGap, 0)
 
-	-- ---- State + Logik ----
+	-- ---- State + logic ----
 	cp._h, cp._s, cp._v = 0, 0, 1
 	cp._orig = { 1, 1, 1 }
 	cp._onChange, cp._onCancel = nil, nil
@@ -1571,7 +1570,7 @@ local function buildColorPicker()
 	hue:SetScript("OnMouseUp", function(self) self:SetScript("OnUpdate", nil) end)
 	hue:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
 
-	-- Hex-Eingabe
+	-- Hex input
 	hexBox:SetScript("OnEnterPressed", function(self)
 		local s = self:GetText():gsub("[^0-9A-Fa-f]", "")
 		if #s == 6 then
@@ -1587,7 +1586,7 @@ local function buildColorPicker()
 
 	local function close() cp:Hide(); closer:Hide() end
 	cp._close = close
-	okBtn:SetScript("OnClick", close) -- onChange war live -> nur schliessen
+	okBtn:SetScript("OnClick", close) -- onChange was live -> just close
 	cancelBtn:SetScript("OnClick", function()
 		if cp._onCancel then cp._onCancel() end
 		close()
@@ -1598,11 +1597,11 @@ local function buildColorPicker()
 	return cp
 end
 
--- o = { r,g,b, anchor?, onChange(r,g,b), onCancel() }. Öffnet den Singleton-Picker.
+-- o = { r,g,b, anchor?, onChange(r,g,b), onCancel() }. Opens the singleton picker.
 function W.OpenColorPicker(o)
 	colorPicker = colorPicker or buildColorPicker()
 	local cp = colorPicker
-	-- Host kann sich seit dem Bau geändert haben (eigentlich nicht) — Parent sicherstellen.
+	-- The host may have changed since build (it shouldn't) — ensure the parent.
 	cp._onChange, cp._onCancel = o.onChange, o.onCancel
 	cp._orig = { o.r or 1, o.g or 1, o.b or 1 }
 	cp._h, cp._s, cp._v = rgb2hsv(o.r or 1, o.g or 1, o.b or 1)
@@ -1620,9 +1619,9 @@ function W.OpenColorPicker(o)
 end
 
 -- ---------------------------------------------------------------------------
---  ColorSwatch — Gold-gerahmtes Farbfeld + Label, öffnet den Lumen-ColorPicker.
---  o = {label, get -> r,g,b, set(r,g,b)}. Layout wie die Checkbox (Box links,
---  Label rechts), damit es austauschbar in Reihen/Zellen sitzt. Maße aus UI.WIDGET.
+--  ColorSwatch — gold-framed color field + label, opens the Lumen color picker.
+--  o = {label, get -> r,g,b, set(r,g,b)}. Layout like the checkbox (box left,
+--  label right) so it sits interchangeably in rows/cells. Dimensions from UI.WIDGET.
 -- ---------------------------------------------------------------------------
 function W.ColorSwatch(parent, o)
 	local BOX = M.checkBox
@@ -1630,20 +1629,20 @@ function W.ColorSwatch(parent, o)
 
 	local box = CreateFrame("Frame", nil, b)
 	box:SetSize(BOX, BOX)
-	-- Farbfläche leicht eingerückt, damit der Gold-Rahmen sie sauber fasst.
+	-- Color surface slightly inset so the gold frame holds it cleanly.
 	local sw = box:CreateTexture(nil, "ARTWORK")
 	sw:SetPoint("TOPLEFT", box, "TOPLEFT", 1, -1)
 	sw:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -1, 1)
 	local edges = UI.Border(box, L.mid, 1, "OVERLAY")
 
-	-- Zwei Modi: field=true -> Label OBEN (rasterbündig zu Dropdowns, per SetAllPoints
-	-- in eine Feld-Zelle); sonst -> Swatch + Label rechts daneben (kompakte Zeile).
+	-- Two modes: field=true -> label ON TOP (grid-aligned with dropdowns, via SetAllPoints
+	-- into a field cell); otherwise -> swatch + label next to it on the right (compact row).
 	local lbl
 	if o.field then
-		-- Feld-Modus: Label OBEN, Swatch als kompakter Farb-Chip im Control-Band darunter.
-		-- Höhe = controlH (gleiche Flucht wie ein Dropdown), Breite kompakt (swatchFieldW)
-		-- -> sitzt sauber in der Reihe, ohne die Spalte als Vollbalken zu dominieren.
-		b:SetSize(M.swatchFieldW, M.controlH + M.fieldGap) -- nur Chip-Breite -> Klickfläche = Chip (NICHT die ganze Zelle)
+		-- Field mode: label ON TOP, swatch as a compact color chip in the control band below.
+		-- Height = controlH (same line as a dropdown), width compact (swatchFieldW)
+		-- -> sits cleanly in the row without dominating the column as a full bar.
+		b:SetSize(M.swatchFieldW, M.controlH + M.fieldGap) -- only chip width -> hit area = chip (NOT the whole cell)
 		box:SetSize(M.swatchFieldW, M.controlH)
 		box:SetPoint("TOPLEFT", b, "TOPLEFT", 0, -M.fieldGap)
 		lbl = UI.FS(b, "fieldLabel", C.gold250)
@@ -1688,8 +1687,8 @@ function W.ColorSwatch(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Hint — gedämpfte Fließtext-Zeile (Caption), wortumbrechend in eigenem Frame
---  (damit der Layout-Stack sie wie ein normales Widget mit Höhe behandeln kann).
+--  Hint — muted body-text line (caption), word-wrapping in its own frame
+--  (so the layout stack can treat it like a normal widget with a height).
 -- ---------------------------------------------------------------------------
 function W.Hint(parent, text, height)
 	local f = CreateFrame("Frame", nil, parent)
@@ -1704,9 +1703,9 @@ function W.Hint(parent, text, height)
 end
 
 -- ---------------------------------------------------------------------------
---  TextInput — einzeilige Eingabe (Inset-Feld + Gold-Rand, optional Gold-Label
---  oben, Platzhalter). Für Profilnamen u.ä. o = {label, placeholder, width,
---  get, onEnter, onChange}. Liefert f mit GetText/SetText/ClearText (+ f._edit).
+--  TextInput — single-line input (inset field + gold border, optional gold label
+--  on top, placeholder). For profile names etc. o = {label, placeholder, width,
+--  get, onEnter, onChange}. Returns f with GetText/SetText/ClearText (+ f._edit).
 -- ---------------------------------------------------------------------------
 function W.TextInput(parent, o)
 	o = o or {}
@@ -1760,10 +1759,10 @@ function W.TextInput(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Textarea — mehrzeilige Eingabe (Inset-Box + Gold-Rand) mit scrollbarem
---  Multi-Line-EditBox. Für Export/Import-Codes. o = {height, width, get,
---  onChange, readOnly, placeholder}. readOnly = wählbar/kopierbar, aber Tipp-
---  Änderungen werden zurückgesetzt (Export-Code). Liefert GetText/SetText.
+--  Textarea — multi-line input (inset box + gold border) with a scrollable
+--  multi-line EditBox. For export/import codes. o = {height, width, get,
+--  onChange, readOnly, placeholder}. readOnly = selectable/copyable, but typing
+--  changes are reset (export code). Returns GetText/SetText.
 -- ---------------------------------------------------------------------------
 function W.Textarea(parent, o)
 	o = o or {}
@@ -1788,7 +1787,7 @@ function W.Textarea(parent, o)
 	sf:SetScrollChild(edit)
 	sf:SetScript("OnSizeChanged", function(_, w) edit:SetWidth(w or 1) end)
 
-	-- Cursor beim Tippen im Sichtfenster halten + Mausrad scrollt die Box.
+	-- Keep the cursor in the viewport while typing + mouse wheel scrolls the box.
 	edit:SetScript("OnCursorChanged", function(_, _, y, _, cursorH)
 		local top = sf:GetVerticalScroll() or 0
 		local viewH = sf:GetHeight() or 1
@@ -1801,7 +1800,7 @@ function W.Textarea(parent, o)
 		self2:SetVerticalScroll(math.max(0, math.min(range, (self2:GetVerticalScroll() or 0) - d * 24)))
 	end)
 	f:EnableMouse(true)
-	f:SetScript("OnMouseDown", function() edit:SetFocus() end) -- Klick irgendwo in der Box -> fokussieren
+	f:SetScript("OnMouseDown", function() edit:SetFocus() end) -- click anywhere in the box -> focus
 
 	local frozen = (o.get and o.get()) or ""
 	edit:SetText(frozen)
@@ -1830,11 +1829,11 @@ function W.Textarea(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Button — primary (Gold) / ghost (Rand) / danger (rot). o = {text,variant,
---  onClick,width}. Höhe 38, Breite aus Text + Padding falls nicht gesetzt.
+--  Button — primary (gold) / ghost (border) / danger (red). o = {text,variant,
+--  onClick,width}. Height 38, width from text + padding if not set.
 -- ---------------------------------------------------------------------------
--- Schriftschnitt je Variante (wie im Prototyp: primary fett/700, ghost 500,
--- danger 600). Größe bleibt die der btn-Rolle.
+-- Font weight per variant (like the prototype: primary bold/700, ghost 500,
+-- danger 600). Size stays that of the btn role.
 local BTN_SIZE = UI.ROLE.btn[2]
 local BTN_VARIANTS = {
 	primary = {
@@ -1863,8 +1862,8 @@ function W.Button(parent, o)
 	local bg = b:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints(b)
 
-	-- primary trägt einen vertikalen Gold-Gradient (oben heller -> metallischer
-	-- Schimmer wie die Wortmarke); Hover schiebt den Gradient eine Stufe heller.
+	-- primary carries a vertical gold gradient (lighter on top -> metallic
+	-- shimmer like the wordmark); hover shifts the gradient one step lighter.
 	local function paintBg(hover)
 		if variant == "primary" then
 			bg:SetColorTexture(1, 1, 1, 1)
@@ -1883,12 +1882,12 @@ function W.Button(parent, o)
 
 	local edges = UI.Border(b, v.line, 1, "OVERLAY")
 	local txt = UI.FS(b, "btn", v.txt)
-	local okFont = txt:SetFont(v.font, BTN_SIZE, "") -- Schnitt je Variante (s. BTN_VARIANTS)
+	local okFont = txt:SetFont(v.font, BTN_SIZE, "") -- weight per variant (see BTN_VARIANTS)
 	txt:SetText(o.text or "")
-	-- Selbst-heilend: lädt die Variant-Font nicht (SetFont=false) oder rendert sie den
-	-- Text nicht (0 Breite trotz Inhalt — z.B. fehlende Glyphen wie „ü" in einem Schnitt),
-	-- auf die Rollen-Font (btn = hankenSemi, rendert Umlaute zuverlässig) zurückfallen.
-	-- So bleibt der bewusste Variant-Schnitt erhalten, wo er funktioniert.
+	-- Self-healing: if the variant font doesn't load (SetFont=false) or doesn't render
+	-- the text (0 width despite content — e.g. missing glyphs like "ü" in a weight),
+	-- fall back to the role font (btn = hankenSemi, renders umlauts reliably).
+	-- This keeps the intended variant weight where it works.
 	if (o.text or "") ~= "" and (okFont == false or txt:GetStringWidth() <= 0) then
 		UI:SetFont(txt, "btn", v.txt)
 		txt:SetText(o.text)
@@ -1897,9 +1896,9 @@ function W.Button(parent, o)
 
 	b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
 
-	-- Kaltstart-Garantie: Wird der Button SICHTBAR und hat sein Text noch 0 Breite (Glyph-Cache
-	-- war beim Bauen kalt -> v.a. der primäre „Übernehmen" im lazy gebauten Color-Picker),
-	-- Schnitt + Text nach EINEM Frame (jetzt sichtbar -> Glyphen rasterisiert) einmal neu setzen.
+	-- Cold-start guarantee: if the button becomes VISIBLE and its text still has 0 width (glyph
+	-- cache was cold at build time -> esp. the primary "Apply" in the lazily built color picker),
+	-- re-set weight + text once after ONE frame (now visible -> glyphs rasterized).
 	if (o.text or "") ~= "" then
 		b:HookScript("OnShow", function()
 			if (txt:GetStringWidth() or 0) > 0 then return end
@@ -1928,8 +1927,8 @@ function W.Button(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  IconTile — beveled Gold-Chip (Signatur-Element) mit Cinzel-Letter. Für
---  Spell-/Modul-Kacheln in Listen. o = {size,letter}.
+--  IconTile — beveled gold chip (signature element) with a Cinzel letter. For
+--  spell/module tiles in lists. o = {size,letter}.
 -- ---------------------------------------------------------------------------
 function W.IconTile(parent, o)
 	local size = o.size or 56
@@ -1950,8 +1949,8 @@ function W.IconTile(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Card — angehobener Container (Surface #171411, Gold-Hairline). Höhe setzt
---  der Aufrufer; Inhalt direkt in die Card oder mit eigenem Padding ankern.
+--  Card — raised container (surface #171411, gold hairline). Height set by the
+--  caller; anchor content directly into the card or with its own padding.
 -- ---------------------------------------------------------------------------
 function W.Card(parent)
 	local c = CreateFrame("Frame", nil, parent)
@@ -1961,9 +1960,9 @@ function W.Card(parent)
 end
 
 -- ---------------------------------------------------------------------------
---  GroupPanel — umrandeter Bereich mit Überschrift + optionalem Inline-Control
---  rechts (z.B. „Anzeigen"-Toggle). o = {title}. Gibt (frame, contentFrame).
---  Höhe setzt der Aufrufer (frame:SetHeight); contentFrame füllt darunter.
+--  GroupPanel — bordered area with a heading + optional inline control on the
+--  right (e.g. a "Show" toggle). o = {title}. Returns (frame, contentFrame).
+--  Height set by the caller (frame:SetHeight); contentFrame fills below.
 -- ---------------------------------------------------------------------------
 function W.GroupPanel(parent, o)
 	local g = CreateFrame("Frame", nil, parent)
@@ -1976,13 +1975,13 @@ function W.GroupPanel(parent, o)
 	title:SetText(o.title or "")
 	title:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, M.groupTitleY)
 
-	-- Inhaltsbereich unter der Überschrift, mit Card-Padding.
+	-- Content area below the heading, with card padding.
 	local content = CreateFrame("Frame", nil, g)
 	content:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, M.groupContentY)
 	content:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", -S.cardPad, S.cardPad)
 
 	g._title, g._content = title, content
-	-- Ankerpunkt für ein optionales Header-Right-Control.
+	-- Anchor point for an optional header-right control.
 	g._headerRightAnchor = function(ctrl)
 		ctrl:SetParent(g)
 		ctrl:ClearAllPoints()
@@ -1993,8 +1992,8 @@ function W.GroupPanel(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Row — N gleichbreite Zellen nebeneinander (entspricht prototype row3/row2).
---  Gibt eine Liste von Zellen-Frames zurück; das Widget je Zelle hineinankern.
+--  Row — N equal-width cells side by side (matches prototype row3/row2).
+--  Returns a list of cell frames; anchor the widget per cell into them.
 -- ---------------------------------------------------------------------------
 function W.Row(parent, count, opts)
 	opts = opts or {}
@@ -2008,7 +2007,7 @@ function W.Row(parent, count, opts)
 		cell:SetPoint("BOTTOM", f, "BOTTOM", 0, 0)
 		cells[i] = cell
 	end
-	-- Breiten-Verteilung erst bei bekannter Reihenbreite (Anker-abhängig).
+	-- Width distribution only once the row width is known (anchor-dependent).
 	f:SetScript("OnSizeChanged", function(self, w)
 		w = w or self:GetWidth() or 0
 		local cw = (w - gap * (count - 1)) / count
