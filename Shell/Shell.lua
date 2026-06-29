@@ -279,6 +279,9 @@ function Shell:Build()
 	f:SetScript("OnDragStart", f.StartMoving)
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
 	f:Hide()
+	-- ESC closes via UISpecialFrames (hides the frame directly, NOT Shell:Hide) — make
+	-- sure a listening KeybindButton never survives the close with the keyboard grabbed.
+	f:HookScript("OnHide", function() if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end end)
 	tinsert(UISpecialFrames, "LumenShellFrame") -- ESC closes
 	self._frame = f
 
@@ -685,6 +688,10 @@ Shell.NewStack = newStack
 -- registered, otherwise the widget gallery (phase-2 fallback). Then set the scroll
 -- child height, scroll to top, update the scrollbar.
 function Shell:RenderContent(keepScroll)
+	-- Release any keybind-capture before rebuilding: hiding the screen orphans a
+	-- listening KeybindButton without firing its OnHide, which would leave the
+	-- keyboard grabbed (no movement / ESC) until /reload.
+	if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end
 	local prevScroll = (keepScroll and self._scroll and self._scroll:GetVerticalScroll()) or 0
 	local holderParent = self._scrollChild
 	if self._screen then self._screen:Hide(); self._screen:SetParent(nil); self._screen = nil end
@@ -772,5 +779,6 @@ function Shell:Show()
 end
 
 function Shell:Hide()
+	if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end -- never leave the keyboard grabbed
 	if self._frame then self._frame:Hide() end
 end
