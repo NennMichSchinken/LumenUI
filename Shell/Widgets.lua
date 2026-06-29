@@ -386,7 +386,7 @@ function W.Select(parent, o)
 		search:SetTextInsets(10, 10, 0, 0)
 		search:SetAutoFocus(false)
 		searchPH = UI.FS(search, "label", C.textMuted)
-		searchPH:SetText("Textur suchen …")
+		searchPH:SetText(T("Search texture …"))
 		searchPH:SetPoint("LEFT", search, "LEFT", 10, 0)
 	end
 
@@ -436,7 +436,7 @@ function W.Select(parent, o)
 
 	-- "no matches" hint (only relevant with an active search).
 	local emptyFS = UI.FS(menu, "label", C.textMuted)
-	emptyFS:SetText("(keine Treffer)")
+	emptyFS:SetText(T("(no matches)"))
 	if search then emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
 	else emptyFS:SetPoint("TOP", menu, "TOP", 0, -(pad + 16)) end
 	emptyFS:Hide()
@@ -673,7 +673,7 @@ function W.SpellPicker(parent, o)
 	search:SetTextInsets(10, 10, 0, 0)
 	search:SetAutoFocus(false)
 	local ph = UI.FS(search, "label", C.textMuted)
-	ph:SetText("Spell suchen …")
+	ph:SetText(T("Search spell …"))
 	ph:SetPoint("LEFT", search, "LEFT", 10, 0)
 
 	-- Scroll list ---------------------------------------------------------
@@ -687,7 +687,7 @@ function W.SpellPicker(parent, o)
 	sf:SetScript("OnSizeChanged", function(self2, w) child:SetWidth(w or self2:GetWidth() or 1) end)
 
 	local emptyFS = UI.FS(menu, "label", C.textMuted)
-	emptyFS:SetText("(keine Treffer)")
+	emptyFS:SetText(T("(no matches)"))
 	emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
 	emptyFS:Hide()
 
@@ -897,7 +897,7 @@ end
 
 function W.Confirm(o)
 	local dlg = confirmDlg or buildConfirm()
-	dlg.title:SetText(o.title or "Bist du sicher?")
+	dlg.title:SetText(o.title or T("Are you sure?"))
 	dlg.body:SetText(o.body or "")
 	dlg.ok._txt:SetText(o.confirmText or T("Confirm"))
 	dlg.cancel._txt:SetText(o.cancelText or T("Cancel"))
@@ -1319,7 +1319,7 @@ function W.KeybindButton(parent, o)
 	local cur = (o.get and o.get()) or ""
 	local listening = false
 	local function fmt(k)
-		if k == "" then return o.placeholder or "Taste setzen …" end
+		if k == "" then return o.placeholder or T("Set key …") end
 		if o.format then return o.format(k) end
 		return k
 	end
