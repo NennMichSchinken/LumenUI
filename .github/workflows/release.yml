@@ -1,0 +1,30 @@
+name: Package and release
+
+# Runs only on a version tag (e.g. v0.9.90 or v0.9.90-beta).
+# Pushing a tag = publishing. Merging to main alone ships NOTHING.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Package and release
+        uses: BigWigsMods/packager@v2
+        env:
+          # Store these in the repo secrets (Settings -> Secrets and variables -> Actions).
+          # Only CF_API_KEY is required for CurseForge; the others are optional for Wago/WoWInterface.
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

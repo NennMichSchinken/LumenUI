@@ -17,7 +17,7 @@ local GROUP_PAD = 20 -- group spacing above/below the AddOns+Lumen group (like B
 -- |cff..|-code in the text (survives Blizzard's hover/enable states); the font face is set
 -- on the FontString. ns.UI is safely present here (GameMenu.lua loads last, after Shell/Tokens).
 local LUMEN_GOLD = "E6C883" -- = UI.C.gold300 (display/wordmark gold)
-local LUMEN_TEXT = "|cff" .. LUMEN_GOLD .. "Lumen|r"
+local LUMEN_TEXT = "|cff" .. LUMEN_GOLD .. "LumenUI|r"
 
 local DEFAULT_FONT -- {path,size,flags} of an unmarked Blizzard button (learned once)
 

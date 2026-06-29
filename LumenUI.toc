@@ -1,11 +1,12 @@
 ## Interface: 120007
-## Title: Lumen
+## Title: LumenUI
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## Author: NennMichSchinken
 ## Version: 0.9.87
 ## SavedVariables: LumenDB
 ## OptionalDeps: MiniCC
 ## X-Website: https://github.com/NennMichSchinken
+## X-Curse-Project-ID: 1590189
 
 embeds.xml
 Core.lua

@@ -323,7 +323,7 @@ function Shell:Build()
 	hsep:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", 0, 0); setColor(hsep, L.divider)
 
 	local word = FS(header, "wordmark", C.gold300)
-	word:SetText(UI.Track("LUMEN", "  ")) -- tracking emulation
+	word:SetText(UI.Track("LUMENUI", "  ")) -- tracking emulation
 	word:SetPoint("CENTER", header, "CENTER", 0, 8)
 	local tag = FS(header, "tagline", C.textMuted)
 	tag:SetText(UI.Track("a focused ui suite", " "))
