@@ -404,17 +404,32 @@ function ns.CC_RegisterButton(button)
 end
 
 -- ===========================================================================
---  HOVERCAST PATH — global secure button + state driver
+--  HOVERCAST PATH — global secure button + header-style state driver
+--
+--  Robust 12.0.7 design. The previous pure-state-driver version left the key
+--  stuck = "an assigned hovercast key blocks the action bar even off a frame".
+--  Three safeguards, adapted from a proven secure-frame approach:
+--   1. RACE FIX: the override binding is ALSO set in each frame's SECURE OnEnter,
+--      so a keypress on arrival never loses the race against the state driver lag.
+--   2. STUCK-CLEAR FIX: the state-driver "0" clear is GUARDED — skipped while the
+--      last-hovered frame is still physically under the cursor, so a transient
+--      [@mouseover,exists]==0 (a churning unit token, common in follower dungeons)
+--      cannot strand the key cleared ("stuck until I re-mouseover").
+--   3. UNBIND FIX: teardown on rebuild wipes ALL overrides at once
+--      (self:ClearBindings) + resets the active flag, so unbinding takes effect
+--      without a /reload.
+--  lu_hoveractive gates SetBindingClick to the become-active edge only -> zero
+--  extra binding writes while sweeping the mouse across frames. lu_hoverframe and
+--  lu_hoveractive live in ONE shared secure env: the driver owns BOTH the OnEnter
+--  wraps (control = driver) and the state driver (self = driver).
 -- ===========================================================================
 local hoverBtn, driver
 local lastHoverCount = 0
 local HOVER_BTN_NAME = "LumenCCHover"
 
--- Hovercast is P2 (see Shell/Screens.lua CC_HOVERCAST): the secure key-driver mechanism
--- no longer releases the key cleanly in 12.0.7 -> an assigned hovercast key blocks the
--- action bar. Disabled until the 12.1.0 rework; existing hovercast bindings stay in the
--- profile but are NOT applied (applyHover silences everything). To re-enable: true.
-local HOVERCAST_ENABLED = false
+-- Re-enabled in Feature 3 (was parked while the old fragile design blocked the
+-- action bar). The three safeguards above make the key release cleanly.
+local HOVERCAST_ENABLED = true
 
 local function buildHoverFrames()
 	if hoverBtn then return end
@@ -426,15 +441,38 @@ local function buildHoverFrames()
 	hoverBtn:Show()
 
 	driver = CreateFrame("Frame", "LumenCCDriver", UIParent, "SecureHandlerStateTemplate")
-	driver:SetFrameRef("hb", hoverBtn)
-	-- While [@mouseover,exists]: route the configured keys to the hover button
-	-- (override binding). When the mouse leaves the unit: clear all overrides.
+	-- "1" = mouseover a unit -> set the overrides (once, on the active edge).
+	-- "0" = no mouseover unit -> clear the overrides, BUT only if the last-hovered
+	-- frame is no longer under the cursor (guard against transient token churn).
 	driver:SetAttribute("_onstate-mo", [[
 		if newstate == "1" then
-			self:RunAttribute("hover_set")
-		else
-			self:ClearBindings()
+			if not lu_hoveractive then
+				self:RunAttribute("hover_set")
+				lu_hoveractive = true
+			end
+		elseif not (lu_hoverframe and lu_hoverframe:IsUnderMouse()) then
+			self:RunAttribute("hover_clear")
+			lu_hoveractive = false
 		end
+	]])
+end
+
+-- Wrap a registered secure button's OnEnter/OnLeave ONCE (control = driver). The
+-- OnEnter sets the override the instant the cursor arrives (race fix) and records
+-- the hovered frame for the clear guard; OnLeave forgets it. Setting up secure
+-- wraps is protected -> call ONLY out of combat (applyHover is OOC-gated).
+local function wrapButtonForHover(button)
+	if button._ccHoverWrapped or not driver then return end
+	button._ccHoverWrapped = true
+	driver:WrapScript(button, "OnEnter", [[
+		lu_hoverframe = self
+		if not lu_hoveractive then
+			control:RunAttribute("hover_set")
+			lu_hoveractive = true
+		end
+	]])
+	driver:WrapScript(button, "OnLeave", [[
+		if lu_hoverframe == self then lu_hoverframe = nil end
 	]])
 end
 
@@ -453,21 +491,27 @@ local function applyHover()
 		-- then set up nothing new -> assigned hovercast bindings block no keys.
 		if driver then
 			UnregisterStateDriver(driver, "mo")
-			pcall(function() driver:Execute("self:ClearBindings()") end)
+			pcall(function() driver:Execute("self:ClearBindings()\nlu_hoveractive = false") end)
 		end
 		if hoverBtn then clearHoverAttrs() end
 		lastHoverCount = 0
 		return
 	end
 	buildHoverFrames()
+
+	-- Teardown the previous build: drop ALL overrides at once + reset the active
+	-- flag, retire the state driver, wipe the global-button attrs. ONLY out of combat.
 	UnregisterStateDriver(driver, "mo")
-	pcall(function() driver:Execute("self:ClearBindings()") end)
+	pcall(function() driver:Execute("self:ClearBindings()\nlu_hoveractive = false") end)
 	clearHoverAttrs()
 
 	local cc = ccDB()
 	if not cc or not cc.enabled then lastHoverCount = 0; return end
 
-	local setLines, count = {}, 0
+	-- Make sure every live button carries the OnEnter/OnLeave race-fix wrap.
+	for button in pairs(buttons) do wrapButtonForHover(button) end
+
+	local setLines, clearLines, count = {}, {}, 0
 	for _, b in ipairs(activeList()) do
 		if b.hovercast then
 			local aType, macrotext = resolveBinding(b, true)
@@ -483,12 +527,19 @@ local function applyHover()
 				end
 				setLines[#setLines + 1] = format(
 					[[self:SetBindingClick(true, %q, %q, %q)]], b.key, HOVER_BTN_NAME, s)
+				clearLines[#clearLines + 1] = format([[self:ClearBinding(%q)]], b.key)
 			end
 		end
 	end
 	lastHoverCount = count
 
+	-- hover_set = bind the configured keys to the hover button; hover_clear = release
+	-- them PER KEY (self:ClearBinding(key)). The bulk self:ClearBindings() must NOT be
+	-- used inside this hot state-driver snippet — if it faults there it taints the
+	-- whole binding system (every key, incl. ESC/movement, goes dead). The bulk form
+	-- is reserved for the Execute() teardown above, which runs outside the snippet.
 	driver:SetAttribute("hover_set", concat(setLines, "\n"))
+	driver:SetAttribute("hover_clear", concat(clearLines, "\n"))
 	if count > 0 then
 		RegisterStateDriver(driver, "mo", "[@mouseover,exists] 1; 0")
 	end

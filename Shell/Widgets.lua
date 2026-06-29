@@ -1289,6 +1289,15 @@ local function kbWithMods(key)
 	return key
 end
 
+-- The button currently capturing keys (its stopListen). While a button listens it
+-- grabs ALL keyboard input (EnableKeyboard+propagate=false) so movement/ESC are dead
+-- by design. The danger: a re-render orphans a listening button — OnHide does NOT
+-- fire on a descendant when only an ancestor (the screen) is hidden, so the grab
+-- would stick forever. The Shell calls W.StopActiveKeybind() before every
+-- RenderContent / on close to release it. Only ONE button can listen at a time.
+local activeCapture
+function W.StopActiveKeybind() if activeCapture then activeCapture() end end
+
 function W.KeybindButton(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	if o.width then f:SetWidth(o.width) end
@@ -1338,22 +1347,22 @@ function W.KeybindButton(parent, o)
 	local function stopListen()
 		if not listening then return end
 		listening = false
+		if activeCapture == stopListen then activeCapture = nil end
+		-- EnableKeyboard(false) drops the button out of the keyboard chain — the real
+		-- release. Propagation is managed ENTIRELY inside OnKeyDown (the only valid
+		-- context); we never touch it here / on a timer (see OnKeyDown note).
 		btn:EnableKeyboard(false)
 		btn:EnableMouseWheel(false)
-		-- Do NOT set propagation to true in the same key event (would pass an ESC through
-		-- -> Shell closes). Reset ONE frame later: then the idle state is clean
-		-- (propagate=true -> the button no longer eats movement/action bar), but the ESC
-		-- that just triggered stopListen stays consumed.
-		C_Timer.After(0, function() if not listening then btn:SetPropagateKeyboardInput(true) end end)
 		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
 		refresh()
 	end
 	local function startListen()
 		if listening then return end
+		if activeCapture and activeCapture ~= stopListen then activeCapture() end -- only one listener at a time
 		listening = true
-		btn:EnableKeyboard(true)
+		activeCapture = stopListen
+		btn:EnableKeyboard(true) -- keys now reach OnKeyDown, which decides pass-through vs consume
 		btn:EnableMouseWheel(true)
-		btn:SetPropagateKeyboardInput(false) -- consume keys (ESC would otherwise close the Shell)
 		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
 		refresh()
 	end
@@ -1371,10 +1380,18 @@ function W.KeybindButton(parent, o)
 		elseif button == "Button4" then commit(kbWithMods("BUTTON4"))
 		elseif button == "Button5" then commit(kbWithMods("BUTTON5")) end
 	end)
-	btn:SetScript("OnKeyDown", function(_, key)
-		if not listening then return end
+	btn:SetScript("OnKeyDown", function(self, key)
+		-- SetPropagateKeyboardInput may ONLY be called from inside a keyboard event —
+		-- i.e. right here. Pass the key THROUGH when not listening or on a bare modifier
+		-- (so it keeps doing its normal thing); consume only a real key while listening.
+		-- This is the proven pattern. The earlier code set propagate=false on start and
+		-- tried to reset it on a C_Timer (outside any keyboard event) — that is invalid
+		-- and left the keyboard globally grabbed: every key dead, mouse still working,
+		-- no error message. Never defer the propagate reset.
+		if not listening then self:SetPropagateKeyboardInput(true); return end
+		if KB_IGNORE[key] then self:SetPropagateKeyboardInput(true); return end
+		self:SetPropagateKeyboardInput(false)
 		if key == "ESCAPE" then stopListen(); return end
-		if KB_IGNORE[key] then return end
 		commit(kbWithMods(key))
 	end)
 	btn:SetScript("OnMouseWheel", function(_, delta)

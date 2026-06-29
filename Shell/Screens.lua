@@ -927,12 +927,12 @@ local function ccApply() if CCm() then CCm():ApplyBindings() end end
 
 local ccSelectedSpec  -- which spec is edited (decoupled from the live spec)
 
--- Hovercast is P2: the secure key-driver mechanism (key active only on hover,
--- otherwise the normal action bar) no longer releases the key cleanly in 12.0.7 ->
--- an assigned hovercast key blocks the action bar. Until the 12.1.0 rework (possibly
--- a more robust approach) the section is hidden; code + data model stay. ClickCast.lua
--- keeps existing hovercast bindings "asleep" in parallel (applyHover is then a no-op).
-local CC_HOVERCAST = false
+-- Hovercast (key active only on hover, otherwise the normal action bar) was parked
+-- because the old secure key-driver no longer released the key cleanly in 12.0.7 ->
+-- an assigned key blocked the action bar. Feature 3 rebuilt it robustly (OnEnter
+-- race fix + guarded clear + ClearBindings teardown, see ClickCast.lua applyHover),
+-- so the section is shown again.
+local CC_HOVERCAST = true
 
 local CC_MOD_OPTS, CC_ACTION_OPTS
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
