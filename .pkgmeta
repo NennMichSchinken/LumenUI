@@ -1,0 +1,12 @@
+package-as: Lumen
+
+# Libs liegen committed im Repo (Libs/) und werden 1:1 mitgepackt —
+# daher keine externals und kein nolib-Stripping.
+enable-nolib-creation: no
+
+# Dev-/Werkzeug-Dateien gehören nicht ins ausgelieferte Zip.
+ignore:
+  - .luacheckrc
+  - tools
+  - .github
+  - "*.md"
