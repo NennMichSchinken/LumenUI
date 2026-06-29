@@ -134,6 +134,18 @@ local function aset(cat, key)
 	end
 end
 
+-- Expand state of the aura section per context (Feature 1). Default nil = collapsed;
+-- the choice is remembered (persisted). Deliberately NOT in the defaults — pure UI
+-- state, and default-collapsed == default-nil. ctx = "raid" | "party".
+local function auraOpen(ctx) local t = rf().auraEditorOpen; return t and t[ctx] or false end
+local function setAuraOpen(ctx, v)
+	local t = rf(); t.auraEditorOpen = t.auraEditorOpen or {}; t.auraEditorOpen[ctx] = v
+end
+
+-- Defined further below (needs PLACE_OPTS); forward-declared because buildRaid
+-- (Raid/Group tabs) builds the per-context aura cards with it.
+local auraCat
+
 -- Display labels for Lumen's own texture keys: the VALUE stays the German key
 -- (texture/pattern matching in Raidframes.lua relies on it), only the shown label
 -- is localized. Built on locale-ready (uses T). Other (LSM/Blizzard) textures keep
@@ -293,6 +305,26 @@ local function buildRaid(d, stack, ctx)
 
 	for _, w in ipairs({ hpPos, hpSize, hpX, hpY }) do hpDeps[#hpDeps + 1] = w end
 	refreshHP()
+
+	-- ===== Aura indicators (Feature 1: per context, collapsible at the bottom) =====
+	-- The standalone "Auras" tab is gone — its display settings live here, separated
+	-- per context. sfx maps the tab context to the aura field suffix ("Raid"/"Party").
+	-- Collapsed by default; the choice is remembered. Toggling re-renders the screen.
+	local sfx  = (ctx == "raid") and "Raid" or "Party"
+	local open = auraOpen(ctx)
+	local auraHead = W.Collapsible(d, { title = T("Aura indicators"), open = open,
+		onToggle = function(v) setAuraOpen(ctx, v); ns.Shell:RenderContent(true) end })
+	stack:place(auraHead, M.sectionHeaderH, open and R.afterCheck or 0)
+	if open then
+		local intro = W.Hint(d, T("Aura icons on the frame — set separately for this context. "
+			.. "Which spells are tracked is shared and set in the \"Tracking\" tab. "
+			.. "Visible in test mode (\"Base\" tab) for preview."), L.tracking.introH)
+		stack:place(intro, L.tracking.introH, R.row)
+		auraCat(d, stack, "hotsOwn",    T("HoTs"),                  false, sfx)
+		auraCat(d, stack, "defensives", T("Defensives & External"), false, sfx)
+		auraCat(d, stack, "major",      T("Major CDs"),             false, sfx)
+		auraCat(d, stack, "debuffs",    T("Debuffs"),               true,  sfx)
+	end
 
 	applyModuleGate(d, rf().enabled) -- module off -> whole Raid/Group screen greyed + locked
 end
@@ -668,66 +700,55 @@ end
 -- ---------------------------------------------------------------------------
 -- Inside/Outside options (context segment switch): false = icons INSIDE the frame,
 -- true = the row is moved fully outside (next to / above / below the frame).
-local PLACE_OPTS, CTX_OPTS
+local PLACE_OPTS
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	PLACE_OPTS = { { value = false, label = T("Inside") }, { value = true, label = T("Outside") } }
-	CTX_OPTS   = { { value = "Raid", label = T("Raid") }, { value = "Party", label = T("Group") } }
 end
 
-local function auraCat(d, stack, cat, label, isDebuff)
+-- One aura category card. Since Feature 1 the context is FIXED by the host tab
+-- (sfx = "Raid" on the Raid tab, "Party" on the Group tab) — no more in-card
+-- switch; ALL display knobs read/write the per-context key (<base> .. sfx).
+function auraCat(d, stack, cat, label, isDebuff, sfx)
 	local fieldH = M.controlH + M.fieldGap
 	local R = L.rhythm
 	local s = stack:section(label)
 
-	-- Context state of THIS card: which context the placement box shows/saves.
-	-- "Amount & behavior" is shared and unaffected. Default Raid (label makes it clear).
-	local ctx = "Raid"
-	local function cget(base) return function() return aget(cat, base .. ctx)() end end
-	local function cset(base) return function(v) aset(cat, base .. ctx)(v) end end
+	-- All knobs bind to the host tab's context (sfx) — no in-card switch anymore.
+	local function cget(base) return aget(cat, base .. sfx) end
+	local function cset(base) return aset(cat, base .. sfx) end
 
-	local deps = {}            -- coupled to "Show" (all controls except master + size)
-	local placeRefresh = {}    -- placement controls: re-pull value on context switch
-	local sizeW                -- size slider (additionally coupled to "Auto-Fit")
+	local deps = {}   -- coupled to "Show" (all controls except the master + size)
+	local sizeW       -- size slider (additionally coupled to "Auto-Fit")
 
 	local function refresh()
-		local on = aget(cat, "enabled")() and true or false
+		local on = cget("enabled")() and true or false
 		for _, w in ipairs(deps) do w:SetWidgetEnabled(on) end
-		if sizeW then sizeW:SetWidgetEnabled(on and not aget(cat, "autoFit")()) end
-	end
-	local function switchCtx(v)
-		ctx = v
-		for _, fn in ipairs(placeRefresh) do fn() end
-	end
-	-- Placement control: couple to "Show" + pull to the new value on context switch.
-	local function place(widget, getter)
-		deps[#deps + 1] = widget
-		placeRefresh[#placeRefresh + 1] = function() if widget.SetValueExternal then widget:SetValueExternal(getter()) end end
-		return widget
+		if sizeW then sizeW:SetWidgetEnabled(on and not cget("autoFit")()) end
 	end
 
 	-- "Show" (master) — free in the card, ABOVE the sub-boxes.
 	local mRow = CreateFrame("Frame", nil, d)
-	local cbOn = W.Checkbox(mRow, { label = T("Show"), get = aget(cat, "enabled"),
-		set = function(v) aset(cat, "enabled")(v); refresh() end })
+	local cbOn = W.Checkbox(mRow, { label = T("Show"), get = cget("enabled"),
+		set = function(v) cset("enabled")(v); refresh() end })
 	cbOn:SetPoint("LEFT", mRow, "LEFT", 0, 0)
 	s:place(mRow, M.checkBox, R.afterCheck)
 
-	-- ── Sub-box A: amount & behavior (SHARED for Raid + Group) ───────────
+	-- ── Sub-box A: amount & behavior ─────────────────────────────────────
 	local boxA = s:subgroup({ title = T("Amount & behavior") })
 	local a1, ac = W.Row(d, 2, { height = M.sliderH })
-	local maxW = W.Slider(ac[1], { label = T("Max. icons"), min = 1, max = 8, get = aget(cat, "maxIcons"), set = aset(cat, "maxIcons") })
+	local maxW = W.Slider(ac[1], { label = T("Max. icons"), min = 1, max = 8, get = cget("maxIcons"), set = cset("maxIcons") })
 	maxW:SetAllPoints(ac[1])
-	local spaceW = W.Slider(ac[2], { label = T("Spacing"), min = 0, max = 20, unit = " px", get = aget(cat, "spacing"), set = aset(cat, "spacing") })
+	local spaceW = W.Slider(ac[2], { label = T("Spacing"), min = 0, max = 20, unit = " px", get = cget("spacing"), set = cset("spacing") })
 	spaceW:SetAllPoints(ac[2])
 	deps[#deps + 1] = maxW; deps[#deps + 1] = spaceW
 	boxA:place(a1, M.sliderH, R.row)
 
 	-- Auto-Fit + cooldown swipe (two checkboxes side by side).
 	local a2, ac2 = W.Row(d, 2, { height = M.checkBox })
-	local cbFit = W.Checkbox(ac2[1], { label = T("Auto-fit (size from frame height)"), get = aget(cat, "autoFit"),
-		set = function(v) aset(cat, "autoFit")(v); refresh() end })
+	local cbFit = W.Checkbox(ac2[1], { label = T("Auto-fit (size from frame height)"), get = cget("autoFit"),
+		set = function(v) cset("autoFit")(v); refresh() end })
 	cbFit:SetPoint("LEFT", ac2[1], "LEFT", 0, 0)
-	local cbSwipe = W.Checkbox(ac2[2], { label = T("Cooldown swipe"), get = aget(cat, "showSwipe"), set = aset(cat, "showSwipe") })
+	local cbSwipe = W.Checkbox(ac2[2], { label = T("Cooldown swipe"), get = cget("showSwipe"), set = cset("showSwipe") })
 	cbSwipe:SetPoint("LEFT", ac2[2], "LEFT", 0, 0)
 	deps[#deps + 1] = cbFit; deps[#deps + 1] = cbSwipe
 	boxA:place(a2, M.checkBox, isDebuff and R.row or R.tight)
@@ -736,60 +757,34 @@ local function auraCat(d, stack, cat, label, isDebuff)
 		local a3, ac3 = W.Row(d, 2, { height = fieldH })
 		local filterW = W.Select(ac3[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
 			tooltip = T("Which debuffs are shown. Raid-relevant = Blizzard's default selection."),
-			get = aget(cat, "filterMode"), set = aset(cat, "filterMode") })
+			get = cget("filterMode"), set = cset("filterMode") })
 		filterW:SetAllPoints(ac3[1])
 		deps[#deps + 1] = filterW
 		boxA:place(a3, fieldH, R.tight)
 	end
 	boxA:close()
 
-	-- ── Sub-box B: placement & size (PER CONTEXT — Raid/Group switch) ──
+	-- ── Sub-box B: placement & size ──────────────────────────────────────
 	local boxB = s:subgroup({ title = T("Placement & size") })
-	-- Raid|Group switch on the right of the box header: switches ONLY this box, locally (no scroll up).
-	local ctxSeg = W.Segment(boxB._panel, { options = CTX_OPTS, get = function() return ctx end, set = switchCtx, width = 150, cellH = 26 })
-	ctxSeg:SetPoint("TOPRIGHT", boxB._panel, "TOPRIGHT", -M.subgroupPad, -10)
-	ctxSeg:SetFrameLevel(boxB._panel:GetFrameLevel() + 5)
-	deps[#deps + 1] = ctxSeg
-
 	-- Row: anchor | growth | inside/outside (all controlH-based -> aligned).
 	local b1, bc = W.Row(d, 3, { height = fieldH })
-	place(W.Select(bc[1], { label = T("Position (anchor)"), options = POINT_OPTS, get = cget("anchor"), set = cset("anchor") }), cget("anchor")):SetAllPoints(bc[1])
-	place(W.Select(bc[2], { label = T("Growth direction"), options = GROW_OPTS, get = cget("grow"), set = cset("grow") }), cget("grow")):SetAllPoints(bc[2])
-	place(W.Segment(bc[3], { label = T("Placement"), options = PLACE_OPTS, get = cget("outside"), set = cset("outside") }), cget("outside")):SetAllPoints(bc[3])
+	local anchorW = W.Select(bc[1], { label = T("Position (anchor)"), options = POINT_OPTS, get = cget("anchor"), set = cset("anchor") }); anchorW:SetAllPoints(bc[1])
+	local growW   = W.Select(bc[2], { label = T("Growth direction"), options = GROW_OPTS, get = cget("grow"), set = cset("grow") }); growW:SetAllPoints(bc[2])
+	local outW    = W.Segment(bc[3], { label = T("Placement"), options = PLACE_OPTS, get = cget("outside"), set = cset("outside") }); outW:SetAllPoints(bc[3])
+	deps[#deps + 1] = anchorW; deps[#deps + 1] = growW; deps[#deps + 1] = outW
 	boxB:place(b1, fieldH, R.row)
 
 	-- Row: offset X | offset Y | size (all sliders).
 	local b2, bc2 = W.Row(d, 3, { height = M.sliderH })
-	place(W.Slider(bc2[1], { label = T("Offset X"), min = -80, max = 80, unit = " px", get = cget("offX"), set = cset("offX") }), cget("offX")):SetAllPoints(bc2[1])
-	place(W.Slider(bc2[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px", get = cget("offY"), set = cset("offY") }), cget("offY")):SetAllPoints(bc2[2])
-	sizeW = W.Slider(bc2[3], { label = T("Size"), min = 8, max = 80, unit = " px", get = cget("size"), set = cset("size") })
-	sizeW:SetAllPoints(bc2[3])
-	placeRefresh[#placeRefresh + 1] = function() sizeW:SetValueExternal(cget("size")()) end
+	local offXW = W.Slider(bc2[1], { label = T("Offset X"), min = -80, max = 80, unit = " px", get = cget("offX"), set = cset("offX") }); offXW:SetAllPoints(bc2[1])
+	local offYW = W.Slider(bc2[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px", get = cget("offY"), set = cset("offY") }); offYW:SetAllPoints(bc2[2])
+	sizeW = W.Slider(bc2[3], { label = T("Size"), min = 8, max = 80, unit = " px", get = cget("size"), set = cset("size") }); sizeW:SetAllPoints(bc2[3])
+	deps[#deps + 1] = offXW; deps[#deps + 1] = offYW
 	boxB:place(b2, M.sliderH, R.tight)
 	boxB:close()
 
 	s:close()
 	refresh()
-end
-
--- ---------------------------------------------------------------------------
---  AurasScreen — aura indicators per category (prototype/AceConfig Auras tab).
---  Three categories: own HoTs, Defensives & External, Debuffs.
--- ---------------------------------------------------------------------------
-local function buildAuras(d, stack)
-	stack:gap(L.base.topToToggle)
-	local intro = W.Hint(d, T("Aura indicators on the frame: your own HoTs, Defensives & External, Debuffs. "
-		.. "Amount & behavior apply to raid and group; placement & size are set per context "
-		.. "(Raid/Group switch in the card). Which spells are tracked is set in the "
-		.. "\"Tracking\" tab. Visible in test mode (\"Base\" tab) for preview."), L.tracking.introH)
-	stack:place(intro, L.tracking.introH, L.auras.afterIntro)
-
-	auraCat(d, stack, "hotsOwn",    T("HoTs"),                 false)
-	auraCat(d, stack, "defensives", T("Defensives & External"), false)
-	auraCat(d, stack, "major",      T("Major CDs"),            false)
-	auraCat(d, stack, "debuffs",    T("Debuffs"),              true)
-
-	applyModuleGate(d, rf().enabled) -- module off -> whole Auras screen greyed + locked
 end
 
 -- ---------------------------------------------------------------------------
@@ -844,7 +839,7 @@ local function buildTracking(d, stack)
 	local spec = trkSpec()
 
 	stack:gap(L.base.topToToggle)
-	local intro = W.Hint(d, T("Which spells are tracked as aura icons — display & position are set in the \"Auras\" tab. "
+	local intro = W.Hint(d, T("Which spells are tracked as aura icons — display & position are set per context in the \"Raid\" and \"Group\" tabs. "
 		.. "Your active spec is edited automatically (WoW cannot read talents of other specs; their defaults apply automatically once you play them)."))
 	stack:place(intro, L.tracking.introH, L.tracking.afterIntro)
 
@@ -1417,5 +1412,4 @@ ns.Screens["Click-Cast/Bindings"] = buildClickCast
 ns.Screens["Raidframes/Base"]     = buildBase
 ns.Screens["Raidframes/Raid"]     = function(d, stack) buildRaid(d, stack, "raid") end
 ns.Screens["Raidframes/Group"]    = function(d, stack) buildRaid(d, stack, "party") end
-ns.Screens["Raidframes/Auras"]    = buildAuras
 ns.Screens["Raidframes/Tracking"] = buildTracking

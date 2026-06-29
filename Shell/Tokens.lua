@@ -77,9 +77,11 @@ UI.line = {
 }
 
 -- ---------------------------------------------------------------------------
---  Fonts — bundled under Lumen/Fonts/ (Cinzel + Hanken Grotesk, SIL OFL)
+--  Fonts — bundled under <addon>/Fonts/ (Cinzel + Hanken Grotesk, SIL OFL)
 -- ---------------------------------------------------------------------------
-local FP = [[Interface\AddOns\Lumen\Fonts\]]
+-- Built from the real addon-folder name (ADDON) so the path survives a folder
+-- rename (e.g. Lumen -> LumenUI). ADDON is the first vararg = the folder name.
+local FP = "Interface\\AddOns\\" .. ADDON .. "\\Fonts\\"
 UI.FONT = {
 	cinzelSemi   = FP .. "Cinzel-SemiBold.ttf",
 	cinzelBold   = FP .. "Cinzel-Bold.ttf",
@@ -348,9 +350,6 @@ UI.LAYOUT = {
 	sizeArrange = {         -- Raid/Group: size & arrangement
 		afterSliders = 22,  -- width/height/spacing -> alignment
 		afterAlign   = 52,  -- alignment -> Text — Name
-	},
-	auras = {               -- Auras tab (the row spacings come from rhythm above)
-		afterIntro = 22,    -- intro hint -> first category card
 	},
 	tracking = {            -- Tracking tab (whitelist editor)
 		introH      = 58,   -- height of the multi-line intro hint

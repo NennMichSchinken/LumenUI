@@ -119,26 +119,34 @@ local defaults = {
 				healthTextX = 0, healthTextY = 0,
 			},
 
-			-- Aura indicators (icon system; phase 1: own HoTs). The layout (anchor,
-			-- growth direction, whitelist, toggles) is SHARED across raid/party — only the
-			-- icon size is context-dependent: autoFit derives it from the frame height,
-			-- otherwise the explicit sizeRaid/sizeParty apply. anchor = one of the 9
-			-- WoW points (TOPLEFT…BOTTOMRIGHT); grow = RIGHT|LEFT|UP|DOWN.
-			-- Three categories (HoTs/Defensives/Debuffs), each with its own anchor/growth/size. Default:
-			-- only HoTs on, the rest off + pre-placed in different corners (collision-free when enabled).
-			-- Phase 2 (B2/B3): auras.whitelist[specID][spellID] = "hot"|"def" is seeded LAZILY on
-			-- first entering a spec from HOT_DEFAULTS ("hot") + DEF_DEFAULTS ("def")
+			-- Aura indicators (icon system). Since Feature 1 ALL display knobs are
+			-- per context (raid vs party) — the standalone "Auras" tab is gone; the
+			-- settings live at the bottom of the Raid resp. Group tab, separated per
+			-- context. Every knob therefore exists as <key>Raid / <key>Party:
+			-- enabled/spacing/maxIcons/autoFit/showSwipe + anchor/grow/offX/offY/outside/size
+			-- (+ filterMode for debuffs). autoFit derives the icon size from the frame
+			-- height, otherwise sizeRaid/sizeParty apply. anchor = one of the 9 WoW points
+			-- (TOPLEFT…BOTTOMRIGHT); grow = RIGHT|LEFT|UP|DOWN. The tracked-spell list
+			-- stays SHARED (whitelist, below). Four categories (HoTs/Defensives/Major/Debuffs);
+			-- default only HoTs on, the rest off + pre-placed in different corners
+			-- (collision-free when enabled).
+			-- Phase 2 (B2/B3): auras.whitelist[specID][spellID] = "hot"|"def"|"major" is seeded
+			-- LAZILY on first entering a spec from HOT_DEFAULTS ("hot") + DEF_DEFAULTS ("def")
 			-- (Raidframes.lua, whitelistFor) — deliberately NOT here in the defaults, so the first
 			-- write creates a real profile-owned table (no mutating of the shared defaults).
 			auras = {
 				hotsOwn = {
-					enabled = true,  spacing = 2, maxIcons = 5, autoFit = true, showSwipe = true, hideTooltips = false,
+					enabledRaid = true,  enabledParty = true,
+					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 5, maxIconsParty = 5,
+					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
 					anchorRaid = "BOTTOMLEFT", anchorParty = "BOTTOMLEFT", growRaid = "RIGHT", growParty = "RIGHT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
 				},
 				defensives = {
-					enabled = false, spacing = 2, maxIcons = 3, autoFit = true, showSwipe = true, hideTooltips = false,
+					enabledRaid = false, enabledParty = false,
+					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 3, maxIconsParty = 3,
+					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
 					anchorRaid = "TOPRIGHT", anchorParty = "TOPRIGHT", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
@@ -147,19 +155,23 @@ local defaults = {
 				-- Raidframes.lua). Default anchor TOPLEFT = the last free corner (HoTs=BOTTOMLEFT,
 				-- Defensives=TOPRIGHT, Debuffs=BOTTOMRIGHT) -> collision-free when enabled.
 				major = {
-					enabled = false, spacing = 2, maxIcons = 3, autoFit = true, showSwipe = true, hideTooltips = false,
+					enabledRaid = false, enabledParty = false,
+					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 3, maxIconsParty = 3,
+					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
 					anchorRaid = "TOPLEFT", anchorParty = "TOPLEFT", growRaid = "RIGHT", growParty = "RIGHT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
 				},
 				debuffs = {
-					enabled = false, spacing = 2, maxIcons = 4, autoFit = true, showSwipe = true, hideTooltips = false,
+					enabledRaid = false, enabledParty = false,
+					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 4, maxIconsParty = 4,
+					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
 					anchorRaid = "BOTTOMRIGHT", anchorParty = "BOTTOMRIGHT", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
-					-- Blizzard default filter: "raid" = only raid-relevant debuffs (like Blizzard's
-					-- default), "all" = all, "dispellable" = only self-dispellable.
-					filterMode = "raid",
+					-- Blizzard default filter (per context): "raid" = only raid-relevant debuffs
+					-- (like Blizzard's default), "all" = all, "dispellable" = only self-dispellable.
+					filterModeRaid = "raid", filterModeParty = "raid",
 				},
 			},
 		},
@@ -286,6 +298,23 @@ local function migrateLayout(rf)
 						cat.growRaid = rawget(cat, "growRaid") or g
 						cat.growParty = rawget(cat, "growParty") or g
 						cat.grow = nil
+					end
+				end
+			end
+		end
+		-- v5: aura DISPLAY knobs (enabled/spacing/maxIcons/autoFit/showSwipe/filterMode)
+		-- also moved from shared -> per context (Feature 1). Deliberately NO carry-over
+		-- (fresh defaults, agreed) — just strip the now-obsolete unsuffixed fields so they
+		-- don't linger in saved profiles / exports. hideTooltips is dropped entirely (unused).
+		if not rf._auraDisplayCtxMigrated then
+			rf._auraDisplayCtxMigrated = true
+			local aud = rawget(rf, "auras")
+			if aud then
+				for _, cat in pairs(aud) do
+					if type(cat) == "table" then
+						cat.enabled, cat.spacing, cat.maxIcons = nil, nil, nil
+						cat.autoFit, cat.showSwipe, cat.filterMode = nil, nil, nil
+						cat.hideTooltips = nil
 					end
 				end
 			end

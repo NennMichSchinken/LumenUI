@@ -153,8 +153,9 @@ ns.RegisterLocale("deDE", {
 	["Text Y offset"] = "Text Y-Versatz",
 	["Aggro"] = "Aggro",
 
-	-- ── Auras ────────────────────────────────────────────────────────────
-	["Aura indicators on the frame: your own HoTs, Defensives & External, Debuffs. Amount & behavior apply to raid and group; placement & size are set per context (Raid/Group switch in the card). Which spells are tracked is set in the \"Tracking\" tab. Visible in test mode (\"Base\" tab) for preview."] = "Aura-Indikatoren am Frame: eigene HoTs, Defensives & Externe, Debuffs. Menge & Verhalten gelten für Raid und Gruppe; Platzierung & Größe stellst du pro Kontext ein (Raid/Gruppe-Schalter in der Karte). Welche Spells getrackt werden, regelt der Tab „Tracking\". Im Testmodus (Tab „Base\") zur Vorschau sichtbar.",
+	-- ── Auras (collapsible at the bottom of the Raid/Group tabs) ──────────
+	["Aura indicators"] = "Aura-Indikatoren",
+	["Aura icons on the frame — set separately for this context. Which spells are tracked is shared and set in the \"Tracking\" tab. Visible in test mode (\"Base\" tab) for preview."] = "Aura-Icons am Frame — für diesen Kontext separat eingestellt. Welche Spells getrackt werden, ist gemeinsam und wird im Tab „Tracking\" festgelegt. Im Testmodus (Tab „Base\") zur Vorschau sichtbar.",
 	["HoTs"] = "HoTs",
 	["Defensives & External"] = "Defensives & Externe",
 	["Major CDs"] = "Major CDs",
@@ -175,7 +176,7 @@ ns.RegisterLocale("deDE", {
 	["Dispellable only"] = "Nur dispellbar",
 
 	-- ── Tracking ─────────────────────────────────────────────────────────
-	["Which spells are tracked as aura icons — display & position are set in the \"Auras\" tab. Your active spec is edited automatically (WoW cannot read talents of other specs; their defaults apply automatically once you play them)."] = "Welche Spells als Aura-Icons getrackt werden — Anzeige & Position regelt der Tab „Auras\". Bearbeitet wird automatisch deine aktive Spec (Talente anderer Specs kann WoW nicht auslesen; deren Defaults greifen automatisch, sobald du sie spielst).",
+	["Which spells are tracked as aura icons — display & position are set per context in the \"Raid\" and \"Group\" tabs. Your active spec is edited automatically (WoW cannot read talents of other specs; their defaults apply automatically once you play them)."] = "Welche Spells als Aura-Icons getrackt werden — Anzeige & Position regelst du pro Kontext in den Tabs „Raid\" und „Gruppe\". Bearbeitet wird automatisch deine aktive Spec (Talente anderer Specs kann WoW nicht auslesen; deren Defaults greifen automatisch, sobald du sie spielst).",
 	["Active spec:"] = "Aktive Spec:",
 	["(no spells)"] = "(keine Spells)",
 	["+ Add spell"] = "+ Spell hinzufügen",

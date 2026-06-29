@@ -1960,6 +1960,56 @@ function W.Card(parent)
 end
 
 -- ---------------------------------------------------------------------------
+--  Collapsible — a clickable section-style header bar (gold accent + title +
+--  chevron) that toggles a body. It holds NO content itself: the caller stores
+--  the open state, builds the body below ONLY when open, and re-renders on
+--  toggle (consistent with the Shell's immediate-mode stacker). Chevron points
+--  down when open, right when collapsed. Height = M.sectionHeaderH.
+--  o = { title, open, onToggle(newState) }.
+-- ---------------------------------------------------------------------------
+function W.Collapsible(parent, o)
+	o = o or {}
+	local f = CreateFrame("Button", nil, parent)
+	f:SetHeight(M.sectionHeaderH)
+	UI.Fill(f, C.ink600)
+	UI.Border(f, L.soft, 1, "OVERLAY")
+
+	-- Gold accent bar on the left (like a section card header).
+	local accent = f:CreateTexture(nil, "OVERLAY")
+	accent:SetWidth(M.sectionHeaderBarW)
+	accent:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+	accent:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+	UI.SetColor(accent, C.gold500)
+
+	local title = UI.FS(f, "sectionHead", C.gold300)
+	title:SetPoint("LEFT", f, "LEFT", M.sectionTitleX, 0)
+	title:SetText(o.title or "")
+
+	-- Chevron (two lines): down ▾ when open, right ▸ when collapsed.
+	local chev = CreateFrame("Frame", nil, f)
+	chev:SetSize(12, 8)
+	chev:SetPoint("RIGHT", f, "RIGHT", -M.sectionTitleX, 0)
+	local a = chev:CreateLine(nil, "OVERLAY"); a:SetThickness(1.5)
+	local b = chev:CreateLine(nil, "OVERLAY"); b:SetThickness(1.5)
+	a:SetColorTexture(C.gold300.r, C.gold300.g, C.gold300.b, 1)
+	b:SetColorTexture(C.gold300.r, C.gold300.g, C.gold300.b, 1)
+	if o.open then
+		a:SetStartPoint("CENTER", chev, -4, 2); a:SetEndPoint("CENTER", chev, 0, -2)
+		b:SetStartPoint("CENTER", chev, 0, -2); b:SetEndPoint("CENTER", chev, 4, 2)
+	else
+		a:SetStartPoint("CENTER", chev, -2, 4); a:SetEndPoint("CENTER", chev, 2, 0)
+		b:SetStartPoint("CENTER", chev, 2, 0); b:SetEndPoint("CENTER", chev, -2, -4)
+	end
+
+	-- Hover wash (subtle, like the tracking rows).
+	local hov = UI.Fill(f, C.inkTint, "BORDER"); hov:SetAllPoints(f); hov:SetAlpha(0)
+	f:SetScript("OnEnter", function() hov:SetAlpha(0.5) end)
+	f:SetScript("OnLeave", function() hov:SetAlpha(0) end)
+	f:SetScript("OnClick", function() if o.onToggle then o.onToggle(not o.open) end end)
+	return f
+end
+
+-- ---------------------------------------------------------------------------
 --  GroupPanel — bordered area with a heading + optional inline control on the
 --  right (e.g. a "Show" toggle). o = {title}. Returns (frame, contentFrame).
 --  Height set by the caller (frame:SetHeight); contentFrame fills below.
