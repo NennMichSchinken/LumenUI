@@ -915,11 +915,12 @@ local function buildTracking(d, stack)
 end
 
 -- ===========================================================================
---  Click-Cast screen — mouse bindings ("click on frame") + hovercast (keyboard)
---  in ONE tab, two section cards. Wired against ns.ClickCast (data model + apply
---  stay in the module). Spell selection via W.SpellPicker (real typeahead search),
---  hovercast key via W.KeybindButton. "Out of combat only" now also for the menu
---  (fixes accidental menus in combat — only affects Lumen's frames).
+--  Click-Cast screen — the action CATALOG. One compact row per binding:
+--  [spell-icon | name+hint | keybind | gear options | enable], in two sections
+--  (Standard catalog actions + Custom spells). ONE keybind field per row: a mouse
+--  button casts on CLICK, a keyboard key casts on HOVER (routed automatically by
+--  key type; modifiers captured inline by holding Shift/Ctrl/Alt). Wired against
+--  ns.ClickCast (data model + apply stay in the module).
 -- ===========================================================================
 local function cc() return ns.Lumen.db.profile.clickCast end
 local function CCm() return ns.ClickCast end
@@ -927,36 +928,19 @@ local function ccApply() if CCm() then CCm():ApplyBindings() end end
 
 local ccSelectedSpec  -- which spec is edited (decoupled from the live spec)
 
--- Hovercast (key active only on hover, otherwise the normal action bar) was parked
--- because the old secure key-driver no longer released the key cleanly in 12.0.7 ->
--- an assigned key blocked the action bar. Feature 3 rebuilt it robustly (OnEnter
--- race fix + guarded clear + ClearBindings teardown, see ClickCast.lua applyHover),
--- so the section is shown again.
-local CC_HOVERCAST = true
-
-local CC_MOD_OPTS, CC_ACTION_OPTS
-ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
-	CC_MOD_OPTS = {
-		{ value = "",      label = T("None") },
-		{ value = "SHIFT", label = T("Shift") },
-		{ value = "CTRL",  label = T("Ctrl") },
-		{ value = "ALT",   label = T("Alt") },
-	}
-	CC_ACTION_OPTS = {
-		{ value = "target", label = T("Target") },
-		{ value = "menu",   label = T("Menu") },
-		{ value = "spell",  label = T("Spell") },
-		{ value = "dispel", label = T("Dispel") },
-		{ value = "rez",    label = T("Resurrect") },
-	}
-end
-local function ccMouseOpts()
-	local opts, m = {}, CCm()
-	if m then for _, k in ipairs(m.MOUSE_BUTTON_SORTING) do
-		opts[#opts + 1] = { value = k, label = m.MOUSE_BUTTON_VALUES[k] }
+-- Standard catalog actions still available to add via "+ Add binding". Labels carry
+-- the inline icon + the real spell/trinket name (FontStrings render |T..|t), so the
+-- user sees exactly what they are adding (e.g. the equipped trinket's icon + name).
+-- Standard catalog actions for the action picker (same searchable popover as the
+-- spell picker): {id=type, name=label, icon}. Only the actions the class has.
+local function ccActionFetch()
+	local out, m = {}, CCm()
+	if m then for _, t in ipairs(m.STANDARD_TYPES) do
+		if m:ActionAvailable(t) then out[#out + 1] = { id = t, name = m:ActionLabel(t), icon = m:ActionIcon(t) } end
 	end end
-	return opts
+	return out
 end
+
 -- Spec dropdown with icon (FontStrings render |T..|t inline, like the AceConfig tab).
 local function ccSpecOpts()
 	local opts, m = {}, CCm()
@@ -977,110 +961,121 @@ local function ccSpellFetch()
 	return out
 end
 
--- One binding box (lighter sub-box with a header "key → action" + remove).
--- s = stacker of the section card; b = binding; isHover = hovercast (keyboard).
-local function ccBindingBox(d, s, b, isHover, spec)
-	local LC = L.clickcast
-	local fieldH = M.controlH + M.fieldGap
-	local box = s:subgroup()
+-- One catalog row, drawn as a flush CARD: fill + a 3-SIDED border (top+left+right;
+-- the bottom is drawn only on the LAST row) so adjacent rows share ONE 1px line and
+-- nothing looks doubled. Right cluster (from the RIGHT): [keybind][gear][trash][switch].
+-- Left: a clickable picker (custom = spell, standard = action) using the SAME searchable
+-- popover. Turning the switch OFF dims + LOCKS the row (a cover blocks all but the
+-- switch). Sizes are central in UI.WIDGET (ccRow*/ccKeyW/ccIcon/switch*).
+local function ccCatalogRow(d, s, b, spec, isLast)
+	local m = CCm()
+	local custom = (b.type == "spell")
+	local configured = (b.type and b.type ~= "" and not custom)
+	local H, PAD, GAPX = M.ccRowH, M.ccRowPad, M.ccRowGapX
+	local row = CreateFrame("Frame", nil, d)
+	row:SetHeight(H)
+	UI.Fill(row, C.ink600)
+	-- 3-sided border; thickness PIXEL-SNAPPED (PixelUtil) so the 1px line never vanishes
+	-- at the 0.74 panel scale; position via plain SetPoint (snapping position would be
+	-- the recurring vanishing-border bug). line.mid for a clearly visible separator.
+	local function edge() local t = row:CreateTexture(nil, "OVERLAY"); UI.SetColor(t, UI.line.mid); return t end
+	local et = edge(); PixelUtil.SetHeight(et, 1); et:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0); et:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+	local el = edge(); PixelUtil.SetWidth(el, 1); el:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0); el:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+	local er = edge(); PixelUtil.SetWidth(er, 1); er:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0); er:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+	if isLast then local eb = edge(); PixelUtil.SetHeight(eb, 1); eb:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0); eb:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0) end
 
-	-- Header: ONLY the keycap (combined key/mouse button) + "Remove". Spell name/icon
-	-- deliberately NOT here — the picker button below already shows them (else doubled).
-	local hd = CreateFrame("Frame", nil, d)
-	hd:SetHeight(M.controlH)
-
-	-- Keycap: square (min controlH×controlH), DARKER + stronger gold border +
-	-- CENTERED text -> reads as a "key", not a dropdown (lighter, chevron, left-aligned).
-	local cap = CreateFrame("Frame", nil, hd)
-	cap:SetHeight(M.controlH)
-	cap:SetPoint("LEFT", hd, "LEFT", 0, 0)
-	UI.Fill(cap, C.ink850)
-	UI.Border(cap, UI.line.strong, 1, "OVERLAY")
-	local capTxt = UI.FS(cap, "selectText", C.gold300)
-	capTxt:SetPoint("CENTER", cap, "CENTER", 0, 0)
-	capTxt:SetText((CCm() and CCm():FormatKey(b.key)) or "—")
-	cap:SetWidth(math.max(M.controlH, math.ceil(capTxt:GetStringWidth()) + 20))
-
-	local rm = W.Button(hd, { text = T("Remove"), variant = "danger", width = M.trackRemoveW,
+	-- right cluster (from the RIGHT): trash (delete, FAR right) <- switch <- gear <- keybind
+	local trash = W.IconButton(row, { icon = "icon-delete", color = C.danger500, hoverColor = C.danger300,
+		size = M.switchH,
 		onClick = function()
 			local idx
-			for i, x in ipairs(CCm():GetBindings(spec)) do if x == b then idx = i; break end end
-			if idx then CCm():RemoveBinding(spec, idx) end
+			for i, x in ipairs(m:GetBindings(spec)) do if x == b then idx = i; break end end
+			if idx then m:RemoveBinding(spec, idx) end
 			ns.Shell:RenderContent(true)
 		end })
-	rm:ClearAllPoints(); rm:SetPoint("RIGHT", hd, "RIGHT", 0, 0)
-	box:place(hd, M.controlH, LC.headToRow)
+	trash:SetPoint("RIGHT", row, "RIGHT", -PAD, 0)
 
-	-- Row 1: click = [mouse button | action | modifier]; hover = [key | action | —].
-	local r1, c1 = W.Row(d, 3, { height = fieldH })
-	if isHover then
-		local kb = W.KeybindButton(c1[1], { label = T("Key"),
-			format = function(k) return (CCm() and CCm():FormatKey(k)) or k end,
-			get = function() return b.key end,
-			set = function(v) b.key = v; ccApply(); ns.Shell:RenderContent(true) end })
-		kb:SetAllPoints(c1[1])
-	else
-		local mb = W.Select(c1[1], { label = T("Mouse button"), options = ccMouseOpts(),
-			get = function() local _, btn = CCm():KeyParts(b.key); return (btn ~= "" and btn) or "BUTTON1" end,
-			set = function(v) local mod = CCm():KeyParts(b.key); b.key = CCm():BuildKey(mod, v); ccApply(); ns.Shell:RenderContent(true) end })
-		mb:SetAllPoints(c1[1])
-	end
-	local act = W.Select(c1[2], { label = T("Action"), options = CC_ACTION_OPTS,
-		get = function() return b.type end,
-		set = function(v) b.type = v; ccApply(); ns.Shell:RenderContent(true) end })
-	act:SetAllPoints(c1[2])
-	if not isHover then
-		local mod = W.Select(c1[3], { label = T("Modifier"), options = CC_MOD_OPTS,
-			get = function() local m = CCm():KeyParts(b.key); return m or "" end,
-			set = function(v) local _, btn = CCm():KeyParts(b.key); b.key = CCm():BuildKey(v, (btn ~= "" and btn) or "BUTTON1"); ccApply(); ns.Shell:RenderContent(true) end })
-		mod:SetAllPoints(c1[3])
-	end
-	box:place(r1, fieldH, LC.betweenRows)
+	local sw = W.Switch(row, {
+		get = function() return b.enabled ~= false end,
+		set = function(v) b.enabled = v; ccApply(); if row._setEnabled then row._setEnabled(v) end end })
+	sw:SetPoint("RIGHT", trash, "LEFT", -GAPX, 0)
 
-	-- Row 2 (only action "Spell"): spell picker (searchable/scrollable).
-	if b.type == "spell" then
-		local spIcon = b.spellID and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(b.spellID) or nil
-		local picker = W.SpellPicker(d, {
-			text = b.spell or T("Choose spell …"), icon = spIcon, width = M.spW,
-			fetch = ccSpellFetch,
-			onPick = function(id)
-				b.spellID = id
-				b.spell = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or b.spell
-				ccApply(); ns.Shell:RenderContent(true)
-			end,
-		})
-		box:placeLeft(picker, M.buttonH, LC.betweenRows)
-	end
-
-	-- Row 3: checkboxes. Click: only "Out of combat only" (except action = target).
-	-- Hover: "Friendly only"/"Enemy only" (only spell) + "Out of combat only".
+	-- options gear (only when the row HAS options) in a reserved slot so columns align
 	local defs = {}
-	if isHover and b.type == "spell" then
+	if configured and b.type ~= "target" then
+		defs[#defs + 1] = { label = T("Out of combat only"),
+			tooltip = (b.type == "menu") and T("Prevents accidental menus in combat — only affects Lumen's frames.") or T("Only trigger out of combat."),
+			get = function() return b.oocOnly end, set = function(v) b.oocOnly = v; ccApply() end }
+	end
+	if custom then
 		defs[#defs + 1] = { label = T("Friendly only"), tooltip = T("Only act on friendly units."),
 			get = function() return b.hoverFriendly end, set = function(v) b.hoverFriendly = v; ccApply() end }
 		defs[#defs + 1] = { label = T("Enemy only"), tooltip = T("Only act on enemy units."),
 			get = function() return b.hoverEnemy end, set = function(v) b.hoverEnemy = v; ccApply() end }
 	end
-	if b.type ~= "target" then
-		defs[#defs + 1] = { label = T("Out of combat only"),
-			tooltip = (b.type == "menu") and T("Prevents accidental menus in combat — only affects Lumen's frames.") or T("Only trigger out of combat."),
-			get = function() return b.oocOnly end, set = function(v) b.oocOnly = v; ccApply() end }
-	end
+	local gearSlot = CreateFrame("Frame", nil, row)
+	gearSlot:SetSize(M.switchH, M.switchH)
+	gearSlot:SetPoint("RIGHT", sw, "LEFT", -GAPX, 0)
 	if #defs > 0 then
-		local cr = CreateFrame("Frame", nil, d)
-		cr:SetHeight(M.checkBox)
-		local prev
-		for _, dc in ipairs(defs) do
-			local chk = W.Checkbox(cr, dc)
-			chk:ClearAllPoints()
-			if prev then chk:SetPoint("LEFT", prev, "RIGHT", L.general.checkRowGap, 0)
-			else chk:SetPoint("LEFT", cr, "LEFT", 0, 0) end
-			prev = chk
-		end
-		box:place(cr, M.checkBox, 0)
+		local gear = W.GearPopover(gearSlot, { defs = defs, size = M.switchH })
+		gear:SetPoint("CENTER", gearSlot, "CENTER", 0, 0)
 	end
 
-	box:close()
+	-- keybind — ALL rows editable (incl. Target/Menu, which a user may want to remap).
+	-- bound = thick gold border, unbound = dashed; ESC clears, every mouse button +
+	-- modifiers are bindable.
+	local kb = W.KeybindButton(row, { width = M.ccKeyW,
+		format = function(k) return (m and m:FormatKey(k)) or k end,
+		get = function() return b.key end,
+		set = function(v) b.key = v; ccApply(); ns.Shell:RenderContent(true) end })
+	kb:ClearAllPoints(); kb:SetPoint("RIGHT", gearSlot, "LEFT", -GAPX, 0)
+
+	-- left side (clickable picker, fills from the left padding up to the keybind)
+	local function fillLeft(w)
+		w:ClearAllPoints()
+		w:SetPoint("LEFT", row, "LEFT", PAD, 0)
+		w:SetPoint("RIGHT", kb, "LEFT", -GAPX, 0)
+	end
+	if custom then
+		local icon = b.spellID and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(b.spellID) or nil
+		fillLeft(W.SpellPicker(row, { bare = true,
+			text = b.spell or T("Choose spell …"), icon = icon,
+			fetch = ccSpellFetch,
+			onPick = function(id)
+				b.spellID = id
+				b.spell = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or b.spell
+				ccApply(); ns.Shell:RenderContent(true)
+			end }))
+	else
+		-- standard row — a clickable action picker (SAME searchable popover as the spell
+		-- rows). Configured shows the action's icon + name + grey hint; click to change.
+		local label
+		if configured then
+			local hint = m and m:ActionHint(b.type)
+			label = ((m and m:ActionLabel(b.type)) or b.type)
+				.. (hint and ("  |cff8c8472— " .. hint .. "|r") or "")
+		else
+			label = T("Choose action …")
+		end
+		fillLeft(W.SpellPicker(row, { bare = true,
+			icon = configured and m and m:ActionIcon(b.type) or nil, text = label,
+			searchPlaceholder = T("Search action …"), fetch = ccActionFetch,
+			onPick = function(v) b.type = v; ccApply(); ns.Shell:RenderContent(true) end }))
+	end
+
+	-- dim + LOCK when disabled: a dark cover over everything except the switch.
+	local cover = CreateFrame("Button", nil, row)
+	cover:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+	cover:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 1, 1) -- full row HEIGHT (not the switch's)
+	cover:SetPoint("RIGHT", sw, "LEFT", -GAPX, 0)          -- horizontally up to the switch
+	cover:SetFrameLevel(row:GetFrameLevel() + 60)
+	cover:EnableMouse(true)
+	local covTex = cover:CreateTexture(nil, "OVERLAY"); covTex:SetAllPoints(cover)
+	covTex:SetColorTexture(C.ink850.r, C.ink850.g, C.ink850.b, 0.55)
+	row._setEnabled = function(on) cover:SetShown(not on) end
+	row._setEnabled(b.enabled ~= false)
+
+	s:place(row, H, M.ccRowGap)
 end
 
 local function buildClickCast(d, stack)
@@ -1089,35 +1084,40 @@ local function buildClickCast(d, stack)
 	local spec = ccSelectedSpec
 	if not spec and m then spec = m:CurrentSpecID(); ccSelectedSpec = spec end
 
-	-- Master (free above everything) — like "Raidframes enabled".
+	-- Top row: master toggle (LEFT) + the Spec dropdown (RIGHT, top edge), both free
+	-- above the gateable body. The master checkbox is vertically centered on the
+	-- dropdown control (which sits in the bottom controlH of the row, below its label).
 	local outerStack = stack
 	local body
 	stack:gap(LC.topToHead)
-	local mRow = CreateFrame("Frame", nil, d)
-	local cbMaster = W.Checkbox(mRow, { label = T("Click-cast enabled"),
+	local topRow = CreateFrame("Frame", nil, d)
+	local topH = M.controlH + M.fieldGap
+	topRow:SetHeight(topH)
+	local specSel -- forward ref so the master toggle can grey it out too
+	local cbMaster = W.Checkbox(topRow, { label = T("Click-cast enabled"),
 		tooltip = T("Takes over clicks on the raid frame buttons. Off = WoW default (left = target, right = menu)."),
 		get = function() return cc().enabled end,
-		set = function(v) cc().enabled = v; ccApply(); applyModuleGate(body, v) end })
-	cbMaster:SetPoint("LEFT", mRow, "LEFT", 0, 0)
-	stack:place(mRow, M.checkBox, LC.afterMaster)
+		set = function(v)
+			cc().enabled = v; ccApply(); applyModuleGate(body, v)
+			if specSel then specSel:SetWidgetEnabled(v) end -- Spec lives outside the body gate
+		end })
+	cbMaster:ClearAllPoints()
+	cbMaster:SetPoint("BOTTOMLEFT", topRow, "BOTTOMLEFT", 0, (M.controlH - M.checkBox) / 2)
+	specSel = W.Select(topRow, { label = T("Spec (edit)"), options = ccSpecOpts(), placeholder = T("No spec"),
+		tooltip = T("Which spec you edit here. In game, the bindings of your active spec apply automatically."),
+		get = function() return ccSelectedSpec end,
+		set = function(v) ccSelectedSpec = v; ns.Shell:RenderContent(true) end })
+	specSel:SetWidth(M.ccSpecW)
+	specSel:ClearAllPoints(); specSel:SetPoint("TOPRIGHT", topRow, "TOPRIGHT", 0, 0)
+	specSel:SetWidgetEnabled(cc().enabled) -- initial state
+	stack:place(topRow, topH, LC.afterMaster)
 
 	-- Everything else into a gateable body frame (when "off" dimmed + locked).
 	body = CreateFrame("Frame", nil, d)
 	local bstack = ns.Shell.NewStack(body)
 	d, stack = body, bstack
 
-	-- Spec selection (decoupled from the live spec) — grid-aligned in column 1.
-	local sr, sc = W.Row(d, 3, { height = M.controlH + M.fieldGap })
-	W.Select(sc[1], { label = T("Spec (edit)"), options = ccSpecOpts(), placeholder = T("No spec"),
-		tooltip = T("Which spec you edit here. In game, the bindings of your active spec apply automatically."),
-		get = function() return ccSelectedSpec end,
-		set = function(v) ccSelectedSpec = v; ns.Shell:RenderContent(true) end }):SetAllPoints(sc[1])
-	stack:place(sr, M.controlH + M.fieldGap, LC.afterSpec)
-
-	local specHint = W.Hint(d, T("Active spec in game:") .. "  " .. ((m and m:CurrentSpecName()) or "?")
-		.. "  —  " .. T("the bindings of your active spec apply automatically."), 22)
-	stack:place(specHint, 22, LC.afterCaption)
-
+	-- "Show only helpful spells" filter (left).
 	local hRow = CreateFrame("Frame", nil, d)
 	hRow:SetHeight(M.checkBox)
 	local cbHelpful = W.Checkbox(hRow, { label = T("Show only helpful spells for selection"),
@@ -1128,44 +1128,46 @@ local function buildClickCast(d, stack)
 
 	local bindings = (m and m:GetBindings(spec)) or {}
 
-	-- ===== Click on frame ==================================================
-	local sClick = stack:section(T("Click on frame"))
-	local anyClick = false
+	-- ===== Standard bindings (predefined catalog) ==========================
+	-- Light section divider (not the heavy header-bar card) + each binding as its own
+	-- card row, like the mockup.
+	stack:place(W.SectionLabel(d, T("Standard bindings")), M.dividerH, LC.afterCaption)
+	local stdRows = {}
 	for _, b in ipairs(bindings) do
-		if not b.hovercast then anyClick = true; ccBindingBox(d, sClick, b, false, spec) end
+		if b.type ~= "spell" and m and m:ActionAvailable(b.type) then stdRows[#stdRows + 1] = b end
 	end
-	if not anyClick then
-		sClick:place(W.Hint(d, T("(no bindings)")), LC.emptyH, LC.afterList)
-	end
-	local addClick = W.Button(d, { text = T("+ Add click binding"), variant = "ghost",
+	for i, b in ipairs(stdRows) do ccCatalogRow(d, stack, b, spec, i == #stdRows) end
+	if #stdRows == 0 then stack:place(W.Hint(d, T("(no bindings)")), LC.emptyH, LC.afterList) end
+	-- "+ Add binding" = green button; adds a new (action-not-yet-chosen) row, like
+	-- "+ Add spell". You then pick the action right in the row (no popover dropdown).
+	stack:gap(M.ccAddGap) -- breathing room off the last row
+	local addStd = W.Button(d, { text = T("+ Add binding"), variant = "success",
 		onClick = function()
-			if m then m:AddBinding(spec, { key = "BUTTON3", type = "spell" }) end
+			if m then m:AddBinding(spec, { type = "", key = "", enabled = true }) end
 			ns.Shell:RenderContent(true)
 		end })
-	sClick:placeLeft(addClick, M.buttonH, 0)
-	sClick:close()
+	stack:placeLeft(addStd, M.buttonH, LC.afterHelpful)
 
-	-- ===== Hovercast (mouseover) — P2, hidden until 12.1.0 (see CC_HOVERCAST) =====
-	if CC_HOVERCAST then
-		local sHover = stack:section(T("Hovercast (mouseover)"))
-		local intro = W.Hint(d, T("Press a key while the mouse hovers over a unit — the action goes to "
-			.. "the hovered unit, without a click. The key only works while hovering; otherwise it does its normal thing."), LC.introH)
-		sHover:place(intro, LC.introH, LC.afterIntro)
-		local anyHover = false
-		for _, b in ipairs(bindings) do
-			if b.hovercast then anyHover = true; ccBindingBox(d, sHover, b, true, spec) end
-		end
-		if not anyHover then
-			sHover:place(W.Hint(d, T("(no bindings)")), LC.emptyH, LC.afterList)
-		end
-		local addHover = W.Button(d, { text = T("+ Add hovercast key"), variant = "ghost",
-			onClick = function()
-				if m then m:AddBinding(spec, { hovercast = true, type = "spell", hoverFriendly = true }) end
-				ns.Shell:RenderContent(true)
-			end })
-		sHover:placeLeft(addHover, M.buttonH, 0)
-		sHover:close()
+	-- ===== Custom spells ===================================================
+	stack:place(W.SectionLabel(d, T("Custom spells")), M.dividerH, LC.afterCaption)
+	local cusRows = {}
+	for _, b in ipairs(bindings) do
+		if b.type == "spell" then cusRows[#cusRows + 1] = b end
 	end
+	for i, b in ipairs(cusRows) do ccCatalogRow(d, stack, b, spec, i == #cusRows) end
+	if #cusRows == 0 then stack:place(W.Hint(d, T("(no bindings)")), LC.emptyH, LC.afterList) end
+	stack:gap(M.ccAddGap) -- breathing room off the last row
+	local addSpell = W.Button(d, { text = T("+ Add spell"), variant = "success",
+		onClick = function()
+			if m then m:AddBinding(spec, { type = "spell", key = "", enabled = true }) end
+			ns.Shell:RenderContent(true)
+		end })
+	stack:placeLeft(addSpell, M.buttonH, LC.afterHelpful)
+
+	-- Footnote: how the one keybind field routes click vs hover + the modifier trick.
+	local note = W.Hint(d, T("Mouse button = cast on click, keyboard key = cast on hover (routed automatically). "
+		.. "Hold Shift, Ctrl or Alt while setting a key to add a modifier."), 34)
+	stack:place(note, 34, 0)
 
 	outerStack:place(body, bstack:height(), 0)
 	applyModuleGate(body, cc().enabled) -- Click-Cast off -> everything below the master greyed + locked

@@ -16,6 +16,8 @@ local ADDON, ns = ...
 local UI = ns.UI
 local C, L, S, M = UI.C, UI.line, UI.S, UI.WIDGET
 local T = ns.T   -- localization: T("english") -> display in the active language
+-- Texture folder, built from the real addon-folder name (survives a rename).
+local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
 
 local W = {}
 ns.W = W
@@ -77,6 +79,74 @@ function W.SectionDivider(parent, text, small)
 	rr:SetPoint("TOP", head, "CENTER", 0, 0)
 	f._head = head
 	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  SectionLabel — LEFT-aligned small gold heading + a single gold rule fading out
+--  to the right (the lighter, elegant section divider; vs the heavy header-bar card
+--  of stack:section). Height ~ dividerH.
+-- ---------------------------------------------------------------------------
+function W.SectionLabel(parent, text)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(M.dividerH)
+	local head = UI.FS(f, "subDivider", C.gold300)
+	head:SetText(text)
+	head:SetPoint("LEFT", f, "LEFT", 0, 0)
+	-- 2px gold rule fading to the right — visible but elegant (the 1px gradient line
+	-- read as too faint). Strong near the heading, pales toward the right edge.
+	local rule = f:CreateTexture(nil, "ARTWORK")
+	rule:SetHeight(2)
+	rule:SetColorTexture(1, 1, 1, 1)
+	rule:SetGradient("HORIZONTAL",
+		CreateColor(C.gold500.r, C.gold500.g, C.gold500.b, 0.45),
+		CreateColor(C.gold500.r, C.gold500.g, C.gold500.b, 0.05))
+	rule:SetPoint("LEFT", head, "RIGHT", M.dividerGap, 0)
+	rule:SetPoint("RIGHT", f, "RIGHT", 0, 0)
+	rule:SetPoint("TOP", head, "CENTER", 0, 0)
+	f._head = head
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  SquareIcon — square spell/item icon chip with a clear gold border. :SetIcon(tex)
+--  (nil = neutral fill). The standard left tile of the Click-Cast catalog rows.
+-- ---------------------------------------------------------------------------
+function W.SquareIcon(parent, size)
+	local t = CreateFrame("Frame", nil, parent)
+	t:SetSize(size, size)
+	UI.Fill(t, C.ink850)
+	UI.Border(t, L.strong, 1, "OVERLAY")
+	local tex = t:CreateTexture(nil, "ARTWORK")
+	tex:SetPoint("TOPLEFT", t, "TOPLEFT", 1, -1)
+	tex:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -1, 1)
+	tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	t.tex = tex
+	function t:SetIcon(icon)
+		if icon then tex:SetTexture(icon)
+		else tex:SetColorTexture(C.ink700.r, C.ink700.g, C.ink700.b, 1) end
+	end
+	return t
+end
+
+-- ---------------------------------------------------------------------------
+--  IconButton — small square button showing a tinted texture from Textures/ (e.g.
+--  the red delete bin). o = { icon (file name, no ext), color?, hoverColor?, size?,
+--  onClick, tooltip? }.
+-- ---------------------------------------------------------------------------
+function W.IconButton(parent, o)
+	local b = CreateFrame("Button", nil, parent)
+	local sz = o.size or M.switchH
+	b:SetSize(sz, sz)
+	local tex = b:CreateTexture(nil, "ARTWORK")
+	tex:SetAllPoints(b)
+	tex:SetTexture(TEX .. o.icon)
+	local col, hov = o.color or C.gold300, o.hoverColor or C.gold100
+	tex:SetVertexColor(col.r, col.g, col.b, 1)
+	b:SetScript("OnEnter", function() tex:SetVertexColor(hov.r, hov.g, hov.b, 1); if o.tooltip then W.ShowTextTip(b, o.tooltip) end end)
+	b:SetScript("OnLeave", function() tex:SetVertexColor(col.r, col.g, col.b, 1); if o.tooltip then W.HideTip() end end)
+	if o.onClick then b:SetScript("OnClick", o.onClick) end
+	b._tex = tex
+	return b
 end
 
 -- ---------------------------------------------------------------------------
@@ -619,26 +689,40 @@ function W.SpellPicker(parent, o)
 
 	local closeMenu -- forward declaration (row click calls it)
 
-	-- Trigger button: inset field with gold border + gold text (like in the mockup).
+	-- Trigger button. bare = catalog-row style (square gold icon tile + plain name,
+	-- no field chrome) so a custom-spell row matches the standard rows + the spell
+	-- icon sits in FRONT. Otherwise = inset field with gold border (the "+ Add" look).
 	local btn = CreateFrame("Button", nil, f)
 	btn:SetAllPoints(f)
-	UI.Fill(btn, C.ink700)
-	local bEdges = UI.Border(btn, L.mid, 1, "OVERLAY")
-	local bTxt = UI.FS(btn, "btn", C.gold300)
-	bTxt:SetFont(UI.FONT.hankenSemi, 16, "")
-	bTxt:SetText(o.text or T("+ Add"))
-	-- With o.icon (chosen spell): icon on the left + text left-aligned next to it; otherwise centered.
-	if o.icon then
-		local bIcon = btn:CreateTexture(nil, "ARTWORK")
-		bIcon:SetSize(M.trackIcon, M.trackIcon)
-		bIcon:SetPoint("LEFT", btn, "LEFT", 10, 0)
-		bIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		bIcon:SetTexture(o.icon)
-		bTxt:SetPoint("LEFT", bIcon, "RIGHT", 8, 0)
-		bTxt:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
+	local bEdges = {}
+	local bTxt
+	if o.bare then
+		local tile = W.SquareIcon(btn, M.ccIcon)
+		tile:SetPoint("LEFT", btn, "LEFT", 0, 0)
+		tile:SetIcon(o.icon)
+		bTxt = UI.FS(btn, "selectText", o.icon and C.gold300 or C.textMuted)
+		bTxt:SetPoint("LEFT", tile, "RIGHT", 10, 0)
+		bTxt:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
 		bTxt:SetJustifyH("LEFT"); bTxt:SetWordWrap(false)
+		bTxt:SetText(o.text or T("+ Add"))
 	else
-		bTxt:SetPoint("CENTER", btn, "CENTER", 0, 0)
+		UI.Fill(btn, C.ink700)
+		bEdges = UI.Border(btn, L.mid, 1, "OVERLAY")
+		bTxt = UI.FS(btn, "btn", C.gold300)
+		bTxt:SetFont(UI.FONT.hankenSemi, 16, "")
+		bTxt:SetText(o.text or T("+ Add"))
+		if o.icon then
+			local bIcon = btn:CreateTexture(nil, "ARTWORK")
+			bIcon:SetSize(M.trackIcon, M.trackIcon)
+			bIcon:SetPoint("LEFT", btn, "LEFT", 10, 0)
+			bIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+			bIcon:SetTexture(o.icon)
+			bTxt:SetPoint("LEFT", bIcon, "RIGHT", 8, 0)
+			bTxt:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
+			bTxt:SetJustifyH("LEFT"); bTxt:SetWordWrap(false)
+		else
+			bTxt:SetPoint("CENTER", btn, "CENTER", 0, 0)
+		end
 	end
 	f._control = btn
 
@@ -673,7 +757,7 @@ function W.SpellPicker(parent, o)
 	search:SetTextInsets(10, 10, 0, 0)
 	search:SetAutoFocus(false)
 	local ph = UI.FS(search, "label", C.textMuted)
-	ph:SetText(T("Search spell …"))
+	ph:SetText(o.searchPlaceholder or T("Search spell …"))
 	ph:SetPoint("LEFT", search, "LEFT", 10, 0)
 
 	-- Scroll list ---------------------------------------------------------
@@ -752,6 +836,10 @@ function W.SpellPicker(parent, o)
 		if i == 1 then r:SetPoint("TOP", child, "TOP", 0, 0)
 		else r:SetPoint("TOP", rows[i - 1], "BOTTOM", 0, 0) end
 		local wash = r:CreateTexture(nil, "BACKGROUND"); wash:SetAllPoints(r); wash:SetColorTexture(0, 0, 0, 0)
+		r._base = { 0, 0, 0, 0 } -- zebra base colour (set per VISIBLE row in populate)
+		local sep = r:CreateTexture(nil, "ARTWORK"); sep:SetHeight(1)
+		sep:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 8, 0); sep:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -8, 0)
+		UI.SetColor(sep, L.faint)
 		local bar = r:CreateTexture(nil, "ARTWORK"); bar:SetWidth(3)
 		bar:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0); bar:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
 		UI.SetColor(bar, C.gold500); bar:Hide()
@@ -771,7 +859,8 @@ function W.SpellPicker(parent, o)
 			W.ShowSpellTip(self2, self2._id) -- own Lumen tooltip
 		end)
 		r:SetScript("OnLeave", function(self2)
-			self2._wash:SetColorTexture(0, 0, 0, 0); self2._bar:Hide()
+			local b = self2._base
+			self2._wash:SetColorTexture(b[1], b[2], b[3], b[4]); self2._bar:Hide()
 			self2._name:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
 			W.HideTip()
 		end)
@@ -795,7 +884,11 @@ function W.SpellPicker(parent, o)
 				r._id = e.id
 				r._icon:SetTexture(e.icon or 136243)
 				r._name:SetText(e.name or ("Spell " .. tostring(e.id)))
-				r._wash:SetColorTexture(0, 0, 0, 0); r._bar:Hide()
+				-- zebra: ALL rows get a fill (both shades darker than the menu bg) so the
+				-- list reads as cells, alternating per VISIBLE row.
+				if n % 2 == 0 then r._base = { C.ink700.r, C.ink700.g, C.ink700.b, 1 }
+				else r._base = { C.ink600.r, C.ink600.g, C.ink600.b, 1 } end
+				r._wash:SetColorTexture(r._base[1], r._base[2], r._base[3], r._base[4]); r._bar:Hide()
 				r._name:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
 				r:Show()
 			end
@@ -1173,6 +1266,49 @@ function W.Checkbox(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
+--  Switch — square on/off toggle (gold-filled track + knob slides right when on).
+--  Reusable for any boolean (rows here, more options later). o = { get, set }.
+--  Square corners per the Lumen design line (no pills/radii).
+-- ---------------------------------------------------------------------------
+function W.Switch(parent, o)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(M.switchW, M.switchH)
+	local track = b:CreateTexture(nil, "BACKGROUND")
+	track:SetAllPoints(b)
+	local edges = UI.Border(b, L.mid, 1, "OVERLAY")
+	local pad = M.switchKnobPad
+	local kS = M.switchH - pad * 2
+	local knob = b:CreateTexture(nil, "OVERLAY")
+	knob:SetSize(kS, kS)
+
+	local val = (o.get and o.get()) or false
+	local function apply(on)
+		knob:ClearAllPoints()
+		if on then
+			UI.SetColor(track, C.gold500)
+			for _, e in ipairs(edges) do UI.SetColor(e, C.gold500) end
+			knob:SetPoint("RIGHT", b, "RIGHT", -pad, 0)
+			knob:SetColorTexture(C.ink850.r, C.ink850.g, C.ink850.b, 1) -- dark knob on gold
+		else
+			track:SetColorTexture(C.ink700.r, C.ink700.g, C.ink700.b, 1)
+			for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
+			knob:SetPoint("LEFT", b, "LEFT", pad, 0)
+			knob:SetColorTexture(C.textMuted.r, C.textMuted.g, C.textMuted.b, 1)
+		end
+	end
+	apply(val)
+
+	b:SetScript("OnEnter", function() if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end end
+		if o.tooltip then W.ShowTextTip(b, o.tooltip) end end)
+	b:SetScript("OnLeave", function() if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
+		if o.tooltip then W.HideTip() end end)
+	b:SetScript("OnClick", function() val = not val; apply(val); if o.set then o.set(val) end end)
+	b.SetValueExternal = function(_, v) val = v; apply(v) end
+	b.SetWidgetEnabled = function(_, on) b:SetAlpha(on and 1 or 0.35); b:EnableMouse(on) end
+	return b
+end
+
+-- ---------------------------------------------------------------------------
 --  Segment — compact multi-toggle (gold-filled active cell). ONE component,
 --  used multiple times: Raid|Group context switch AND inside|outside.
 --  o = { label?, options = {{value,label},…} (or strings), get, set, value,
@@ -1298,6 +1434,56 @@ end
 local activeCapture
 function W.StopActiveKeybind() if activeCapture then activeCapture() end end
 
+-- Dashed rectangle border made of small textures along the 4 edges (WoW has no
+-- dashed-line primitive). Rebuilds on size change (anchored frames have 0 size at
+-- build time). Returns { Show, Hide, SetColor }. Used for the unbound keybind field.
+local function makeDashedEdges(frame, dashLen, gapLen)
+	local tex, color, shown = {}, L.mid, false
+	local thick = M.kbDashThick
+	local function rebuild()
+		for _, t in ipairs(tex) do t:Hide(); t:SetParent(nil) end
+		wipe(tex)
+		local fw, fh = frame:GetWidth(), frame:GetHeight()
+		if not fw or fw < 2 or not fh or fh < 2 then return end
+		local period = dashLen + gapLen
+		-- Pixel-snap the THICKNESS (PixelUtil) so dashes never vanish at panel scale;
+		-- position via plain SetPoint (snapping position is the vanishing-border bug).
+		local function hdash(len, px, py)
+			local t = frame:CreateTexture(nil, "OVERLAY")
+			t:SetColorTexture(color.r, color.g, color.b, color.a or 1)
+			t:SetWidth(len); PixelUtil.SetHeight(t, thick)
+			t:SetPoint("TOPLEFT", frame, "TOPLEFT", px, -py)
+			t:SetShown(shown); tex[#tex + 1] = t
+		end
+		local function vdash(len, px, py)
+			local t = frame:CreateTexture(nil, "OVERLAY")
+			t:SetColorTexture(color.r, color.g, color.b, color.a or 1)
+			PixelUtil.SetWidth(t, thick); t:SetHeight(len)
+			t:SetPoint("TOPLEFT", frame, "TOPLEFT", px, -py)
+			t:SetShown(shown); tex[#tex + 1] = t
+		end
+		local x = 0
+		while x < fw do
+			local w = math.min(dashLen, fw - x)
+			hdash(w, x, 0); hdash(w, x, fh - thick)
+			x = x + period
+		end
+		local y = 0
+		while y < fh do
+			local h = math.min(dashLen, fh - y)
+			vdash(h, 0, y); vdash(h, fw - thick, y)
+			y = y + period
+		end
+	end
+	frame:HookScript("OnSizeChanged", rebuild)
+	rebuild()
+	return {
+		SetColor = function(c) color = c; for _, t in ipairs(tex) do t:SetColorTexture(c.r, c.g, c.b, c.a or 1) end end,
+		Show = function() shown = true; if #tex == 0 then rebuild() end; for _, t in ipairs(tex) do t:Show() end end,
+		Hide = function() shown = false; for _, t in ipairs(tex) do t:Hide() end end,
+	}
+end
+
 function W.KeybindButton(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	if o.width then f:SetWidth(o.width) end
@@ -1317,13 +1503,16 @@ function W.KeybindButton(parent, o)
 	btn:RegisterForClicks("AnyUp")
 	btn:EnableKeyboard(false) -- idle state: NO keyboard capture (else the button eats movement/action bar)
 	UI.Fill(btn, C.ink700)
-	local edges = UI.Border(btn, L.soft, 1, "OVERLAY")
+	-- Border per state: thick SOLID gold when a key is set (or while capturing),
+	-- DASHED gold when unbound (mockup look).
+	local solid = UI.Border(btn, C.gold500, M.kbBoundThick, "OVERLAY")
+	local dashed = makeDashedEdges(btn, M.kbDashLen, M.kbDashGap)
 	f._control = btn
 
 	local lbl = UI.FS(btn, "selectText", C.gold300)
-	lbl:SetPoint("LEFT", btn, "LEFT", 12, 0)
-	lbl:SetPoint("RIGHT", btn, "RIGHT", -12, 0)
-	lbl:SetJustifyH("LEFT"); lbl:SetWordWrap(false)
+	lbl:SetPoint("LEFT", btn, "LEFT", 10, 0)
+	lbl:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
+	lbl:SetJustifyH("CENTER"); lbl:SetWordWrap(false)
 
 	local cur = (o.get and o.get()) or ""
 	local listening = false
@@ -1331,6 +1520,15 @@ function W.KeybindButton(parent, o)
 		if k == "" then return o.placeholder or T("Set key …") end
 		if o.format then return o.format(k) end
 		return k
+	end
+	local function setBorder()
+		if listening or cur ~= "" then
+			for _, e in ipairs(solid) do UI.SetColor(e, C.gold500); e:Show() end
+			dashed.Hide()
+		else
+			for _, e in ipairs(solid) do e:Hide() end
+			dashed.SetColor(L.mid); dashed.Show()
+		end
 	end
 	local function refresh()
 		if listening then
@@ -1341,6 +1539,7 @@ function W.KeybindButton(parent, o)
 			local col = (cur ~= "") and C.gold300 or C.textMuted
 			lbl:SetTextColor(col.r, col.g, col.b)
 		end
+		setBorder()
 	end
 	refresh()
 
@@ -1353,8 +1552,7 @@ function W.KeybindButton(parent, o)
 		-- context); we never touch it here / on a timer (see OnKeyDown note).
 		btn:EnableKeyboard(false)
 		btn:EnableMouseWheel(false)
-		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
-		refresh()
+		refresh() -- updates label + border state (setBorder)
 	end
 	local function startListen()
 		if listening then return end
@@ -1363,8 +1561,7 @@ function W.KeybindButton(parent, o)
 		activeCapture = stopListen
 		btn:EnableKeyboard(true) -- keys now reach OnKeyDown, which decides pass-through vs consume
 		btn:EnableMouseWheel(true)
-		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
-		refresh()
+		refresh() -- updates label + border state (setBorder)
 	end
 	local function commit(key)
 		cur = key
@@ -1374,8 +1571,10 @@ function W.KeybindButton(parent, o)
 
 	btn:SetScript("OnClick", function(_, button)
 		if not listening then startListen(); return end
-		if button == "RightButton" then stopListen()
-		elseif button == "LeftButton" then commit(kbWithMods("BUTTON1"))
+		-- ALL mouse buttons (incl. right click, with held modifiers) are bindable here.
+		-- Right click no longer cancels — clearing is ESC (see OnKeyDown).
+		if button == "LeftButton" then commit(kbWithMods("BUTTON1"))
+		elseif button == "RightButton" then commit(kbWithMods("BUTTON2"))
 		elseif button == "MiddleButton" then commit(kbWithMods("BUTTON3"))
 		elseif button == "Button4" then commit(kbWithMods("BUTTON4"))
 		elseif button == "Button5" then commit(kbWithMods("BUTTON5")) end
@@ -1391,15 +1590,21 @@ function W.KeybindButton(parent, o)
 		if not listening then self:SetPropagateKeyboardInput(true); return end
 		if KB_IGNORE[key] then self:SetPropagateKeyboardInput(true); return end
 		self:SetPropagateKeyboardInput(false)
-		if key == "ESCAPE" then stopListen(); return end
+		if key == "ESCAPE" then commit(""); return end -- ESC CLEARS the binding ("Set key …")
 		commit(kbWithMods(key))
 	end)
 	btn:SetScript("OnMouseWheel", function(_, delta)
 		if not listening then return end
 		commit(kbWithMods(delta > 0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN"))
 	end)
-	btn:SetScript("OnEnter", function() if not listening then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end end)
-	btn:SetScript("OnLeave", function() if not listening then for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end end end)
+	btn:SetScript("OnEnter", function()
+		if listening then return end
+		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, C.gold400) end else dashed.SetColor(L.strong) end
+	end)
+	btn:SetScript("OnLeave", function()
+		if listening then return end
+		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, C.gold500) end else dashed.SetColor(L.mid) end
+	end)
 	btn:HookScript("OnHide", stopListen)
 
 	f.SetValueExternal = function(_, v) cur = v or ""; refresh() end
@@ -1409,6 +1614,82 @@ function W.KeybindButton(parent, o)
 		if not on then stopListen() end
 	end
 	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  GearPopover — a gold settings-cog button (Textures/icon-settings.tga, a white
+--  Icons8 "settings" glyph tinted gold via vertex color) that opens a floating
+--  options popover: a stack of checkboxes + an optional danger "Remove" action at
+--  the bottom. Floats on the menu host so the ScrollFrame can't clip it (W.Select
+--  pattern). Checkbox set callbacks apply only (NOT RenderContent) so the popover
+--  survives the click. o = { defs = { {label,tooltip?,get,set}, ... }, onRemove?,
+--  removeText?, size? }
+-- ---------------------------------------------------------------------------
+function W.GearPopover(parent, o)
+	local sz = o.size or M.ccGearSize
+	local btn = CreateFrame("Button", nil, parent)
+	btn:SetSize(sz, sz)
+	local icon = btn:CreateTexture(nil, "ARTWORK")
+	icon:SetAllPoints(btn)
+	icon:SetTexture(TEX .. "icon-settings")
+	icon:SetVertexColor(C.gold300.r, C.gold300.g, C.gold300.b, 1)
+	btn:SetScript("OnEnter", function() icon:SetVertexColor(C.gold100.r, C.gold100.g, C.gold100.b, 1) end)
+	btn:SetScript("OnLeave", function() icon:SetVertexColor(C.gold300.r, C.gold300.g, C.gold300.b, 1) end)
+
+	local host = W._menuHost or parent
+	local closer = CreateFrame("Button", nil, host)
+	closer:SetAllPoints(UIParent)
+	closer:SetFrameStrata("FULLSCREEN_DIALOG")
+	closer:Hide()
+
+	local pop = CreateFrame("Frame", nil, host)
+	pop:SetFrameStrata("FULLSCREEN_DIALOG")
+	pop:SetFrameLevel(closer:GetFrameLevel() + 10)
+	pop:Hide()
+	UI.Fill(pop, C.ink550)
+	UI.Border(pop, L.mid, 1, "OVERLAY")
+	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = pop end
+
+	local function closePop() pop:Hide(); closer:Hide() end
+	closer:SetScript("OnClick", closePop)
+
+	local pad, gap, rowH = 12, 8, M.checkBox
+	local y, maxw = -pad, 1
+	local function placeTop(w) w:ClearAllPoints(); w:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y); y = y - rowH - gap end
+	for _, d in ipairs(o.defs) do
+		local cb = W.Checkbox(pop, d)
+		placeTop(cb)
+		local w = cb:GetWidth() or 1; if w > maxw then maxw = w end
+	end
+	if o.onRemove then
+		if #o.defs > 0 then
+			local sep = pop:CreateTexture(nil, "OVERLAY")
+			PixelUtil.SetHeight(sep, 1)
+			sep:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y + gap * 0.5)
+			sep:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y + gap * 0.5)
+			UI.SetColor(sep, L.faint)
+		end
+		local rm = CreateFrame("Button", nil, pop)
+		rm:SetHeight(rowH)
+		placeTop(rm)
+		rm:SetPoint("RIGHT", pop, "RIGHT", -pad, 0)
+		local rtxt = UI.FS(rm, "checkLabel", C.danger500)
+		rtxt:SetPoint("LEFT", rm, "LEFT", 0, 0)
+		rtxt:SetText(o.removeText or T("Remove"))
+		rm:SetScript("OnEnter", function() rtxt:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b) end)
+		rm:SetScript("OnLeave", function() rtxt:SetTextColor(C.danger500.r, C.danger500.g, C.danger500.b) end)
+		rm:SetScript("OnClick", function() closePop(); o.onRemove() end)
+		local w = math.ceil(rtxt:GetStringWidth()) + 20; if w > maxw then maxw = w end
+	end
+	pop:SetSize(math.ceil(maxw) + pad * 2, -y - gap + pad)
+
+	btn:SetScript("OnClick", function()
+		if pop:IsShown() then closePop(); return end
+		pop:ClearAllPoints()
+		pop:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -4)
+		closer:Show(); pop:Show(); pop:Raise()
+	end)
+	return btn
 end
 
 -- ===========================================================================
@@ -1868,6 +2149,12 @@ local BTN_VARIANTS = {
 		txt = C.danger500, txtHover = C.danger500,
 		line = L.dangerLine, lineHover = C.danger500, pad = 22, font = UI.FONT.hankenSemi,
 	},
+	-- success = green "add" action (same scheme as danger, green instead of red).
+	success = {
+		bg = L.successWash, bgHover = { r = C.success500.r, g = C.success500.g, b = C.success500.b, a = 0.20 },
+		txt = C.success500, txtHover = C.success500,
+		line = L.successLine, lineHover = C.success500, pad = 22, font = UI.FONT.hankenSemi,
+	},
 }
 
 function W.Button(parent, o)
@@ -1941,6 +2228,87 @@ function W.Button(parent, o)
 	if o.onClick then b:SetScript("OnClick", o.onClick) end
 	b._txt = txt
 	return b
+end
+
+-- ---------------------------------------------------------------------------
+--  MenuButton — a button that opens a small popover list of options (labels may
+--  carry inline |T..|t icons) and calls o.onPick(value). For "+ Add binding"
+--  (pick a catalog action). Floats on the menu host (non-clipped), like W.Select.
+--  o = { text, variant?, width?, options = { { value, label }, ... }, onPick }
+-- ---------------------------------------------------------------------------
+function W.MenuButton(parent, o)
+	-- bare = catalog-row style trigger (square gold icon tile + plain "… wählen"
+	-- text), so a freshly-added standard row matches the others and you pick the
+	-- action right in the row. Otherwise = a normal (e.g. green) button.
+	local btn
+	if o.bare then
+		btn = CreateFrame("Button", nil, parent)
+		btn:SetHeight(M.ccRowH)
+		if o.width then btn:SetWidth(o.width) end
+		local tile = W.SquareIcon(btn, M.ccIcon)
+		tile:SetPoint("LEFT", btn, "LEFT", 0, 0)
+		tile:SetIcon(o.icon)
+		local txt = UI.FS(btn, "selectText", o.icon and C.textBody or C.textMuted)
+		txt:SetPoint("LEFT", tile, "RIGHT", 10, 0)
+		txt:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
+		txt:SetJustifyH("LEFT"); txt:SetWordWrap(false)
+		txt:SetText(o.text or T("Select"))
+	else
+		btn = W.Button(parent, { text = o.text, variant = o.variant or "ghost", width = o.width })
+	end
+
+	local host = W._menuHost or parent
+	local closer = CreateFrame("Button", nil, host)
+	closer:SetAllPoints(UIParent)
+	closer:SetFrameStrata("FULLSCREEN_DIALOG")
+	closer:Hide()
+	local menu = CreateFrame("Frame", nil, host)
+	menu:SetFrameStrata("FULLSCREEN_DIALOG")
+	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
+	menu:Hide()
+	UI.Fill(menu, C.ink550)
+	UI.Border(menu, L.mid, 1, "OVERLAY")
+	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
+
+	local function closeMenu() menu:Hide(); closer:Hide() end
+	closer:SetScript("OnClick", closeMenu)
+
+	local pad, rowH, gap = 6, 30, 2
+	local prev, maxw = nil, 1
+	for _, op in ipairs(o.options) do
+		local item = CreateFrame("Button", nil, menu)
+		item:SetHeight(rowH)
+		if prev then item:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -gap)
+		else item:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad) end
+		item:SetPoint("RIGHT", menu, "RIGHT", -pad, 0)
+		local wash = item:CreateTexture(nil, "BACKGROUND")
+		wash:SetAllPoints(item); wash:SetColorTexture(0, 0, 0, 0)
+		local itxt = UI.FS(item, "selectText", C.textStrong)
+		itxt:SetPoint("LEFT", item, "LEFT", 10, 0)
+		itxt:SetText(op.label)
+		item:SetScript("OnEnter", function()
+			wash:SetColorTexture(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1)
+			itxt:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
+		end)
+		item:SetScript("OnLeave", function()
+			wash:SetColorTexture(0, 0, 0, 0)
+			itxt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		end)
+		item:SetScript("OnClick", function() closeMenu(); if o.onPick then o.onPick(op.value) end end)
+		local w = math.ceil(itxt:GetStringWidth()) + 32
+		if w > maxw then maxw = w end
+		prev = item
+	end
+	menu:SetWidth(math.max(maxw + pad * 2, btn:GetWidth() or 120))
+	menu:SetHeight(pad * 2 + #o.options * rowH + math.max(0, #o.options - 1) * gap)
+
+	btn:SetScript("OnClick", function()
+		if menu:IsShown() then closeMenu(); return end
+		menu:ClearAllPoints()
+		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -4)
+		closer:Show(); menu:Show(); menu:Raise()
+	end)
+	return btn
 end
 
 -- ---------------------------------------------------------------------------

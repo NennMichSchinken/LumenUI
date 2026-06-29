@@ -328,6 +328,7 @@ function Lumen:OnInitialize()
 	if ns.ApplyLocale then ns.ApplyLocale(self.db.global.language) end
 	if ns.RunLocaleReady then ns.RunLocaleReady() end   -- build localized module constants now (after language choice)
 	migrateLayout(self.db.profile.raidframes)
+	if ns.ClickCast then ns.ClickCast:MigrateCatalog() end
 
 	self.db.RegisterCallback(self, "OnProfileChanged", "RefreshAll")
 	self.db.RegisterCallback(self, "OnProfileCopied",  "RefreshAll")
@@ -359,7 +360,7 @@ function Lumen:RefreshAll()
 		ns.Raidframes:Disable()
 	end
 	-- Profile switch: re-apply Click-Cast bindings (bindings are profile-bound).
-	if ns.ClickCast then ns.ClickCast:ApplyBindings() end
+	if ns.ClickCast then ns.ClickCast:MigrateCatalog(); ns.ClickCast:ApplyBindings() end
 	-- If the suite shell is open, pull its controls onto the (possibly new) profile values.
 	if ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown() then
 		ns.Shell:RenderContent(true)
