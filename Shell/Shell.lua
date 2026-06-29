@@ -709,11 +709,11 @@ function Shell:RenderContent(keepScroll)
 			-- (otherwise just an empty tab without a hint). Print the error to chat.
 			local ok, err = pcall(builder, d, stack)
 			if not ok and ns.Lumen then
-				ns.Lumen:Print("|cffD66A5CShell-Fehler in " .. key .. ":|r " .. tostring(err))
+				ns.Lumen:Print("|cffD66A5C" .. T("Shell error in") .. " " .. key .. ":|r " .. tostring(err))
 			end
-		else
-			self:Gallery(d, stack)
 		end
+		-- No builder for this section/tab: leave the screen empty (defensive — every
+		-- live section currently has a real screen, so this branch is not reached).
 	end
 
 	local h = stack:height()
@@ -726,109 +726,6 @@ function Shell:RenderContent(keepScroll)
 		self._scroll:SetVerticalScroll(math.max(0, math.min(range, prevScroll)))
 	end
 	if self._updateBar then self._updateBar() end
-end
-
--- ---------------------------------------------------------------------------
---  Widget gallery (phase 2): shows the complete toolkit (divider, slider,
---  select, checkbox, GroupPanel, buttons, card) live-operable — so Florian can
---  judge look AND feel in-game. Sandbox data (not yet db-wired).
--- ---------------------------------------------------------------------------
-local W = ns.W
-local M = UI.WIDGET
-
--- Sandbox state so the widgets react interactively (no db writes).
-local demo = {
-	breite = 114, hoehe = 60, abstand = 2,
-	ausrichtung = "vertical",
-	nameShow = true, nameColor = false, nameSize = 12,
-	outline = "none",
-	hotsOn = true,
-}
-local function g(k) return function() return demo[k] end end
-local function s(k) return function(v) demo[k] = v end end
-
-local ALIGN_OPTS = {
-	{ value = "vertical",   label = "Vertikal — Mitglieder untereinander" },
-	{ value = "horizontal", label = "Horizontal — Mitglieder nebeneinander" },
-}
-local OUTLINE_OPTS = {
-	{ value = "none", label = "Keine" }, { value = "thin", label = "Dünn" },
-	{ value = "thick", label = "Dick" }, { value = "mono", label = "Monochrom" },
-}
-
-function Shell:Gallery(d, stack)
-	local place = function(w, h, dy) stack:place(w, h, dy) end
-
-	local secName = SECTIONS[self._section][1]
-	local tabName = SECTIONS[self._section][2][self._tab] or "?"
-
-	-- 1) Section-Divider
-	place(W.SectionDivider(d, secName .. " · " .. tabName), M.dividerH, 24)
-
-	-- 2) Three sliders side by side (row3)
-	local sliderRow, cells = W.Row(d, 3, { height = M.sliderH })
-	W.Slider(cells[1], { label = "Breite", min = 40, max = 240, value = demo.breite, unit = " px",
-		get = g("breite"), set = s("breite") }):SetAllPoints(cells[1])
-	W.Slider(cells[2], { label = "Höhe", min = 20, max = 160, value = demo.hoehe, unit = " px",
-		get = g("hoehe"), set = s("hoehe") }):SetAllPoints(cells[2])
-	W.Slider(cells[3], { label = "Abstand", min = 0, max = 30, value = demo.abstand, unit = " px",
-		get = g("abstand"), set = s("abstand") }):SetAllPoints(cells[3])
-	place(sliderRow, M.sliderH, 22)
-
-	-- 3) Two dropdowns (alignment + outline) as a 2-column row
-	local fieldH = M.controlH + M.fieldGap
-	local ddRow, ddCells = W.Row(d, 2, { height = fieldH })
-	W.Select(ddCells[1], { label = "Ausrichtung", options = ALIGN_OPTS,
-		get = g("ausrichtung"), set = s("ausrichtung") }):SetAllPoints(ddCells[1])
-	W.Select(ddCells[2], { label = "Namens-Umrandung", options = OUTLINE_OPTS,
-		get = g("outline"), set = s("outline") }):SetAllPoints(ddCells[2])
-	place(ddRow, fieldH, 24)
-
-	-- 4) Checkbox row
-	local cbRow = CreateFrame("Frame", nil, d)
-	local cb1 = W.Checkbox(cbRow, { label = "Name anzeigen", get = g("nameShow"), set = s("nameShow") })
-	cb1:SetPoint("LEFT", cbRow, "LEFT", 0, 0)
-	local cb2 = W.Checkbox(cbRow, { label = "Namensfarbe", get = g("nameColor"), set = s("nameColor") })
-	cb2:SetPoint("LEFT", cb1, "RIGHT", 28, 0)
-	place(cbRow, M.checkBox, 26)
-
-	-- 5) GroupPanel with header-right toggle + content
-	local panel, pc = W.GroupPanel(d, { title = "HoTs" })
-	panel._headerRightAnchor(W.Checkbox(panel, { label = "Anzeigen", get = g("hotsOn"), set = s("hotsOn") }))
-	local pcSlider = W.Slider(pc, { label = "Namensgröße", min = 6, max = 30, value = demo.nameSize,
-		get = g("nameSize"), set = s("nameSize") })
-	pcSlider:SetPoint("TOPLEFT", pc, "TOPLEFT", 0, 0)
-	pcSlider:SetWidth(320)
-	place(panel, -M.groupContentY + M.sliderH + S.cardPad, 24)
-
-	-- 6) Button row (primary / ghost / danger)
-	local btnRow = CreateFrame("Frame", nil, d)
-	local pb = W.Button(btnRow, { text = "Übernehmen", variant = "primary" })
-	pb:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
-	local gb = W.Button(btnRow, { text = "Standard", variant = "ghost" })
-	gb:SetPoint("LEFT", pb, "RIGHT", 12, 0)
-	local db = W.Button(btnRow, { text = "Zurücksetzen", variant = "danger" })
-	db:SetPoint("LEFT", gb, "RIGHT", 12, 0)
-	place(btnRow, M.buttonH, 22)
-
-	-- 7) Card with IconTile + text (signature surface)
-	local card = W.Card(d)
-	local tile = W.IconTile(card, { size = 52, letter = "L" })
-	tile:SetPoint("LEFT", card, "LEFT", S.cardPad, 0)
-	local ct = FS(card, "body", C.textBody)
-	ct:SetJustifyH("LEFT"); ct:SetWordWrap(true)
-	ct:SetPoint("LEFT", tile, "RIGHT", 16, 0)
-	ct:SetPoint("RIGHT", card, "RIGHT", -S.cardPad, 0)
-	ct:SetText("Toolkit-Bausteine: Slider, Select, Checkbox, Button, GroupPanel, "
-		.. "Card, IconTile — alle auf den Design-Tokens und pixel-gesnappten Borders.")
-	place(card, 92, 22)
-
-	-- 8) Hint
-	local hint = FS(d, "caption", C.textFaint)
-	hint:SetText("Phase 2 — Widget-Toolkit (live bedienbar, noch Sandbox-Daten). "
-		.. "/lumen öffnet weiterhin die klassische Konfiguration.")
-	hint:SetPoint("TOPLEFT", d, "TOPLEFT", 0, stack:y())
-	stack:gap(M.hintH) -- account for the hint block in the height
 end
 
 -- ---------------------------------------------------------------------------

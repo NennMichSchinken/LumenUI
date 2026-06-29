@@ -40,11 +40,10 @@ local sort = table.sort
 -- ---------------------------------------------------------------------------
 --  Constants: mouse buttons / modifiers (for the options dropdown) + display
 -- ---------------------------------------------------------------------------
-local KEY_DISPLAY = {
-	BUTTON1 = "Linksklick", BUTTON2 = "Rechtsklick", BUTTON3 = "Mittlere Maustaste",
-	BUTTON4 = "Maus 4", BUTTON5 = "Maus 5",
-}
-local MOD_DISPLAY = { SHIFT = "Shift", CTRL = "Strg", ALT = "Alt", META = "Meta" }
+-- Display tables for FormatKey — filled IN PLACE on locale-ready (stable upvalue
+-- references captured by FormatKey at module load). META has no translation.
+local KEY_DISPLAY = {}
+local MOD_DISPLAY = { META = "Meta" }
 
 -- Mouse button and modifier SEPARATE (options: mouse-button dropdown + optional
 -- modifier toggle with Shift/Ctrl/Alt). Stored combined in b.key.
@@ -66,6 +65,10 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	MOD_VALUES.SHIFT = T("Shift"); MOD_VALUES.CTRL = T("Ctrl"); MOD_VALUES.ALT = T("Alt")
 	BINDING_TYPES.target = T("Target"); BINDING_TYPES.menu = T("Menu")
 	BINDING_TYPES.spell = T("Spell"); BINDING_TYPES.dispel = T("Dispel"); BINDING_TYPES.rez = T("Resurrect")
+	KEY_DISPLAY.BUTTON1 = T("Left click"); KEY_DISPLAY.BUTTON2 = T("Right click")
+	KEY_DISPLAY.BUTTON3 = T("Middle mouse button")
+	KEY_DISPLAY.BUTTON4 = T("Mouse 4"); KEY_DISPLAY.BUTTON5 = T("Mouse 5")
+	MOD_DISPLAY.SHIFT = T("Shift"); MOD_DISPLAY.CTRL = T("Ctrl"); MOD_DISPLAY.ALT = T("Alt")
 end
 
 -- ---------------------------------------------------------------------------
@@ -110,7 +113,7 @@ function CC:CurrentSpecID() return curSpecID() end
 function CC:CurrentSpecName()
 	local idx = GetSpecialization and GetSpecialization()
 	if idx then local _, n = GetSpecializationInfo(idx); return n end
-	return "Keine Spec"
+	return ns.T("No spec")
 end
 
 -- All specs of the player's class (for the spec-selection dropdown of the options).

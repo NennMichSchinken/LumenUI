@@ -298,4 +298,12 @@ ns.RegisterLocale("deDE", {
 	["This module is still in progress and will be unlocked in a later version."] = "Dieses Modul ist noch in Arbeit und wird in einer späteren Version freigeschaltet.",
 	["The \"%s\" module is still in progress and will be unlocked in a later version."] = "Das Modul „%s\" ist noch in Arbeit und wird in einer späteren Version freigeschaltet.",
 	["loaded. |cffD4A34F/lumen|r opens the settings."] = "geladen. |cffD4A34F/lumen|r öffnet die Einstellungen.",
+
+	-- ── Widgets: generic placeholders / dialogs ──────────────────────────
+	["Search texture …"] = "Textur suchen …",
+	["Search spell …"] = "Spell suchen …",
+	["(no matches)"] = "(keine Treffer)",
+	["Are you sure?"] = "Bist du sicher?",
+	["Set key …"] = "Taste setzen …",
+	["Shell error in"] = "Shell-Fehler in",
 })
