@@ -1,4 +1,4 @@
-package-as: Lumen
+package-as: LumenUI
 
 # Libs liegen committed im Repo (Libs/) und werden 1:1 mitgepackt —
 # daher keine externals und kein nolib-Stripping.

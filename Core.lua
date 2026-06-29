@@ -5,7 +5,7 @@ local ADDON, ns = ...
 --  Addon (Ace3), central profiles (AceDB), /lumen.
 -- ===========================================================================
 
-local Lumen = LibStub("AceAddon-3.0"):NewAddon("Lumen", "AceConsole-3.0", "AceEvent-3.0")
+local Lumen = LibStub("AceAddon-3.0"):NewAddon("LumenUI", "AceConsole-3.0", "AceEvent-3.0")
 ns.Lumen = Lumen
 
 local defaults = {
@@ -304,8 +304,9 @@ function Lumen:OnInitialize()
 	self.db.RegisterCallback(self, "OnProfileCopied",  "RefreshAll")
 	self.db.RegisterCallback(self, "OnProfileReset",   "RefreshAll")
 
-	self:RegisterChatCommand("lumen", "OpenConfig")
-	self:RegisterChatCommand("lu",    "OpenConfig")
+	self:RegisterChatCommand("lumenui", "OpenConfig")
+	self:RegisterChatCommand("lumen",   "OpenConfig") -- short alias (kept)
+	self:RegisterChatCommand("lu",      "OpenConfig")
 
 	self:Print(ns.T("loaded. |cffD4A34F/lumen|r opens the settings."))
 end
