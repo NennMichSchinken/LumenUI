@@ -1,12 +1,10 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Suite-Shell (phase 1: visual scaffold)
---  Own runed config look following the Lumen design system (see Shell/Tokens).
---  Phase 1 = chrome (header/nav/tabs/footer/rune) + dummy content for a look check.
---  Runs IN PARALLEL to the existing AceConfig (which stays on /lumen). Calling the
---  Shell during development: /lumen shell.
---  Widget toolkit + real screens follow in phase 2/3.
+--  Lumen — Suite-Shell
+--  The one and only config UI, with its own runed look following the Lumen
+--  design system (see Shell/Tokens). Chrome (header/nav/tabs/footer/rune) +
+--  the real screens (Shell/Screens). Opened via /lumen and the ESC-menu button.
 -- ===========================================================================
 
 local UI = ns.UI
