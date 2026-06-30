@@ -1,6 +1,7 @@
 ## Interface: 120007
 ## Title: LumenUI
 ## Notes: A focused UI suite — Raidframes (MVP)
+## IconTexture: Interface\AddOns\LumenUI\Textures\Logo
 ## Author: NennMichSchinken
 ## Version: 0.9.104
 ## SavedVariables: LumenDB
