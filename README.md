@@ -1,2 +1,147 @@
 # LumenUI
-a focused UI suite for World of Warcraft (Retail)
+
+**A focused UI suite for World of Warcraft (Retail).** Built for Mythic+ and Raid, tuned to healer standards.
+
+> 🚧 **Status: Public Beta** · Version `0.9.104` · Interface `120007` (Patch 12.0.7)
+> The Raidframes module is complete and battle-tested. More modules are on the roadmap.
+
+LumenUI is deliberately **anti-bloat**: a short, curated module list with strong defaults instead of hundreds of switches — only what serious M+ and raid players actually use, done properly. The guiding rule: *what reads well for a healer under pressure works for every role.*
+
+---
+
+## Design principles
+
+Two worlds, kept apart on purpose:
+
+- **In combat** (raidframes, and later unit frames / nameplates) LumenUI stays **close to the WoW original** — class-colored bars, familiar layout, calm defaults. Fast pattern-matching beats stylization when you're under pressure.
+- **In the suite** (settings, profiles, branding) it carries its own modern, flat, gold-accented identity.
+
+Everything is freely positionable and builds on WoW's native Edit Mode rather than fighting it.
+
+---
+
+## Features (Beta — Raidframes module)
+
+- WoW-native layout: class-colored health bars + role icons
+- Absorb / shield display, including **overshield** at full health
+- **Heal prediction** (incoming heals) and **heal absorb** (eats into health from the right)
+- **Dispellable debuffs** highlighted, filtered to your class (Magic / Curse / Poison / Disease)
+- **Aura indicators** — flexible system for HoTs, defensives & externals, and debuffs; per-spec whitelist (curated for every class/spec), 9 anchor positions, auto-fit sizing, combat-safe icons
+- **Aggro warning** — two-stage (yellow/red), border and/or overlay, optional text, tanks excluded
+- **Party + Raid** with sortable role / group ordering
+- **Mouseover / target highlight** (gold edge)
+- **Click-to-Cast** — click-cast + hovercast with a curated action catalog (heals, externals, battle-rez, trinket), bindings saved per spec
+- Hides Blizzard's default raidframes while active (one click to restore)
+
+### Suite
+
+- One settings home — `/lumen` or the **Lumen** button in the ESC menu
+- Central profiles (AceDB)
+- **Export / Import** — share your whole config as one text code; import is granular (per-module checkboxes) with a separate toggle for layout positions
+- English & German localization
+
+---
+
+## Installation
+
+**Players:** install via [CurseForge](https://www.curseforge.com/) or [WoWUp](https://wowup.io/) (search for *LumenUI*).
+
+**Manual:** download the latest release and extract the `LumenUI` folder into
+`World of Warcraft/_retail_/Interface/AddOns/`.
+
+---
+
+## Development
+
+No build step — the WoW client interprets Lua directly. The repository **is** the addon.
+
+### Local setup (junction)
+
+Point a junction in your AddOns folder at this repo so a `/reload` picks up your edits instantly:
+
+```powershell
+$AddOns = "<path>\World of Warcraft\_retail_\Interface\AddOns"
+New-Item -ItemType Junction -Path "$AddOns\LumenUI" -Target "<path>\LumenUI"
+```
+
+To test a work-in-progress build alongside a released copy, junction it under a separate
+name (e.g. `LumenUI_Dev`) with its own `LumenUI_Dev.toc`, and enable only one at a time.
+
+### Linting
+
+All Lua is checked with [luacheck](https://github.com/lunarmodules/luacheck) against the
+project `.luacheckrc` (WoW/Ace3 globals whitelisted; `Libs/` and `tools/` excluded):
+
+```powershell
+tools\luacheck.exe .
+# or
+powershell tools\check.ps1
+```
+
+### Project structure
+
+| Path | Purpose |
+|---|---|
+| `LumenUI.toc` | Addon manifest + file load order |
+| `embeds.xml` | Loads the Ace3 libraries from `Libs/` |
+| `Core.lua` | Ace3 addon, AceDB profiles (`LumenDB`), slash commands |
+| `EditMode.lua` | Movable-frame registry hooked into WoW's Edit Mode |
+| `Style.lua` | Shared status-bar styling (gradients, depth) |
+| `Modules/Raidframes.lua` | The MVP module — secret-safe rendering, auras, aggro, sorting |
+| `Modules/ClickCast.lua` | Click-cast + hovercast, secure bindings per spec |
+| `Modules/Share.lua` | Export / import codec (sparse export, merge-on-defaults) |
+| `Modules/MiniCC.lua` | Optional MiniCC frame-provider bridge (no-op without MiniCC) |
+| `Shell/` | Suite-shell UI — design tokens, widget toolkit, screens, chrome |
+| `Locales/` | Lightweight localization (English default, `deDE` overrides) |
+| `Libs/` | Bundled Ace3 libraries + LibDeflate |
+| `Fonts/`, `Textures/` | Bundled assets |
+
+---
+
+## Releasing
+
+Releases are produced by the [BigWigs Packager](https://github.com/BigWigsMods/packager)
+GitHub Action and uploaded to CurseForge. **Pushing a tag publishes — merging to `main`
+alone ships nothing.**
+
+1. Merge `dev` → `main`.
+2. Bump `## Version:` in `LumenUI.toc`.
+3. Push a tag:
+   ```bash
+   git tag v0.9.105-beta   # tags containing -beta/-alpha go to the beta channel
+   git push origin v0.9.105-beta
+   ```
+
+Requires a `CF_API_KEY` repository secret (CurseForge API token). `WAGO_API_TOKEN` and
+`WOWI_API_TOKEN` are optional for additional distribution targets.
+
+Branch model: **`dev` = work · `main` = stable · tag = publish.**
+
+---
+
+## Roadmap
+
+Module by module, no bloat: **Unit Frames → Nameplates → quality-of-life** (M+ loot
+preview, CC tracker, context quick-actions). Encounter callouts and niche tools are
+intentionally out of scope.
+
+---
+
+## Tech stack
+
+Lua + WoW API, built on [Ace3](https://www.wowace.com/projects/ace3)
+(AceAddon, AceDB, AceEvent, AceTimer, AceSerializer) plus
+[LibDeflate](https://github.com/SafeteeWoW/LibDeflate) for export/import compression.
+The settings UI is a custom suite shell (`Shell/`) — not AceConfig.
+
+Design, UX/UI and project direction by **NennMichSchinken**; the Lua implementation
+was written with **[Claude Code](https://www.anthropic.com/claude-code)** (Anthropic).
+
+## Credits & licensing
+
+- Fonts: **Cinzel** and **Hanken Grotesk** — SIL Open Font License
+- Settings & delete icons by [Icons8](https://icons8.com)
+- Ace3 and LibDeflate ship under their respective licenses (see `Libs/`)
+
+Addon code © 2026 NennMichSchinken. A project license (e.g. MIT) is still to be added —
+see `LICENSE` once present.

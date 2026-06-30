@@ -54,15 +54,22 @@ UI.C = {
 
 	-- Danger — strictly destructive
 	danger500 = hex("D66A5C"),
+	danger300 = hex("E89384"), -- lighter red (hover on delete)
+
+	-- Success — confirming / add actions (muted natural green, not neon)
+	success500 = hex("7FB069"),
 }
 
 -- Gold/danger in standard opacities (borders, washes) — as {r,g,b,a}.
 local g = UI.C.gold500
 local d = UI.C.danger500
+local s = UI.C.success500
 local function goldA(a) return { r = g.r, g = g.g, b = g.b, a = a } end
 local function dangerA(a) return { r = d.r, g = d.g, b = d.b, a = a } end
+local function successA(a) return { r = s.r, g = s.g, b = s.b, a = a } end
 UI.goldA = goldA
 UI.dangerA = dangerA
+UI.successA = successA
 
 UI.line = {
 	faint   = goldA(0.12), -- fine separators (content)
@@ -74,12 +81,16 @@ UI.line = {
 	wash     = goldA(0.12),
 	dangerLine = dangerA(0.40),
 	dangerWash = dangerA(0.12),
+	successLine = successA(0.45),
+	successWash = successA(0.12),
 }
 
 -- ---------------------------------------------------------------------------
---  Fonts — bundled under Lumen/Fonts/ (Cinzel + Hanken Grotesk, SIL OFL)
+--  Fonts — bundled under <addon>/Fonts/ (Cinzel + Hanken Grotesk, SIL OFL)
 -- ---------------------------------------------------------------------------
-local FP = [[Interface\AddOns\Lumen\Fonts\]]
+-- Built from the real addon-folder name (ADDON) so the path survives a folder
+-- rename (e.g. Lumen -> LumenUI). ADDON is the first vararg = the folder name.
+local FP = "Interface\\AddOns\\" .. ADDON .. "\\Fonts\\"
 UI.FONT = {
 	cinzelSemi   = FP .. "Cinzel-SemiBold.ttf",
 	cinzelBold   = FP .. "Cinzel-Bold.ttf",
@@ -270,11 +281,33 @@ UI.WIDGET = {
 	spW            = 340, -- width of the spell-picker popover
 	spPad          = 10,  -- inner padding of the popover
 	spSearchH      = 32,  -- height of the search field
-	spRowH         = 32,  -- height of a picker list row
+	spRowH         = 40,  -- height of a picker list row (roomier: +4px air top & bottom)
 	spVisibleRows  = 7,   -- simultaneously visible rows (rest scrolls)
 	spScrollW      = 4,   -- width of the picker scrollbar (also used by W.Select)
 	spScrollGap    = 6,   -- gap list <-> scrollbar
 	selectMaxRows  = 8,   -- W.Select: max. simultaneously visible options (rest scrolls)
+
+	-- Click-Cast catalog (rows + switch + keybind field). ALL centrally tunable here:
+	-- change row height/gap/padding for the whole Click-Cast tab from this one place.
+	ccRowH      = 54, -- card row height (taller = the keybind field gets vertical air)
+	ccRowGap    = 0,  -- flush; each row draws only TOP+LEFT+RIGHT (+bottom on the last)
+	                  -- so adjacent rows share ONE 1px line (no doubled border)
+	ccRowPad    = 20, -- inner left/right padding inside a row card
+	ccRowGapX   = 14, -- horizontal gap between the right-cluster items (keybind/gear/switch)
+	ccAddGap    = 8,  -- gap above the "+ Add binding/spell" buttons (off the last row)
+	ccKeyW      = 150, -- keybind field width (wide enough for "Taste setzen …")
+	ccSpecW     = 230, -- spec dropdown width (top-right, on the master toggle row)
+	ccIcon      = 30, -- spell-icon tile edge length (square, gold border)
+	ccGearSize  = 18, -- options gear icon size
+	-- Switch (square on/off toggle) — reusable beyond Click-Cast.
+	switchW       = 40,
+	switchH       = 22,
+	switchKnobPad = 3, -- inset of the sliding knob from the track edge
+	-- Keybind field border: thick solid gold when bound, dashed when unbound.
+	kbBoundThick  = 2, -- solid gold border thickness when a key is set
+	kbDashLen     = 7, -- dash length of the unbound dashed border
+	kbDashGap     = 4, -- gap between dashes
+	kbDashThick   = 2, -- dash thickness (pixel-snapped so it never vanishes at panel scale)
 
 	-- Confirm dialog (modal confirmation popup; dims the Shell behind it).
 	confirmW      = 460, -- card width
@@ -348,9 +381,6 @@ UI.LAYOUT = {
 	sizeArrange = {         -- Raid/Group: size & arrangement
 		afterSliders = 22,  -- width/height/spacing -> alignment
 		afterAlign   = 52,  -- alignment -> Text — Name
-	},
-	auras = {               -- Auras tab (the row spacings come from rhythm above)
-		afterIntro = 22,    -- intro hint -> first category card
 	},
 	tracking = {            -- Tracking tab (whitelist editor)
 		introH      = 58,   -- height of the multi-line intro hint

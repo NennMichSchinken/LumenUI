@@ -43,6 +43,7 @@ read_globals = {
     -- Namespaces
     "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum",
     "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents",
+    "GetInventoryItemTexture", "GetInventoryItemLink",
     -- Spec / secure bindings (click-cast)
     "GetSpecialization", "GetSpecializationInfo", "GetNumSpecializations",
     "IsShiftKeyDown", "IsControlKeyDown", "IsAltKeyDown",

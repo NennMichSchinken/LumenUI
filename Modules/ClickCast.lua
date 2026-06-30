@@ -26,6 +26,8 @@ ns.ClickCast = CC
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local UnitClass = UnitClass
+local GetInventoryItemTexture = GetInventoryItemTexture
+local GetInventoryItemLink = GetInventoryItemLink
 local C_Spell = C_Spell
 local C_SpellBook = C_SpellBook
 local Enum = Enum
@@ -65,6 +67,8 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	MOD_VALUES.SHIFT = T("Shift"); MOD_VALUES.CTRL = T("Ctrl"); MOD_VALUES.ALT = T("Alt")
 	BINDING_TYPES.target = T("Target"); BINDING_TYPES.menu = T("Menu")
 	BINDING_TYPES.spell = T("Spell"); BINDING_TYPES.dispel = T("Dispel"); BINDING_TYPES.rez = T("Resurrect")
+	BINDING_TYPES.external = T("External defensive")
+	BINDING_TYPES.trinket1 = T("Trinket 1"); BINDING_TYPES.trinket2 = T("Trinket 2")
 	KEY_DISPLAY.BUTTON1 = T("Left click"); KEY_DISPLAY.BUTTON2 = T("Right click")
 	KEY_DISPLAY.BUTTON3 = T("Middle mouse button")
 	KEY_DISPLAY.BUTTON4 = T("Mouse 4"); KEY_DISPLAY.BUTTON5 = T("Mouse 5")
@@ -99,6 +103,20 @@ local REZ_BY_CLASS = {
 	DEATHKNIGHT = { battle = 61999 },
 	WARLOCK     = { battle = 20707 },
 }
+-- External defensives cast on an ally (by class; spec-aware where the spell differs).
+-- Multiple ids = cast the one(s) the active spec actually knows (e.g. Priest Disc vs Holy).
+local EXTERNAL_SPELLS = {
+	DRUID   = { 102342 },          -- Ironbark
+	PALADIN = { 6940 },            -- Blessing of Sacrifice
+	MONK    = { 116849 },          -- Life Cocoon
+	EVOKER  = { 357170 },          -- Time Dilation
+	PRIEST  = { 33206, 47788 },    -- Pain Suppression (Disc) / Guardian Spirit (Holy)
+}
+
+-- The predefined catalog the UI shows as "Standard bindings" (in this order).
+local STANDARD_TYPES = { "target", "menu", "dispel", "rez", "external", "trinket1", "trinket2" }
+CC.STANDARD_TYPES = STANDARD_TYPES
+local TRINKET_SLOT = { trinket1 = 13, trinket2 = 14 }
 
 -- ---------------------------------------------------------------------------
 --  DB access
@@ -131,19 +149,54 @@ end
 -- spec to edit it without switching the live spec). create=true creates it and
 -- seeds it once with the defaults (left=target, right=menu). Deleting leaves an
 -- empty table behind -> it is NOT re-seeded.
+-- Smart default seed: all standard catalog rows present (left=target, right=menu
+-- pre-keyed; the rest enabled but unbound). Order = STANDARD_TYPES.
+local function seedStandard()
+	return {
+		{ type = "target",   key = "BUTTON1", enabled = true },
+		{ type = "menu",     key = "BUTTON2", enabled = true },
+		{ type = "dispel",   key = "", enabled = true },
+		{ type = "rez",      key = "", enabled = true },
+		{ type = "external", key = "", enabled = true },
+		{ type = "trinket1", key = "", enabled = true },
+		{ type = "trinket2", key = "", enabled = true },
+	}
+end
+
 local function getSpec(create, specID)
 	local cc = ccDB(); if not cc then return nil end
 	local id = specID or curSpecID(); if not id then return nil end
 	if not cc.specs[id] then
 		if not create then return nil end
-		cc.specs[id] = {
-			{ key = "BUTTON1", type = "target", enabled = true },
-			{ key = "BUTTON2", type = "menu",   enabled = true },
-		}
+		cc.specs[id] = seedStandard()
 	end
 	return cc.specs[id]
 end
 function CC:GetBindings(specID) return getSpec(true, specID) or {} end
+
+-- One-time migration of an existing profile to the catalog model (no data loss):
+-- drop the obsolete binding.hovercast flag (click-vs-hover is now derived from the
+-- key type) and make sure every standard catalog type exists at least once
+-- (add missing ones unbound). Existing custom spell bindings are kept untouched.
+function CC:MigrateCatalog()
+	local cc = ccDB(); if not cc or cc._ccCatalogMigrated then return end
+	cc._ccCatalogMigrated = true
+	for _, list in pairs(cc.specs or {}) do
+		if type(list) == "table" then
+			local have = {}
+			for _, b in ipairs(list) do
+				b.hovercast = nil
+				if b.type then have[b.type] = true end
+			end
+			for _, t in ipairs(STANDARD_TYPES) do
+				if not have[t] then
+					local seedKey = (t == "target" and "BUTTON1") or (t == "menu" and "BUTTON2") or ""
+					tinsert(list, { type = t, key = seedKey, enabled = true })
+				end
+			end
+		end
+	end
+end
 
 -- ---------------------------------------------------------------------------
 --  Key parsing
@@ -238,6 +291,93 @@ local function rezLines(oocOnly)
 	return lines
 end
 
+-- The class external defensive(s) the active spec knows (Priest Disc/Holy differ).
+local function externalIDs()
+	local _, pc = UnitClass("player")
+	return EXTERNAL_SPELLS[pc]
+end
+local function externalLines(oocOnly)
+	local list = externalIDs(); if not list then return {} end
+	local cond = oocOnly and "@mouseover,help,exists,nodead,nocombat" or "@mouseover,help,exists,nodead"
+	local lines = {}
+	for _, id in ipairs(list) do
+		if spellKnown(id) then
+			local n = spellName(id)
+			if n then lines[#lines + 1] = "/cast [" .. cond .. "] " .. n end
+		end
+	end
+	return lines
+end
+
+-- Trinkets are self-used (no unit) — slot 13/14 via /use. oocOnly gates with [nocombat].
+local function trinketMacro(slot, oocOnly)
+	if oocOnly then return "/use [nocombat] " .. slot end
+	return "/use " .. slot
+end
+
+-- ---------------------------------------------------------------------------
+--  Catalog action metadata (for the Shell screen: icon, hint, availability)
+-- ---------------------------------------------------------------------------
+local function firstKnownDispel()
+	local _, pc = UnitClass("player")
+	for _, sp in ipairs(DISPEL_SPELLS) do
+		if sp.class == pc and spellKnown(sp.id) then return sp.id end
+	end
+	-- fallback: first dispel of the class even if not currently known (icon only)
+	for _, sp in ipairs(DISPEL_SPELLS) do if sp.class == pc then return sp.id end end
+end
+local function firstRez()
+	local _, pc = UnitClass("player")
+	local kit = REZ_BY_CLASS[pc]; if not kit then return nil end
+	for _, k in ipairs({ "group", "single", "battle" }) do
+		local id = kit[k]; if id and spellKnown(id) then return id end
+	end
+	return kit.group or kit.single or kit.battle
+end
+local function firstExternal()
+	local list = externalIDs(); if not list then return nil end
+	for _, id in ipairs(list) do if spellKnown(id) then return id end end
+	return list[1]
+end
+
+-- Representative spell id of a catalog action (for icon/hint). nil = no spell.
+local function actionSpellID(t)
+	if t == "dispel" then return firstKnownDispel() end
+	if t == "rez" then return firstRez() end
+	if t == "external" then return firstExternal() end
+	return nil
+end
+
+-- Whether the player's class actually has this action (so the catalog only lists
+-- the relevant rows). target/menu/trinket are always available.
+function CC:ActionAvailable(t)
+	if t == "dispel" then return firstKnownDispel() ~= nil end
+	if t == "rez" then local _, pc = UnitClass("player"); return REZ_BY_CLASS[pc] ~= nil end
+	if t == "external" then local _, pc = UnitClass("player"); return EXTERNAL_SPELLS[pc] ~= nil end
+	return true
+end
+function CC:ActionLabel(t) return BINDING_TYPES[t] or t end
+-- Name of the equipped trinket in slot 13/14 (from its item link), or nil.
+local function trinketName(slot)
+	local link = GetInventoryItemLink and GetInventoryItemLink("player", slot)
+	return link and link:match("%[(.-)%]") or nil
+end
+-- Grey hint next to the action name: the spell name (dispel/rez/external) or the
+-- equipped trinket's name (trinket1/2); nil if none.
+function CC:ActionHint(t)
+	if t == "trinket1" then return trinketName(13) end
+	if t == "trinket2" then return trinketName(14) end
+	local id = actionSpellID(t); return id and spellName(id) or nil
+end
+-- Icon texture: spell texture for dispel/rez/external, equipped-trinket texture for
+-- trinket1/2, nil for target/menu (the UI draws a neutral glyph there).
+function CC:ActionIcon(t)
+	if t == "trinket1" then return GetInventoryItemTexture and GetInventoryItemTexture("player", 13) or nil end
+	if t == "trinket2" then return GetInventoryItemTexture and GetInventoryItemTexture("player", 14) or nil end
+	local id = actionSpellID(t)
+	return id and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id) or nil
+end
+
 -- Binding -> actionType ("target"|"togglemenu"|"macro"), macrotext.
 -- forHover adds friend/harm filters for spells. Spell/dispel/rez are ALWAYS
 -- @mouseover macros (works for click AND hover).
@@ -256,9 +396,12 @@ local function resolveBinding(b, forHover)
 		if b.oocOnly then conds[#conds + 1] = "nocombat" end
 		return "macro", "/cast [" .. concat(conds, ",") .. "] " .. n
 	end
+	if t == "trinket1" then return "macro", trinketMacro(TRINKET_SLOT.trinket1, b.oocOnly) end
+	if t == "trinket2" then return "macro", trinketMacro(TRINKET_SLOT.trinket2, b.oocOnly) end
 	local lines
 	if t == "dispel" then lines = dispelLines(b.oocOnly)
-	elseif t == "rez" then lines = rezLines(b.oocOnly) end
+	elseif t == "rez" then lines = rezLines(b.oocOnly)
+	elseif t == "external" then lines = externalLines(b.oocOnly) end
 	if not lines or #lines == 0 then return nil end
 	return "macro", concat(lines, "\n")
 end
@@ -376,13 +519,13 @@ local function applyEnabled(button)
 	button:SetAttribute("type1", "target"); rec(button, "type1")
 	button:SetAttribute("type2", "click"); rec(button, "type2")
 	button:SetAttribute("clickbutton2", getProxy(button, "togglemenu")); rec(button, "clickbutton2")
+	-- Click path = bindings whose key is a MOUSE BUTTON (clicking the frame). Keyboard
+	-- keys are handled by the hovercast path instead (one list, routed by key type).
 	for _, b in ipairs(activeList()) do
-		if not b.hovercast then
-			local p = parseKey(b.key)
-			if p.isMouse and p.buttonNum and p.buttonNum <= 5 then
-				local aType, macrotext = resolveBinding(b, false)
-				if aType then applyClick(button, p, aType, macrotext, b) end
-			end
+		local p = parseKey(b.key)
+		if p.isMouse and p.buttonNum and p.buttonNum <= 5 then
+			local aType, macrotext = resolveBinding(b, false)
+			if aType then applyClick(button, p, aType, macrotext, b) end
 		end
 	end
 end
@@ -404,17 +547,32 @@ function ns.CC_RegisterButton(button)
 end
 
 -- ===========================================================================
---  HOVERCAST PATH — global secure button + state driver
+--  HOVERCAST PATH — global secure button + header-style state driver
+--
+--  Robust 12.0.7 design. The previous pure-state-driver version left the key
+--  stuck = "an assigned hovercast key blocks the action bar even off a frame".
+--  Three safeguards, adapted from a proven secure-frame approach:
+--   1. RACE FIX: the override binding is ALSO set in each frame's SECURE OnEnter,
+--      so a keypress on arrival never loses the race against the state driver lag.
+--   2. STUCK-CLEAR FIX: the state-driver "0" clear is GUARDED — skipped while the
+--      last-hovered frame is still physically under the cursor, so a transient
+--      [@mouseover,exists]==0 (a churning unit token, common in follower dungeons)
+--      cannot strand the key cleared ("stuck until I re-mouseover").
+--   3. UNBIND FIX: teardown on rebuild wipes ALL overrides at once
+--      (self:ClearBindings) + resets the active flag, so unbinding takes effect
+--      without a /reload.
+--  lu_hoveractive gates SetBindingClick to the become-active edge only -> zero
+--  extra binding writes while sweeping the mouse across frames. lu_hoverframe and
+--  lu_hoveractive live in ONE shared secure env: the driver owns BOTH the OnEnter
+--  wraps (control = driver) and the state driver (self = driver).
 -- ===========================================================================
 local hoverBtn, driver
 local lastHoverCount = 0
 local HOVER_BTN_NAME = "LumenCCHover"
 
--- Hovercast is P2 (see Shell/Screens.lua CC_HOVERCAST): the secure key-driver mechanism
--- no longer releases the key cleanly in 12.0.7 -> an assigned hovercast key blocks the
--- action bar. Disabled until the 12.1.0 rework; existing hovercast bindings stay in the
--- profile but are NOT applied (applyHover silences everything). To re-enable: true.
-local HOVERCAST_ENABLED = false
+-- Re-enabled in Feature 3 (was parked while the old fragile design blocked the
+-- action bar). The three safeguards above make the key release cleanly.
+local HOVERCAST_ENABLED = true
 
 local function buildHoverFrames()
 	if hoverBtn then return end
@@ -426,15 +584,38 @@ local function buildHoverFrames()
 	hoverBtn:Show()
 
 	driver = CreateFrame("Frame", "LumenCCDriver", UIParent, "SecureHandlerStateTemplate")
-	driver:SetFrameRef("hb", hoverBtn)
-	-- While [@mouseover,exists]: route the configured keys to the hover button
-	-- (override binding). When the mouse leaves the unit: clear all overrides.
+	-- "1" = mouseover a unit -> set the overrides (once, on the active edge).
+	-- "0" = no mouseover unit -> clear the overrides, BUT only if the last-hovered
+	-- frame is no longer under the cursor (guard against transient token churn).
 	driver:SetAttribute("_onstate-mo", [[
 		if newstate == "1" then
-			self:RunAttribute("hover_set")
-		else
-			self:ClearBindings()
+			if not lu_hoveractive then
+				self:RunAttribute("hover_set")
+				lu_hoveractive = true
+			end
+		elseif not (lu_hoverframe and lu_hoverframe:IsUnderMouse()) then
+			self:RunAttribute("hover_clear")
+			lu_hoveractive = false
 		end
+	]])
+end
+
+-- Wrap a registered secure button's OnEnter/OnLeave ONCE (control = driver). The
+-- OnEnter sets the override the instant the cursor arrives (race fix) and records
+-- the hovered frame for the clear guard; OnLeave forgets it. Setting up secure
+-- wraps is protected -> call ONLY out of combat (applyHover is OOC-gated).
+local function wrapButtonForHover(button)
+	if button._ccHoverWrapped or not driver then return end
+	button._ccHoverWrapped = true
+	driver:WrapScript(button, "OnEnter", [[
+		lu_hoverframe = self
+		if not lu_hoveractive then
+			control:RunAttribute("hover_set")
+			lu_hoveractive = true
+		end
+	]])
+	driver:WrapScript(button, "OnLeave", [[
+		if lu_hoverframe == self then lu_hoverframe = nil end
 	]])
 end
 
@@ -453,23 +634,32 @@ local function applyHover()
 		-- then set up nothing new -> assigned hovercast bindings block no keys.
 		if driver then
 			UnregisterStateDriver(driver, "mo")
-			pcall(function() driver:Execute("self:ClearBindings()") end)
+			pcall(function() driver:Execute("self:ClearBindings()\nlu_hoveractive = false") end)
 		end
 		if hoverBtn then clearHoverAttrs() end
 		lastHoverCount = 0
 		return
 	end
 	buildHoverFrames()
+
+	-- Teardown the previous build: drop ALL overrides at once + reset the active
+	-- flag, retire the state driver, wipe the global-button attrs. ONLY out of combat.
 	UnregisterStateDriver(driver, "mo")
-	pcall(function() driver:Execute("self:ClearBindings()") end)
+	pcall(function() driver:Execute("self:ClearBindings()\nlu_hoveractive = false") end)
 	clearHoverAttrs()
 
 	local cc = ccDB()
 	if not cc or not cc.enabled then lastHoverCount = 0; return end
 
-	local setLines, count = {}, 0
+	-- Make sure every live button carries the OnEnter/OnLeave race-fix wrap.
+	for button in pairs(buttons) do wrapButtonForHover(button) end
+
+	-- Hover path = bindings whose key is a KEYBOARD key / wheel (cast on mouseover).
+	-- Mouse-button bindings are handled by the click path instead.
+	local setLines, clearLines, count = {}, {}, 0
 	for _, b in ipairs(activeList()) do
-		if b.hovercast then
+		local p = parseKey(b.key)
+		if not p.isMouse then
 			local aType, macrotext = resolveBinding(b, true)
 			if aType then
 				count = count + 1
@@ -483,12 +673,19 @@ local function applyHover()
 				end
 				setLines[#setLines + 1] = format(
 					[[self:SetBindingClick(true, %q, %q, %q)]], b.key, HOVER_BTN_NAME, s)
+				clearLines[#clearLines + 1] = format([[self:ClearBinding(%q)]], b.key)
 			end
 		end
 	end
 	lastHoverCount = count
 
+	-- hover_set = bind the configured keys to the hover button; hover_clear = release
+	-- them PER KEY (self:ClearBinding(key)). The bulk self:ClearBindings() must NOT be
+	-- used inside this hot state-driver snippet — if it faults there it taints the
+	-- whole binding system (every key, incl. ESC/movement, goes dead). The bulk form
+	-- is reserved for the Execute() teardown above, which runs outside the snippet.
 	driver:SetAttribute("hover_set", concat(setLines, "\n"))
+	driver:SetAttribute("hover_clear", concat(clearLines, "\n"))
 	if count > 0 then
 		RegisterStateDriver(driver, "mo", "[@mouseover,exists] 1; 0")
 	end

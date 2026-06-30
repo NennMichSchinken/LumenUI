@@ -40,7 +40,8 @@ local issecretvalue = issecretvalue or function() return false end
 local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
 local AbbrevNum = _G.AbbreviateNumbersAlt or _G.AbbreviateNumbers or tostring
 
-local T = "Interface\\AddOns\\Lumen\\Textures\\"
+-- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
+local T = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
 local SHIELD_OVL_TEX = T .. "blizzard-shield"      -- 256x40, opaque, diagonal stripes + shading
 local HEALABS_TEX    = T .. "blizzard-absorb.png"  -- 256x128, semi-transparent, heal-absorb pattern
 local STRIPE_TEX_W   = 256                          -- texture width of both stripe textures (for TexCoord tiling)
@@ -754,15 +755,15 @@ local function auraCtxSuffix() return isRaidContext() and "Raid" or "Party" end
 -- automatically between raid/group), otherwise explicit per context.
 local function auraIconSize(cat, L)
 	local sfx = auraCtxSuffix()
-	if not cat.autoFit then
+	if not cat["autoFit" .. sfx] then
 		return cat["size" .. sfx] or (sfx == "Raid" and 16 or 22)
 	end
 	-- Auto-fit: ~30% of the frame height, BUT capped so the full row/column fits into
 	-- the frame (no overflow past the edge on narrow/short frames):
 	-- cap horizontal growth at the width, vertical at the height.
 	local h, w = L.height or 60, L.width or 114
-	local n  = max(1, cat.maxIcons or 5)
-	local sp = cat.spacing or 0
+	local n  = max(1, cat["maxIcons" .. sfx] or 5)
+	local sp = cat["spacing" .. sfx] or 0
 	local size = h * 0.30
 	local grow = cat["grow" .. sfx] or "RIGHT"
 	if grow == "UP" or grow == "DOWN" then
@@ -850,7 +851,9 @@ end
 -- (may create frames -> out of combat).
 local function layoutAuraCat(f, key, cat, size)
 	local holder = f.auraHolders[key]
-	if not (cat and cat.enabled) then
+	-- All display knobs are per context (raid/party) since Feature 1.
+	local sfx = auraCtxSuffix()
+	if not (cat and cat["enabled" .. sfx]) then
 		if holder then holder:Hide() end
 		return
 	end
@@ -862,22 +865,21 @@ local function layoutAuraCat(f, key, cat, size)
 	end
 	holder:Show()
 	-- Remember layout parameters for the render-time positioning (positionAuraIcons).
-	-- Anchor/growth/offset/inside-outside are separate per context (raid/party).
-	local sfx = auraCtxSuffix()
 	holder._anchor  = cat["anchor" .. sfx] or "BOTTOMLEFT"
 	holder._grow    = cat["grow" .. sfx] or "RIGHT"
 	holder._offX    = cat["offX" .. sfx] or 0
 	holder._offY    = cat["offY" .. sfx] or 0
 	holder._outside = cat["outside" .. sfx] or false
 	holder._size    = size
-	holder._spacing = cat.spacing or 0
+	holder._spacing = cat["spacing" .. sfx] or 0
 	holder._posCount = nil   -- layout params reset -> discard position cache
-	local maxN = cat.maxIcons or 5
+	local showSwipe = cat["showSwipe" .. sfx]
+	local maxN = cat["maxIcons" .. sfx] or 5
 	for i = 1, maxN do
 		local ic = holder.icons[i] or makeAuraIcon(holder)
 		holder.icons[i] = ic
 		ic:SetSize(size, size)
-		if cat.showSwipe then ic.cd:Show() else ic.cd:Hide() end
+		if showSwipe then ic.cd:Show() else ic.cd:Hide() end
 		ic:Hide()
 	end
 	for i = maxN + 1, #holder.icons do holder.icons[i]:Hide() end
@@ -1273,11 +1275,14 @@ function Raidframes:RenderAurasLive(f)
 	learnUnitSigs(u)   -- passive signature learning (out of combat; groundwork for the whitelist)
 	local spec = currentSpecID()
 	local wl   = whitelistFor(spec)   -- whitelist of the active spec (lazily seeded)
+	local sfx  = auraCtxSuffix()       -- display knobs are per context (Feature 1)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
-		if cat and cat.enabled and holder then
-			local maxN = cat.maxIcons or 5
+		if cat and cat["enabled" .. sfx] and holder then
+			local maxN     = cat["maxIcons" .. sfx] or 5
+			local showSwipe = cat["showSwipe" .. sfx]
+			local filterMode = cat["filterMode" .. sfx]
 			local fn   = C_UnitAuras.IsAuraFilteredOutByInstanceID
 			local shown, i = 0, 1
 			while shown < maxN do
@@ -1296,7 +1301,7 @@ function Raidframes:RenderAurasLive(f)
 					end
 				elseif c.harmfulModes then
 					-- Debuffs: Blizzard standard filter (all/raid-relevant/dispellable).
-					subPass = debuffModeAccept(u, iid, cat.filterMode, fn)
+					subPass = debuffModeAccept(u, iid, filterMode, fn)
 				end
 				-- Whitelist: which spells this category shows. sid also for the secret-free icon.
 				--  * whitelistOr (defensives, B3): filter hit (external def) OR own "def"
@@ -1333,7 +1338,7 @@ function Raidframes:RenderAurasLive(f)
 					local ic = holder.icons[shown]
 					if ic then
 						applyAuraIcon(ic, aura)
-						if cat.showSwipe and ic.cd then
+						if showSwipe and ic.cd then
 							local durObj = iid and C_UnitAuras.GetAuraDuration and C_UnitAuras.GetAuraDuration(u, iid)
 							if durObj and ic.cd.SetCooldownFromDurationObject then
 								pcall(ic.cd.SetCooldownFromDurationObject, ic.cd, durObj)
@@ -1355,17 +1360,19 @@ end
 function Raidframes:RenderAurasFake(f)
 	local A = db().auras
 	if not A then return end
+	local sfx = auraCtxSuffix()        -- display knobs are per context (Feature 1)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
-		if cat and cat.enabled and holder then
-			local n = min(cat.maxIcons or 5, 3)
+		if cat and cat["enabled" .. sfx] and holder then
+			local n = min(cat["maxIcons" .. sfx] or 5, 3)
+			local showSwipe = cat["showSwipe" .. sfx]
 			local fakeTex = c.fake or FAKE_HOTS
 			for k = 1, n do
 				local ic = holder.icons[k]
 				if ic then
 					ic.tex:SetTexture(fakeTex[((k - 1) % #fakeTex) + 1])
-					if cat.showSwipe and ic.cd then
+					if showSwipe and ic.cd then
 						ic.cd:SetCooldown(GetTime() - k * 1.5, 6 + k * 4)
 					elseif ic.cd then
 						ic.cd:Clear()

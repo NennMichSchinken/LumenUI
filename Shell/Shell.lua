@@ -1,12 +1,10 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Suite-Shell (phase 1: visual scaffold)
---  Own runed config look following the Lumen design system (see Shell/Tokens).
---  Phase 1 = chrome (header/nav/tabs/footer/rune) + dummy content for a look check.
---  Runs IN PARALLEL to the existing AceConfig (which stays on /lumen). Calling the
---  Shell during development: /lumen shell.
---  Widget toolkit + real screens follow in phase 2/3.
+--  Lumen — Suite-Shell
+--  The one and only config UI, with its own runed look following the Lumen
+--  design system (see Shell/Tokens). Chrome (header/nav/tabs/footer/rune) +
+--  the real screens (Shell/Screens). Opened via /lumen and the ESC-menu button.
 -- ===========================================================================
 
 local UI = ns.UI
@@ -257,7 +255,7 @@ end
 local SECTIONS = {
 	{ "Global",      { "Base", "Profile" } },
 	{ "Click-Cast",  { "Bindings" } },
-	{ "Raidframes",  { "Base", "Raid", "Group", "Auras", "Tracking" } },
+	{ "Raidframes",  { "Base", "Raid", "Group", "Tracking" } },
 	{ "Unitframes",  {}, soon = true },
 	{ "Nameplates",  {}, soon = true },
 	{ "QoL",         {}, soon = true },
@@ -279,6 +277,9 @@ function Shell:Build()
 	f:SetScript("OnDragStart", f.StartMoving)
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
 	f:Hide()
+	-- ESC closes via UISpecialFrames (hides the frame directly, NOT Shell:Hide) — make
+	-- sure a listening KeybindButton never survives the close with the keyboard grabbed.
+	f:HookScript("OnHide", function() if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end end)
 	tinsert(UISpecialFrames, "LumenShellFrame") -- ESC closes
 	self._frame = f
 
@@ -406,8 +407,11 @@ function Shell:Build()
 	paintThumb(0.55)
 
 	local function updateBar()
-		local range = scroll:GetVerticalScrollRange() or 0
+		-- Derive the range from the scroll child height (always current) instead of
+		-- GetVerticalScrollRange(), which updates a frame LATE after a content-height
+		-- change (e.g. collapsing the aura section) -> stale -> oversized/overflowing thumb.
 		local h = scroll:GetHeight() or 1
+		local range = math.max(0, (scrollChild:GetHeight() or 0) - h)
 		if range <= 0.5 or h <= 1 then sbTrack:Hide(); return end
 		sbTrack:Show()
 		local total = h + range
@@ -682,6 +686,10 @@ Shell.NewStack = newStack
 -- registered, otherwise the widget gallery (phase-2 fallback). Then set the scroll
 -- child height, scroll to top, update the scrollbar.
 function Shell:RenderContent(keepScroll)
+	-- Release any keybind-capture before rebuilding: hiding the screen orphans a
+	-- listening KeybindButton without firing its OnHide, which would leave the
+	-- keyboard grabbed (no movement / ESC) until /reload.
+	if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end
 	local prevScroll = (keepScroll and self._scroll and self._scroll:GetVerticalScroll()) or 0
 	local holderParent = self._scrollChild
 	if self._screen then self._screen:Hide(); self._screen:SetParent(nil); self._screen = nil end
@@ -720,10 +728,11 @@ function Shell:RenderContent(keepScroll)
 	d:SetHeight(h)
 	holderParent:SetHeight(h)
 	if self._scroll then
-		-- On a forced rebuild (e.g. role reordering) keep the scroll position,
-		-- otherwise it jumps to the top.
-		local range = self._scroll:GetVerticalScrollRange() or 0
-		self._scroll:SetVerticalScroll(math.max(0, math.min(range, prevScroll)))
+		-- On a forced rebuild (e.g. role reordering, collapsing the aura section) keep
+		-- the scroll position, but clamp to the NEW content height. GetVerticalScrollRange()
+		-- is a frame late right after SetHeight (stale) -> derive the max from the content height.
+		local maxScroll = math.max(0, h - (self._scroll:GetHeight() or 0))
+		self._scroll:SetVerticalScroll(math.min(maxScroll, math.max(0, prevScroll)))
 	end
 	if self._updateBar then self._updateBar() end
 end
@@ -768,5 +777,6 @@ function Shell:Show()
 end
 
 function Shell:Hide()
+	if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end -- never leave the keyboard grabbed
 	if self._frame then self._frame:Hide() end
 end
