@@ -1,6 +1,9 @@
 # Lokales Dev-Werkzeug (luacheck-Binary + Runner) — gehört nicht ins Addon-Repo/Package.
 /tools/
 
+# Local dev .toc for the side-by-side "LumenUI_Dev" test install — never ship this.
+/LumenUI_Dev.toc
+
 # Claude Code / KI-Assistenz — interne Arbeitsdateien, nicht ins öffentliche Repo.
 CLAUDE.md
 CLAUDE.local.md
