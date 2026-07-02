@@ -5,6 +5,17 @@
 > 🚧 **Status: Public Beta** · Version `0.9.104` · Interface `120007` (Patch 12.0.7)
 > The Raidframes module is complete and battle-tested. More modules are on the roadmap.
 
+## About this project
+
+LumenUI started out of boredom — a little thing for me and a few friends, just to see how
+far you can actually get. I'm a **UI/UX designer, not a programmer**: I own the design, UX
+and direction, and the Lua is written **with AI — [Claude Code](https://www.anthropic.com/claude-code)
+(Anthropic)** — in a tight design-and-iterate loop. It grew into something we genuinely use
+in M+ and raid, so it's out as a public Beta. Treat it with the honesty of a hobby project:
+solid where it counts, rough at the edges, and better with your bug reports.
+
+---
+
 LumenUI is deliberately **anti-bloat**: a short, curated module list with strong defaults instead of hundreds of switches — only what serious M+ and raid players actually use, done properly. The guiding rule: *what reads well for a healer under pressure works for every role.*
 
 ---
@@ -96,6 +107,18 @@ powershell tools\check.ps1
 | `Libs/` | Bundled Ace3 libraries + LibDeflate |
 | `Fonts/`, `Textures/` | Bundled assets |
 
+### Contributing
+
+Issues and PRs are welcome — this is an open hobby project. A few notes so we stay aligned:
+
+- The identity is **anti-bloat**: features are curated, not maximal. For anything bigger
+  than a fix, please open an issue first so we can agree on scope before you build.
+- Keep commits small and focused; run `luacheck` (must be 0 warnings / 0 errors) before a PR.
+- The code is written in an **AI-assisted loop** — clarity and WoW 12.0 secret-safe patterns
+  matter more than cleverness.
+- Combat code must stay **secret-safe** (no Lua math or comparisons on secret values). See
+  `Modules/Raidframes.lua` for the established rendering patterns.
+
 ---
 
 ## Releasing
@@ -130,12 +153,9 @@ intentionally out of scope.
 ## Tech stack
 
 Lua + WoW API, built on [Ace3](https://www.wowace.com/projects/ace3)
-(AceAddon, AceDB, AceEvent, AceTimer, AceSerializer) plus
+(AceAddon, AceConsole, AceEvent, AceDB, AceSerializer) plus
 [LibDeflate](https://github.com/SafeteeWoW/LibDeflate) for export/import compression.
 The settings UI is a custom suite shell (`Shell/`) — not AceConfig.
-
-Design, UX/UI and project direction by **NennMichSchinken**; the Lua implementation
-was written with **[Claude Code](https://www.anthropic.com/claude-code)** (Anthropic).
 
 ## Credits & licensing
 
