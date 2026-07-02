@@ -10,6 +10,13 @@ on:
 permissions:
   contents: write
 
+# Guard against a double-trigger for the same tag (publishing a release that
+# creates the tag can fire twice) — collapse duplicate runs so a version is
+# only packaged and uploaded once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
