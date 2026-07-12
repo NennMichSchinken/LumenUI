@@ -1,0 +1,12 @@
+package-as: LumenUI
+
+# Libs are committed in the repo (Libs/) and shipped as-is —
+# so no externals and no nolib stripping.
+enable-nolib-creation: no
+
+# Dev/tooling files do not belong in the shipped zip.
+ignore:
+  - .luacheckrc
+  - tools
+  - .github
+  - "*.md"

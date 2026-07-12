@@ -1,0 +1,24 @@
+# Lokales Dev-Werkzeug (luacheck-Binary + Runner) — gehört nicht ins Addon-Repo/Package.
+/tools/
+
+# Local dev .toc for the side-by-side "LumenUI_Dev" test install — never ship this.
+/LumenUI_Dev.toc
+
+# Claude Code / KI-Assistenz — interne Arbeitsdateien, nicht ins öffentliche Repo.
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.mcp.json
+
+# Interne Design-Doku — bleibt lokal/privat (Backup im LumenUI-Private-Repo).
+LUMENUI_DESIGN_PRINCIPLES.md
+
+# Andere KI-/Editor-Artefakte (vorsorglich).
+.cursor/
+.aider*
+.windsurf/
+
+# OS-/Editor-Müll.
+.DS_Store
+Thumbs.db
+*.swp

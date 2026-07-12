@@ -1,0 +1,99 @@
+local ADDON, ns = ...
+
+-- ===========================================================================
+--  Lumen — Edit Mode
+--  Movable Lumen elements get a drag overlay with a label.
+--  Visible/draggable when EITHER the manual switch (Global) is on
+--  OR WoW's own Edit Mode is running (one place for everything).
+--  Modules register their frame via :Register.
+-- ===========================================================================
+
+local EditMode = { manual = false, blizzard = false, active = false, items = {} }
+ns.EditMode = EditMode
+
+local floor = math.floor
+
+local function makeOverlay(frame, label)
+	local o = CreateFrame("Frame", nil, frame)
+	o:SetAllPoints()
+	o:SetFrameStrata("HIGH")
+	o:EnableMouse(true)
+
+	o.bg = o:CreateTexture(nil, "BACKGROUND")
+	o.bg:SetAllPoints()
+	-- brand gold (palette C1 #E9BB69 — kept literal here: this file loads before Shell/Tokens)
+	o.bg:SetColorTexture(0.91, 0.73, 0.41, 0.25)
+
+	local function line() local t = o:CreateTexture(nil, "BORDER"); t:SetColorTexture(0.91, 0.73, 0.41, 0.9); return t end
+	local t, b, l, r = line(), line(), line(), line()
+	t:SetPoint("TOPLEFT"); t:SetPoint("TOPRIGHT"); t:SetHeight(1)
+	b:SetPoint("BOTTOMLEFT"); b:SetPoint("BOTTOMRIGHT"); b:SetHeight(1)
+	l:SetPoint("TOPLEFT"); l:SetPoint("BOTTOMLEFT"); l:SetWidth(1)
+	r:SetPoint("TOPRIGHT"); r:SetPoint("BOTTOMRIGHT"); r:SetWidth(1)
+
+	o.text = o:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	o.text:SetPoint("CENTER")
+	o.text:SetText(label)
+	o.text:SetTextColor(1, 0.95, 0.82)
+
+	o:SetScript("OnMouseDown", function() frame:StartMoving() end)
+	o:SetScript("OnMouseUp", function()
+		frame:StopMovingOrSizing()
+		local p, _, _, x, y = frame:GetPoint()
+		local info = EditMode.items[frame]
+		if info and info.save then info.save(p, floor(x + 0.5), floor(y + 0.5)) end
+	end)
+	o:Hide()
+	return o
+end
+
+function EditMode:_refresh()
+	self.active = self.manual or self.blizzard
+	for _, info in pairs(self.items) do
+		info.overlay:SetShown(self.active)
+	end
+	-- Notify listeners (e.g. QoL trackers force-show while unlocked so
+	-- instance-only elements can be placed anywhere).
+	if self.listeners then
+		for i = 1, #self.listeners do pcall(self.listeners[i], self.active) end
+	end
+end
+
+function EditMode:AddListener(fn)
+	self.listeners = self.listeners or {}
+	self.listeners[#self.listeners + 1] = fn
+end
+
+function EditMode:Register(frame, label, save)
+	if self.items[frame] then return end
+	frame:SetMovable(true)
+	frame:SetClampedToScreen(true)
+	self.items[frame] = { label = label, save = save, overlay = makeOverlay(frame, label) }
+	if self.active then self.items[frame].overlay:Show() end
+end
+
+function EditMode:Toggle(on)            -- manual switch (Global)
+	self.manual = on and true or false
+	self:_refresh()
+end
+
+function EditMode:SetBlizzard(on)       -- WoW Edit Mode
+	self.blizzard = on and true or false
+	self:_refresh()
+end
+
+function EditMode:IsActive() return self.manual end
+
+-- Hook into WoW's Edit Mode: Lumen frames show up there as movable.
+local hookFrame = CreateFrame("Frame")
+hookFrame:RegisterEvent("PLAYER_LOGIN")
+hookFrame:SetScript("OnEvent", function()
+	if EditModeManagerFrame then
+		if EditModeManagerFrame.EnterEditMode then
+			hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() EditMode:SetBlizzard(true) end)
+		end
+		if EditModeManagerFrame.ExitEditMode then
+			hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() EditMode:SetBlizzard(false) end)
+		end
+	end
+end)
