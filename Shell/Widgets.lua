@@ -2277,9 +2277,27 @@ function W.Button(parent, o)
 		UI:SetFont(txt, "btn", v.txt)
 		txt:SetText(o.text)
 	end
-	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 
-	b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
+	-- Optional leading Lucide icon (o.icon = texture basename in Textures/),
+	-- tinted to match the label in every state (nav-icon pattern: snap off).
+	local icon, iconSpan = nil, 0
+	if o.icon then
+		icon = b:CreateTexture(nil, "ARTWORK")
+		icon:SetSize(M.btnIcon, M.btnIcon)
+		icon:SetTexture(TEX .. o.icon)
+		icon:SetSnapToPixelGrid(false)
+		icon:SetTexelSnappingBias(0)
+		icon:SetVertexColor(v.txt.r, v.txt.g, v.txt.b)
+		iconSpan = M.btnIcon + M.btnIconGap
+		icon:SetPoint("RIGHT", txt, "LEFT", -M.btnIconGap, 0)
+	end
+	-- Center the icon+label pair as one block.
+	txt:SetPoint("CENTER", b, "CENTER", iconSpan / 2, 0)
+
+	local function fitWidth()
+		b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + iconSpan + v.pad * 2))
+	end
+	fitWidth()
 
 	-- Cold-start guarantee: a cold glyph cache (first session use of the Bold
 	-- weight, e.g. the Profile tab's primary buttons) can MEASURE a width while
@@ -2298,7 +2316,7 @@ function W.Button(parent, o)
 			-- blank glyphs stay blank) -> clear first so the re-set is a real change.
 			txt:SetText("")
 			txt:SetText(o.text)
-			b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
+			fitWidth()
 		end
 		b:HookScript("OnShow", function() C_Timer.After(0, heal) end)
 		C_Timer.After(0, heal)
@@ -2308,11 +2326,13 @@ function W.Button(parent, o)
 		paintBg(true)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.lineHover) end
 		txt:SetTextColor(v.txtHover.r, v.txtHover.g, v.txtHover.b)
+		if icon then icon:SetVertexColor(v.txtHover.r, v.txtHover.g, v.txtHover.b) end
 	end)
 	b:SetScript("OnLeave", function()
 		paintBg(false)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.line) end
 		txt:SetTextColor(v.txt.r, v.txt.g, v.txt.b)
+		if icon then icon:SetVertexColor(v.txt.r, v.txt.g, v.txt.b) end
 	end)
 	if o.onClick then b:SetScript("OnClick", o.onClick) end
 	b._txt = txt
