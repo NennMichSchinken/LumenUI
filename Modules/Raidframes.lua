@@ -2422,7 +2422,11 @@ function Raidframes:Setup()
 		ns.EditMode:Register(container, "Raidframes", function(p, x, y)
 			-- Save the position into the ACTIVE context (raid/party).
 			local L = layoutCtx(); L.point, L.x, L.y = p, x, y
-		end)
+		end,
+		-- Bounds provider: the container is a fixed 200x200 pad, but the actual
+		-- frames only fill the header's auto-sized region — Edit Mode uses THAT
+		-- for the overlay + walls + grooves so alignment matches the visible frames.
+		function() return header end)
 	end
 	container:Hide()   -- default = off; only Enable() shows the container (else frames despite "off")
 end
