@@ -65,6 +65,20 @@ local function rectOf(f)
 	return l * eff, b * eff, f:GetWidth() * eff, f:GetHeight() * eff
 end
 
+-- The frame whose VISIBLE bounds represent an element. Some movers (the
+-- raidframes) sit inside a larger fixed container — walls/grooves/overlay must
+-- follow the actual frames, not the padded container. info.boundsFn returns
+-- that inner frame (may not exist yet at Register time -> re-evaluated live).
+local function boundsFor(frame, info)
+	if info and info.boundsFn then
+		local bf = info.boundsFn()
+		-- Only trust the inner bounds when it actually has a usable rect (a
+		-- header with no visible frames can be 0-sized -> fall back to the frame).
+		if bf and bf:GetLeft() and bf:GetWidth() > 8 and bf:GetHeight() > 8 then return bf end
+	end
+	return frame
+end
+
 local function hitsObstacle(x, y, w, h, i)
 	return x < obsR[i] and x + w > obsL[i] and y < obsT[i] and y + h > obsB[i]
 end
@@ -187,31 +201,17 @@ local function updateGuides(gvx, gvsrc, ghy, ghsrc, x, y)
 	if not shown and badge then badge:Hide() end
 end
 
--- ---------------------------------------------------------------------------
---  Drag loop (own SetPoint loop — StartMoving cannot be constrained).
--- ---------------------------------------------------------------------------
-local function beginDrag(frame)
-	local ui = UIParent:GetEffectiveScale()
-	local cx, cy = GetCursorPosition()
-	local l, b, w, h = rectOf(frame)
-	if not l then return false end
-	drag.frame = frame
-	drag.offX, drag.offY = cx / ui - l, cy / ui - b
-	drag.grabX, drag.grabY = cx / ui, cy / ui
-	drag.w, drag.h = w, h
-	drag.lastX, drag.lastY = l, b
-	drag.moved = false
-	drag.screenW, drag.screenH = UIParent:GetWidth(), UIParent:GetHeight()
-	drag.tol = TOL_PX / ui
-
-	-- Collect obstacles + alignment lines ONCE per drag (the others don't
-	-- move while this one is dragged). Screen center axes are always targets.
+-- Collect the obstacle rects + alignment lines of all OTHER visible movers
+-- (using each one's VISIBLE bounds). Screen center axes are always targets.
+-- Shared by the drag start and the arrow-key nudge (so nudging also aligns).
+local function collectObstacles(frame)
 	obsN, vN, hN = 0, 0, 0
+	drag.screenW, drag.screenH = UIParent:GetWidth(), UIParent:GetHeight()
 	vN = vN + 1; vLine[vN] = drag.screenW / 2; vSrc[vN] = 0
 	hN = hN + 1; hLine[hN] = drag.screenH / 2; hSrc[hN] = 0
-	for f in pairs(EditMode.items) do
+	for f, inf in pairs(EditMode.items) do
 		if f ~= frame and f:IsShown() then
-			local ol, ob, ow, oh = rectOf(f)
+			local ol, ob, ow, oh = rectOf(boundsFor(f, inf))
 			if ol then
 				obsN = obsN + 1
 				obsL[obsN], obsB[obsN] = ol, ob
@@ -225,6 +225,30 @@ local function beginDrag(frame)
 			end
 		end
 	end
+end
+
+-- ---------------------------------------------------------------------------
+--  Drag loop (own SetPoint loop — StartMoving cannot be constrained).
+-- ---------------------------------------------------------------------------
+local function beginDrag(frame)
+	local info = EditMode.items[frame]
+	local ui = UIParent:GetEffectiveScale()
+	local cx, cy = GetCursorPosition()
+	-- Physics run in the element's VISIBLE-bounds space; the moved frame gets a
+	-- translated position (delta = moved-frame origin - bounds origin, constant
+	-- while dragging because the bounds frame is anchored inside the moved one).
+	local bl, bb, bw, bh = rectOf(boundsFor(frame, info))
+	local fl, fb = rectOf(frame)
+	if not bl or not fl then return false end
+	drag.frame = frame
+	drag.deltaX, drag.deltaY = fl - bl, fb - bb
+	drag.offX, drag.offY = cx / ui - bl, cy / ui - bb
+	drag.grabX, drag.grabY = cx / ui, cy / ui
+	drag.w, drag.h = bw, bh
+	drag.lastX, drag.lastY = bl, bb
+	drag.moved = false
+	drag.tol = TOL_PX / ui
+	collectObstacles(frame)
 	return true
 end
 
@@ -308,11 +332,12 @@ local function dragUpdate()
 
 	if x ~= drag.lastX or y ~= drag.lastY then
 		drag.lastX, drag.lastY = x, y
-		-- SetPoint offsets live in the FRAME's own scale space — convert back
-		-- from UIParent units (identity while all movers run scale 1).
+		-- Translate the bounds target to the moved frame (add the constant
+		-- delta), then convert from UIParent units to the frame's own scale
+		-- space (identity while all movers run scale 1).
 		local inv = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
 		frame:ClearAllPoints()
-		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x * inv, y * inv)
+		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (x + drag.deltaX) * inv, (y + drag.deltaY) * inv)
 	end
 	updateGuides(gvx, gvsrc, ghy, ghsrc, x, y)
 end
@@ -335,7 +360,10 @@ end
 local function makeOverlay(frame, label)
 	local o = CreateFrame("Frame", nil, frame)
 	o:SetAllPoints()
-	o:SetFrameStrata("HIGH")
+	-- Above the unit buttons (container/buttons are HIGH strata, and the buttons
+	-- would otherwise eat the mouse over the actual frames — the reason the
+	-- raidframes were only grabbable in their empty container padding).
+	o:SetFrameStrata("FULLSCREEN_DIALOG")
 	o:EnableMouse(true)
 
 	o.bg = o:CreateTexture(nil, "BACKGROUND")
@@ -391,12 +419,45 @@ end
 --  Selection + arrow-key nudge (session only)
 -- ---------------------------------------------------------------------------
 function EditMode:Select(frame)
+	if self.selected == frame then return end
+	hideGuides() -- a lingering nudge line belongs to the old selection
 	if self.selected and self.items[self.selected] then
 		self.items[self.selected].overlay:SetSelected(false)
 	end
 	self.selected = frame
 	if frame and self.items[frame] then
 		self.items[frame].overlay:SetSelected(true)
+	end
+end
+
+-- After a nudge, show the guide line(s) if the element now sits exactly on a
+-- flight line — so keyboard aligning gets the same feedback as mouse dragging
+-- (Florian's request 2026-07-13). Auto-hides shortly after the last nudge.
+local nudgeTimer
+local function showNudgeGuides(frame)
+	local info = EditMode.items[frame]
+	local bl, bb, bw, bh = rectOf(boundsFor(frame, info))
+	if not bl then return end
+	collectObstacles(frame)
+	drag.w, drag.h = bw, bh
+	local eps = 0.75
+	local gvx, gvsrc, ghy, ghsrc
+	for i = 1, vN do
+		local Lp = vLine[i]
+		if abs(bl - Lp) < eps or abs(bl + bw / 2 - Lp) < eps or abs(bl + bw - Lp) < eps then
+			gvx = Lp; gvsrc = vSrc[i]; break
+		end
+	end
+	for i = 1, hN do
+		local Lp = hLine[i]
+		if abs(bb - Lp) < eps or abs(bb + bh / 2 - Lp) < eps or abs(bb + bh - Lp) < eps then
+			ghy = Lp; ghsrc = hSrc[i]; break
+		end
+	end
+	updateGuides(gvx, gvsrc or 0, ghy, ghsrc or 0, bl, bb)
+	if nudgeTimer then nudgeTimer:Cancel(); nudgeTimer = nil end
+	if gvx or ghy then
+		nudgeTimer = C_Timer.NewTimer(1.2, function() hideGuides(); nudgeTimer = nil end)
 	end
 end
 
@@ -413,6 +474,7 @@ local function nudgeSelected(dx, dy)
 		local p, _, _, px, py = frame:GetPoint()
 		info.save(p, floor(px + 0.5), floor(py + 0.5))
 	end
+	showNudgeGuides(frame)
 end
 
 -- Keyboard catcher: active ONLY while a Lumen session runs. HARD RULES from
@@ -473,6 +535,17 @@ local function ensureToolbar()
 	UI.RoundFill(toolbar, UI.P.panel, "BACKGROUND", nil, UI.RADIUS.lg)
 	UI.RoundBorder(toolbar, UI.line.mid, "BORDER", nil, UI.RADIUS.lg)
 
+	-- Grip glyph (Lucide grip-vertical): a visual "grab me" affordance at the
+	-- front (Florian 2026-07-13). The whole toolbar is the drag handle.
+	local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+	local grip = toolbar:CreateTexture(nil, "ARTWORK")
+	grip:SetSize(14, 14)
+	grip:SetTexture(TEX .. "icon-grip")
+	grip:SetSnapToPixelGrid(false)
+	grip:SetTexelSnappingBias(0)
+	grip:SetVertexColor(UI.P.textSecondary.r, UI.P.textSecondary.g, UI.P.textSecondary.b)
+	toolbar._grip = grip
+
 	-- EDIT MODE wordmark-style label (brand gold, non-clickable = C1).
 	local mark = UI.FS(toolbar, "groupTitle", UI.P.goldBrand)
 	mark:SetText(UI.Track("EDIT MODE", " "))
@@ -490,11 +563,15 @@ local function ensureToolbar()
 	-- re-fit on show (cold-start fonts can measure 0 on the very first frame).
 	local M = UI.WIDGET
 	local pad, gap = M.sectionPad, M.sectionPad
+	local gripGap = M.btnIconGap
 	function toolbar:_fit()
-		local w = pad + mark:GetStringWidth() + gap + done:GetWidth() + gap + hint:GetStringWidth() + pad
+		local w = pad + grip:GetWidth() + gripGap + mark:GetStringWidth() + gap
+			+ done:GetWidth() + gap + hint:GetStringWidth() + pad
 		self:SetSize(w, M.buttonH + 24)
+		grip:ClearAllPoints()
+		grip:SetPoint("LEFT", self, "LEFT", pad, 0)
 		mark:ClearAllPoints()
-		mark:SetPoint("LEFT", self, "LEFT", pad, 0)
+		mark:SetPoint("LEFT", grip, "RIGHT", gripGap, 0)
 		done:ClearAllPoints()
 		done:SetPoint("LEFT", mark, "RIGHT", gap, 0)
 		hint:ClearAllPoints()
@@ -509,8 +586,21 @@ end
 -- ---------------------------------------------------------------------------
 --  Registry + activation
 -- ---------------------------------------------------------------------------
+-- Anchor every overlay to its element's VISIBLE bounds (the raidframes' inner
+-- header may only get its real size a frame after the session opens) so the
+-- gold box + label hug the frames, not the padded container.
+function EditMode:_anchorOverlays()
+	if not self.active then return end
+	for frame, info in pairs(self.items) do
+		local bf = boundsFor(frame, info)
+		info.overlay:ClearAllPoints()
+		info.overlay:SetAllPoints(bf)
+	end
+end
+
 function EditMode:_refresh()
 	self.active = self.session or self.blizzard
+	if self.active then self:_anchorOverlays() end
 	for _, info in pairs(self.items) do
 		info.overlay:SetShown(self.active)
 	end
@@ -526,12 +616,21 @@ function EditMode:AddListener(fn)
 	self.listeners[#self.listeners + 1] = fn
 end
 
-function EditMode:Register(frame, label, save)
+-- boundsFn (optional): a function returning the frame whose VISIBLE bounds
+-- represent this element for walls/grooves/overlay, when it differs from the
+-- moved frame (e.g. the raidframes live in a larger fixed container).
+function EditMode:Register(frame, label, save, boundsFn)
 	if self.items[frame] then return end
 	frame:SetMovable(true)
 	frame:SetClampedToScreen(true)
-	self.items[frame] = { label = label, save = save, overlay = makeOverlay(frame, label) }
-	if self.active then self.items[frame].overlay:Show() end
+	self.items[frame] = { label = label, save = save, boundsFn = boundsFn, overlay = makeOverlay(frame, label) }
+	if self.active then
+		local info = self.items[frame]
+		local bf = boundsFor(frame, info)
+		info.overlay:ClearAllPoints()
+		info.overlay:SetAllPoints(bf)
+		info.overlay:Show()
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -559,6 +658,9 @@ function EditMode:OpenSession()
 	kb:Show()
 	evt:RegisterEvent("PLAYER_REGEN_DISABLED")
 	self:_refresh()
+	-- Re-anchor once more next frame: the raidframes' header can resolve its
+	-- real size only after this frame, leaving the overlay on the container.
+	C_Timer.After(0, function() self:_anchorOverlays() end)
 end
 
 function EditMode:CloseSession(reopenShell)
