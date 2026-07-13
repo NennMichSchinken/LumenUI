@@ -273,7 +273,9 @@ ns.RegisterLocale("deDE", {
 	["Edit Mode is not available in combat."] = "Der Edit-Modus ist im Kampf nicht verfügbar.",
 	["Reset positions"] = "Positionen zurücksetzen",
 	["Reset positions?"] = "Positionen zurücksetzen?",
-	["Resets all movable Lumen elements to their default positions."] = "Setzt alle beweglichen Lumen-Elemente auf ihre Standardpositionen zurück.",
+	["Resets all movable Lumen elements to their default positions and removes couplings."] = "Setzt alle beweglichen Lumen-Elemente auf ihre Standardpositionen zurück und löst alle Kopplungen.",
+	["Pick an element to couple to (Esc cancels)."] = "Element zum Koppeln anklicken (Esc bricht ab).",
+	["Can't couple — that would create a loop."] = "Kopplung nicht möglich — das würde eine Schleife erzeugen.",
 	["Applies after a UI reload."] = "Wird nach einem Neuladen der UI angewendet.",
 	["Also works through WoW's own Edit Mode."] = "Funktioniert auch über WoWs eigenen Edit-Modus.",
 

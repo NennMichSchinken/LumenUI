@@ -1528,9 +1528,12 @@ local function buildGlobalBase(d, stack)
 		onClick = function()
 			W.Confirm({
 				title = T("Reset positions?"),
-				body = T("Resets all movable Lumen elements to their default positions."),
+				body = T("Resets all movable Lumen elements to their default positions and removes couplings."),
 				confirmText = T("Reset"), cancelText = T("Cancel"),
 				onConfirm = function()
+					-- Drop Edit Mode couplings first so the elements fall back to
+					-- the default absolute positions set below.
+					wipe(ns.Lumen.db.profile.editLinks)
 					local r = rf()
 					for _, ctx in ipairs({ "raid", "party" }) do
 						local t = r[ctx]; if t then t.point, t.x, t.y = "CENTER", 0, -120 end
@@ -1542,6 +1545,7 @@ local function buildGlobalBase(d, stack)
 					tk.brez.pos = { point = "CENTER", x = -30, y = -240 }
 					tk.lust.pos = { point = "CENTER", x = 30, y = -240 }
 					if ns.QoL then ns.QoL:ApplyPull(); ns.QoL:ApplyTrackers() end
+					if ns.EditMode then ns.EditMode:_refresh() end
 				end,
 			})
 		end })
