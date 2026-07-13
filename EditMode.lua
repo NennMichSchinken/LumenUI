@@ -43,6 +43,12 @@ local GAP_MIN = 7
 -- Brand gold (palette C1 #E9BB69 — kept literal here: this file loads before
 -- Shell/Tokens; runtime-built parts below use the real tokens instead).
 local GOLD_R, GOLD_G, GOLD_B = 0.91, 0.73, 0.41
+-- C2 interactive gold #CDA255 (coupled) + muted text #808283 (idle chain icon).
+local GOLDINT_R, GOLDINT_G, GOLDINT_B = 0.80, 0.64, 0.33
+local MUTED_R, MUTED_G, MUTED_B = 0.50, 0.51, 0.51
+
+local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local CHAIN = 20 -- chain-icon edge length (top-right of the overlay)
 
 -- ---------------------------------------------------------------------------
 --  Drag state — file-locals reused across drags (no tables/closures are
@@ -55,6 +61,35 @@ local obsL, obsB, obsR, obsT, obsN = {}, {}, {}, {}, 0
 local vLine, vSrc, vN = {}, {}, 0
 local hLine, hSrc, hN = {}, {}, 0
 local drag = { frame = nil }
+-- Frames that move WITH the dragged one (a dragged anchor takes its group) —
+-- they must NOT act as walls against it. Rebuilt per drag (reused table).
+local moveSet = {}
+
+-- Phase 2 (links): stable string key -> frame.
+EditMode.byKey = {}
+
+-- Shared event frame (session combat-exit, Blizzard Edit Mode hook, deferred
+-- ApplyLinks out of combat). Declared here so ApplyLinks can reach it.
+local evt = CreateFrame("Frame")
+
+-- The editLinks profile table ({ [childKey] = { to, offX, offY } }).
+local function linksDB()
+	local L = ns.Lumen
+	return L and L.db and L.db.profile and L.db.profile.editLinks
+end
+
+-- Does anchorKey's anchor chain already contain childKey? (cycle guard)
+local function chainReaches(startKey, targetKey)
+	local links = linksDB()
+	local k, guard = startKey, 0
+	while k and guard < 64 do
+		if k == targetKey then return true end
+		local e = links and links[k]
+		k = e and e.to
+		guard = guard + 1
+	end
+	return false
+end
 
 -- Frame rect in UIParent coordinate space (handles a differing effective
 -- scale, e.g. if a registered frame ever runs its own SetScale).
@@ -201,6 +236,63 @@ local function updateGuides(gvx, gvsrc, ghy, ghsrc, x, y)
 	if not shown and badge then badge:Hide() end
 end
 
+-- ---------------------------------------------------------------------------
+--  Connection lines between coupled elements (Phase 2). A subtle gold line
+--  from each child's visible center to its anchor's center, shown while the
+--  session runs. Pooled Line objects on a dedicated host BELOW the overlays.
+-- ---------------------------------------------------------------------------
+local linkHost, linkLines, linkLineN = nil, {}, 0
+
+local function ensureLinkHost()
+	if linkHost then return end
+	linkHost = CreateFrame("Frame", nil, UIParent)
+	linkHost:SetAllPoints(UIParent)
+	linkHost:SetFrameStrata("FULLSCREEN") -- above the frames, below the FULLSCREEN_DIALOG overlays
+	linkHost:EnableMouse(false)
+	linkHost:Hide()
+end
+
+local function centerOf(frame, info)
+	local l, b, w, h = rectOf(boundsFor(frame, info))
+	if not l then return nil end
+	return l + w / 2, b + h / 2
+end
+
+local function updateLinkLines()
+	local links = linksDB()
+	if not EditMode.active or not links or not next(links) then
+		if linkHost then linkHost:Hide() end
+		return
+	end
+	ensureLinkHost()
+	linkHost:Show()
+	local n = 0
+	for childKey, e in pairs(links) do
+		local cf, af = EditMode.byKey[childKey], e.to and EditMode.byKey[e.to]
+		if cf and af and cf:IsShown() and af:IsShown() then
+			local x1, y1 = centerOf(cf, EditMode.items[cf])
+			local x2, y2 = centerOf(af, EditMode.items[af])
+			if x1 and x2 then
+				n = n + 1
+				local ln = linkLines[n]
+				if not ln then
+					ln = linkHost:CreateLine(nil, "OVERLAY")
+					ln:SetThickness(2)
+					local col = ns.UI and ns.UI.P.goldBrand
+					if col then ln:SetColorTexture(col.r, col.g, col.b, 0.45)
+					else ln:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 0.45) end
+					linkLines[n] = ln
+				end
+				ln:SetStartPoint("BOTTOMLEFT", linkHost, x1, y1)
+				ln:SetEndPoint("BOTTOMLEFT", linkHost, x2, y2)
+				ln:Show()
+			end
+		end
+	end
+	for i = n + 1, linkLineN do linkLines[i]:Hide() end
+	linkLineN = n
+end
+
 -- Collect the obstacle rects + alignment lines of all OTHER visible movers
 -- (using each one's VISIBLE bounds). Screen center axes are always targets.
 -- Shared by the drag start and the arrow-key nudge (so nudging also aligns).
@@ -210,7 +302,7 @@ local function collectObstacles(frame)
 	vN = vN + 1; vLine[vN] = drag.screenW / 2; vSrc[vN] = 0
 	hN = hN + 1; hLine[hN] = drag.screenH / 2; hSrc[hN] = 0
 	for f, inf in pairs(EditMode.items) do
-		if f ~= frame and f:IsShown() then
+		if f ~= frame and not moveSet[f] and f:IsShown() then
 			local ol, ob, ow, oh = rectOf(boundsFor(f, inf))
 			if ol then
 				obsN = obsN + 1
@@ -225,6 +317,60 @@ local function collectObstacles(frame)
 			end
 		end
 	end
+end
+
+-- Save a frame's CURRENT absolute position through its module save callback
+-- (BOTTOMLEFT in UIParent units) — the always-fresh fallback used when a link's
+-- anchor is unavailable.
+local function saveAbsolute(f)
+	local info = EditMode.items[f]
+	if not (info and info.save) then return end
+	local l, b = rectOf(f)
+	if not l then return end
+	local inv = UIParent:GetEffectiveScale() / f:GetEffectiveScale()
+	info.save("BOTTOMLEFT", floor(l * inv + 0.5), floor(b * inv + 0.5))
+end
+
+-- Fill moveSet with the frame + all elements anchored to it (chain), and
+-- return the frame's own anchor frame (if it is itself a coupled child).
+local function buildGroup(frame)
+	wipe(moveSet)
+	moveSet[frame] = true
+	local info = EditMode.items[frame]
+	local key = info and info.key
+	local links = linksDB()
+	if key and links then
+		for k, e in pairs(links) do
+			if e.to and chainReaches(k, key) then
+				local cf = EditMode.byKey[k]
+				if cf then moveSet[cf] = true end
+			end
+		end
+	end
+	if key and links and links[key] and links[key].to then
+		return EditMode.byKey[links[key].to]
+	end
+	return nil
+end
+
+-- Persist a move: absolute fallback of the frame + every group member; if the
+-- frame is a coupled child, re-freeze its offset to the anchor; re-apply links.
+local function commitMove(frame, anchorFrame)
+	saveAbsolute(frame)
+	for f in pairs(moveSet) do if f ~= frame then saveAbsolute(f) end end
+	local info = EditMode.items[frame]
+	local key = info and info.key
+	local links = linksDB()
+	if key and links and links[key] and anchorFrame then
+		local cl, cb = rectOf(frame)
+		local al, ab = rectOf(anchorFrame)
+		if cl and al then
+			links[key].offX = floor(cl - al + 0.5)
+			links[key].offY = floor(cb - ab + 0.5)
+		end
+	end
+	EditMode:ApplyLinks()
+	updateLinkLines()
 end
 
 -- ---------------------------------------------------------------------------
@@ -248,6 +394,15 @@ local function beginDrag(frame)
 	drag.lastX, drag.lastY = bl, bb
 	drag.moved = false
 	drag.tol = TOL_PX / ui
+
+	-- Group handling (Phase 2): the dragged element + everything anchored to it
+	-- (directly or via a chain) move together — exclude them from the walls so
+	-- the group never collides with itself. If the dragged element is itself a
+	-- coupled child, remember its anchor to re-freeze the offset on release.
+	drag.anchorFrame = buildGroup(frame)
+	local links = linksDB()
+	drag.hasLinks = (links and next(links)) and true or false
+
 	collectObstacles(frame)
 	return true
 end
@@ -338,6 +493,9 @@ local function dragUpdate()
 		local inv = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
 		frame:ClearAllPoints()
 		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (x + drag.deltaX) * inv, (y + drag.deltaY) * inv)
+		-- Any connection line touching this element (as child or as anchor
+		-- dragging its group) follows along.
+		if drag.hasLinks then updateLinkLines() end
 	end
 	updateGuides(gvx, gvsrc, ghy, ghsrc, x, y)
 end
@@ -345,11 +503,7 @@ end
 local function endDrag(frame)
 	if drag.frame ~= frame then return end
 	hideGuides()
-	local info = EditMode.items[frame]
-	if info and info.save and drag.moved then
-		local p, _, _, px, py = frame:GetPoint()
-		info.save(p, floor(px + 0.5), floor(py + 0.5))
-	end
+	if drag.moved then commitMove(frame, drag.anchorFrame) end
 	drag.frame = nil
 	EditMode:Select(frame) -- click AND drag both select (nudge target)
 end
@@ -393,8 +547,53 @@ local function makeOverlay(frame, label)
 		l:SetWidth(thick); r:SetWidth(thick)
 	end
 
+	-- Chain (link) icon, top-right — Phase 2 coupling. Only keyed elements are
+	-- couplable; Register hides it for keyless ones.
+	local chain = CreateFrame("Button", nil, o)
+	chain:SetSize(CHAIN, CHAIN)
+	chain:SetPoint("TOPRIGHT", o, "TOPRIGHT", -1, -1)
+	chain:SetFrameLevel(o:GetFrameLevel() + 10)
+	local cbg = chain:CreateTexture(nil, "BACKGROUND")
+	cbg:SetAllPoints(); cbg:SetColorTexture(0.06, 0.06, 0.07, 0.62)
+	local cglyph = chain:CreateTexture(nil, "ARTWORK")
+	cglyph:SetPoint("CENTER"); cglyph:SetSize(CHAIN - 8, CHAIN - 8)
+	cglyph:SetTexture(TEX .. "icon-link")
+	cglyph:SetSnapToPixelGrid(false); cglyph:SetTexelSnappingBias(0)
+	cglyph:SetVertexColor(MUTED_R, MUTED_G, MUTED_B)
+	o.chain, o.chainGlyph = chain, cglyph
+	chain:SetScript("OnClick", function() EditMode:OnChainClick(frame) end)
+	chain:SetScript("OnEnter", function()
+		if not o._linked then cglyph:SetVertexColor(GOLD_R, GOLD_G, GOLD_B) end
+	end)
+	chain:SetScript("OnLeave", function()
+		if not o._linked then cglyph:SetVertexColor(MUTED_R, MUTED_G, MUTED_B) end
+	end)
+
+	-- Coupled: filled gold icon. Idle: muted.
+	function o:SetLinked(on)
+		self._linked = on
+		if on then cglyph:SetVertexColor(GOLDINT_R, GOLDINT_G, GOLDINT_B)
+		else cglyph:SetVertexColor(MUTED_R, MUTED_G, MUTED_B) end
+	end
+	-- Link mode: this element is the source (brand-gold icon) or a candidate
+	-- target (brighter fill inviting the click).
+	function o:SetLinkSource(on)
+		cglyph:SetVertexColor(on and GOLD_R or MUTED_R, on and GOLD_G or MUTED_G, on and GOLD_B or MUTED_B)
+	end
+	function o:SetLinkTarget(on)
+		self.bg:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, on and 0.42 or 0.25)
+		local a = on and 1 or 0.9
+		for i = 1, 4 do self.edges[i]:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, a) end
+	end
+
 	o:SetScript("OnMouseDown", function(_, btn)
 		if btn ~= "LeftButton" then return end
+		-- In link mode a body click on any OTHER element completes the coupling
+		-- (never starts a drag); a click on the source does nothing.
+		if EditMode.linkSource then
+			if EditMode.linkSource ~= frame then EditMode:CompleteLink(frame) end
+			return
+		end
 		if beginDrag(frame) then
 			o:SetScript("OnUpdate", dragUpdate) -- runs ONLY while dragging
 		end
@@ -427,6 +626,121 @@ function EditMode:Select(frame)
 	self.selected = frame
 	if frame and self.items[frame] then
 		self.items[frame].overlay:SetSelected(true)
+	end
+end
+
+-- ---------------------------------------------------------------------------
+--  Linking (Phase 2): explicit coupling via the chain icon.
+-- ---------------------------------------------------------------------------
+local function keyOf(frame)
+	local info = EditMode.items[frame]
+	return info and info.key
+end
+
+-- Reflect each element's coupled state on its chain icon (called on activate +
+-- after every link change).
+function EditMode:_refreshChains()
+	local links = linksDB()
+	for frame, info in pairs(self.items) do
+		local k = info.key
+		info.overlay:SetLinked(k and links and links[k] ~= nil or false)
+	end
+end
+
+function EditMode:StartLink(frame)
+	local k = keyOf(frame)
+	if not k then return end
+	self.linkSource = frame
+	for f, info in pairs(self.items) do
+		if info.key and f:IsShown() then
+			if f == frame then info.overlay:SetLinkSource(true)
+			else info.overlay:SetLinkTarget(true) end
+		end
+	end
+	if ns.Lumen then ns.Lumen:Print(ns.T("Pick an element to couple to (Esc cancels).")) end
+end
+
+function EditMode:CancelLink()
+	if not self.linkSource then return end
+	self.linkSource = nil
+	for _, info in pairs(self.items) do
+		info.overlay:SetLinkTarget(false)
+	end
+	self:_refreshChains()
+end
+
+function EditMode:CompleteLink(anchorFrame)
+	local child = self.linkSource
+	if not child or child == anchorFrame then return end
+	local childKey, anchorKey = keyOf(child), keyOf(anchorFrame)
+	if not childKey or not anchorKey then return end
+	-- Cycle guard: refuse if the anchor already hangs (directly/chained) on the
+	-- child. Keep link mode active so another target can be chosen.
+	if chainReaches(anchorKey, childKey) then
+		if ns.Lumen then ns.Lumen:Print(ns.T("Can't couple — that would create a loop.")) end
+		return
+	end
+	local links = linksDB()
+	if not links then return end
+	-- Freeze the CURRENT offset so nothing jumps on coupling.
+	local cl, cb = rectOf(child)
+	local al, ab = rectOf(anchorFrame)
+	if not cl or not al then return end
+	links[childKey] = { to = anchorKey, offX = floor(cl - al + 0.5), offY = floor(cb - ab + 0.5) }
+	self:CancelLink()
+	self:ApplyLinks()
+	self:_refreshChains()
+	updateLinkLines()
+end
+
+function EditMode:Uncouple(frame)
+	local k = keyOf(frame)
+	local links = linksDB()
+	if not k or not links or not links[k] then return end
+	links[k] = nil
+	saveAbsolute(frame) -- keep its current absolute position as the fallback
+	-- Physically detach from the anchor at the current spot, otherwise its stale
+	-- SetPoint would keep following the (now ex-)anchor when that moves.
+	local l, b = rectOf(frame)
+	if l then
+		local inv = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
+		frame:ClearAllPoints()
+		frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", l * inv, b * inv)
+	end
+	self:_refreshChains()
+	updateLinkLines()
+end
+
+function EditMode:OnChainClick(frame)
+	if self.linkSource then
+		if frame == self.linkSource then self:CancelLink()
+		else self:CompleteLink(frame) end
+		return
+	end
+	local k = keyOf(frame)
+	local links = linksDB()
+	if k and links and links[k] then self:Uncouple(frame)
+	else self:StartLink(frame) end
+end
+
+-- Apply all links: anchor each coupled child's BOTTOMLEFT to its anchor frame
+-- (the engine then moves the group in-game AND in Edit Mode — zero runtime
+-- code). Fallback: anchor missing/hidden -> the child keeps its module-saved
+-- absolute position (modules re-save it on every drag/nudge release).
+function EditMode:ApplyLinks()
+	local links = linksDB()
+	if not links then return end
+	if InCombatLockdown() then
+		self._linkPending = true
+		evt:RegisterEvent("PLAYER_REGEN_ENABLED")
+		return
+	end
+	for childKey, e in pairs(links) do
+		local cf, af = self.byKey[childKey], e.to and self.byKey[e.to]
+		if cf and af and af:IsShown() then
+			cf:ClearAllPoints()
+			cf:SetPoint("BOTTOMLEFT", af, "BOTTOMLEFT", e.offX or 0, e.offY or 0)
+		end
 	end
 end
 
@@ -466,14 +780,11 @@ local function nudgeSelected(dx, dy)
 	if not frame or not frame:IsShown() then return end
 	local l, b = rectOf(frame)
 	if not l then return end
+	local anchorFrame = buildGroup(frame) -- (also lets a nudged anchor keep its group)
 	local inv = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
 	frame:ClearAllPoints()
 	frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (l + dx) * inv, (b + dy) * inv)
-	local info = EditMode.items[frame]
-	if info and info.save then
-		local p, _, _, px, py = frame:GetPoint()
-		info.save(p, floor(px + 0.5), floor(py + 0.5))
-	end
+	commitMove(frame, anchorFrame)
 	showNudgeGuides(frame)
 end
 
@@ -497,7 +808,9 @@ local function ensureKeyboard()
 		end
 		if key == "ESCAPE" then
 			self:SetPropagateKeyboardInput(false)
-			EditMode:CloseSession(true)
+			-- Esc first backs out of link mode, then ends the session.
+			if EditMode.linkSource then EditMode:CancelLink()
+			else EditMode:CloseSession(true) end
 			return
 		end
 		if EditMode.selected then
@@ -537,7 +850,6 @@ local function ensureToolbar()
 
 	-- Grip glyph (Lucide grip-vertical): a visual "grab me" affordance at the
 	-- front (Florian 2026-07-13). The whole toolbar is the drag handle.
-	local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
 	local grip = toolbar:CreateTexture(nil, "ARTWORK")
 	grip:SetSize(14, 14)
 	grip:SetTexture(TEX .. "icon-grip")
@@ -600,15 +912,21 @@ end
 
 function EditMode:_refresh()
 	self.active = self.session or self.blizzard
-	if self.active then self:_anchorOverlays() end
 	for _, info in pairs(self.items) do
 		info.overlay:SetShown(self.active)
 	end
-	-- Notify listeners (e.g. QoL trackers force-show while unlocked so
-	-- instance-only elements can be placed anywhere).
+	-- Notify listeners FIRST (e.g. QoL trackers force-show + register while
+	-- unlocked so instance-only elements can be placed anywhere) — so the
+	-- chain/link pass below also covers freshly registered elements.
 	if self.listeners then
 		for i = 1, #self.listeners do pcall(self.listeners[i], self.active) end
 	end
+	if self.active then
+		self:_anchorOverlays()
+		self:_refreshChains()
+		self:ApplyLinks()
+	end
+	updateLinkLines() -- shows coupled-pair lines while active, hides otherwise
 end
 
 function EditMode:AddListener(fn)
@@ -619,16 +937,19 @@ end
 -- boundsFn (optional): a function returning the frame whose VISIBLE bounds
 -- represent this element for walls/grooves/overlay, when it differs from the
 -- moved frame (e.g. the raidframes live in a larger fixed container).
-function EditMode:Register(frame, label, save, boundsFn)
+-- key (optional): a stable string id -> the element is COUPLABLE (Phase 2).
+function EditMode:Register(frame, label, save, boundsFn, key)
 	if self.items[frame] then return end
 	frame:SetMovable(true)
 	frame:SetClampedToScreen(true)
-	self.items[frame] = { label = label, save = save, boundsFn = boundsFn, overlay = makeOverlay(frame, label) }
+	local info = { label = label, save = save, boundsFn = boundsFn, key = key, overlay = makeOverlay(frame, label) }
+	self.items[frame] = info
+	if key then self.byKey[key] = frame else info.overlay.chain:Hide() end
 	if self.active then
-		local info = self.items[frame]
 		local bf = boundsFor(frame, info)
 		info.overlay:ClearAllPoints()
 		info.overlay:SetAllPoints(bf)
+		info.overlay:SetLinked(key and linksDB() and linksDB()[key] ~= nil or false)
 		info.overlay:Show()
 	end
 end
@@ -636,8 +957,6 @@ end
 -- ---------------------------------------------------------------------------
 --  Session (the Lumen path: Shell hides, toolbar shows, ESC/combat ends)
 -- ---------------------------------------------------------------------------
-local evt = CreateFrame("Frame")
-
 function EditMode:OpenSession()
 	if self.session then return end
 	if InCombatLockdown() then
@@ -666,6 +985,7 @@ end
 function EditMode:CloseSession(reopenShell)
 	if not self.session then return end
 	self.session = false
+	self:CancelLink()
 	self:Select(nil)
 	if toolbar then toolbar:Hide() end
 	if kb then kb:EnableKeyboard(false); kb:Hide() end
@@ -697,6 +1017,14 @@ evt:RegisterEvent("PLAYER_LOGIN")
 evt:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_REGEN_DISABLED" then
 		EditMode:CloseSession(false)
+		return
+	end
+	if event == "PLAYER_REGEN_ENABLED" then
+		evt:UnregisterEvent("PLAYER_REGEN_ENABLED")
+		if EditMode._linkPending then
+			EditMode._linkPending = false
+			EditMode:ApplyLinks()
+		end
 		return
 	end
 	-- PLAYER_LOGIN: hook into WoW's Edit Mode so Lumen movers show up there too.
