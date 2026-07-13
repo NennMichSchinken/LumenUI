@@ -353,7 +353,7 @@ local function buildRaid(d, stack, ctx)
 	sliderBox(c1[2], { label = T("Height"),  min = 20, max = 160, unit = " px", get = vget(ctx, "height"),  set = vset(ctx, "height") })
 	sliderBox(c1[3], { label = T("Spacing"), min = 0,  max = 30,  unit = " px", get = vget(ctx, "spacing"), set = vset(ctx, "spacing") })
 	W.Select(c1[4], { label = T("Alignment"), options = ALIGN_OPTS, get = vget(ctx, "orientation"), set = vset(ctx, "orientation"),
-		tooltip = T("Position: move via \"Unlock frames\" in the Global tab or WoW's Edit Mode. Raid and Group have separate positions.") }):SetAllPoints(c1[4])
+		tooltip = T("Position: move via the Edit Mode button (sidebar) or WoW's Edit Mode. Raid and Group have separate positions.") }):SetAllPoints(c1[4])
 	sSize:place(r1, M.sliderBoxH, R.tight)
 	sSize:close()
 
@@ -1516,11 +1516,15 @@ local function buildGlobalBase(d, stack)
 	sLang:close()
 
 	local sMove = b1.cards[2]
-	sMove:place(checkRow(d, T("Unlock frames — shows all movable Lumen elements"), {
-		get = function() return ns.EditMode and ns.EditMode:IsActive() end,
-		set = function(v) if ns.EditMode then ns.EditMode:Toggle(v) end end }), M.optionRowH, R.afterCheck)
+	-- v2: the old "Unlock frames" checkbox became the Edit Mode session — the
+	-- sidebar button is the primary entry, this one keeps it findable where
+	-- movement topics live. Both buttons share one row (uniform anatomy).
+	local btnRow = CreateFrame("Frame", nil, d)
+	local openBtn = W.Button(btnRow, { text = T("Open Edit Mode"), variant = "neutral", icon = "icon-move",
+		onClick = function() if ns.EditMode then ns.EditMode:OpenSession() end end })
+	openBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
 
-	local resetBtn = W.Button(d, { text = T("Reset positions"), variant = "ghost",
+	local resetBtn = W.Button(btnRow, { text = T("Reset positions"), variant = "ghost",
 		onClick = function()
 			W.Confirm({
 				title = T("Reset positions?"),
@@ -1541,7 +1545,8 @@ local function buildGlobalBase(d, stack)
 				end,
 			})
 		end })
-	sMove:placeLeft(resetBtn, M.buttonH, R.tight)
+	resetBtn:SetPoint("LEFT", openBtn, "RIGHT", UI.GRID.cardGap, 0)
+	sMove:place(btnRow, M.buttonH, R.tight)
 	sMove:close()
 	b1.close()
 

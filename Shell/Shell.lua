@@ -343,11 +343,20 @@ function Shell:Build()
 		UI.RoundBorder(chip, L.soft, "OVERLAY", nil, UI.RADIUS.xs)
 	end
 
+	-- Edit Mode button (v2): a suite-global action, so it lives in the global
+	-- chrome — pinned above the version chip, ALWAYS visible on every screen.
+	-- Opens the Lumen edit session (Shell hides, mover overlays + toolbar show).
+	local emY = hasChip and (S.panelGutter + chipH + S.s4) or S.panelGutter
+	local emBtn = ns.W.Button(nav, { text = T("Edit Mode"), variant = "neutral", icon = "icon-move",
+		onClick = function() if ns.EditMode then ns.EditMode:OpenSession() end end })
+	emBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, emY)
+	emBtn:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, emY)
+
 	-- Preview toggle (v3 mockup): ONE central point to open/close the preview
-	-- window. Sits ABOVE the version chip (or at the sidebar bottom if there's no
-	-- chip). Hidden on screens without a registered preview; label follows the
-	-- open state (_UpdateDock keeps it current).
-	local pvY = hasChip and (S.panelGutter + chipH + S.s4) or S.panelGutter
+	-- window. Stacks ABOVE the Edit Mode button. Hidden on screens without a
+	-- registered preview; label follows the open state (_UpdateDock keeps it
+	-- current).
+	local pvY = emY + UI.WIDGET.buttonH + S.s4
 	local pvBtn = ns.W.Button(nav, { text = "", variant = "neutral",
 		onClick = function() Shell:TogglePreview() end })
 	pvBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, pvY)
