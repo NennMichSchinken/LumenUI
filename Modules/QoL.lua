@@ -311,7 +311,7 @@ local function createButtons()
 	if ns.EditMode then
 		ns.EditMode:Register(btnFrame, ns.T("Ready & Pull"), function(pt, x, y)
 			ns.Lumen.db.profile.qol.pull.btnPos = { point = pt, x = x, y = y }
-		end)
+		end, nil, "readypull")
 	end
 end
 
@@ -345,6 +345,8 @@ function QoL:ApplyPull()
 	elseif btnFrame then
 		btnFrame:Hide()
 	end
+	-- Re-anchor Edit Mode links (the block may be a coupled child or anchor).
+	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -525,10 +527,10 @@ local function createTrackers()
 	if ns.EditMode then
 		ns.EditMode:Register(brezFrame, ns.T("Combat res"), function(p, x, y)
 			ns.Lumen.db.profile.qol.trackers.brez.pos = { point = p, x = x, y = y }
-		end)
+		end, nil, "brez")
 		ns.EditMode:Register(lustFrame, "Bloodlust", function(p, x, y)
 			ns.Lumen.db.profile.qol.trackers.lust.pos = { point = p, x = x, y = y }
-		end)
+		end, nil, "lust")
 	end
 end
 
@@ -630,6 +632,8 @@ function QoL:ApplyTrackers()
 		f:SetPoint(pos.point or "CENTER", UIParent, pos.point or "CENTER", pos.x or 0, pos.y or -240)
 	end
 	self:UpdateTrackerVisibility()
+	-- Re-anchor Edit Mode links (a tracker may be a coupled child or anchor).
+	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
 end
 
 -- ---------------------------------------------------------------------------
