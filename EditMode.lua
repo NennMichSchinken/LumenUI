@@ -64,6 +64,11 @@ local drag = { frame = nil }
 -- Frames that move WITH the dragged one (a dragged anchor takes its group) —
 -- they must NOT act as walls against it. Rebuilt per drag (reused table).
 local moveSet = {}
+-- Group-aware physics (Phase 2): edge offsets (relative to the dragged bounds
+-- origin) of EVERY moving member, so a groove can align ANY member's edge —
+-- and the union bounding box of the whole group for the walls. Rebuilt per drag.
+local vEO, vEON = {}, 0   -- vertical edge offsets (left/center/right of each member)
+local hEO, hEON = {}, 0   -- horizontal edge offsets (bottom/center/top of each member)
 
 -- Phase 2 (links): stable string key -> frame.
 EditMode.byKey = {}
@@ -403,6 +408,31 @@ local function beginDrag(frame)
 	local links = linksDB()
 	drag.hasLinks = (links and next(links)) and true or false
 
+	-- Build the moving group's edge offsets (grooves align ANY member's edge)
+	-- + its union bounding box (walls keep the WHOLE group off the obstacles).
+	vEON, hEON = 0, 0
+	local uMinX, uMinY, uMaxX, uMaxY = 0, 0, bw, bh
+	for f in pairs(moveSet) do
+		local ml, mb, mw, mh
+		if f == frame then ml, mb, mw, mh = bl, bb, bw, bh
+		else ml, mb, mw, mh = rectOf(boundsFor(f, EditMode.items[f])) end
+		if ml then
+			local rdx, rdy = ml - bl, mb - bb
+			vEON = vEON + 1; vEO[vEON] = rdx
+			vEON = vEON + 1; vEO[vEON] = rdx + mw / 2
+			vEON = vEON + 1; vEO[vEON] = rdx + mw
+			hEON = hEON + 1; hEO[hEON] = rdy
+			hEON = hEON + 1; hEO[hEON] = rdy + mh / 2
+			hEON = hEON + 1; hEO[hEON] = rdy + mh
+			if rdx < uMinX then uMinX = rdx end
+			if rdy < uMinY then uMinY = rdy end
+			if rdx + mw > uMaxX then uMaxX = rdx + mw end
+			if rdy + mh > uMaxY then uMaxY = rdy + mh end
+		end
+	end
+	drag.uOffX, drag.uOffY = uMinX, uMinY
+	drag.uW, drag.uH = uMaxX - uMinX, uMaxY - uMinY
+
 	collectObstacles(frame)
 	return true
 end
@@ -422,65 +452,62 @@ local function dragUpdate()
 	local x = ux - drag.offX
 	local y = uy - drag.offY
 
-	-- Keep the desired position on screen (physics stays honest at the edges).
-	local maxX, maxY = drag.screenW - drag.w, drag.screenH - drag.h
-	if x < 0 then x = 0 elseif x > maxX then x = maxX end
-	if y < 0 then y = 0 elseif y > maxY then y = maxY end
+	-- All physics runs on the group's UNION box (uOff/uW/uH); for a single
+	-- element that is just its own rect. Screen clamp keeps the whole group on.
+	local uox, uoy, uw, uh = drag.uOffX, drag.uOffY, drag.uW, drag.uH
+	if x + uox < 0 then x = -uox elseif x + uox + uw > drag.screenW then x = drag.screenW - uox - uw end
+	if y + uoy < 0 then y = -uoy elseif y + uoy + uh > drag.screenH then y = drag.screenH - uoy - uh end
 
 	local gvx, ghy   -- active guide line positions (nil = none)
 	local gvsrc, ghsrc = 0, 0
 	if not IsControlKeyDown() then
-		-- WALLS — resolved PER AXIS so the frame slides along edges: first X
-		-- against the previous Y, then Y against the resolved X. The clamp
-		-- falls away as soon as the desired position is free (the desired
-		-- position always hangs on the cursor — that's why nothing sticks).
+		-- WALLS — the group's union box vs the obstacles, resolved PER AXIS so it
+		-- slides along edges: first X against the previous Y, then Y against the
+		-- resolved X. The clamp falls away as soon as the desired position is free
+		-- (the desired position always hangs on the cursor — nothing sticks).
 		local lx, ly = drag.lastX, drag.lastY
 		for i = 1, obsN do
-			if hitsObstacle(x, ly, drag.w, drag.h, i) then
-				if lx + drag.w <= obsL[i] + 0.01 then x = obsL[i] - drag.w
-				elseif lx >= obsR[i] - 0.01 then x = obsR[i]
+			if hitsObstacle(x + uox, ly + uoy, uw, uh, i) then
+				if lx + uox + uw <= obsL[i] + 0.01 then x = obsL[i] - uw - uox
+				elseif lx + uox >= obsR[i] - 0.01 then x = obsR[i] - uox
 				else x = lx end
 			end
 		end
 		for i = 1, obsN do
-			if hitsObstacle(x, y, drag.w, drag.h, i) then
-				if ly + drag.h <= obsB[i] + 0.01 then y = obsB[i] - drag.h
-				elseif ly >= obsT[i] - 0.01 then y = obsT[i]
+			if hitsObstacle(x + uox, y + uoy, uw, uh, i) then
+				if ly + uoy + uh <= obsB[i] + 0.01 then y = obsB[i] - uh - uoy
+				elseif ly + uoy >= obsT[i] - 0.01 then y = obsT[i] - uoy
 				else y = ly end
 			end
 		end
 
-		-- GROOVES — hold when an edge or the center of the dragged frame is
-		-- within ±tol of a line. Walls have priority: a held position that
-		-- would collide is discarded.
+		-- GROOVES — hold when ANY moving member's edge/center is within ±tol of a
+		-- line (so a coupled child's edge aligns too, not just the dragged one).
+		-- Walls have priority: a held position that would collide is discarded.
 		local tol = drag.tol
 		local bestD, bestX = tol + 0.001, nil
 		for i = 1, vN do
 			local L = vLine[i]
-			local d = abs(x - L)
-			if d < bestD then bestD = d; bestX = L; gvx = L; gvsrc = vSrc[i] end
-			d = abs(x + drag.w / 2 - L)
-			if d < bestD then bestD = d; bestX = L - drag.w / 2; gvx = L; gvsrc = vSrc[i] end
-			d = abs(x + drag.w - L)
-			if d < bestD then bestD = d; bestX = L - drag.w; gvx = L; gvsrc = vSrc[i] end
+			for j = 1, vEON do
+				local d = abs(x + vEO[j] - L)
+				if d < bestD then bestD = d; bestX = L - vEO[j]; gvx = L; gvsrc = vSrc[i] end
+			end
 		end
 		if bestX then
-			if not hitsAny(bestX, y, drag.w, drag.h) then x = bestX
+			if not hitsAny(bestX + uox, y + uoy, uw, uh) then x = bestX
 			else gvx = nil; gvsrc = 0 end
 		end
 		local bestY
 		bestD = tol + 0.001
 		for i = 1, hN do
 			local L = hLine[i]
-			local d = abs(y - L)
-			if d < bestD then bestD = d; bestY = L; ghy = L; ghsrc = hSrc[i] end
-			d = abs(y + drag.h / 2 - L)
-			if d < bestD then bestD = d; bestY = L - drag.h / 2; ghy = L; ghsrc = hSrc[i] end
-			d = abs(y + drag.h - L)
-			if d < bestD then bestD = d; bestY = L - drag.h; ghy = L; ghsrc = hSrc[i] end
+			for j = 1, hEON do
+				local d = abs(y + hEO[j] - L)
+				if d < bestD then bestD = d; bestY = L - hEO[j]; ghy = L; ghsrc = hSrc[i] end
+			end
 		end
 		if bestY then
-			if not hitsAny(x, bestY, drag.w, drag.h) then y = bestY
+			if not hitsAny(x + uox, bestY + uoy, uw, uh) then y = bestY
 			else ghy = nil; ghsrc = 0 end
 		end
 	end
@@ -749,23 +776,33 @@ end
 -- (Florian's request 2026-07-13). Auto-hides shortly after the last nudge.
 local nudgeTimer
 local function showNudgeGuides(frame)
-	local info = EditMode.items[frame]
-	local bl, bb, bw, bh = rectOf(boundsFor(frame, info))
+	local bl, bb, bw, bh = rectOf(boundsFor(frame, EditMode.items[frame]))
 	if not bl then return end
+	-- moveSet is current (nudgeSelected called buildGroup just before). Scan
+	-- EVERY moving member's edges so a coupled child's edge shows a guide too.
 	collectObstacles(frame)
 	drag.w, drag.h = bw, bh
 	local eps = 0.75
 	local gvx, gvsrc, ghy, ghsrc
-	for i = 1, vN do
-		local Lp = vLine[i]
-		if abs(bl - Lp) < eps or abs(bl + bw / 2 - Lp) < eps or abs(bl + bw - Lp) < eps then
-			gvx = Lp; gvsrc = vSrc[i]; break
-		end
-	end
-	for i = 1, hN do
-		local Lp = hLine[i]
-		if abs(bb - Lp) < eps or abs(bb + bh / 2 - Lp) < eps or abs(bb + bh - Lp) < eps then
-			ghy = Lp; ghsrc = hSrc[i]; break
+	for f in pairs(moveSet) do
+		local ml, mb, mw, mh = rectOf(boundsFor(f, EditMode.items[f]))
+		if ml then
+			if not gvx then
+				for i = 1, vN do
+					local Lp = vLine[i]
+					if abs(ml - Lp) < eps or abs(ml + mw / 2 - Lp) < eps or abs(ml + mw - Lp) < eps then
+						gvx = Lp; gvsrc = vSrc[i]; break
+					end
+				end
+			end
+			if not ghy then
+				for i = 1, hN do
+					local Lp = hLine[i]
+					if abs(mb - Lp) < eps or abs(mb + mh / 2 - Lp) < eps or abs(mb + mh - Lp) < eps then
+						ghy = Lp; ghsrc = hSrc[i]; break
+					end
+				end
+			end
 		end
 	end
 	updateGuides(gvx, gvsrc or 0, ghy, ghsrc or 0, bl, bb)
