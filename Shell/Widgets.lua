@@ -310,6 +310,15 @@ function W.Slider(parent, o)
 	track:SetScript("OnShow", function() visual(cur) end)
 
 	visual(cur)
+	-- Cold-start glyph repaint (report 2026-07-14, QoL tab): when the slider is built
+	-- into an ALREADY-VISIBLE parent (opening a tab on a cold client), OnShow never fires,
+	-- so the value box + min/max labels keep the blank layout the cold glyph cache produced
+	-- on the first paint. A one-shot deferred re-set (next frame, after that first paint
+	-- forced rasterization) repaints them — same mechanism W.Button uses from creation.
+	C_Timer.After(0, function()
+		visual(cur)
+		if minL then minL:SetText(tostring(minV)); maxL:SetText(tostring(maxV)) end
+	end)
 	f.SetValueExternal = function(_, v) cur = v; visual(v) end
 	-- Grey out + lock interaction (for dependent sections, e.g. "Show name" off).
 	-- RECOLOR instead of frame alpha: alpha'd gold over the dark inset boxes
