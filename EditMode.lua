@@ -448,6 +448,7 @@ local function dragUpdate()
 	if not drag.moved then
 		if abs(ux - drag.grabX) + abs(uy - drag.grabY) < 2 then return end
 		drag.moved = true
+		EditMode:_hidePanel() -- a flyout would sit stale over the moving element
 	end
 	local x = ux - drag.offX
 	local y = uy - drag.offY
@@ -530,9 +531,11 @@ end
 local function endDrag(frame)
 	if drag.frame ~= frame then return end
 	hideGuides()
-	if drag.moved then commitMove(frame, drag.anchorFrame) end
+	local moved = drag.moved
+	if moved then commitMove(frame, drag.anchorFrame) end
 	drag.frame = nil
-	EditMode:Select(frame) -- click AND drag both select (nudge target)
+	EditMode:Select(frame) -- select (border + nudge target) on both click and drag
+	if not moved then EditMode:_updatePanel() end -- a plain CLICK opens the flyout; a drag does not
 end
 
 -- ---------------------------------------------------------------------------
@@ -654,6 +657,8 @@ function EditMode:Select(frame)
 	if frame and self.items[frame] then
 		self.items[frame].overlay:SetSelected(true)
 	end
+	-- NB: selection no longer opens the flyout — that's driven explicitly so a
+	-- DRAG doesn't pop it open on release (only a plain click does; see endDrag).
 end
 
 -- ---------------------------------------------------------------------------
@@ -823,6 +828,7 @@ local function nudgeSelected(dx, dy)
 	frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (l + dx) * inv, (b + dy) * inv)
 	commitMove(frame, anchorFrame)
 	showNudgeGuides(frame)
+	EditMode:_positionPanel() -- keep the flyout beside the element as it nudges
 end
 
 -- Keyboard catcher: active ONLY while a Lumen session runs. HARD RULES from
@@ -933,6 +939,162 @@ local function ensureToolbar()
 end
 
 -- ---------------------------------------------------------------------------
+--  Selection settings flyout (Phase 3): click-selecting an element opens a
+--  Lumen-skinned panel beside it (side chosen by the available room) with that
+--  element's QUICK settings — size etc. live on the real element, an X to close,
+--  an optional "Reset to default" and "Open settings" (large modules point back
+--  to the Shell tab). Built lazily (this file loads before Tokens/W). Descriptor-
+--  based (info.quick) so future modules plug in without touching this file.
+-- ---------------------------------------------------------------------------
+local panel
+local PANEL_INNER  = 220   -- content width in panel-local units
+local PANEL_HEADER = 40    -- title + subtitle block below the top padding
+
+local function ensurePanel()
+	if panel then return end
+	local UI, W, T = ns.UI, ns.W, ns.T
+	local M, S = UI.WIDGET, UI.S
+	panel = CreateFrame("Frame", "LumenEditModePanel", UIParent)
+	panel:SetFrameStrata("TOOLTIP")       -- above the FULLSCREEN_DIALOG overlays
+	panel:SetToplevel(true)
+	panel:EnableMouse(true)               -- eat clicks so they don't fall through
+	panel:SetClampedToScreen(true)
+	panel:SetWidth(PANEL_INNER + M.sectionPad * 2)
+	UI.RoundFill(panel, UI.P.panel, "BACKGROUND", nil, UI.RADIUS.lg)
+	UI.RoundBorder(panel, UI.line.mid, "BORDER", nil, UI.RADIUS.lg)
+
+	panel._title = UI.FS(panel, "groupTitle", UI.P.goldBrand)
+	panel._title:SetPoint("TOPLEFT", panel, "TOPLEFT", M.sectionPad, -M.sectionPad)
+
+	panel._sub = UI.FS(panel, "caption", UI.P.textSecondary)
+	panel._sub:SetText(T("Quick settings"))
+	panel._sub:SetPoint("TOPLEFT", panel._title, "BOTTOMLEFT", 0, -2)
+
+	panel._x = W.IconButton(panel, { icon = "icon-x", size = S.closeGlyph,
+		color = UI.P.textSecondary, hoverColor = UI.P.goldBrand,
+		onClick = function() EditMode:Select(nil); EditMode:_updatePanel() end })
+	panel._x:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -M.sectionPad, -M.sectionPad)
+
+	-- Draggable like the toolbar: the header/padding is the grab area (the
+	-- sliders/buttons are mouse children, so a drag starting on them goes to
+	-- them, not the panel). Once the user moves it, auto-placement backs off
+	-- until the selection changes.
+	panel:SetMovable(true)
+	panel:RegisterForDrag("LeftButton")
+	panel:SetScript("OnDragStart", function(self) self:StartMoving(); self._userMoved = true end)
+	panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
+
+	panel._contents = {}   -- frame -> its cached content sub-frame
+	panel:Hide()
+end
+
+-- Build (once, cached) the control column for one element from its descriptor.
+local function buildContent(frame, info)
+	local existing = panel._contents[frame]
+	if existing then return existing end
+	local UI, W, T = ns.UI, ns.W, ns.T
+	local M, S = UI.WIDGET, UI.S
+	local q = info.quick
+	-- Parented straight to the panel (a 0-height intermediate frame gives its
+	-- children NO rect -> they render invisibly; memory lumen-beta-roadmap-plan).
+	local c = CreateFrame("Frame", nil, panel)
+	c:SetPoint("TOPLEFT", panel, "TOPLEFT", M.sectionPad, -(M.sectionPad + PANEL_HEADER))
+	c:SetWidth(PANEL_INNER)
+	c._syncers = {}
+	local y = 0
+	if q.fields then
+		for i = 1, #q.fields do
+			local fd = q.fields[i]
+			if fd.kind == "slider" then
+				local sl = W.Slider(c, { label = fd.label, min = fd.min, max = fd.max,
+					step = fd.step or 1, unit = fd.unit or "", width = PANEL_INNER, compact = true,
+					get = fd.get, set = fd.set })
+				sl:SetPoint("TOPLEFT", c, "TOPLEFT", 0, y)
+				y = y - (M.sliderCompactH + S.s3)
+				c._syncers[#c._syncers + 1] = function() sl:SetValueExternal(fd.get()) end
+			end
+		end
+	end
+	local function addBtn(text, variant, fn)
+		local b = W.Button(c, { text = text, variant = variant, width = PANEL_INNER, onClick = fn })
+		b:SetPoint("TOPLEFT", c, "TOPLEFT", 0, y)
+		y = y - (M.buttonH + S.s3)
+	end
+	if q.openSettings then
+		addBtn(T("Open settings"), "secondary", function()
+			EditMode:CloseSession(false)
+			q.openSettings()
+		end)
+	end
+	if q.reset then
+		addBtn(T("Reset to default"), "neutral", function()
+			q.reset()
+			for i = 1, #c._syncers do c._syncers[i]() end
+			EditMode:_anchorOverlays()
+			EditMode:_positionPanel()
+		end)
+	end
+	c._height = (-y) - S.s3   -- drop the trailing gap after the last control
+	if c._height < M.buttonH then c._height = M.buttonH end
+	c:SetHeight(c._height)
+	c:Hide()
+	panel._contents[frame] = c
+	return c
+end
+
+function EditMode:_hidePanel()
+	if panel and panel:IsShown() then panel:Hide() end
+end
+
+-- Show/refresh the flyout for the current selection (or hide it).
+function EditMode:_updatePanel()
+	local frame = self.selected
+	local info = frame and self.items[frame]
+	if not (self.active and info and info.quick) then
+		if panel then panel._forFrame = nil; panel:Hide() end
+		return
+	end
+	ensurePanel()
+	if ns.Shell and ns.Shell._frame then panel:SetScale(ns.Shell._frame:GetScale()) end
+	if panel._current and panel._current ~= panel._contents[frame] then panel._current:Hide() end
+	local c = buildContent(frame, info)
+	c:Show()
+	panel._current = c
+	if panel._forFrame ~= frame then panel._userMoved = false end -- new element -> auto-place again
+	panel._forFrame = frame
+	panel._title:SetText(info.label or "")
+	for i = 1, #c._syncers do c._syncers[i]() end   -- fresh values (size may have changed)
+	panel:SetHeight(ns.UI.WIDGET.sectionPad * 2 + PANEL_HEADER + c._height)
+	panel:Show()
+	self:_positionPanel()
+end
+
+-- Place the flyout beside the selected element: right if it fits, else left,
+-- else clamped below/centered. All math in UIParent units; convert to the
+-- panel's own (scaled) space for the final SetPoint.
+function EditMode:_positionPanel()
+	if not panel or not panel._forFrame or not panel:IsShown() then return end
+	if panel._userMoved then return end -- respect a manual drag until selection changes
+	local info = self.items[panel._forFrame]
+	local bl, bb, bw, bh = rectOf(boundsFor(panel._forFrame, info))
+	if not bl then return end
+	local r = panel:GetScale()
+	local ew, eh = panel:GetWidth() * r, panel:GetHeight() * r
+	local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
+	local gap = 16
+	local elR, elT = bl + bw, bb + bh
+	local px
+	if elR + gap + ew <= sw then px = elR + gap
+	elseif bl - gap - ew >= 0 then px = bl - gap - ew
+	else px = math.min(math.max(4, bl + bw / 2 - ew / 2), sw - ew - 4) end
+	local pyTop = elT
+	if pyTop > sh - 4 then pyTop = sh - 4 end
+	if pyTop - eh < 4 then pyTop = eh + 4 end
+	panel:ClearAllPoints()
+	panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", px / r, pyTop / r)
+end
+
+-- ---------------------------------------------------------------------------
 --  Registry + activation
 -- ---------------------------------------------------------------------------
 -- Anchor every overlay to its element's VISIBLE bounds (the raidframes' inner
@@ -975,11 +1137,16 @@ end
 -- represent this element for walls/grooves/overlay, when it differs from the
 -- moved frame (e.g. the raidframes live in a larger fixed container).
 -- key (optional): a stable string id -> the element is COUPLABLE (Phase 2).
-function EditMode:Register(frame, label, save, boundsFn, key)
+-- quick (optional): a settings descriptor { fields = { {kind="slider", label,
+--   min, max, step?, unit?, get, set}, ... }, reset = fn, openSettings = fn }.
+--   Click-selecting the element in a session opens a Lumen flyout beside it with
+--   these controls (Phase 3). Small widgets carry their full settings; large
+--   modules just carry openSettings (a jump back to the Shell tab).
+function EditMode:Register(frame, label, save, boundsFn, key, quick)
 	if self.items[frame] then return end
 	frame:SetMovable(true)
 	frame:SetClampedToScreen(true)
-	local info = { label = label, save = save, boundsFn = boundsFn, key = key, overlay = makeOverlay(frame, label) }
+	local info = { label = label, save = save, boundsFn = boundsFn, key = key, quick = quick, overlay = makeOverlay(frame, label) }
 	self.items[frame] = info
 	if key then self.byKey[key] = frame else info.overlay.chain:Hide() end
 	if self.active then
@@ -1024,6 +1191,7 @@ function EditMode:CloseSession(reopenShell)
 	self.session = false
 	self:CancelLink()
 	self:Select(nil)
+	self:_updatePanel() -- selection cleared -> hides the flyout
 	if toolbar then toolbar:Hide() end
 	if kb then kb:EnableKeyboard(false); kb:Hide() end
 	hideGuides()

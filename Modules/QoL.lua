@@ -525,12 +525,29 @@ local function createTrackers()
 	brezFrame = makeTrackerIcon("LumenBrezTracker", BREZ_ID)
 	lustFrame = makeTrackerIcon("LumenLustTracker", LUST_ICON_ID)
 	if ns.EditMode then
+		-- Quick descriptor: size lives ONLY in the Edit Mode flyout now (the QoL
+		-- tab just toggles the tracker on/off) — the real icon resizes live under
+		-- the panel. Reset restores the default size + a non-overlapping position.
+		local function trackerQuick(which, defX)
+			return {
+				fields = { { kind = "slider", label = ns.T("Size"), min = 24, max = 80, unit = " px",
+					get = function() return ns.Lumen.db.profile.qol.trackers[which].size end,
+					set = function(v) ns.Lumen.db.profile.qol.trackers[which].size = v; QoL:ApplyTrackers() end } },
+				reset = function()
+					local d = ns.Defaults and ns.Defaults.profile.qol.trackers[which]
+					local s = ns.Lumen.db.profile.qol.trackers[which]
+					s.size = (d and d.size) or 40
+					s.pos = { point = "CENTER", x = defX, y = -240 }
+					QoL:ApplyTrackers()
+				end,
+			}
+		end
 		ns.EditMode:Register(brezFrame, ns.T("Combat res"), function(p, x, y)
 			ns.Lumen.db.profile.qol.trackers.brez.pos = { point = p, x = x, y = y }
-		end, nil, "brez")
+		end, nil, "brez", trackerQuick("brez", -30))
 		ns.EditMode:Register(lustFrame, "Bloodlust", function(p, x, y)
 			ns.Lumen.db.profile.qol.trackers.lust.pos = { point = p, x = x, y = y }
-		end, nil, "lust")
+		end, nil, "lust", trackerQuick("lust", 30))
 	end
 end
 

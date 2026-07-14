@@ -2430,7 +2430,12 @@ function Raidframes:Setup()
 		-- frames only fill the header's auto-sized region — Edit Mode uses THAT
 		-- for the overlay + walls + grooves so alignment matches the visible frames.
 		function() return header end,
-		"raidframes")
+		"raidframes",
+		-- Large module: the flyout doesn't duplicate the dozens of raidframe
+		-- settings — it just jumps back to the Shell tab (full settings + preview).
+		{ openSettings = function()
+			if ns.Shell then ns.Shell:OpenTo("Raidframes", "Base") end
+		end })
 	end
 	container:Hide()   -- default = off; only Enable() shows the container (else frames despite "off")
 end
