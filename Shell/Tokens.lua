@@ -270,6 +270,8 @@ UI.WIDGET = {
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
 	sortArrowGlyph = 14, -- sort up/down arrow glyph (Lucide chevron-up/down)
 	buttonH     = 45, -- button height (= controlH: uniform, hierarchy comes from the variant colors — Florian 2026-07-05)
+	btnIcon     = 18, -- optional leading Lucide icon inside a W.Button (Edit Mode button)
+	btnIconGap  = 8,  -- gap icon -> button label
 	fieldGap    = 26, -- vertical gap label -> control below
 
 	-- Checkbox

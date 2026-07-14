@@ -236,6 +236,12 @@ local defaults = {
 			},
 		},
 
+		-- Edit Mode links (Phase 2): explicit coupling of movable elements.
+		-- [childKey] = { to = anchorKey, offX = n, offY = n }. The child's
+		-- BOTTOMLEFT anchors to the anchor frame's BOTTOMLEFT + (offX, offY);
+		-- the engine then moves the group. Empty by default (nothing coupled).
+		editLinks = {},
+
 		-- UI scale (PROFILE-bound so it travels with export/import): optional
 		-- management of the GAME's UI scale. "Pixel perfect" = 768/screen height
 		-- (the ElvUI-style formula) -> crisp 1:1 pixels and a profile that looks
@@ -463,6 +469,9 @@ function Lumen:RefreshAll()
 	end
 	-- UI scale is profile-bound -> re-assert on profile switch/import.
 	self:ApplyUIScale()
+	-- Edit Mode links are profile-bound: after every module re-applied its own
+	-- (absolute) positions, re-anchor coupled children onto their anchors.
+	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
 	-- If the suite shell is open, pull its controls onto the (possibly new) profile
 	-- values. Closed: still drop its screen cache — cached screens would otherwise
 	-- show the OLD profile's values on the next open.
