@@ -635,6 +635,24 @@ function Shell:SelectTab(index)
 	self:RenderContent()
 end
 
+-- Open the Shell straight to a section (and optional tab) by NAME — used by the
+-- Edit Mode flyout's "Open settings" jump for large modules. Name lookup keeps
+-- callers stable if the SECTIONS order ever changes.
+function Shell:OpenTo(sectionName, tabName)
+	self:Show()
+	for i, sec in ipairs(SECTIONS) do
+		if sec[1] == sectionName then
+			self:SelectSection(i)
+			if tabName and sec[2] then
+				for j, t in ipairs(sec[2]) do
+					if t == tabName then self:SelectTab(j) break end
+				end
+			end
+			return
+		end
+	end
+end
+
 -- Apply a composed badge text to the tab-strip badge (internal; used by
 -- SetTabBadge and by the screen cache when re-showing a cached screen).
 function Shell:_ApplyBadge(text)

@@ -1955,36 +1955,29 @@ local function buildQoLBase(d, stack)
 	bc:close()
 
 	-- ===== Trackers card ====================================================
-	local slBrez, slLust
-	local function refreshTrackers()
-		slBrez:SetWidgetEnabled(qt().brez.enabled and true or false)
-		slLust:SetWidgetEnabled(qt().lust.enabled and true or false)
+	-- Size + position are edited live in Edit Mode (per-element flyout), so the
+	-- tab only toggles the trackers on/off — no duplicate size sliders here.
+	local function trackerHint()
+		if ns.Lumen then ns.Lumen:Print(T("Set its size and position in Edit Mode.")) end
 	end
 
 	local rowBrez = switchRow(d, T("Combat res tracker"), {
 		get = function() return qt().brez.enabled end,
-		set = function(v) qt().brez.enabled = v; applyTrackers(); refreshTrackers() end,
+		set = function(v) qt().brez.enabled = v; applyTrackers(); if v then trackerHint() end end,
 		tooltip = T("Shared battle-res pool as an icon (charges + recharge timer) — visible during Mythic+ runs and raid bosses, greyed while no charge is up. Place it via Edit Mode.") })
 	tc:place(rowBrez, rowH, 0)
 
 	local rowLust = switchRow(d, T("Bloodlust tracker"), {
 		get = function() return qt().lust.enabled end,
-		set = function(v) qt().lust.enabled = v; applyTrackers(); refreshTrackers() end,
+		set = function(v) qt().lust.enabled = v; applyTrackers(); if v then trackerHint() end end,
 		tooltip = T("Shows whether Bloodlust is available: normal icon when ready, greyed with a timer while you are Sated. Visible in dungeons and raids. Place it via Edit Mode.") })
 	tc:place(rowLust, rowH, R.row)
 
-	local tr2, tcc = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-	slBrez = sliderBox(tcc[1], { label = T("Combat res size"), min = 24, max = 80, unit = " px",
-		get = function() return qt().brez.size end,
-		set = function(v) qt().brez.size = v; applyTrackers() end })
-	slLust = sliderBox(tcc[2], { label = T("Bloodlust size"), min = 24, max = 80, unit = " px",
-		get = function() return qt().lust.size end,
-		set = function(v) qt().lust.size = v; applyTrackers() end })
-	tc:place(tr2, M.sliderBoxH, R.tight)
+	local trHint = W.Hint(d, T("Size and position: adjust each tracker in Edit Mode."))
+	tc:place(trHint, M.hintH, R.row)
 
 	tc:close()
 	bb.close()
-	refreshTrackers()
 
 	refreshCursor()
 	refreshVendor()

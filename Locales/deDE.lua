@@ -278,6 +278,11 @@ ns.RegisterLocale("deDE", {
 	["Can't couple — that would create a loop."] = "Kopplung nicht möglich — das würde eine Schleife erzeugen.",
 	["Applies after a UI reload."] = "Wird nach einem Neuladen der UI angewendet.",
 	["Also works through WoW's own Edit Mode."] = "Funktioniert auch über WoWs eigenen Edit-Modus.",
+	["Quick settings"] = "Schnelleinstellungen",
+	["Reset to default"] = "Auf Standard zurücksetzen",
+	["Open settings"] = "In Einstellungen öffnen",
+	["Set its size and position in Edit Mode."] = "Größe und Position im Edit-Modus einstellen.",
+	["Size and position: adjust each tracker in Edit Mode."] = "Größe und Position: jeden Tracker im Edit-Modus anpassen.",
 
 	-- ── Global / Profile ─────────────────────────────────────────────────
 	["Profile"] = "Profil",
