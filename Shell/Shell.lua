@@ -1134,13 +1134,21 @@ function Shell:RenderContent(changed)
 	local sec = SECTIONS[self._section]
 	local key = sec[1] .. "/" .. ((not sec.soon and sec[2][self._tab]) or "")
 
-	-- Leaving a screen (navigation): it may ask to be rebuilt fresh on its
-	-- next visit (ns.ScreenLeft — e.g. the Raid/Group tabs auto-collapse
-	-- their sections). Dropping the cache entry BEFORE the put-away below
-	-- orphans the old frame instead of parking it.
-	if self._lastKey and self._lastKey ~= key
-		and ns.ScreenLeft and ns.ScreenLeft(self._lastKey) then
-		cache[self._lastKey] = nil
+	-- Leaving a whole SECTION (not a tab switch within it): reset that section's
+	-- open disclosures and drop its cached screens so they rebuild collapsed on
+	-- the next visit. Switching tabs inside a section keeps everything open.
+	if self._lastKey and self._lastKey ~= key then
+		local oldSec = self._lastKey:match("^[^/]+")
+		if oldSec ~= key:match("^[^/]+") and ns.SectionLeft and ns.SectionLeft(oldSec) then
+			for k, entry in pairs(cache) do
+				if k:match("^[^/]+") == oldSec then
+					if entry.frame and entry.frame ~= self._screen then
+						entry.frame:Hide(); entry.frame:SetParent(nil)
+					end
+					cache[k] = nil
+				end
+			end
+		end
 	end
 	self._lastKey = key
 
