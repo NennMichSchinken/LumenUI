@@ -10,9 +10,9 @@
 -- categories use different corners, each category gets its OWN container per
 -- button: button._rfc = { [catKey] = container }.
 --
--- Toggle-gated (`/lumennative on|off`, default OFF) so it does NOT disturb the
--- shipping behavior. Inert on live 12.0.x (the "AuraContainer" frame type does
--- not exist -> attach no-ops).
+-- Auto-default ON on 12.1 (detected via build number); `/lumennative on|off` is
+-- a manual override. Inert on 12.0.x (the "AuraContainer" frame type does not
+-- exist -> attach no-ops, old scan path renders).
 --
 -- Not final: layout parity for centered anchors, the pandemic warning, and the
 -- debuff category are follow-ups; whether OTHER units' SECRET auras render on the
@@ -56,6 +56,11 @@ local DEBUFF_PRESETS = {
 	dispellable = { { key = "db_disp",  filter = "HARMFUL|RAID_PLAYER_DISPELLABLE" } },
 }
 local ALL_DEBUFF_KEYS = { "db_all", "db_raid", "db_raidc", "db_disp" }
+
+-- Native aura path is available on 12.1.0+ (the "AuraContainer" frame type). On
+-- 12.1 it becomes the DEFAULT automatically (no toggle); on 12.0.x it stays off
+-- and the old scan path renders. `/lumennative off` is still a manual override.
+local IS_121 = (select(4, GetBuildInfo()) or 0) >= 120100
 
 local PREFIX = "|cffD4A34FLumenNative|r "
 local function say(m) print(PREFIX .. m) end
@@ -415,8 +420,8 @@ function RFC.Suppresses(key)
 	return RFC.enabled and IS_NATIVE[key] ~= nil
 end
 
-function RFC.Enable()
-	if InCombatLockdown() then say("|cffff5555OOC schalten (Kampf).|r"); return end
+function RFC.Enable(quiet)
+	if InCombatLockdown() then if not quiet then say("|cffff5555OOC schalten (Kampf).|r") end return end
 	RFC.enabled = true
 	forEachLiveButton(function(btn)
 		RFC.Attach(btn)
@@ -424,8 +429,21 @@ function RFC.Enable()
 		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(true); c:Show() end end
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	say("Native Auren |cff44ff44AN|r (HoTs · Defensives · Major CDs · Debuffs).")
+	if not quiet then say("Native Auren |cff44ff44AN|r (HoTs · Defensives · Major CDs · Debuffs).") end
 end
+
+-- Auto-default: on 12.1 turn native on by itself (once, after login), so no
+-- manual toggle is needed. RFC.enabled=true also makes buttons assigned later
+-- attach via their unit-change hook. A manual `/lumennative off` still overrides
+-- for the session. On 12.0.x this never fires -> old path stays.
+local autoDone = false
+local autoFrame = CreateFrame("Frame")
+autoFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+autoFrame:SetScript("OnEvent", function()
+	if autoDone or not IS_121 then return end
+	autoDone = true
+	C_Timer.After(1, function() if IS_121 and not RFC.enabled then RFC.Enable(true) end end)
+end)
 
 function RFC.Disable()
 	if InCombatLockdown() then say("|cffff5555OOC schalten (Kampf).|r"); return end
@@ -444,8 +462,8 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "off" then RFC.Disable()
 	elseif arg == "refresh" then RFC.Disable(); RFC.Enable()
 	else
-		say("Auren über den nativen 12.1-Container (Testschalter).")
+		say("Auren über den nativen 12.1-Container. Auf 12.1 automatisch AN.")
 		say("  /lumennative on | off | refresh   (aktuell: "
-			.. (RFC.enabled and "AN" or "AUS") .. ")")
+			.. (RFC.enabled and "AN" or "AUS") .. (IS_121 and ", 12.1 erkannt" or ", kein 12.1") .. ")")
 	end
 end
