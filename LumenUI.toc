@@ -25,3 +25,4 @@ Modules\Share.lua
 Modules\MiniCC.lua
 Modules\QoL.lua
 GameMenu.lua
+Spikes\AuraContainerSpike.lua

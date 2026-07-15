@@ -39,7 +39,7 @@ read_globals = {
     "CreateUnitHealPredictionCalculator", "UnitGUID",
     "IsInRaid", "IsInGroup", "IsInInstance", "GetNumGroupMembers", "GetNumSubgroupMembers",
     -- Colors / auras / numbers
-    "RAID_CLASS_COLORS", "AuraUtil", "CurveConstants",
+    "RAID_CLASS_COLORS", "AuraUtil", "CurveConstants", "AnchorUtil", "GetBuildInfo",
     "AbbreviateNumbers", "AbbreviateNumbersAlt",
     "CreateColor", "Mixin", "GetTime",
     -- Namespaces
