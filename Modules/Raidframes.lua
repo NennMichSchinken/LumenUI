@@ -912,9 +912,9 @@ end
 -- (may create frames -> out of combat).
 local function layoutAuraCat(f, key, cat, size)
 	local holder = f.auraHolders[key]
-	-- Phase 2: native AuraContainer owns HoTs while enabled -> keep the old
-	-- holder hidden so it never lays out or renders alongside the native one.
-	if key == "hotsOwn" and ns.RFC and ns.RFC.SuppressesHots() then
+	-- Phase 2: native AuraContainer owns the helpful whitelist categories while
+	-- enabled -> keep the old holder hidden so it never lays out alongside them.
+	if ns.RFC and ns.RFC.Suppresses and ns.RFC.Suppresses(key) then
 		if holder then holder:Hide() end
 		return
 	end
@@ -1609,9 +1609,9 @@ function Raidframes:RenderAurasLive(f)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
-		-- Phase 2: the native AuraContainer owns HoTs while enabled -> skip the
-		-- old manual render for that category (avoids double display).
-		if c.key == "hotsOwn" and ns.RFC and ns.RFC.SuppressesHots() then
+		-- Phase 2: the native AuraContainer owns the helpful whitelist categories
+		-- while enabled -> skip the old manual render for them (avoids double display).
+		if ns.RFC and ns.RFC.Suppresses and ns.RFC.Suppresses(c.key) then
 			if holder then holder:Hide() end
 		elseif cat and cat["enabled" .. sfx] and holder then
 			local maxN     = cat["maxIcons" .. sfx] or 5

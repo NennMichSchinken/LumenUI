@@ -1,19 +1,22 @@
 -- Modules/AuraContainer.lua
 --
 -- Aura Phase 2 (WIP) -- native 12.1 AuraContainer rendering for raid-frame auras.
--- FIRST INCREMENT: the HoTs category only, on the LIVE secure raid buttons,
--- proving the native path end-to-end (per-button container, unit binding,
--- per-spellId whitelist, icon + cooldown swipe + duration text) before we rip
--- out the old manual scan/signature/secret-icon apparatus.
+-- Renders the HELPFUL whitelist categories (HoTs, Defensives, Major CDs) via the
+-- native container on the LIVE secure raid buttons, replacing the old manual
+-- scan/signature/secret-icon path for those. Debuffs (HARMFUL, filter-mode) still
+-- run on the old path for now.
 --
--- Toggle-gated so it does NOT disturb the shipping behavior: `/lumennative on`
--- swaps the native HoTs path in (and suppresses the old HoTs holder); `off`
--- restores the current system. Default OFF. This whole file is inert on live
--- 12.0.x (the "AuraContainer" frame type does not exist -> Attach no-ops).
+-- Because SetAuraLayout* is CONTAINER-level (one anchor per container) and our
+-- categories use different corners, each category gets its OWN container per
+-- button: button._rfc = { [catKey] = container }.
 --
--- Not final: layout parity for vertical growth / centered anchors and the
--- new duration/pandemic options are follow-ups; this increment hardcodes a
--- sensible duration text so the render can be validated on the PTR.
+-- Toggle-gated (`/lumennative on|off`, default OFF) so it does NOT disturb the
+-- shipping behavior. Inert on live 12.0.x (the "AuraContainer" frame type does
+-- not exist -> attach no-ops).
+--
+-- Not final: layout parity for centered anchors, the pandemic warning, and the
+-- debuff category are follow-ups; whether OTHER units' SECRET auras render on the
+-- non-secure overlay parent still needs a real-group test.
 
 -- luacheck: globals SLASH_LUMENNATIVE1
 
@@ -28,10 +31,19 @@ local floor, strfind    = math.floor, string.find
 
 RFC.enabled = false
 
+-- The HELPFUL whitelist categories the native path owns. Debuffs are excluded
+-- (HARMFUL filter-mode -> old path until it too migrates).
+local NATIVE_CATS = {
+	{ key = "hotsOwn",    wl = "hot" },
+	{ key = "defensives", wl = "def" },
+	{ key = "major",      wl = "major" },
+}
+local IS_NATIVE = {}
+for _, c in ipairs(NATIVE_CATS) do IS_NATIVE[c.key] = c.wl end
+
 local PREFIX = "|cffD4A34FLumenNative|r "
 local function say(m) print(PREFIX .. m) end
 
--- Context + spec helpers (kept local; we don't reach into Raidframes internals).
 local function ctxSfx() return IsInRaid() and "Raid" or "Party" end
 local function currentSpecID()
 	local idx = GetSpecialization and GetSpecialization()
@@ -39,30 +51,35 @@ local function currentSpecID()
 	return (GetSpecializationInfo and GetSpecializationInfo(idx)) or 0
 end
 
-local function hotsCat()
+local function auras()
 	local rf = ns.Lumen and ns.Lumen.db and ns.Lumen.db.profile.raidframes
-	local auras = rf and rf.auras
-	return auras and auras.hotsOwn
+	return rf and rf.auras
+end
+local function catCfg(key)
+	local a = auras()
+	return a and a[key]
+end
+local function catEnabled(key)
+	local cat = catCfg(key)
+	return cat and cat["enabled" .. ctxSfx()] and true or false
 end
 
--- Whitelist -> includeSpellIDs. Sourced from the curated per-spec HoT whitelist
--- (stable ids), NEVER from live aura reads (12.1 aura.spellId is secret).
-local function buildHotInclude()
+-- Whitelist -> includeSpellIDs, by type. Sourced from the curated per-spec
+-- whitelist (stable ids), NEVER from live aura reads (12.1 aura.spellId is secret).
+local function buildInclude(wlType)
 	local include = {}
 	local rf = ns.Raidframes
 	if not rf or not rf.WhitelistMap then return include end
 	for sid, typ in pairs(rf:WhitelistMap(currentSpecID())) do
-		if typ == "hot" then include[sid] = true end
+		if typ == wlType then include[sid] = true end
 	end
 	return include
 end
 
--- Icon size for the HoTs category (explicit or a simple auto-fit off the button
--- height; the exact auto-fit math from Raidframes is a follow-up).
-local function hotIconSize(button)
-	local cat, sfx = hotsCat(), ctxSfx()
-	-- Explicit size only when auto-fit is off (mirrors the old system); otherwise
-	-- derive from the frame height.
+-- Icon size of a category (explicit only when auto-fit is off, else derived from
+-- the frame height; the exact auto-fit math from Raidframes is a follow-up).
+local function iconSizeFor(button, key)
+	local cat, sfx = catCfg(key), ctxSfx()
 	if cat and not cat["autoFit" .. sfx] and cat["size" .. sfx] then
 		return cat["size" .. sfx]
 	end
@@ -91,25 +108,24 @@ local function getDurationFormatter()
 	return durationFormatter or nil
 end
 
--- Current duration-text options for the HoTs category (per context). Falls back
--- to sensible values if the profile hasn't been migrated yet.
-local function currentDurOpts()
-	local cat, sfx = hotsCat(), ctxSfx()
-	if not cat then return true, 12, "outline" end
+-- Per-category duration-text options (per context).
+local function durOptsFor(key)
+	local cat, sfx = catCfg(key), ctxSfx()
+	if not cat then return true, 12, "shadow" end
 	local on = cat["showDuration" .. sfx]
 	if on == nil then on = true end
 	return on, cat["durationSize" .. sfx] or 12, cat["durationOutline" .. sfx] or "shadow"
 end
 
--- Tracked { button, fs } pairs so duration text can be RESTYLED live (size /
+-- Tracked { button, fs, key } so duration text can be RESTYLED live (size /
 -- outline / show) on a settings change without rebuilding the containers.
 local durText = {}
 
--- Style one duration fontstring from the current options + (re)register or clear
--- the engine binding for the on/off state. An unstyled FontString hard-errors in
--- the engine's SetText path, so the font is set before the binding is attached.
-local function applyDurStyle(button, fs)
-	local on, size, outline = currentDurOpts()
+-- Style one duration fontstring from its category's options + (re)register or
+-- clear the engine binding for the on/off state. An unstyled FontString hard-errors
+-- in the engine's SetText path, so the font is set before the binding is attached.
+local function applyDurStyle(button, fs, key)
+	local on, size, outline = durOptsFor(key)
 	if ns.Raidframes and ns.Raidframes.StyleTextFont then
 		ns.Raidframes:StyleTextFont(fs, size, outline)
 	end
@@ -129,7 +145,7 @@ function RFC.RestyleDuration()
 	for i = #durText, 1, -1 do
 		local e = durText[i]
 		if e.fs and e.button then
-			applyDurStyle(e.button, e.fs)
+			applyDurStyle(e.button, e.fs, e.key)
 		else
 			durText[i] = durText[#durText]; durText[#durText] = nil
 		end
@@ -138,8 +154,8 @@ end
 
 -- The per-button initializer (runs once per pre-created button). Builds our own
 -- child regions and registers them; matches the old icon look (1px black frame,
--- cropped icon, cooldown swipe) and adds the requested duration text.
-local function makeInitializer(size)
+-- cropped icon, cooldown swipe) and the duration text.
+local function makeInitializer(size, key)
 	return function(button)
 		button:SetSize(size, size) -- an unsized aura button renders nothing
 
@@ -160,16 +176,14 @@ local function makeInitializer(size)
 		cd:SetHideCountdownNumbers(true) -- our own text renders the number
 		button:SetDurationCooldown(cd)
 
-		-- Duration text rides a carrier frame ABOVE the cooldown swipe, else the
-		-- swipe darkens/greys the number. Created once; visibility/size/outline are
-		-- driven live by applyDurStyle (from the per-category options).
+		-- Duration text rides a carrier frame ABOVE the swipe (else it greys out).
 		local textLayer = CreateFrame("Frame", nil, button)
 		textLayer:SetAllPoints(button)
 		textLayer:SetFrameLevel(cd:GetFrameLevel() + 1)
 		local dt = textLayer:CreateFontString(nil, "OVERLAY")
 		dt:SetPoint("CENTER", button, "CENTER", 0, 0)
-		durText[#durText + 1] = { button = button, fs = dt }
-		applyDurStyle(button, dt)
+		durText[#durText + 1] = { button = button, fs = dt, key = key }
+		applyDurStyle(button, dt, key)
 	end
 end
 
@@ -191,8 +205,8 @@ local function insetFor(point)
 	return x, y
 end
 
--- "Outside" placement: push the whole row/column beyond the anchored edge,
--- perpendicular to the growth axis (mirrors the old positionAuraIcons _outside).
+-- "Outside" placement: push the row/column beyond the anchored edge, perpendicular
+-- to the growth axis (mirrors the old positionAuraIcons _outside).
 local AURA_OUT_GAP = 2
 local function outsideOffset(anchor, grow, size)
 	local horiz = (grow == "RIGHT" or grow == "LEFT")
@@ -207,9 +221,9 @@ local function outsideOffset(anchor, grow, size)
 	return ox, oy
 end
 
--- Read the hotsOwn layout params for the current context.
-local function readLayout(button)
-	local cat, sfx = hotsCat(), ctxSfx()
+-- Read a category's layout params for the current context.
+local function readLayout(button, key)
+	local cat, sfx = catCfg(key), ctxSfx()
 	return {
 		anchor  = (cat and cat["anchor" .. sfx]) or "BOTTOMLEFT",
 		grow    = (cat and cat["grow" .. sfx]) or "RIGHT",
@@ -218,14 +232,13 @@ local function readLayout(button)
 		offX    = (cat and cat["offX" .. sfx]) or 0,
 		offY    = (cat and cat["offY" .. sfx]) or 0,
 		outside = (cat and cat["outside" .. sfx]) or false,
-		size    = hotIconSize(button),
+		size    = iconSizeFor(button, key),
 	}
 end
 
--- Apply position + layout to an EXISTING container via the live-settable native
--- setters (used both at Attach and on every settings change). The "hotsOwn"
--- group must already exist.
-local function applyLayout(container, parent, lo)
+-- Apply position + layout to an existing container (live-settable native setters).
+-- The group named `key` must already exist.
+local function applyLayout(container, parent, key, lo)
 	local ix, iy = insetFor(lo.anchor)
 	local ox, oy = 0, 0
 	if lo.outside then ox, oy = outsideOffset(lo.anchor, lo.grow, lo.size) end
@@ -235,8 +248,8 @@ local function applyLayout(container, parent, lo)
 	container:SetAuraLayoutAnchorPoint(lo.anchor)
 	container:SetAuraLayoutGrowthDirection(hDir, vDir)
 	container:SetAuraLayoutRowWidth(column and (lo.size + 0.5) or nil) -- nil = unlimited
-	container:SetAuraGroupMaxFrameCount("hotsOwn", lo.maxN)
-	container:SetAuraGroupLayout("hotsOwn", {
+	container:SetAuraGroupMaxFrameCount(key, lo.maxN)
+	container:SetAuraGroupLayout(key, {
 		elementWidth = lo.size, elementHeight = lo.size,
 		elementSpacingX = lo.spacing, elementSpacingY = lo.spacing,
 	})
@@ -248,33 +261,25 @@ local function forEachLiveButton(fn)
 	for _, btn in ipairs(rf:GetLiveButtons()) do fn(btn) end
 end
 
--- Create + configure the container on one secure button. OOC only (containers
--- cannot be created in combat). Idempotent.
-function RFC.Attach(button)
-	if button._rfc or not button then return end
-	if InCombatLockdown() then return end
+-- Create + configure ONE category's container on a button. OOC only (containers
+-- cannot be created in combat). Idempotent per category.
+local function attachCat(button, parent, key, wl)
+	button._rfc = button._rfc or {}
+	if button._rfc[key] then return button._rfc[key] end
 
-	-- Parent the container to the NON-secure overlay (where the old aura icons
-	-- render), not the secure unit button: on the protected button our tainted
-	-- icon texture stays blank (swipe/text still show), while on the overlay the
-	-- engine's secret-safe SetTexture displays -- same as the old path + the
-	-- Phase-1 spike. NOTE: whether OTHER units' SECRET auras also render on a
-	-- non-secure parent is the next thing to verify in a real group.
-	local parent = button.overlay or button
 	local ok, container = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
-	if not ok or not container then return end -- not 12.1 -> silently inert
-	button._rfc = container
+	if not ok or not container then return nil end -- not 12.1 -> silently inert
+	button._rfc[key] = container
 
-	local lo = readLayout(button)
-
+	local lo = readLayout(button, key)
 	local built = pcall(function()
 		container:SetSize(1, 1)
-		container:AddAuraGroup("hotsOwn", "HELPFUL", {
+		container:AddAuraGroup(key, "HELPFUL", {
 			maxFrameCount    = lo.maxN,
-			candidateFilters = { includeSpellIDs = buildHotInclude() },
-			initializeFrame  = makeInitializer(lo.size),
+			candidateFilters = { includeSpellIDs = buildInclude(wl) },
+			initializeFrame  = makeInitializer(lo.size, key),
 		})
-		applyLayout(container, parent, lo)
+		applyLayout(container, parent, key, lo)
 
 		local u = button.unit or button:GetAttribute("unit")
 		if u then container:SetUnit(u) end
@@ -282,44 +287,67 @@ function RFC.Attach(button)
 		container:UpdateAllAuras()
 	end)
 
-	if not built then button._rfc = nil end
-	return button._rfc
+	if not built then button._rfc[key] = nil end
+	return button._rfc[key]
 end
 
--- Re-apply position/size/layout to all live containers + resize existing aura
--- buttons (called on any aura settings change so the position options are live).
-function RFC.Relayout()
-	local size
-	forEachLiveButton(function(btn)
-		local c = btn._rfc
-		if c then
-			local lo = readLayout(btn)
-			size = lo.size
-			pcall(applyLayout, c, btn.overlay or btn, lo)
-		end
-	end)
-	if size then
-		for _, e in ipairs(durText) do
-			if e.button then pcall(e.button.SetSize, e.button, size, size) end
-		end
+-- Attach every ENABLED native category on a button (idempotent).
+function RFC.Attach(button)
+	if not button or InCombatLockdown() then return end
+	local parent = button.overlay or button
+	for _, c in ipairs(NATIVE_CATS) do
+		if catEnabled(c.key) then attachCat(button, parent, c.key, c.wl) end
 	end
 end
 
--- Re-point the container's unit when the secure header (re)assigns the button.
+-- Re-point every category container's unit when the header (re)assigns a button.
 -- Same-unit early-out avoids a raid-wide reparse storm on roster re-processing.
 function RFC.SetUnit(button, unit)
-	local c = button and button._rfc
-	if not c then return end
+	if not (button and button._rfc) then return end
 	if button._rfcUnit == unit then return end
 	button._rfcUnit = unit
-	if unit then
+	if not unit then return end
+	for _, c in pairs(button._rfc) do
 		pcall(function() c:SetUnit(unit); c:UpdateAllAuras() end)
 	end
 end
 
--- True while the native path owns HoTs -> the old holder must stay suppressed.
-function RFC.SuppressesHots()
-	return RFC.enabled
+-- Reconcile all live buttons: attach newly-enabled categories, hide disabled
+-- ones, re-apply layout + resize the rest (called on any aura settings change).
+function RFC.Relayout()
+	if not RFC.enabled then return end
+	local sizes = {}
+	forEachLiveButton(function(btn)
+		if InCombatLockdown() then return end
+		local parent = btn.overlay or btn
+		for _, c in ipairs(NATIVE_CATS) do
+			local on = catEnabled(c.key)
+			local container = btn._rfc and btn._rfc[c.key]
+			if on then
+				if not container then
+					container = attachCat(btn, parent, c.key, c.wl)
+					if container then RFC.SetUnit(btn, btn.unit or btn:GetAttribute("unit")) end
+				end
+				if container then
+					local lo = readLayout(btn, c.key)
+					sizes[c.key] = lo.size
+					container:Show(); container:SetEnabled(true)
+					pcall(applyLayout, container, parent, c.key, lo)
+				end
+			elseif container then
+				container:SetEnabled(false); container:Hide()
+			end
+		end
+	end)
+	-- Resize existing aura buttons to their category's current icon size.
+	for _, e in ipairs(durText) do
+		if e.button and sizes[e.key] then pcall(e.button.SetSize, e.button, sizes[e.key], sizes[e.key]) end
+	end
+end
+
+-- True while the native path owns category `key` -> the old holder stays suppressed.
+function RFC.Suppresses(key)
+	return RFC.enabled and IS_NATIVE[key] ~= nil
 end
 
 function RFC.Enable()
@@ -328,21 +356,20 @@ function RFC.Enable()
 	forEachLiveButton(function(btn)
 		RFC.Attach(btn)
 		RFC.SetUnit(btn, btn.unit or btn:GetAttribute("unit"))
-		if btn._rfc then btn._rfc:SetEnabled(true); btn._rfc:Show() end
+		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(true); c:Show() end end
 	end)
-	-- Drop the old HoTs holder so we don't double-render.
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	say("Native HoTs |cff44ff44AN|r.")
+	say("Native Auren |cff44ff44AN|r (HoTs · Defensives · Major CDs).")
 end
 
 function RFC.Disable()
 	if InCombatLockdown() then say("|cffff5555OOC schalten (Kampf).|r"); return end
 	RFC.enabled = false
 	forEachLiveButton(function(btn)
-		if btn._rfc then btn._rfc:SetEnabled(false); btn._rfc:Hide() end
+		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(false); c:Hide() end end
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	say("Native HoTs |cffffcc00AUS|r (altes System zurück).")
+	say("Native Auren |cffffcc00AUS|r (altes System zurück).")
 end
 
 SLASH_LUMENNATIVE1 = "/lumennative"
@@ -352,7 +379,7 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "off" then RFC.Disable()
 	elseif arg == "refresh" then RFC.Disable(); RFC.Enable()
 	else
-		say("HoTs über den nativen 12.1-Container (Testschalter).")
+		say("Auren über den nativen 12.1-Container (Testschalter).")
 		say("  /lumennative on | off | refresh   (aktuell: "
 			.. (RFC.enabled and "AN" or "AUS") .. ")")
 	end
