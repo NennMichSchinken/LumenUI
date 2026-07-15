@@ -1,10 +1,10 @@
 -- Modules/AuraContainer.lua
 --
 -- Aura Phase 2 (WIP) -- native 12.1 AuraContainer rendering for raid-frame auras.
--- Renders the HELPFUL whitelist categories (HoTs, Defensives, Major CDs) via the
--- native container on the LIVE secure raid buttons, replacing the old manual
--- scan/signature/secret-icon path for those. Debuffs (HARMFUL, filter-mode) still
--- run on the old path for now.
+-- Renders all four aura categories via the native container on the LIVE secure
+-- raid buttons: the HELPFUL whitelist categories (HoTs, Defensives, Major CDs)
+-- via per-spellId includeSpellIDs, and Debuffs (HARMFUL) via filter-mode groups
+-- (raid/all/dispellable). Replaces the old manual scan/signature/secret-icon path.
 --
 -- Because SetAuraLayout* is CONTAINER-level (one anchor per container) and our
 -- categories use different corners, each category gets its OWN container per
@@ -31,15 +31,31 @@ local floor, strfind    = math.floor, string.find
 
 RFC.enabled = false
 
--- The HELPFUL whitelist categories the native path owns. Debuffs are excluded
--- (HARMFUL filter-mode -> old path until it too migrates).
+-- Categories the native path owns. HELPFUL ones (wl) filter by a per-spellId
+-- whitelist; debuffs are HARMFUL (harmful=true) and filter by MODE via filter
+-- strings (per-spellId matching is not permitted for harmful auras on assistable
+-- units -- the Phase 1 constraint).
 local NATIVE_CATS = {
 	{ key = "hotsOwn",    wl = "hot" },
 	{ key = "defensives", wl = "def" },
 	{ key = "major",      wl = "major" },
+	{ key = "debuffs",    harmful = true },
 }
 local IS_NATIVE = {}
-for _, c in ipairs(NATIVE_CATS) do IS_NATIVE[c.key] = c.wl end
+for _, c in ipairs(NATIVE_CATS) do IS_NATIVE[c.key] = true end
+
+-- Debuff filter modes -> aura filter-string groups. "raid" is a UNION (RAID or
+-- RAID_IN_COMBAT), so it declares two non-overlapping groups (the second negates
+-- RAID) to avoid a double display. Groups live in ONE debuffs container; the
+-- active mode's groups get maxFrameCount = N, the rest 0 (live switching, no
+-- container swap -- mirrors the EllesmereUI approach).
+local DEBUFF_PRESETS = {
+	all         = { { key = "db_all",   filter = "HARMFUL" } },
+	raid        = { { key = "db_raid",  filter = "HARMFUL|RAID" },
+	                { key = "db_raidc", filter = "HARMFUL|RAID_IN_COMBAT|!RAID" } },
+	dispellable = { { key = "db_disp",  filter = "HARMFUL|RAID_PLAYER_DISPELLABLE" } },
+}
+local ALL_DEBUFF_KEYS = { "db_all", "db_raid", "db_raidc", "db_disp" }
 
 local PREFIX = "|cffD4A34FLumenNative|r "
 local function say(m) print(PREFIX .. m) end
@@ -62,6 +78,10 @@ end
 local function catEnabled(key)
 	local cat = catCfg(key)
 	return cat and cat["enabled" .. ctxSfx()] and true or false
+end
+local function debuffMode()
+	local cat = catCfg("debuffs")
+	return (cat and cat["filterMode" .. ctxSfx()]) or "raid"
 end
 
 -- Whitelist -> includeSpellIDs, by type. Sourced from the curated per-spec
@@ -236,9 +256,9 @@ local function readLayout(button, key)
 	}
 end
 
--- Apply position + layout to an existing container (live-settable native setters).
--- The group named `key` must already exist.
-local function applyLayout(container, parent, key, lo)
+-- Container-level layout (anchor / growth / position) -- shared by every group
+-- in the container. Live-settable.
+local function applyContainerLayout(container, parent, lo)
 	local ix, iy = insetFor(lo.anchor)
 	local ox, oy = 0, 0
 	if lo.outside then ox, oy = outsideOffset(lo.anchor, lo.grow, lo.size) end
@@ -248,11 +268,44 @@ local function applyLayout(container, parent, key, lo)
 	container:SetAuraLayoutAnchorPoint(lo.anchor)
 	container:SetAuraLayoutGrowthDirection(hDir, vDir)
 	container:SetAuraLayoutRowWidth(column and (lo.size + 0.5) or nil) -- nil = unlimited
-	container:SetAuraGroupMaxFrameCount(key, lo.maxN)
-	container:SetAuraGroupLayout(key, {
+end
+
+-- Per-group size/spacing/count. The group must already exist.
+local function applyGroupLayout(container, gkey, lo, maxN)
+	container:SetAuraGroupMaxFrameCount(gkey, maxN)
+	container:SetAuraGroupLayout(gkey, {
 		elementWidth = lo.size, elementHeight = lo.size,
 		elementSpacingX = lo.spacing, elementSpacingY = lo.spacing,
 	})
+end
+
+-- Declare a debuff group on demand (engine groups are add-only) + configure it.
+local function ensureDebuffGroup(container, gkey, filter, lo, maxN)
+	container._dbGroups = container._dbGroups or {}
+	if not container._dbGroups[gkey] then
+		container._dbGroups[gkey] = true
+		container:AddAuraGroup(gkey, filter, {
+			maxFrameCount   = maxN,
+			initializeFrame = makeInitializer(lo.size, "debuffs"),
+		})
+	end
+	applyGroupLayout(container, gkey, lo, maxN)
+end
+
+-- Reconcile the debuffs container to the active filter mode: the active preset's
+-- groups get maxFrameCount = N, every other already-declared debuff group 0.
+local function syncDebuffs(container, parent, lo)
+	local active = {}
+	for _, g in ipairs(DEBUFF_PRESETS[debuffMode()] or DEBUFF_PRESETS.raid) do
+		active[g.key] = true
+		ensureDebuffGroup(container, g.key, g.filter, lo, lo.maxN)
+	end
+	for _, gkey in ipairs(ALL_DEBUFF_KEYS) do
+		if not active[gkey] and container._dbGroups and container._dbGroups[gkey] then
+			container:SetAuraGroupMaxFrameCount(gkey, 0)
+		end
+	end
+	applyContainerLayout(container, parent, lo)
 end
 
 local function forEachLiveButton(fn)
@@ -262,8 +315,9 @@ local function forEachLiveButton(fn)
 end
 
 -- Create + configure ONE category's container on a button. OOC only (containers
--- cannot be created in combat). Idempotent per category.
-local function attachCat(button, parent, key, wl)
+-- cannot be created in combat). Idempotent per category. `c` = NATIVE_CATS entry.
+local function attachCat(button, parent, c)
+	local key = c.key
 	button._rfc = button._rfc or {}
 	if button._rfc[key] then return button._rfc[key] end
 
@@ -274,13 +328,17 @@ local function attachCat(button, parent, key, wl)
 	local lo = readLayout(button, key)
 	local built = pcall(function()
 		container:SetSize(1, 1)
-		container:AddAuraGroup(key, "HELPFUL", {
-			maxFrameCount    = lo.maxN,
-			candidateFilters = { includeSpellIDs = buildInclude(wl) },
-			initializeFrame  = makeInitializer(lo.size, key),
-		})
-		applyLayout(container, parent, key, lo)
-
+		if c.harmful then
+			syncDebuffs(container, parent, lo)
+		else
+			container:AddAuraGroup(key, "HELPFUL", {
+				maxFrameCount    = lo.maxN,
+				candidateFilters = { includeSpellIDs = buildInclude(c.wl) },
+				initializeFrame  = makeInitializer(lo.size, key),
+			})
+			applyContainerLayout(container, parent, lo)
+			applyGroupLayout(container, key, lo, lo.maxN)
+		end
 		local u = button.unit or button:GetAttribute("unit")
 		if u then container:SetUnit(u) end
 		container:SetEnabled(true)
@@ -296,7 +354,7 @@ function RFC.Attach(button)
 	if not button or InCombatLockdown() then return end
 	local parent = button.overlay or button
 	for _, c in ipairs(NATIVE_CATS) do
-		if catEnabled(c.key) then attachCat(button, parent, c.key, c.wl) end
+		if catEnabled(c.key) then attachCat(button, parent, c) end
 	end
 end
 
@@ -325,14 +383,21 @@ function RFC.Relayout()
 			local container = btn._rfc and btn._rfc[c.key]
 			if on then
 				if not container then
-					container = attachCat(btn, parent, c.key, c.wl)
+					container = attachCat(btn, parent, c)
 					if container then RFC.SetUnit(btn, btn.unit or btn:GetAttribute("unit")) end
 				end
 				if container then
 					local lo = readLayout(btn, c.key)
 					sizes[c.key] = lo.size
 					container:Show(); container:SetEnabled(true)
-					pcall(applyLayout, container, parent, c.key, lo)
+					if c.harmful then
+						pcall(syncDebuffs, container, parent, lo)
+					else
+						pcall(function()
+							applyContainerLayout(container, parent, lo)
+							applyGroupLayout(container, c.key, lo, lo.maxN)
+						end)
+					end
 				end
 			elseif container then
 				container:SetEnabled(false); container:Hide()
@@ -359,7 +424,7 @@ function RFC.Enable()
 		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(true); c:Show() end end
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	say("Native Auren |cff44ff44AN|r (HoTs · Defensives · Major CDs).")
+	say("Native Auren |cff44ff44AN|r (HoTs · Defensives · Major CDs · Debuffs).")
 end
 
 function RFC.Disable()
