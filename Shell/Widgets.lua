@@ -200,6 +200,11 @@ function W.Slider(parent, o)
 		box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
 		UI:SetFont(box, "value", C.gold500)
 		box:SetJustifyH("RIGHT")
+		-- Subtle field affordance so the inline value reads as a TYPEABLE input
+		-- (Florian 2026-07-14: the drag can't reliably hit exact px -> click the
+		-- value to type an exact number). Border brightens on focus (boxEdges).
+		UI.RoundFill(box, P.inset, "BACKGROUND", nil, RAD.xs)
+		boxEdges = UI.RoundBorder(box, L.soft, "OVERLAY", nil, RAD.xs)
 	else
 		box:SetSize(M.valueBoxW, M.valueBoxH)
 		box:SetPoint("TOP", row, "BOTTOM", 0, -M.valueBoxGap)
@@ -209,7 +214,7 @@ function W.Slider(parent, o)
 		box:SetJustifyH("CENTER")
 	end
 	box:SetAutoFocus(false)
-	box:SetTextInsets(compact and 0 or 6, compact and 0 or 6, 0, 0)
+	box:SetTextInsets(6, 6, 0, 0)
 
 	local cur = (o.get and o.get()) or o.value or minV
 	local unit = o.unit or ""
@@ -252,12 +257,16 @@ function W.Slider(parent, o)
 	-- clamp, apply. Focus colors the border more strongly.
 	box:SetScript("OnEditFocusGained", function(self)
 		typing = true
+		-- Let the Edit Mode keyboard catcher yield while typing here, so digits/
+		-- Enter/Esc reach this box instead of nudging/closing the session.
+		if ns.EditMode then ns.EditMode._fieldFocused = true end
 		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, L.strong) end
 		else self:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b) end
 		self:HighlightText()
 	end)
 	box:SetScript("OnEditFocusLost", function(self)
 		typing = false
+		if ns.EditMode then ns.EditMode._fieldFocused = false end
 		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, L.soft) end
 		else self:SetTextColor(C.gold500.r, C.gold500.g, C.gold500.b) end
 		self:SetText(cur .. unit) -- reset to the canonical state

@@ -283,6 +283,8 @@ ns.RegisterLocale("deDE", {
 	["Open settings"] = "In Einstellungen öffnen",
 	["Set its size and position in Edit Mode."] = "Größe und Position im Edit-Modus einstellen.",
 	["Size and position: adjust each tracker in Edit Mode."] = "Größe und Position: jeden Tracker im Edit-Modus anpassen.",
+	["Group Frame"] = "Gruppen-Frame",
+	["Raid Frame"] = "Raid-Frame",
 
 	-- ── Global / Profile ─────────────────────────────────────────────────
 	["Profile"] = "Profil",
