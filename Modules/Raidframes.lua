@@ -1951,6 +1951,16 @@ function Raidframes:RefreshPreview(ctx)
 end
 
 -- Session on/off: swap the live secure frames for the two previews, or restore.
+-- Bring one preview's whole subtree in front of the other so a grabbed,
+-- overlapping frame lies COMPLETELY on top (no interleaving of the two frames'
+-- bars). Strata cascades to the fake frames + their bars (they never set their
+-- own strata), so bumping the holder is enough.
+function Raidframes:RaisePreview(ctx)
+	local other = (ctx == "raid") and "party" or "raid"
+	if epHolders[ctx] then epHolders[ctx]:SetFrameStrata("DIALOG") end
+	if epHolders[other] then epHolders[other]:SetFrameStrata("HIGH") end
+end
+
 function Raidframes:ShowEditPreviews(on)
 	ensureEditPreviews()
 	if on then
@@ -1958,6 +1968,8 @@ function Raidframes:ShowEditPreviews(on)
 		if container then container:Hide() end
 		self:RefreshPreview("party")
 		self:RefreshPreview("raid")
+		epHolders.party:SetFrameStrata("HIGH") -- defined starting order; grab raises one above
+		epHolders.raid:SetFrameStrata("HIGH")
 		epHolders.party:Show()
 		epHolders.raid:Show()
 	else
@@ -2542,7 +2554,8 @@ function Raidframes:Setup()
 						get = function() return db()[ctx].spacing end,
 						set = function(v) db()[ctx].spacing = v; Raidframes:RefreshPreview(ctx) end },
 				},
-				openSettings = function() if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end end })
+				openSettings = function() if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end end,
+				onRaise = function() Raidframes:RaisePreview(ctx) end })
 		end
 		regPreview("party", "raidframes_group", "Group Frame", "Group")
 		regPreview("raid",  "raidframes_raid",  "Raid Frame",  "Raid")

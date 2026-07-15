@@ -68,8 +68,11 @@ local vLine, vN = {}, 0
 local hLine, hN = {}, 0
 local drag = { frame = nil }
 -- Soft-wall pass-through per obstacle (Florian): a wall RESISTS, but pushing the
--- group's center into an obstacle breaks through (overlap) without Ctrl, and
--- re-arms only once the group is fully clear again. Rebuilt per drag.
+-- group into an obstacle breaks through (overlap) without Ctrl, and re-arms only
+-- once the group is fully clear again. Breakaway triggers at a modest PENETRATION
+-- (BREAK_FRAC of the dragged box on BOTH axes) -- earlier than "drag the majority
+-- over" (the old center-crossing rule felt locked). Tunable. Rebuilt per drag.
+local BREAK_FRAC = 0.15
 local passThrough = {}
 -- Frames that move WITH the dragged one (a dragged anchor takes its group) —
 -- they must NOT act as walls against it. Rebuilt per drag (reused table).
@@ -540,15 +543,18 @@ local function dragUpdate()
 		-- resolved X. The clamp falls away as soon as the desired position is free
 		-- (the desired position always hangs on the cursor — nothing sticks).
 		local lx, ly = drag.lastX, drag.lastY
-		-- Soft walls: a wall for obstacle i turns OFF once the group's desired CENTER
-		-- pushes inside i (breakaway → overlap without Ctrl) and re-arms only when the
+		-- Soft walls: a wall for obstacle i turns OFF once the group's desired box
+		-- penetrates i by BREAK_FRAC on BOTH axes (breakaway → overlap without Ctrl,
+		-- from any side, well before the majority is over) and re-arms only when the
 		-- group is FULLY clear of i again (so dragging back out stays free too).
-		local ccx, ccy = x + uox + uw / 2, y + uoy + uh / 2
+		local bx, by = x + uox, y + uoy
 		for i = 1, obsN do
 			if passThrough[i] then
-				if not hitsObstacle(x + uox, y + uoy, uw, uh, i) then passThrough[i] = false end
-			elseif ccx > obsL[i] and ccx < obsR[i] and ccy > obsB[i] and ccy < obsT[i] then
-				passThrough[i] = true
+				if not hitsObstacle(bx, by, uw, uh, i) then passThrough[i] = false end
+			else
+				local ox = min(bx + uw, obsR[i]) - max(bx, obsL[i])
+				local oy = min(by + uh, obsT[i]) - max(by, obsB[i])
+				if ox > BREAK_FRAC * uw and oy > BREAK_FRAC * uh then passThrough[i] = true end
 			end
 		end
 		for i = 1, obsN do
@@ -723,6 +729,7 @@ local function makeOverlay(frame, label)
 			return
 		end
 		if beginDrag(frame) then
+			EditMode:_raise(frame) -- grabbed element comes fully to the front
 			o:SetScript("OnUpdate", dragUpdate) -- runs ONLY while dragging
 		end
 	end)
@@ -798,6 +805,9 @@ function EditMode:_raise(frame)
 	if not info then return end
 	self._raiseLvl = (self._raiseLvl or 400) + 1
 	info.overlay:SetFrameLevel(self._raiseLvl)
+	-- Let the element lift its own render order too (e.g. an overlapping raid
+	-- preview brings its whole frame subtree to the front, not just the overlay).
+	if info.quick and info.quick.onRaise then info.quick.onRaise(frame) end
 end
 
 -- ---------------------------------------------------------------------------
