@@ -61,6 +61,10 @@ local obsL, obsB, obsR, obsT, obsN = {}, {}, {}, {}, 0
 local vLine, vSrc, vN = {}, {}, 0
 local hLine, hSrc, hN = {}, {}, 0
 local drag = { frame = nil }
+-- Soft-wall pass-through per obstacle (Florian): a wall RESISTS, but pushing the
+-- group's center into an obstacle breaks through (overlap) without Ctrl, and
+-- re-arms only once the group is fully clear again. Rebuilt per drag.
+local passThrough = {}
 -- Frames that move WITH the dragged one (a dragged anchor takes its group) —
 -- they must NOT act as walls against it. Rebuilt per drag (reused table).
 local moveSet = {}
@@ -123,9 +127,11 @@ local function hitsObstacle(x, y, w, h, i)
 	return x < obsR[i] and x + w > obsL[i] and y < obsT[i] and y + h > obsB[i]
 end
 
-local function hitsAny(x, y, w, h)
+-- True if the box hits any ARMED obstacle (pass-through ones are ignored) — so a
+-- groove can align (e.g. center the Raid inside the Group frame) once broken through.
+local function hitsAnyWall(x, y, w, h)
 	for i = 1, obsN do
-		if hitsObstacle(x, y, w, h, i) then return true end
+		if not passThrough[i] and hitsObstacle(x, y, w, h, i) then return true end
 	end
 	return false
 end
@@ -434,6 +440,11 @@ local function beginDrag(frame)
 	drag.uW, drag.uH = uMaxX - uMinX, uMaxY - uMinY
 
 	collectObstacles(frame)
+	-- Soft-wall init: obstacles the group ALREADY overlaps start passed-through, so
+	-- a stacked default (Group inside Raid) never feels locked — you can drag out.
+	for i = 1, obsN do
+		passThrough[i] = hitsObstacle(drag.lastX + drag.uOffX, drag.lastY + drag.uOffY, drag.uW, drag.uH, i)
+	end
 	return true
 end
 
@@ -467,15 +478,26 @@ local function dragUpdate()
 		-- resolved X. The clamp falls away as soon as the desired position is free
 		-- (the desired position always hangs on the cursor — nothing sticks).
 		local lx, ly = drag.lastX, drag.lastY
+		-- Soft walls: a wall for obstacle i turns OFF once the group's desired CENTER
+		-- pushes inside i (breakaway → overlap without Ctrl) and re-arms only when the
+		-- group is FULLY clear of i again (so dragging back out stays free too).
+		local ccx, ccy = x + uox + uw / 2, y + uoy + uh / 2
 		for i = 1, obsN do
-			if hitsObstacle(x + uox, ly + uoy, uw, uh, i) then
+			if passThrough[i] then
+				if not hitsObstacle(x + uox, y + uoy, uw, uh, i) then passThrough[i] = false end
+			elseif ccx > obsL[i] and ccx < obsR[i] and ccy > obsB[i] and ccy < obsT[i] then
+				passThrough[i] = true
+			end
+		end
+		for i = 1, obsN do
+			if not passThrough[i] and hitsObstacle(x + uox, ly + uoy, uw, uh, i) then
 				if lx + uox + uw <= obsL[i] + 0.01 then x = obsL[i] - uw - uox
 				elseif lx + uox >= obsR[i] - 0.01 then x = obsR[i] - uox
 				else x = lx end
 			end
 		end
 		for i = 1, obsN do
-			if hitsObstacle(x + uox, y + uoy, uw, uh, i) then
+			if not passThrough[i] and hitsObstacle(x + uox, y + uoy, uw, uh, i) then
 				if ly + uoy + uh <= obsB[i] + 0.01 then y = obsB[i] - uh - uoy
 				elseif ly + uoy >= obsT[i] - 0.01 then y = obsT[i] - uoy
 				else y = ly end
@@ -495,7 +517,7 @@ local function dragUpdate()
 			end
 		end
 		if bestX then
-			if not hitsAny(bestX + uox, y + uoy, uw, uh) then x = bestX
+			if not hitsAnyWall(bestX + uox, y + uoy, uw, uh) then x = bestX
 			else gvx = nil; gvsrc = 0 end
 		end
 		local bestY
@@ -508,7 +530,7 @@ local function dragUpdate()
 			end
 		end
 		if bestY then
-			if not hitsAny(x + uox, bestY + uoy, uw, uh) then y = bestY
+			if not hitsAnyWall(x + uox, bestY + uoy, uw, uh) then y = bestY
 			else ghy = nil; ghsrc = 0 end
 		end
 	end
@@ -534,8 +556,21 @@ local function endDrag(frame)
 	local moved = drag.moved
 	if moved then commitMove(frame, drag.anchorFrame) end
 	drag.frame = nil
-	EditMode:Select(frame) -- select (border + nudge target) on both click and drag
-	if not moved then EditMode:_updatePanel() end -- a plain CLICK opens the flyout; a drag does not
+	if moved then
+		EditMode:Select(frame) -- a drag just re-affirms the dragged element
+	else
+		-- Click: if this element is already selected and peers sit under the cursor,
+		-- cycle to the next (reach a stacked frame); raise it so a follow-up drag
+		-- grabs it. Then open the flyout.
+		local target = frame
+		if EditMode.selected == frame then
+			local nxt = EditMode:_nextUnderCursor(frame)
+			if nxt then target = nxt end
+		end
+		EditMode:Select(target)
+		EditMode:_raise(target)
+		EditMode:_updatePanel()
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -575,6 +610,7 @@ local function makeOverlay(frame, label)
 		for i = 1, 4 do self.edges[i]:SetAlpha(alpha) end
 		t:SetHeight(thick); b:SetHeight(thick)
 		l:SetWidth(thick); r:SetWidth(thick)
+		self.bg:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, on and 0.40 or 0.25)
 	end
 
 	-- Chain (link) icon, top-right — Phase 2 coupling. Only keyed elements are
@@ -640,6 +676,17 @@ local function makeOverlay(frame, label)
 			hideGuides()
 		end
 	end)
+	-- Hover highlight so you see which stacked element you'd grab before clicking.
+	o:SetScript("OnEnter", function()
+		if EditMode.selected ~= frame and not EditMode.linkSource then
+			o.bg:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 0.36)
+		end
+	end)
+	o:SetScript("OnLeave", function()
+		if EditMode.selected ~= frame and not EditMode.linkSource then
+			o.bg:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 0.25)
+		end
+	end)
 	o:Hide()
 	return o
 end
@@ -659,6 +706,36 @@ function EditMode:Select(frame)
 	end
 	-- NB: selection no longer opens the flyout — that's driven explicitly so a
 	-- DRAG doesn't pop it open on release (only a plain click does; see endDrag).
+end
+
+-- Overlap grab (Florian): elements can be stacked (e.g. Group over Raid). Clicking
+-- cycles selection through everything under the cursor (stable by registration
+-- order); the selected one is raised so a following drag isn't blocked by a peer.
+function EditMode:_nextUnderCursor(frame)
+	local ui = UIParent:GetEffectiveScale()
+	local mx, my = GetCursorPosition()
+	mx, my = mx / ui, my / ui
+	local hits, n = nil, 0
+	for f, info in pairs(self.items) do
+		if f:IsShown() then
+			local l, b, w, h = rectOf(boundsFor(f, info))
+			if l and mx >= l and mx <= l + w and my >= b and my <= b + h then
+				hits = hits or {}; n = n + 1; hits[n] = f
+			end
+		end
+	end
+	if n < 2 then return nil end
+	table.sort(hits, function(a, b) return self.items[a].regIndex < self.items[b].regIndex end)
+	local ci = 1
+	for i = 1, n do if hits[i] == frame then ci = i break end end
+	return hits[(ci % n) + 1]
+end
+
+function EditMode:_raise(frame)
+	local info = frame and self.items[frame]
+	if not info then return end
+	self._raiseLvl = (self._raiseLvl or 400) + 1
+	info.overlay:SetFrameLevel(self._raiseLvl)
 end
 
 -- ---------------------------------------------------------------------------
@@ -846,6 +923,12 @@ local function ensureKeyboard()
 	kb:Hide()
 	kb:SetScript("OnKeyDown", function(self, key)
 		if not EditMode.session then
+			self:SetPropagateKeyboardInput(true)
+			return
+		end
+		-- A flyout value field has focus -> pass EVERY key through to it (typing an
+		-- exact number), never nudge or close the session while editing.
+		if EditMode._fieldFocused then
 			self:SetPropagateKeyboardInput(true)
 			return
 		end
@@ -1095,6 +1178,64 @@ function EditMode:_positionPanel()
 end
 
 -- ---------------------------------------------------------------------------
+--  Session chrome: a subtle world dim (so it's obvious you're in Edit Mode,
+--  Ellesmere/Blizzard style — behind all UI so the frames stay bright) + a
+--  persistent screen-center crosshair as a fixed alignment reference.
+-- ---------------------------------------------------------------------------
+local editChrome
+local function ensureEditChrome()
+	if editChrome then return end
+	local dim = CreateFrame("Frame", nil, UIParent)
+	dim:SetFrameStrata("BACKGROUND")   -- over the world, under all UI/frames
+	dim:SetAllPoints(UIParent)
+	dim:EnableMouse(false)
+	local dt = dim:CreateTexture(nil, "BACKGROUND")
+	dt:SetAllPoints()
+	dt:SetColorTexture(0, 0, 0, 0.28)
+	dim:Hide()
+
+	local host = CreateFrame("Frame", nil, UIParent)
+	host:SetFrameStrata("MEDIUM")       -- reference lines sit behind the HIGH frames
+	host:SetAllPoints(UIParent)
+	host:EnableMouse(false)
+	local function mkLine()
+		local t = host:CreateTexture(nil, "OVERLAY")
+		if ns.UI then ns.UI.SetColor(t, ns.UI.P.goldBrand) else t:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 1) end
+		t:SetAlpha(0.30)
+		return t
+	end
+	local cv, chz = mkLine(), mkLine()
+	local function place()
+		local w, h = host:GetWidth(), host:GetHeight()
+		if not w or w == 0 then return end
+		cv:ClearAllPoints()
+		cv:SetPoint("TOP", host, "TOPLEFT", w / 2, 0)
+		cv:SetPoint("BOTTOM", host, "BOTTOMLEFT", w / 2, 0)
+		PixelUtil.SetWidth(cv, 1)
+		chz:ClearAllPoints()
+		chz:SetPoint("LEFT", host, "BOTTOMLEFT", 0, h / 2)
+		chz:SetPoint("RIGHT", host, "BOTTOMRIGHT", 0, h / 2)
+		PixelUtil.SetHeight(chz, 1)
+	end
+	host:HookScript("OnShow", place)
+	host:HookScript("OnSizeChanged", place)
+	host:Hide()
+	editChrome = { dim = dim, host = host, place = place }
+end
+
+local function showEditChrome(on)
+	if on then
+		ensureEditChrome()
+		editChrome.dim:Show()
+		editChrome.host:Show()
+		editChrome.place()
+	elseif editChrome then
+		editChrome.dim:Hide()
+		editChrome.host:Hide()
+	end
+end
+
+-- ---------------------------------------------------------------------------
 --  Registry + activation
 -- ---------------------------------------------------------------------------
 -- Anchor every overlay to its element's VISIBLE bounds (the raidframes' inner
@@ -1146,7 +1287,9 @@ function EditMode:Register(frame, label, save, boundsFn, key, quick)
 	if self.items[frame] then return end
 	frame:SetMovable(true)
 	frame:SetClampedToScreen(true)
-	local info = { label = label, save = save, boundsFn = boundsFn, key = key, quick = quick, overlay = makeOverlay(frame, label) }
+	self._regCount = (self._regCount or 0) + 1
+	local info = { label = label, save = save, boundsFn = boundsFn, key = key, quick = quick,
+		regIndex = self._regCount, overlay = makeOverlay(frame, label) }
 	self.items[frame] = info
 	if key then self.byKey[key] = frame else info.overlay.chain:Hide() end
 	if self.active then
@@ -1176,6 +1319,7 @@ function EditMode:OpenSession()
 	-- Constant physical size like the Shell (same scale source).
 	if ns.Shell and ns.Shell._frame then toolbar:SetScale(ns.Shell._frame:GetScale()) end
 	toolbar:Show()
+	showEditChrome(true)   -- world dim + screen-center crosshair
 	ensureKeyboard()
 	kb:EnableKeyboard(true)
 	kb:Show()
@@ -1193,6 +1337,7 @@ function EditMode:CloseSession(reopenShell)
 	self:Select(nil)
 	self:_updatePanel() -- selection cleared -> hides the flyout
 	if toolbar then toolbar:Hide() end
+	showEditChrome(false)
 	if kb then kb:EnableKeyboard(false); kb:Hide() end
 	hideGuides()
 	evt:UnregisterEvent("PLAYER_REGEN_DISABLED")
