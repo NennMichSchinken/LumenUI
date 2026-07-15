@@ -155,6 +155,10 @@ local defaults = {
 					anchorRaid = "BOTTOMLEFT", anchorParty = "BOTTOMLEFT", growRaid = "RIGHT", growParty = "RIGHT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
+					-- Duration text on the icon (native aura path): show + size + outline (like the name text).
+					showDurationRaid = true, showDurationParty = true,
+					durationSizeRaid = 12, durationSizeParty = 14,
+					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 				},
 				defensives = {
 					enabledRaid = false, enabledParty = false,
@@ -163,6 +167,9 @@ local defaults = {
 					anchorRaid = "TOPRIGHT", anchorParty = "TOPRIGHT", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
+					showDurationRaid = true, showDurationParty = true,
+					durationSizeRaid = 12, durationSizeParty = 14,
+					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 				},
 				-- Major CDs (big class cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
 				-- Raidframes.lua). Default anchor TOPLEFT = the last free corner (HoTs=BOTTOMLEFT,
@@ -174,6 +181,9 @@ local defaults = {
 					anchorRaid = "TOPLEFT", anchorParty = "TOPLEFT", growRaid = "RIGHT", growParty = "RIGHT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
+					showDurationRaid = true, showDurationParty = true,
+					durationSizeRaid = 12, durationSizeParty = 14,
+					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 				},
 				debuffs = {
 					enabledRaid = false, enabledParty = false,
@@ -182,6 +192,9 @@ local defaults = {
 					anchorRaid = "BOTTOMRIGHT", anchorParty = "BOTTOMRIGHT", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
+					showDurationRaid = true, showDurationParty = true,
+					durationSizeRaid = 12, durationSizeParty = 14,
+					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 					-- Blizzard default filter (per context): "raid" = only raid-relevant debuffs
 					-- (like Blizzard's default), "all" = all, "dispellable" = only self-dispellable.
 					filterModeRaid = "raid", filterModeParty = "raid",

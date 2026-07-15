@@ -1028,9 +1028,12 @@ function auraCat(d, s, cat, isDebuff, ctx, sfx, refreshReg)
 		s:place(f1, fieldH, R.row)
 	end
 
-	-- More options: auto-fit + swipe (stacked rows first, §8), then spacing +
-	-- inside/outside and the offsets as unit-width field rows.
+	-- More options: two clearly separated sub-sections -- the ICON PLACEMENT
+	-- (size/swipe/spacing/inside-outside/offsets = where the aura sits) and the
+	-- DURATION TEXT (its own show/size/outline). Sub-headings keep the offsets
+	-- visibly tied to the aura, not to the duration number.
 	if (auraAdvState[ctx] or {})[cat] then
+		s:place(subHeadRow(d, T("Icon placement")), M.subHeadH, R.tight)
 		local cbFit = checkRow(d, T("Auto-fit (size from frame height)"), { get = cget("autoFit"),
 			set = function(v) cset("autoFit")(v); refresh() end })
 		s:place(cbFit, M.optionRowH, 0)
@@ -1050,6 +1053,19 @@ function auraCat(d, s, cat, isDebuff, ctx, sfx, refreshReg)
 		local offYW = sliderBox(ec2[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px", get = cget("offY"), set = cset("offY") })
 		deps[#deps + 1] = offXW; deps[#deps + 1] = offYW
 		s:place(e2, M.sliderBoxH, R.row)
+
+		-- Duration text on the icon: show + size + outline (same outline options
+		-- as the name text).
+		s:place(subHeadRow(d, T("Duration text")), M.subHeadH, R.row)
+		local cbDur = checkRow(d, T("Show duration"), { get = cget("showDuration"), set = cset("showDuration") })
+		s:place(cbDur, M.optionRowH, 0)
+		deps[#deps + 1] = cbDur
+		local du1, duc = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+		local durSizeW = sliderBox(duc[1], { label = T("Size"), min = 6, max = 30, unit = " px", get = cget("durationSize"), set = cset("durationSize") })
+		local durOutW = W.Segment(duc[2], { label = T("Outline"), options = OUTLINE_SEG_OPTS, get = cget("durationOutline"), set = cset("durationOutline") })
+		durOutW:SetAllPoints(duc[2])
+		deps[#deps + 1] = durSizeW; deps[#deps + 1] = durOutW
+		s:place(du1, M.sliderBoxH, R.row)
 	end
 	local advOpen = (auraAdvState[ctx] or {})[cat]
 	s:place(W.Disclosure(d, { open = advOpen,

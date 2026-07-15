@@ -61,18 +61,12 @@ end
 -- height; the exact auto-fit math from Raidframes is a follow-up).
 local function hotIconSize(button)
 	local cat, sfx = hotsCat(), ctxSfx()
-	local explicit = cat and cat["size" .. sfx]
-	if explicit then return explicit end
+	-- Explicit size only when auto-fit is off (mirrors the old system); otherwise
+	-- derive from the frame height.
+	if cat and not cat["autoFit" .. sfx] and cat["size" .. sfx] then
+		return cat["size" .. sfx]
+	end
 	return math.max(10, math.min(40, floor((button:GetHeight() or 60) * 0.3)))
-end
-
--- Duration FontString styling. Set a font object FIRST -- an unstyled FontString
--- hard-errors inside the engine's SetText path.
-local function styleDurationFS(fs, size)
-	fs:SetFontObject(NumberFontNormalSmall)
-	local f, _, fl = fs:GetFont()
-	if f then fs:SetFont(f, size or 12, fl or "OUTLINE") end
-	fs:SetTextColor(1, 1, 1)
 end
 
 -- Number-only duration formatter: bare seconds under a minute ("14", not "14s"),
@@ -97,10 +91,55 @@ local function getDurationFormatter()
 	return durationFormatter or nil
 end
 
+-- Current duration-text options for the HoTs category (per context). Falls back
+-- to sensible values if the profile hasn't been migrated yet.
+local function currentDurOpts()
+	local cat, sfx = hotsCat(), ctxSfx()
+	if not cat then return true, 12, "outline" end
+	local on = cat["showDuration" .. sfx]
+	if on == nil then on = true end
+	return on, cat["durationSize" .. sfx] or 12, cat["durationOutline" .. sfx] or "shadow"
+end
+
+-- Tracked { button, fs } pairs so duration text can be RESTYLED live (size /
+-- outline / show) on a settings change without rebuilding the containers.
+local durText = {}
+
+-- Style one duration fontstring from the current options + (re)register or clear
+-- the engine binding for the on/off state. An unstyled FontString hard-errors in
+-- the engine's SetText path, so the font is set before the binding is attached.
+local function applyDurStyle(button, fs)
+	local on, size, outline = currentDurOpts()
+	if ns.Raidframes and ns.Raidframes.StyleTextFont then
+		ns.Raidframes:StyleTextFont(fs, size, outline)
+	end
+	fs:SetTextColor(1, 1, 1)
+	if on then
+		local fmt = getDurationFormatter()
+		pcall(button.SetDurationText, button, fs, fmt and { formatter = fmt } or {})
+		fs:Show()
+	else
+		pcall(button.ClearDurationText, button)
+		fs:Hide()
+	end
+end
+
+-- Re-apply duration styling to every tracked button (called on settings change).
+function RFC.RestyleDuration()
+	for i = #durText, 1, -1 do
+		local e = durText[i]
+		if e.fs and e.button then
+			applyDurStyle(e.button, e.fs)
+		else
+			durText[i] = durText[#durText]; durText[#durText] = nil
+		end
+	end
+end
+
 -- The per-button initializer (runs once per pre-created button). Builds our own
 -- child regions and registers them; matches the old icon look (1px black frame,
 -- cropped icon, cooldown swipe) and adds the requested duration text.
-local function makeInitializer(size, durationOn, durationSize)
+local function makeInitializer(size)
 	return function(button)
 		button:SetSize(size, size) -- an unsized aura button renders nothing
 
@@ -121,29 +160,28 @@ local function makeInitializer(size, durationOn, durationSize)
 		cd:SetHideCountdownNumbers(true) -- our own text renders the number
 		button:SetDurationCooldown(cd)
 
-		if durationOn then
-			local dt = button:CreateFontString(nil, "OVERLAY")
-			styleDurationFS(dt, durationSize)
-			dt:SetPoint("CENTER", button, "CENTER", 0, 0)
-			local fmt = getDurationFormatter()
-			button:SetDurationText(dt, fmt and { formatter = fmt } or {})
-		end
+		-- Duration text rides a carrier frame ABOVE the cooldown swipe, else the
+		-- swipe darkens/greys the number. Created once; visibility/size/outline are
+		-- driven live by applyDurStyle (from the per-category options).
+		local textLayer = CreateFrame("Frame", nil, button)
+		textLayer:SetAllPoints(button)
+		textLayer:SetFrameLevel(cd:GetFrameLevel() + 1)
+		local dt = textLayer:CreateFontString(nil, "OVERLAY")
+		dt:SetPoint("CENTER", button, "CENTER", 0, 0)
+		durText[#durText + 1] = { button = button, fs = dt }
+		applyDurStyle(button, dt)
 	end
 end
 
--- Map our growth keyword to native flow directions + a row width that yields a
--- single row (horizontal) or single column (vertical). Layout parity for
--- centered anchors / the "outside" offset is a follow-up.
-local function growthFor(grow, size, spacing)
+-- Growth keyword -> native flow directions (h, v) + whether it's a vertical
+-- column (forced via a one-element row width). Centered-anchor parity is a
+-- follow-up; corner anchors + outside placement + offsets work.
+local function growthDirs(grow)
 	local FD = AnchorUtil.FlowDirection
-	if grow == "LEFT" then
-		return FD.Left, FD.Down, nil
-	elseif grow == "UP" then
-		return FD.Right, FD.Up, size + 0.5           -- one per row -> column upward
-	elseif grow == "DOWN" then
-		return FD.Right, FD.Down, size + 0.5          -- one per row -> column downward
-	end
-	return FD.Right, FD.Down, nil                     -- RIGHT (default): single row
+	if grow == "LEFT" then return FD.Left, FD.Down, false
+	elseif grow == "UP" then return FD.Right, FD.Up, true
+	elseif grow == "DOWN" then return FD.Right, FD.Down, true end
+	return FD.Right, FD.Down, false -- RIGHT (default)
 end
 
 local function insetFor(point)
@@ -151,6 +189,63 @@ local function insetFor(point)
 	if strfind(point, "LEFT") then x = I elseif strfind(point, "RIGHT") then x = -I end
 	if strfind(point, "TOP") then y = -I elseif strfind(point, "BOTTOM") then y = I end
 	return x, y
+end
+
+-- "Outside" placement: push the whole row/column beyond the anchored edge,
+-- perpendicular to the growth axis (mirrors the old positionAuraIcons _outside).
+local AURA_OUT_GAP = 2
+local function outsideOffset(anchor, grow, size)
+	local horiz = (grow == "RIGHT" or grow == "LEFT")
+	local ox, oy = 0, 0
+	if horiz then
+		if strfind(anchor, "TOP") then oy = size + AURA_OUT_GAP
+		elseif strfind(anchor, "BOTTOM") then oy = -(size + AURA_OUT_GAP) end
+	else
+		if strfind(anchor, "LEFT") then ox = -(size + AURA_OUT_GAP)
+		elseif strfind(anchor, "RIGHT") then ox = size + AURA_OUT_GAP end
+	end
+	return ox, oy
+end
+
+-- Read the hotsOwn layout params for the current context.
+local function readLayout(button)
+	local cat, sfx = hotsCat(), ctxSfx()
+	return {
+		anchor  = (cat and cat["anchor" .. sfx]) or "BOTTOMLEFT",
+		grow    = (cat and cat["grow" .. sfx]) or "RIGHT",
+		spacing = (cat and cat["spacing" .. sfx]) or 2,
+		maxN    = (cat and cat["maxIcons" .. sfx]) or 5,
+		offX    = (cat and cat["offX" .. sfx]) or 0,
+		offY    = (cat and cat["offY" .. sfx]) or 0,
+		outside = (cat and cat["outside" .. sfx]) or false,
+		size    = hotIconSize(button),
+	}
+end
+
+-- Apply position + layout to an EXISTING container via the live-settable native
+-- setters (used both at Attach and on every settings change). The "hotsOwn"
+-- group must already exist.
+local function applyLayout(container, parent, lo)
+	local ix, iy = insetFor(lo.anchor)
+	local ox, oy = 0, 0
+	if lo.outside then ox, oy = outsideOffset(lo.anchor, lo.grow, lo.size) end
+	local hDir, vDir, column = growthDirs(lo.grow)
+	container:ClearAllPoints()
+	container:SetPoint(lo.anchor, parent, lo.anchor, ix + lo.offX + ox, iy + lo.offY + oy)
+	container:SetAuraLayoutAnchorPoint(lo.anchor)
+	container:SetAuraLayoutGrowthDirection(hDir, vDir)
+	container:SetAuraLayoutRowWidth(column and (lo.size + 0.5) or nil) -- nil = unlimited
+	container:SetAuraGroupMaxFrameCount("hotsOwn", lo.maxN)
+	container:SetAuraGroupLayout("hotsOwn", {
+		elementWidth = lo.size, elementHeight = lo.size,
+		elementSpacingX = lo.spacing, elementSpacingY = lo.spacing,
+	})
+end
+
+local function forEachLiveButton(fn)
+	local rf = ns.Raidframes
+	if not (rf and rf.GetLiveButtons) then return end
+	for _, btn in ipairs(rf:GetLiveButtons()) do fn(btn) end
 end
 
 -- Create + configure the container on one secure button. OOC only (containers
@@ -170,37 +265,16 @@ function RFC.Attach(button)
 	if not ok or not container then return end -- not 12.1 -> silently inert
 	button._rfc = container
 
-	local cat, sfx = hotsCat(), ctxSfx()
-	local anchor  = (cat and cat["anchor" .. sfx]) or "BOTTOMLEFT"
-	local grow    = (cat and cat["grow" .. sfx]) or "RIGHT"
-	local spacing = (cat and cat["spacing" .. sfx]) or 2
-	local maxN    = (cat and cat["maxIcons" .. sfx]) or 5
-	local offX    = (cat and cat["offX" .. sfx]) or 0
-	local offY    = (cat and cat["offY" .. sfx]) or 0
-	local size    = hotIconSize(button)
-
-	local ix, iy = insetFor(anchor)
-	local hDir, vDir, rowWidth = growthFor(grow, size, spacing)
+	local lo = readLayout(button)
 
 	local built = pcall(function()
-		container:ClearAllPoints()
-		container:SetPoint(anchor, parent, anchor, ix + offX, iy + offY)
 		container:SetSize(1, 1)
-		container:SetAuraLayoutAnchorPoint(anchor)
-		container:SetAuraLayoutGrowthDirection(hDir, vDir)
-		if rowWidth then container:SetAuraLayoutRowWidth(rowWidth) end
-
 		container:AddAuraGroup("hotsOwn", "HELPFUL", {
-			maxFrameCount    = maxN,
+			maxFrameCount    = lo.maxN,
 			candidateFilters = { includeSpellIDs = buildHotInclude() },
-			initializeFrame  = makeInitializer(size, true, 12),
-			layout = {
-				elementWidth    = size,
-				elementHeight   = size,
-				elementSpacingX = spacing,
-				elementSpacingY = spacing,
-			},
+			initializeFrame  = makeInitializer(lo.size),
 		})
+		applyLayout(container, parent, lo)
 
 		local u = button.unit or button:GetAttribute("unit")
 		if u then container:SetUnit(u) end
@@ -210,6 +284,25 @@ function RFC.Attach(button)
 
 	if not built then button._rfc = nil end
 	return button._rfc
+end
+
+-- Re-apply position/size/layout to all live containers + resize existing aura
+-- buttons (called on any aura settings change so the position options are live).
+function RFC.Relayout()
+	local size
+	forEachLiveButton(function(btn)
+		local c = btn._rfc
+		if c then
+			local lo = readLayout(btn)
+			size = lo.size
+			pcall(applyLayout, c, btn.overlay or btn, lo)
+		end
+	end)
+	if size then
+		for _, e in ipairs(durText) do
+			if e.button then pcall(e.button.SetSize, e.button, size, size) end
+		end
+	end
 end
 
 -- Re-point the container's unit when the secure header (re)assigns the button.
@@ -227,12 +320,6 @@ end
 -- True while the native path owns HoTs -> the old holder must stay suppressed.
 function RFC.SuppressesHots()
 	return RFC.enabled
-end
-
-local function forEachLiveButton(fn)
-	local rf = ns.Raidframes
-	if not (rf and rf.GetLiveButtons) then return end
-	for _, btn in ipairs(rf:GetLiveButtons()) do fn(btn) end
 end
 
 function RFC.Enable()

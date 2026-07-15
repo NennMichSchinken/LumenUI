@@ -684,6 +684,15 @@ local function applyText(fs, frame, point, x, y, size, color, outline)
 	if color then fs:SetTextColor(color.r or 1, color.g or 1, color.b or 1) end
 end
 
+-- Public: style a fontstring's typeface/size/outline (+ inherited shadow) the
+-- same way the frame texts do (shadow-safe per the 12.0.7 gotcha above). Used by
+-- the native aura duration text so it matches the name-text outline options.
+function Raidframes:StyleTextFont(fs, size, outline)
+	local sf = shadowFonts()
+	fs:SetFontObject(sf[outline] or sf.none)   -- inherit shadow BEFORE SetFont
+	fs:SetFont(STANDARD_TEXT_FONT, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
+end
+
 local function GetFakeList(size)
 	local list = {}
 	for i = 1, size do list[i] = FAKE[((i - 1) % #FAKE) + 1] end
@@ -2235,6 +2244,10 @@ function Raidframes:RefreshAuras()
 		end
 	end
 	self:RefreshShellPreview()   -- aura setters route through here -> keep the band live
+	if ns.RFC then -- native aura path: apply layout + duration-text options live
+		if ns.RFC.Relayout then ns.RFC.Relayout() end
+		if ns.RFC.RestyleDuration then ns.RFC.RestyleDuration() end
+	end
 end
 
 -- Settings/roster changes funnel through here -> relayout the secure header.
