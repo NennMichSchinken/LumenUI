@@ -14,12 +14,17 @@ local ADDON, ns = ...
 --   * GROOVES: alignment lines (screen center axes + edges/centers of the
 --     other elements) HOLD the position once the user's own movement reaches
 --     them (±TOL); a small push across the line releases. While held, a gold
---     guide line is drawn (+ a px gap badge toward the aligned neighbor).
+--     guide line is drawn.
+--   * SPACING: while moving/nudging, a Figma-style measure (short gold segment
+--     with end ticks + a px badge) shows the LIVE gap to the nearest element
+--     that shares the moving group's row/column — so fine-tuning a distance is
+--     readable without needing an edge to snap. Nearest neighbour per axis,
+--     capped to nearby elements.
 --   * Ctrl bypasses walls AND grooves (free placement/overlap).
 --   * Click selects a mover; arrow keys nudge 1 px, Shift+arrow 10 px.
 --
 --  NOTE: this file loads BEFORE Shell/Tokens.lua (see LumenUI.toc) — no
---  ns.UI/ns.W at file scope. Toolbar, guide lines and badge are built LAZILY
+--  ns.UI/ns.W at file scope. Toolbar, guide lines and measures are built LAZILY
 --  on first use (at runtime the tokens/widgets are available).
 -- ===========================================================================
 
@@ -28,6 +33,8 @@ ns.EditMode = EditMode
 
 local floor = math.floor
 local abs = math.abs
+local min = math.min
+local max = math.max
 local pairs = pairs
 local GetCursorPosition = GetCursorPosition
 local IsControlKeyDown = IsControlKeyDown
@@ -37,8 +44,6 @@ local InCombatLockdown = InCombatLockdown
 -- Groove hold zone in PHYSICAL screen px (Florian tuned 4 in the mockup,
 -- 2026-07-13). Converted to UIParent units per drag (depends on UI scale).
 local TOL_PX = 4
--- Show the px gap badge only for gaps that are worth reading.
-local GAP_MIN = 7
 
 -- Brand gold (palette C1 #E9BB69 — kept literal here: this file loads before
 -- Shell/Tokens; runtime-built parts below use the real tokens instead).
@@ -57,9 +62,10 @@ local CHAIN = 20 -- chain-icon edge length (top-right of the overlay)
 -- Obstacle rects (all OTHER registered, visible elements), rebuilt into the
 -- SAME arrays at drag start.
 local obsL, obsB, obsR, obsT, obsN = {}, {}, {}, {}, 0
--- Alignment lines: position + source obstacle index (0 = screen center axis).
-local vLine, vSrc, vN = {}, {}, 0
-local hLine, hSrc, hN = {}, {}, 0
+-- Alignment (flight) line positions — screen center axes + edges/centers of the
+-- other elements. Rebuilt per drag/nudge.
+local vLine, vN = {}, 0
+local hLine, hN = {}, 0
 local drag = { frame = nil }
 -- Soft-wall pass-through per obstacle (Florian): a wall RESISTS, but pushing the
 -- group's center into an obstacle breaks through (overlap) without Ctrl, and
@@ -137,9 +143,13 @@ local function hitsAnyWall(x, y, w, h)
 end
 
 -- ---------------------------------------------------------------------------
---  Guide lines + px gap badge (lazy: needs runtime; badge uses the tokens).
+--  Alignment guide lines + Figma-style neighbour spacing measures. Everything
+--  is drawn on one TOOLTIP-strata host, built lazily (this file loads before
+--  Shell/Tokens, so the badge chrome is only built once ns.UI is available).
 -- ---------------------------------------------------------------------------
-local guideHost, lineV, lineH, badge
+local guideHost, lineV, lineH
+local measH, measV            -- neighbour spacing measure per axis: { line, cap1, cap2, badge }
+local CAP_LEN = 6             -- measure end-tick length (UIParent units)
 
 local function ensureGuides()
 	if guideHost then return end
@@ -149,15 +159,15 @@ local function ensureGuides()
 	guideHost:SetFrameStrata("TOOLTIP")
 	guideHost:EnableMouse(false)
 	guideHost:Hide()
-	local function mkLine()
+	local function mkTex(a)
 		local t = guideHost:CreateTexture(nil, "OVERLAY")
 		if UI then UI.SetColor(t, UI.P.goldBrand)
 		else t:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 1) end
-		t:SetAlpha(0.9)
+		t:SetAlpha(a or 0.9)
 		t:Hide()
 		return t
 	end
-	lineV, lineH = mkLine(), mkLine()
+	lineV, lineH = mkTex(), mkTex()
 	-- Pixel-snap rule (memory lumen-border-pixelsnap-rule): snap ONLY the
 	-- thickness; positions run via plain SetPoint per update.
 	local function snap()
@@ -167,48 +177,117 @@ local function ensureGuides()
 	snap()
 	guideHost:HookScript("OnShow", snap)
 
-	-- px gap badge (Figma-style spacing readout while a groove holds —
-	-- approved by Florian in the mockup round 2026-07-13).
+	-- Neighbour spacing measure = a short gold segment with end ticks + a px
+	-- badge broken into its middle (Figma-style; Florian 2026-07-15). Shows the
+	-- live gap to the nearest element that shares a row/column while moving.
 	if UI then
-		badge = CreateFrame("Frame", nil, guideHost)
-		badge:SetFrameLevel(guideHost:GetFrameLevel() + 2)
-		local bg = { r = UI.P.inset.r, g = UI.P.inset.g, b = UI.P.inset.b, a = 0.92 }
-		UI.RoundFill(badge, bg, "BACKGROUND", nil, UI.RADIUS.xs)
-		UI.RoundBorder(badge, UI.line.mid, "OVERLAY", nil, UI.RADIUS.xs)
-		badge.txt = UI.FS(badge, "caption", UI.P.goldBrand)
-		badge.txt:SetPoint("CENTER", badge, "CENTER", 0, 0)
-		badge:Hide()
+		local function mkBadge()
+			local b = CreateFrame("Frame", nil, guideHost)
+			b:SetFrameLevel(guideHost:GetFrameLevel() + 2)
+			local bg = { r = UI.P.inset.r, g = UI.P.inset.g, b = UI.P.inset.b, a = 0.92 }
+			UI.RoundFill(b, bg, "BACKGROUND", nil, UI.RADIUS.xs)
+			UI.RoundBorder(b, UI.line.mid, "OVERLAY", nil, UI.RADIUS.xs)
+			b.txt = UI.FS(b, "caption", UI.P.goldBrand)
+			b.txt:SetPoint("CENTER", b, "CENTER", 0, 0)
+			b:Hide()
+			return b
+		end
+		measH = { line = mkTex(), cap1 = mkTex(), cap2 = mkTex(), badge = mkBadge() }
+		measV = { line = mkTex(), cap1 = mkTex(), cap2 = mkTex(), badge = mkBadge() }
 	end
+end
+
+local function hideMeasure(m)
+	if not m then return end
+	m.line:Hide(); m.cap1:Hide(); m.cap2:Hide(); m.badge:Hide()
 end
 
 local function hideGuides()
 	if not guideHost then return end
 	lineV:Hide(); lineH:Hide()
-	if badge then badge:Hide() end
+	hideMeasure(measH); hideMeasure(measV)
 	guideHost:Hide()
 end
 
--- Place the badge showing the gap between the dragged rect and the guide's
--- source obstacle (only along the guide's axis, only for readable gaps).
-local function showBadge(gap, bx, by)
-	if not badge or gap < GAP_MIN then
-		if badge then badge:Hide() end
-		return
-	end
-	badge.txt:SetText(floor(gap + 0.5) .. " px")
-	badge:SetSize(badge.txt:GetStringWidth() + 14, 22)
-	badge:ClearAllPoints()
-	badge:SetPoint("CENTER", guideHost, "BOTTOMLEFT", bx, by)
-	badge:Show()
+-- Draw a horizontal spacing measure (gap along X) between xa<xb at height y.
+local function drawMeasureH(gap, xa, xb, y)
+	if not measH then return false end
+	local m = measH
+	local mid = (xa + xb) / 2
+	m.line:ClearAllPoints(); m.line:SetPoint("CENTER", guideHost, "BOTTOMLEFT", mid, y)
+	m.line:SetWidth(xb - xa); PixelUtil.SetHeight(m.line, 1)
+	m.cap1:ClearAllPoints(); m.cap1:SetPoint("CENTER", guideHost, "BOTTOMLEFT", xa, y)
+	m.cap1:SetHeight(CAP_LEN); PixelUtil.SetWidth(m.cap1, 1)
+	m.cap2:ClearAllPoints(); m.cap2:SetPoint("CENTER", guideHost, "BOTTOMLEFT", xb, y)
+	m.cap2:SetHeight(CAP_LEN); PixelUtil.SetWidth(m.cap2, 1)
+	m.badge.txt:SetText(floor(gap + 0.5) .. " px")
+	m.badge:SetSize(m.badge.txt:GetStringWidth() + 14, 22)
+	m.badge:ClearAllPoints(); m.badge:SetPoint("CENTER", guideHost, "BOTTOMLEFT", mid, y)
+	m.line:Show(); m.cap1:Show(); m.cap2:Show(); m.badge:Show()
+	return true
 end
 
-local function updateGuides(gvx, gvsrc, ghy, ghsrc, x, y)
-	if not gvx and not ghy then
-		hideGuides()
-		return
+-- Draw a vertical spacing measure (gap along Y) between ya<yb at column x.
+local function drawMeasureV(gap, ya, yb, x)
+	if not measV then return false end
+	local m = measV
+	local mid = (ya + yb) / 2
+	m.line:ClearAllPoints(); m.line:SetPoint("CENTER", guideHost, "BOTTOMLEFT", x, mid)
+	m.line:SetHeight(yb - ya); PixelUtil.SetWidth(m.line, 1)
+	m.cap1:ClearAllPoints(); m.cap1:SetPoint("CENTER", guideHost, "BOTTOMLEFT", x, ya)
+	m.cap1:SetWidth(CAP_LEN); PixelUtil.SetHeight(m.cap1, 1)
+	m.cap2:ClearAllPoints(); m.cap2:SetPoint("CENTER", guideHost, "BOTTOMLEFT", x, yb)
+	m.cap2:SetWidth(CAP_LEN); PixelUtil.SetHeight(m.cap2, 1)
+	m.badge.txt:SetText(floor(gap + 0.5) .. " px")
+	m.badge:SetSize(m.badge.txt:GetStringWidth() + 14, 22)
+	m.badge:ClearAllPoints(); m.badge:SetPoint("CENTER", guideHost, "BOTTOMLEFT", x, mid)
+	m.line:Show(); m.cap1:Show(); m.cap2:Show(); m.badge:Show()
+	return true
+end
+
+-- Figma-style live spacing: for the moving group's union box, show the gap to
+-- the NEAREST other element that overlaps it on the cross axis (a row → the
+-- horizontal gap; a column → the vertical gap). Capped to nearby neighbours so
+-- a lone far element (the old "722 px to screen centre" annoyance) never shows.
+-- Runs every drag/nudge frame, independent of whether a groove line is holding.
+local MEAS_MIN = 2   -- below this the elements are touching (wall feedback covers it)
+local function computeSpacing(gl, gb, gw, gh)
+	local gr, gt = gl + gw, gb + gh
+	local ui = UIParent:GetEffectiveScale()
+	local ovl = 12 / ui       -- cross-axis overlap tolerance (≈ physical px)
+	local cap = 500 / ui      -- max neighbour distance worth reading
+	local hGap, hxa, hxb, hy
+	local vGap, vya, vyb, vx
+	for i = 1, obsN do
+		local ol, ob, orr, ot = obsL[i], obsB[i], obsR[i], obsT[i]
+		-- horizontal spacing needs a VERTICAL overlap (neighbour shares the row)
+		if min(gt, ot) - max(gb, ob) > -ovl then
+			local yMid = (max(gb, ob) + min(gt, ot)) / 2
+			local g = ol - gr                       -- neighbour to the right
+			if g >= MEAS_MIN and g <= cap and (not hGap or g < hGap) then hGap, hxa, hxb, hy = g, gr, ol, yMid end
+			g = gl - orr                            -- neighbour to the left
+			if g >= MEAS_MIN and g <= cap and (not hGap or g < hGap) then hGap, hxa, hxb, hy = g, orr, gl, yMid end
+		end
+		-- vertical spacing needs a HORIZONTAL overlap (neighbour shares the column)
+		if min(gr, orr) - max(gl, ol) > -ovl then
+			local xMid = (max(gl, ol) + min(gr, orr)) / 2
+			local g = ob - gt                       -- neighbour above
+			if g >= MEAS_MIN and g <= cap and (not vGap or g < vGap) then vGap, vya, vyb, vx = g, gt, ob, xMid end
+			g = gb - ot                             -- neighbour below
+			if g >= MEAS_MIN and g <= cap and (not vGap or g < vGap) then vGap, vya, vyb, vx = g, ot, gb, xMid end
+		end
 	end
+	local any = false
+	if hGap then any = drawMeasureH(hGap, hxa, hxb, hy) or any else hideMeasure(measH) end
+	if vGap then any = drawMeasureV(vGap, vya, vyb, vx) or any else hideMeasure(measV) end
+	return any
+end
+
+-- Draw the alignment flight lines (gvx/ghy, nil = none) AND the neighbour
+-- spacing measures for the moving group's union box, then show/hide the host.
+-- Returns true if anything is visible (used to arm the nudge auto-hide timer).
+local function renderFeedback(gvx, ghy, gl, gb, gw, gh)
 	ensureGuides()
-	guideHost:Show()
 	if gvx then
 		lineV:ClearAllPoints()
 		lineV:SetPoint("TOP", guideHost, "TOPLEFT", gvx, 0)
@@ -225,26 +304,10 @@ local function updateGuides(gvx, gvsrc, ghy, ghsrc, x, y)
 	else
 		lineH:Hide()
 	end
-	-- Badge: prefer the vertical guide's gap (element sources only), else the
-	-- horizontal one. gvsrc/ghsrc = obstacle index, 0 = screen axis (no gap).
-	local shown = false
-	if gvx and gvsrc > 0 then
-		local i = gvsrc
-		if y > obsT[i] then
-			showBadge(y - obsT[i], gvx, (y + obsT[i]) / 2); shown = true
-		elseif obsB[i] > y + drag.h then
-			showBadge(obsB[i] - (y + drag.h), gvx, (y + drag.h + obsB[i]) / 2); shown = true
-		end
-	end
-	if not shown and ghy and ghsrc > 0 then
-		local i = ghsrc
-		if x > obsR[i] then
-			showBadge(x - obsR[i], (x + obsR[i]) / 2, ghy); shown = true
-		elseif obsL[i] > x + drag.w then
-			showBadge(obsL[i] - (x + drag.w), (x + drag.w + obsL[i]) / 2, ghy); shown = true
-		end
-	end
-	if not shown and badge then badge:Hide() end
+	local anyMeas = computeSpacing(gl, gb, gw, gh)
+	local shown = (gvx and true) or (ghy and true) or anyMeas
+	if shown then guideHost:Show() else hideGuides() end
+	return shown
 end
 
 -- ---------------------------------------------------------------------------
@@ -310,8 +373,8 @@ end
 local function collectObstacles(frame)
 	obsN, vN, hN = 0, 0, 0
 	drag.screenW, drag.screenH = UIParent:GetWidth(), UIParent:GetHeight()
-	vN = vN + 1; vLine[vN] = drag.screenW / 2; vSrc[vN] = 0
-	hN = hN + 1; hLine[hN] = drag.screenH / 2; hSrc[hN] = 0
+	vN = vN + 1; vLine[vN] = drag.screenW / 2
+	hN = hN + 1; hLine[hN] = drag.screenH / 2
 	for f, inf in pairs(EditMode.items) do
 		if f ~= frame and not moveSet[f] and f:IsShown() then
 			local ol, ob, ow, oh = rectOf(boundsFor(f, inf))
@@ -319,12 +382,12 @@ local function collectObstacles(frame)
 				obsN = obsN + 1
 				obsL[obsN], obsB[obsN] = ol, ob
 				obsR[obsN], obsT[obsN] = ol + ow, ob + oh
-				vN = vN + 1; vLine[vN] = ol;          vSrc[vN] = obsN
-				vN = vN + 1; vLine[vN] = ol + ow / 2; vSrc[vN] = obsN
-				vN = vN + 1; vLine[vN] = ol + ow;     vSrc[vN] = obsN
-				hN = hN + 1; hLine[hN] = ob;          hSrc[hN] = obsN
-				hN = hN + 1; hLine[hN] = ob + oh / 2; hSrc[hN] = obsN
-				hN = hN + 1; hLine[hN] = ob + oh;     hSrc[hN] = obsN
+				vN = vN + 1; vLine[vN] = ol
+				vN = vN + 1; vLine[vN] = ol + ow / 2
+				vN = vN + 1; vLine[vN] = ol + ow
+				hN = hN + 1; hLine[hN] = ob
+				hN = hN + 1; hLine[hN] = ob + oh / 2
+				hN = hN + 1; hLine[hN] = ob + oh
 			end
 		end
 	end
@@ -471,7 +534,6 @@ local function dragUpdate()
 	if y + uoy < 0 then y = -uoy elseif y + uoy + uh > drag.screenH then y = drag.screenH - uoy - uh end
 
 	local gvx, ghy   -- active guide line positions (nil = none)
-	local gvsrc, ghsrc = 0, 0
 	if not IsControlKeyDown() then
 		-- WALLS — the group's union box vs the obstacles, resolved PER AXIS so it
 		-- slides along edges: first X against the previous Y, then Y against the
@@ -513,12 +575,12 @@ local function dragUpdate()
 			local L = vLine[i]
 			for j = 1, vEON do
 				local d = abs(x + vEO[j] - L)
-				if d < bestD then bestD = d; bestX = L - vEO[j]; gvx = L; gvsrc = vSrc[i] end
+				if d < bestD then bestD = d; bestX = L - vEO[j]; gvx = L end
 			end
 		end
 		if bestX then
 			if not hitsAnyWall(bestX + uox, y + uoy, uw, uh) then x = bestX
-			else gvx = nil; gvsrc = 0 end
+			else gvx = nil end
 		end
 		local bestY
 		bestD = tol + 0.001
@@ -526,12 +588,12 @@ local function dragUpdate()
 			local L = hLine[i]
 			for j = 1, hEON do
 				local d = abs(y + hEO[j] - L)
-				if d < bestD then bestD = d; bestY = L - hEO[j]; ghy = L; ghsrc = hSrc[i] end
+				if d < bestD then bestD = d; bestY = L - hEO[j]; ghy = L end
 			end
 		end
 		if bestY then
 			if not hitsAnyWall(x + uox, bestY + uoy, uw, uh) then y = bestY
-			else ghy = nil; ghsrc = 0 end
+			else ghy = nil end
 		end
 	end
 
@@ -547,7 +609,7 @@ local function dragUpdate()
 		-- dragging its group) follows along.
 		if drag.hasLinks then updateLinkLines() end
 	end
-	updateGuides(gvx, gvsrc, ghy, ghsrc, x, y)
+	renderFeedback(gvx, ghy, x + uox, y + uoy, uw, uh)
 end
 
 local function endDrag(frame)
@@ -853,27 +915,36 @@ function EditMode:ApplyLinks()
 	end
 end
 
--- After a nudge, show the guide line(s) if the element now sits exactly on a
--- flight line — so keyboard aligning gets the same feedback as mouse dragging
--- (Florian's request 2026-07-13). Auto-hides shortly after the last nudge.
+-- After a nudge, show the flight line(s) if the element now sits exactly on one
+-- AND the live neighbour spacing to whatever it shares a row/column with — so
+-- keyboard aligning gets the same feedback as mouse dragging (Florian's request
+-- 2026-07-13, spacing 2026-07-15). Auto-hides shortly after the last nudge.
 local nudgeTimer
 local function showNudgeGuides(frame)
 	local bl, bb, bw, bh = rectOf(boundsFor(frame, EditMode.items[frame]))
 	if not bl then return end
 	-- moveSet is current (nudgeSelected called buildGroup just before). Scan
-	-- EVERY moving member's edges so a coupled child's edge shows a guide too.
+	-- EVERY moving member's edges so a coupled child's edge shows a guide too,
+	-- and build the group's union box for the neighbour spacing measures.
 	collectObstacles(frame)
-	drag.w, drag.h = bw, bh
 	local eps = 0.75
-	local gvx, gvsrc, ghy, ghsrc
+	local gvx, ghy
+	local gl, gb, gr, gt
 	for f in pairs(moveSet) do
 		local ml, mb, mw, mh = rectOf(boundsFor(f, EditMode.items[f]))
 		if ml then
+			if not gl then gl, gb, gr, gt = ml, mb, ml + mw, mb + mh
+			else
+				if ml < gl then gl = ml end
+				if mb < gb then gb = mb end
+				if ml + mw > gr then gr = ml + mw end
+				if mb + mh > gt then gt = mb + mh end
+			end
 			if not gvx then
 				for i = 1, vN do
 					local Lp = vLine[i]
 					if abs(ml - Lp) < eps or abs(ml + mw / 2 - Lp) < eps or abs(ml + mw - Lp) < eps then
-						gvx = Lp; gvsrc = vSrc[i]; break
+						gvx = Lp; break
 					end
 				end
 			end
@@ -881,15 +952,15 @@ local function showNudgeGuides(frame)
 				for i = 1, hN do
 					local Lp = hLine[i]
 					if abs(mb - Lp) < eps or abs(mb + mh / 2 - Lp) < eps or abs(mb + mh - Lp) < eps then
-						ghy = Lp; ghsrc = hSrc[i]; break
+						ghy = Lp; break
 					end
 				end
 			end
 		end
 	end
-	updateGuides(gvx, gvsrc or 0, ghy, ghsrc or 0, bl, bb)
+	local any = renderFeedback(gvx, ghy, gl or bl, gb or bb, (gr and gr - gl) or bw, (gt and gt - gb) or bh)
 	if nudgeTimer then nudgeTimer:Cancel(); nudgeTimer = nil end
-	if gvx or ghy then
+	if any then
 		nudgeTimer = C_Timer.NewTimer(1.2, function() hideGuides(); nudgeTimer = nil end)
 	end
 end
