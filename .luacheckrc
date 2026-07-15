@@ -40,10 +40,11 @@ read_globals = {
     "IsInRaid", "IsInGroup", "IsInInstance", "GetNumGroupMembers", "GetNumSubgroupMembers",
     -- Colors / auras / numbers
     "RAID_CLASS_COLORS", "AuraUtil", "CurveConstants", "AnchorUtil", "GetBuildInfo",
+    "NumberFontNormalSmall",
     "AbbreviateNumbers", "AbbreviateNumbersAlt",
     "CreateColor", "Mixin", "GetTime",
     -- Namespaces
-    "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum",
+    "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum", "C_StringUtil",
     "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents",
     "GetInventoryItemTexture", "GetInventoryItemLink",
     -- Spec / secure bindings (click-cast)

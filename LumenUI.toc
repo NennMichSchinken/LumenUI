@@ -20,6 +20,7 @@ Shell\Widgets.lua
 Shell\Screens.lua
 Shell\Shell.lua
 Modules\Raidframes.lua
+Modules\AuraContainer.lua
 Modules\ClickCast.lua
 Modules\Share.lua
 Modules\MiniCC.lua

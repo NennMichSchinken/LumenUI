@@ -903,6 +903,12 @@ end
 -- (may create frames -> out of combat).
 local function layoutAuraCat(f, key, cat, size)
 	local holder = f.auraHolders[key]
+	-- Phase 2: native AuraContainer owns HoTs while enabled -> keep the old
+	-- holder hidden so it never lays out or renders alongside the native one.
+	if key == "hotsOwn" and ns.RFC and ns.RFC.SuppressesHots() then
+		if holder then holder:Hide() end
+		return
+	end
 	-- All display knobs are per context (raid/party) since Feature 1.
 	local sfx = auraCtxSuffix()
 	if not (cat and cat["enabled" .. sfx]) then
@@ -1594,7 +1600,11 @@ function Raidframes:RenderAurasLive(f)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
-		if cat and cat["enabled" .. sfx] and holder then
+		-- Phase 2: the native AuraContainer owns HoTs while enabled -> skip the
+		-- old manual render for that category (avoids double display).
+		if c.key == "hotsOwn" and ns.RFC and ns.RFC.SuppressesHots() then
+			if holder then holder:Hide() end
+		elseif cat and cat["enabled" .. sfx] and holder then
 			local maxN     = cat["maxIcons" .. sfx] or 5
 			local showSwipe = cat["showSwipe" .. sfx]
 			local filterMode = cat["filterMode" .. sfx]
@@ -2028,6 +2038,11 @@ local function styleSecureButton(button)
 			self.unit = u; self.fake = nil
 			unitToButton[u] = self
 			Raidframes:RenderLive(self)
+			-- Phase 2 (native HoTs): attach on first assignment + rebind unit.
+			if ns.RFC and ns.RFC.enabled then
+				if not self._rfc then ns.RFC.Attach(self) end
+				ns.RFC.SetUnit(self, u)
+			end
 		else
 			self.unit = nil
 		end
