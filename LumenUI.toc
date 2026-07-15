@@ -1,4 +1,4 @@
-## Interface: 120007
+## Interface: 120007, 120100
 ## Title: LumenUI
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## IconTexture: Interface\AddOns\LumenUI\Textures\Logo
