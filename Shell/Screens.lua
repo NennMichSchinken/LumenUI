@@ -353,7 +353,7 @@ local function buildRaid(d, stack, ctx)
 	sliderBox(c1[2], { label = T("Height"),  min = 20, max = 160, unit = " px", get = vget(ctx, "height"),  set = vset(ctx, "height") })
 	sliderBox(c1[3], { label = T("Spacing"), min = 0,  max = 30,  unit = " px", get = vget(ctx, "spacing"), set = vset(ctx, "spacing") })
 	W.Select(c1[4], { label = T("Alignment"), options = ALIGN_OPTS, get = vget(ctx, "orientation"), set = vset(ctx, "orientation"),
-		tooltip = T("Position: move via \"Unlock frames\" in the Global tab or WoW's Edit Mode. Raid and Group have separate positions.") }):SetAllPoints(c1[4])
+		tooltip = T("Position: move via the Edit Mode button (sidebar) or WoW's Edit Mode. Raid and Group have separate positions.") }):SetAllPoints(c1[4])
 	sSize:place(r1, M.sliderBoxH, R.tight)
 	sSize:close()
 
@@ -1516,17 +1516,24 @@ local function buildGlobalBase(d, stack)
 	sLang:close()
 
 	local sMove = b1.cards[2]
-	sMove:place(checkRow(d, T("Unlock frames — shows all movable Lumen elements"), {
-		get = function() return ns.EditMode and ns.EditMode:IsActive() end,
-		set = function(v) if ns.EditMode then ns.EditMode:Toggle(v) end end }), M.optionRowH, R.afterCheck)
+	-- v2: the old "Unlock frames" checkbox became the Edit Mode session — the
+	-- sidebar button is the primary entry, this one keeps it findable where
+	-- movement topics live. Both buttons share one row (uniform anatomy).
+	local btnRow = CreateFrame("Frame", nil, d)
+	local openBtn = W.Button(btnRow, { text = T("Open Edit Mode"), variant = "neutral", icon = "icon-move",
+		onClick = function() if ns.EditMode then ns.EditMode:OpenSession() end end })
+	openBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
 
-	local resetBtn = W.Button(d, { text = T("Reset positions"), variant = "ghost",
+	local resetBtn = W.Button(btnRow, { text = T("Reset positions"), variant = "ghost",
 		onClick = function()
 			W.Confirm({
 				title = T("Reset positions?"),
-				body = T("Resets all movable Lumen elements to their default positions."),
+				body = T("Resets all movable Lumen elements to their default positions and removes couplings."),
 				confirmText = T("Reset"), cancelText = T("Cancel"),
 				onConfirm = function()
+					-- Drop Edit Mode couplings first so the elements fall back to
+					-- the default absolute positions set below.
+					wipe(ns.Lumen.db.profile.editLinks)
 					local r = rf()
 					for _, ctx in ipairs({ "raid", "party" }) do
 						local t = r[ctx]; if t then t.point, t.x, t.y = "CENTER", 0, -120 end
@@ -1538,10 +1545,12 @@ local function buildGlobalBase(d, stack)
 					tk.brez.pos = { point = "CENTER", x = -30, y = -240 }
 					tk.lust.pos = { point = "CENTER", x = 30, y = -240 }
 					if ns.QoL then ns.QoL:ApplyPull(); ns.QoL:ApplyTrackers() end
+					if ns.EditMode then ns.EditMode:_refresh() end
 				end,
 			})
 		end })
-	sMove:placeLeft(resetBtn, M.buttonH, R.tight)
+	resetBtn:SetPoint("LEFT", openBtn, "RIGHT", UI.GRID.cardGap, 0)
+	sMove:place(btnRow, M.buttonH, R.tight)
 	sMove:close()
 	b1.close()
 
@@ -1946,36 +1955,29 @@ local function buildQoLBase(d, stack)
 	bc:close()
 
 	-- ===== Trackers card ====================================================
-	local slBrez, slLust
-	local function refreshTrackers()
-		slBrez:SetWidgetEnabled(qt().brez.enabled and true or false)
-		slLust:SetWidgetEnabled(qt().lust.enabled and true or false)
+	-- Size + position are edited live in Edit Mode (per-element flyout), so the
+	-- tab only toggles the trackers on/off — no duplicate size sliders here.
+	local function trackerHint()
+		if ns.Lumen then ns.Lumen:Print(T("Set its size and position in Edit Mode.")) end
 	end
 
 	local rowBrez = switchRow(d, T("Combat res tracker"), {
 		get = function() return qt().brez.enabled end,
-		set = function(v) qt().brez.enabled = v; applyTrackers(); refreshTrackers() end,
+		set = function(v) qt().brez.enabled = v; applyTrackers(); if v then trackerHint() end end,
 		tooltip = T("Shared battle-res pool as an icon (charges + recharge timer) — visible during Mythic+ runs and raid bosses, greyed while no charge is up. Place it via Edit Mode.") })
 	tc:place(rowBrez, rowH, 0)
 
 	local rowLust = switchRow(d, T("Bloodlust tracker"), {
 		get = function() return qt().lust.enabled end,
-		set = function(v) qt().lust.enabled = v; applyTrackers(); refreshTrackers() end,
+		set = function(v) qt().lust.enabled = v; applyTrackers(); if v then trackerHint() end end,
 		tooltip = T("Shows whether Bloodlust is available: normal icon when ready, greyed with a timer while you are Sated. Visible in dungeons and raids. Place it via Edit Mode.") })
 	tc:place(rowLust, rowH, R.row)
 
-	local tr2, tcc = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-	slBrez = sliderBox(tcc[1], { label = T("Combat res size"), min = 24, max = 80, unit = " px",
-		get = function() return qt().brez.size end,
-		set = function(v) qt().brez.size = v; applyTrackers() end })
-	slLust = sliderBox(tcc[2], { label = T("Bloodlust size"), min = 24, max = 80, unit = " px",
-		get = function() return qt().lust.size end,
-		set = function(v) qt().lust.size = v; applyTrackers() end })
-	tc:place(tr2, M.sliderBoxH, R.tight)
+	local trHint = W.Hint(d, T("Size and position: adjust each tracker in Edit Mode."))
+	tc:place(trHint, M.hintH, R.row)
 
 	tc:close()
 	bb.close()
-	refreshTrackers()
 
 	refreshCursor()
 	refreshVendor()

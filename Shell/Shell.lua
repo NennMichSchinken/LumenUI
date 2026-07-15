@@ -343,11 +343,20 @@ function Shell:Build()
 		UI.RoundBorder(chip, L.soft, "OVERLAY", nil, UI.RADIUS.xs)
 	end
 
+	-- Edit Mode button (v2): a suite-global action, so it lives in the global
+	-- chrome — pinned above the version chip, ALWAYS visible on every screen.
+	-- Opens the Lumen edit session (Shell hides, mover overlays + toolbar show).
+	local emY = hasChip and (S.panelGutter + chipH + S.s4) or S.panelGutter
+	local emBtn = ns.W.Button(nav, { text = T("Edit Mode"), variant = "neutral", icon = "icon-move",
+		onClick = function() if ns.EditMode then ns.EditMode:OpenSession() end end })
+	emBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, emY)
+	emBtn:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, emY)
+
 	-- Preview toggle (v3 mockup): ONE central point to open/close the preview
-	-- window. Sits ABOVE the version chip (or at the sidebar bottom if there's no
-	-- chip). Hidden on screens without a registered preview; label follows the
-	-- open state (_UpdateDock keeps it current).
-	local pvY = hasChip and (S.panelGutter + chipH + S.s4) or S.panelGutter
+	-- window. Stacks ABOVE the Edit Mode button. Hidden on screens without a
+	-- registered preview; label follows the open state (_UpdateDock keeps it
+	-- current).
+	local pvY = emY + UI.WIDGET.buttonH + S.s4
 	local pvBtn = ns.W.Button(nav, { text = "", variant = "neutral",
 		onClick = function() Shell:TogglePreview() end })
 	pvBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, pvY)
@@ -624,6 +633,24 @@ function Shell:SelectTab(index)
 	if self._section then self._lastTab[self._section] = index end
 	for i, tb in ipairs(self._tabButtons) do tb:SetActive(i == index) end
 	self:RenderContent()
+end
+
+-- Open the Shell straight to a section (and optional tab) by NAME — used by the
+-- Edit Mode flyout's "Open settings" jump for large modules. Name lookup keeps
+-- callers stable if the SECTIONS order ever changes.
+function Shell:OpenTo(sectionName, tabName)
+	self:Show()
+	for i, sec in ipairs(SECTIONS) do
+		if sec[1] == sectionName then
+			self:SelectSection(i)
+			if tabName and sec[2] then
+				for j, t in ipairs(sec[2]) do
+					if t == tabName then self:SelectTab(j) break end
+				end
+			end
+			return
+		end
+	end
 end
 
 -- Apply a composed badge text to the tab-strip badge (internal; used by

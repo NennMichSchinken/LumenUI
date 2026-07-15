@@ -139,6 +139,12 @@ function Share:Export()
 		end
 	end
 
+	-- Edit Mode links belong to the layout (positions) -> travel with the
+	-- "import layout positions" switch, not with any single module.
+	if p.editLinks and next(p.editLinks) then
+		payload.layout.editLinks = deepcopy(p.editLinks)
+	end
+
 	return self:Encode(payload)
 end
 
@@ -178,6 +184,13 @@ function Share:Import(payload, selected, withLayout)
 			p[key] = merged
 			applied = true
 		end
+	end
+
+	-- Edit Mode links ride the layout switch (they ARE positions). Only replace
+	-- when the sender's layout is taken; otherwise keep the receiver's own links.
+	if withLayout and payload.layout and payload.layout.editLinks then
+		p.editLinks = deepcopy(payload.layout.editLinks)
+		applied = true
 	end
 
 	if applied and L.RefreshAll then L:RefreshAll() end

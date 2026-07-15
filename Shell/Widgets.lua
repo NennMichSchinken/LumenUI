@@ -200,6 +200,11 @@ function W.Slider(parent, o)
 		box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
 		UI:SetFont(box, "value", C.gold500)
 		box:SetJustifyH("RIGHT")
+		-- Subtle field affordance so the inline value reads as a TYPEABLE input
+		-- (Florian 2026-07-14: the drag can't reliably hit exact px -> click the
+		-- value to type an exact number). Border brightens on focus (boxEdges).
+		UI.RoundFill(box, P.inset, "BACKGROUND", nil, RAD.xs)
+		boxEdges = UI.RoundBorder(box, L.soft, "OVERLAY", nil, RAD.xs)
 	else
 		box:SetSize(M.valueBoxW, M.valueBoxH)
 		box:SetPoint("TOP", row, "BOTTOM", 0, -M.valueBoxGap)
@@ -209,7 +214,7 @@ function W.Slider(parent, o)
 		box:SetJustifyH("CENTER")
 	end
 	box:SetAutoFocus(false)
-	box:SetTextInsets(compact and 0 or 6, compact and 0 or 6, 0, 0)
+	box:SetTextInsets(6, 6, 0, 0)
 
 	local cur = (o.get and o.get()) or o.value or minV
 	local unit = o.unit or ""
@@ -252,12 +257,16 @@ function W.Slider(parent, o)
 	-- clamp, apply. Focus colors the border more strongly.
 	box:SetScript("OnEditFocusGained", function(self)
 		typing = true
+		-- Let the Edit Mode keyboard catcher yield while typing here, so digits/
+		-- Enter/Esc reach this box instead of nudging/closing the session.
+		if ns.EditMode then ns.EditMode._fieldFocused = true end
 		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, L.strong) end
 		else self:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b) end
 		self:HighlightText()
 	end)
 	box:SetScript("OnEditFocusLost", function(self)
 		typing = false
+		if ns.EditMode then ns.EditMode._fieldFocused = false end
 		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, L.soft) end
 		else self:SetTextColor(C.gold500.r, C.gold500.g, C.gold500.b) end
 		self:SetText(cur .. unit) -- reset to the canonical state
@@ -310,6 +319,15 @@ function W.Slider(parent, o)
 	track:SetScript("OnShow", function() visual(cur) end)
 
 	visual(cur)
+	-- Cold-start glyph repaint (report 2026-07-14, QoL tab): when the slider is built
+	-- into an ALREADY-VISIBLE parent (opening a tab on a cold client), OnShow never fires,
+	-- so the value box + min/max labels keep the blank layout the cold glyph cache produced
+	-- on the first paint. A one-shot deferred re-set (next frame, after that first paint
+	-- forced rasterization) repaints them — same mechanism W.Button uses from creation.
+	C_Timer.After(0, function()
+		visual(cur)
+		if minL then minL:SetText(tostring(minV)); maxL:SetText(tostring(maxV)) end
+	end)
 	f.SetValueExternal = function(_, v) cur = v; visual(v) end
 	-- Grey out + lock interaction (for dependent sections, e.g. "Show name" off).
 	-- RECOLOR instead of frame alpha: alpha'd gold over the dark inset boxes
@@ -2277,9 +2295,27 @@ function W.Button(parent, o)
 		UI:SetFont(txt, "btn", v.txt)
 		txt:SetText(o.text)
 	end
-	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 
-	b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
+	-- Optional leading Lucide icon (o.icon = texture basename in Textures/),
+	-- tinted to match the label in every state (nav-icon pattern: snap off).
+	local icon, iconSpan = nil, 0
+	if o.icon then
+		icon = b:CreateTexture(nil, "ARTWORK")
+		icon:SetSize(M.btnIcon, M.btnIcon)
+		icon:SetTexture(TEX .. o.icon)
+		icon:SetSnapToPixelGrid(false)
+		icon:SetTexelSnappingBias(0)
+		icon:SetVertexColor(v.txt.r, v.txt.g, v.txt.b)
+		iconSpan = M.btnIcon + M.btnIconGap
+		icon:SetPoint("RIGHT", txt, "LEFT", -M.btnIconGap, 0)
+	end
+	-- Center the icon+label pair as one block.
+	txt:SetPoint("CENTER", b, "CENTER", iconSpan / 2, 0)
+
+	local function fitWidth()
+		b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + iconSpan + v.pad * 2))
+	end
+	fitWidth()
 
 	-- Cold-start guarantee: a cold glyph cache (first session use of the Bold
 	-- weight, e.g. the Profile tab's primary buttons) can MEASURE a width while
@@ -2298,7 +2334,7 @@ function W.Button(parent, o)
 			-- blank glyphs stay blank) -> clear first so the re-set is a real change.
 			txt:SetText("")
 			txt:SetText(o.text)
-			b:SetWidth(o.width or (math.ceil(txt:GetStringWidth()) + v.pad * 2))
+			fitWidth()
 		end
 		b:HookScript("OnShow", function() C_Timer.After(0, heal) end)
 		C_Timer.After(0, heal)
@@ -2308,11 +2344,13 @@ function W.Button(parent, o)
 		paintBg(true)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.lineHover) end
 		txt:SetTextColor(v.txtHover.r, v.txtHover.g, v.txtHover.b)
+		if icon then icon:SetVertexColor(v.txtHover.r, v.txtHover.g, v.txtHover.b) end
 	end)
 	b:SetScript("OnLeave", function()
 		paintBg(false)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.line) end
 		txt:SetTextColor(v.txt.r, v.txt.g, v.txt.b)
+		if icon then icon:SetVertexColor(v.txt.r, v.txt.g, v.txt.b) end
 	end)
 	if o.onClick then b:SetScript("OnClick", o.onClick) end
 	b._txt = txt

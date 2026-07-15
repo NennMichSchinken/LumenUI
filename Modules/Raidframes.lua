@@ -1870,6 +1870,105 @@ function Raidframes:RefreshShellPreview()
 end
 
 -- ===========================================================================
+--  Edit Mode two-frame previews (Group 5 / Raid 20). While a Lumen Edit Mode
+--  session runs, the live secure frames are hidden and TWO placeable fake
+--  previews are shown — one per context — so Group and Raid can be positioned
+--  and sized INDEPENDENTLY (WoW-Edit-Mode style), even solo. Reuses the shell
+--  preview fill (pvFillOne + previewCtx). Exiting restores the live frames.
+-- ===========================================================================
+local epPools = { party = {}, raid = {} }
+local epHolders = {}          -- ctx -> world holder frame (mirrors the live 200x200 container)
+-- The previews exist to POSITION/SIZE frames, not to judge appearance (that's the
+-- tab dock). Show just the class-coloured health bars + names — no auras/shields/
+-- icons/dispel/aggro — so overlapping Group/Raid previews stay clean (Florian).
+local PREVIEW_EYES = {
+	hotsOwn = false, defensives = false, major = false, debuffs = false,
+	shields = false, icons = false, dispel = false, aggro = false,
+}
+local epListenerAdded = false
+
+local function ensureEditPreviews()
+	if epHolders.party then return end
+	for _, ctx in ipairs({ "party", "raid" }) do
+		-- The holder MIRRORS the live container EXACTLY (200x200, positioned by the
+		-- same L.point) so a placed preview maps 1:1 to the real frames. The fakes
+		-- live in a `.frames` child anchored at the holder TOPLEFT (like the secure
+		-- header), which is also the Edit Mode bounds so the overlay hugs the frames.
+		local h = CreateFrame("Frame", nil, UIParent)
+		h:SetSize(200, 200)
+		h:SetFrameStrata("HIGH")
+		h:Hide()
+		h.frames = CreateFrame("Frame", nil, h)
+		h.frames:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
+		epHolders[ctx] = h
+	end
+end
+
+local function epFrame(ctx, i)
+	local pool = epPools[ctx]
+	local f = pool[i]
+	if not f then
+		f = CreateFrame("Frame", nil, epHolders[ctx].frames)
+		Decorate(f)
+		f:EnableMouse(false)   -- the Edit Mode overlay handles the mouse
+		pool[i] = f
+	end
+	f:SetParent(epHolders[ctx].frames)
+	return f
+end
+
+-- Lay out ctx's fake sample (5 party / 20 raid) at ctx's size/spacing and move
+-- the holder to ctx's saved position. Called on show + on every slider change.
+function Raidframes:RefreshPreview(ctx)
+	ensureEditPreviews()
+	local holder = epHolders[ctx]
+	local L = db()[ctx]
+	local w, h, sp = L.width or 114, L.height or 60, L.spacing or 6
+	local horizontal = (L.orientation == "horizontal")
+	local n = (ctx == "raid") and 20 or GROUP_SIZE
+	local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
+	local pool = epPools[ctx]
+	for i = 1, n do
+		local f = epFrame(ctx, i)
+		pvFillOne(f, list[i], ctx, PREVIEW_EYES)
+		local idx   = i - 1
+		local group = floor(idx / GROUP_SIZE)
+		local slot  = idx % GROUP_SIZE
+		local col, row
+		if horizontal then col, row = slot, group else col, row = group, slot end
+		f:ClearAllPoints()
+		f:SetPoint("TOPLEFT", holder.frames, "TOPLEFT", col * (w + sp), -row * (h + sp))
+	end
+	for i = n + 1, #pool do if pool[i] then pool[i]:Hide() end end
+	local groups  = max(1, ceil(n / GROUP_SIZE))
+	local inGroup = max(1, min(n, GROUP_SIZE))
+	local cols, rows
+	if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
+	holder.frames:SetSize(cols * (w + sp) - sp, rows * (h + sp) - sp)
+	-- Position the 200x200 holder EXACTLY like the live container (applyHeaderLayout).
+	holder:ClearAllPoints()
+	holder:SetPoint(L.point or "CENTER", UIParent, L.point or "CENTER", L.x or 0, L.y or 0)
+end
+
+-- Session on/off: swap the live secure frames for the two previews, or restore.
+function Raidframes:ShowEditPreviews(on)
+	ensureEditPreviews()
+	if on then
+		self:HideHeader()
+		if container then container:Hide() end
+		self:RefreshPreview("party")
+		self:RefreshPreview("raid")
+		epHolders.party:Show()
+		epHolders.raid:Show()
+	else
+		epHolders.party:Hide()
+		epHolders.raid:Hide()
+		if container then container:Show() end
+		self:UpdateLayout()   -- rebuild + reposition the real header
+	end
+end
+
+-- ===========================================================================
 --  LIVE  (SecureGroupHeader + SecureUnitButtons) — clickable/targetable (phase 1).
 -- ===========================================================================
 
@@ -2128,6 +2227,9 @@ function Raidframes:UpdateLayout()
 	wlInvalidate()      -- profile may have switched -> re-resolve the whitelist table
 	self:LayoutLive()
 	self:RefreshShellPreview()   -- settings changes route through here -> keep the band live
+	-- If the raidframes are a coupled child, LayoutLive just reset the container
+	-- to its absolute position -> re-anchor it onto its Edit Mode link anchor.
+	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
 end
 
 -- Unit events -> the SPLIT render part they need (PERF: a health tick no longer
@@ -2419,10 +2521,36 @@ function Raidframes:Setup()
 	playerDispels = CLASS_DISPELS[class] or {}
 
 	if ns.EditMode then
-		ns.EditMode:Register(container, "Raidframes", function(p, x, y)
-			-- Save the position into the ACTIVE context (raid/party).
-			local L = layoutCtx(); L.point, L.x, L.y = p, x, y
-		end)
+		-- Two independent placeable previews (WoW-Edit-Mode style, Florian's call):
+		-- "Group Frame" (5) and "Raid Frame" (20) — each edits its OWN context so
+		-- Group and Raid can be placed/sized differently, even solo. The flyout is
+		-- the spatial subset (size + spacing); visuals stay in the tab (Open settings).
+		ensureEditPreviews()
+		local function regPreview(ctx, key, label, tab)
+			ns.EditMode:Register(epHolders[ctx], ns.T(label),
+				function(p, x, y) local L = db()[ctx]; L.point, L.x, L.y = p, x, y end,
+				function() return epHolders[ctx].frames end,   -- overlay/physics hug the fakes
+				key,
+				{ fields = {
+					{ kind = "slider", label = ns.T("Width"),   min = 40, max = 240, unit = " px",
+						get = function() return db()[ctx].width end,
+						set = function(v) db()[ctx].width = v; Raidframes:RefreshPreview(ctx) end },
+					{ kind = "slider", label = ns.T("Height"),  min = 20, max = 160, unit = " px",
+						get = function() return db()[ctx].height end,
+						set = function(v) db()[ctx].height = v; Raidframes:RefreshPreview(ctx) end },
+					{ kind = "slider", label = ns.T("Spacing"), min = 0, max = 30, unit = " px",
+						get = function() return db()[ctx].spacing end,
+						set = function(v) db()[ctx].spacing = v; Raidframes:RefreshPreview(ctx) end },
+				},
+				openSettings = function() if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end end })
+		end
+		regPreview("party", "raidframes_group", "Group Frame", "Group")
+		regPreview("raid",  "raidframes_raid",  "Raid Frame",  "Raid")
+		-- Show the previews (and hide the live frames) only during a Lumen session.
+		if not epListenerAdded then
+			epListenerAdded = true
+			ns.EditMode:AddListener(function() Raidframes:ShowEditPreviews(ns.EditMode.session) end)
+		end
 	end
 	container:Hide()   -- default = off; only Enable() shows the container (else frames despite "off")
 end
