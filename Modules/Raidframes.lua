@@ -904,6 +904,13 @@ local function makeAuraIcon(holder)
 	ic.cd:SetAllPoints(ic.tex)
 	ic.cd:SetDrawEdge(false)
 	ic.cd:SetHideCountdownNumbers(true)
+	-- Duration text rides a carrier frame ABOVE the swipe (mirrors the native
+	-- AuraContainer initializer) so the preview can show the remaining-time text.
+	local textLayer = CreateFrame("Frame", nil, ic)
+	textLayer:SetAllPoints(ic)
+	textLayer:SetFrameLevel(ic.cd:GetFrameLevel() + 1)
+	ic.dur = textLayer:CreateFontString(nil, "OVERLAY")
+	ic.dur:SetPoint("CENTER", ic, "CENTER", 0, 0)
 	ic:Hide()
 	return ic
 end
@@ -914,7 +921,11 @@ local function layoutAuraCat(f, key, cat, size)
 	local holder = f.auraHolders[key]
 	-- Phase 2: native AuraContainer owns the helpful whitelist categories while
 	-- enabled -> keep the old holder hidden so it never lays out alongside them.
-	if ns.RFC and ns.RFC.Suppresses and ns.RFC.Suppresses(key) then
+	-- LIVE frames only: native containers attach solely to secure unit buttons,
+	-- never to the fake preview/test pool -> those must keep the old holder so
+	-- RenderAurasFake can still fill it (design rule: fake mode renders every
+	-- feature). f.fake is set before ApplyConfig in pvFillOne.
+	if not f.fake and ns.RFC and ns.RFC.Suppresses and ns.RFC.Suppresses(key) then
 		if holder then holder:Hide() end
 		return
 	end
@@ -1695,21 +1706,52 @@ function Raidframes:RenderAurasFake(f)
 	local A = db().auras
 	if not A then return end
 	local sfx = auraCtxSuffix()        -- display knobs are per context (Feature 1)
+	local spec = currentSpecID()
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
 		if cat and cat["enabled" .. sfx] and holder then
 			local n = min(cat["maxIcons" .. sfx] or 5, 3)
 			local showSwipe = cat["showSwipe" .. sfx]
+			-- Icon source: the category's ACTUAL whitelist for the active spec so
+			-- the preview is honest (Major CDs show Major CDs, not HoTs). Fall back
+			-- to the static fake list when the whitelist is empty or the category
+			-- is filter-mode (debuffs have no whitelist).
+			local wlIcons
+			if c.whitelist and spec and spec ~= 0 then
+				local ents = self:WhitelistEntries(spec, c.whitelist)
+				if ents and #ents > 0 then wlIcons = ents end
+			end
 			local fakeTex = c.fake or FAKE_HOTS
+			-- Duration-text options mirror the native path (per context): show
+			-- on/off, size, and outline (same outline set as the name text).
+			local durOn = cat["showDuration" .. sfx]
+			if durOn == nil then durOn = true end
+			local durSize    = cat["durationSize" .. sfx] or 12
+			local durOutline = cat["durationOutline" .. sfx] or "shadow"
 			for k = 1, n do
 				local ic = holder.icons[k]
 				if ic then
-					ic.tex:SetTexture(fakeTex[((k - 1) % #fakeTex) + 1])
+					if wlIcons then
+						ic.tex:SetTexture(wlIcons[((k - 1) % #wlIcons) + 1].icon)
+					else
+						ic.tex:SetTexture(fakeTex[((k - 1) % #fakeTex) + 1])
+					end
+					local dur = 6 + k * 4   -- sample duration for the swipe + remaining text
 					if showSwipe and ic.cd then
-						ic.cd:SetCooldown(GetTime() - k * 1.5, 6 + k * 4)
+						ic.cd:SetCooldown(GetTime() - k * 1.5, dur)
 					elseif ic.cd then
 						ic.cd:Clear()
+					end
+					if ic.dur then
+						if durOn then
+							self:StyleTextFont(ic.dur, durSize, durOutline)
+							ic.dur:SetTextColor(1, 1, 1)
+							ic.dur:SetText(tostring(floor(dur - k * 1.5)))
+							ic.dur:Show()
+						else
+							ic.dur:Hide()
+						end
 					end
 					ic:Show()
 				end
