@@ -72,6 +72,11 @@ local function onUpdate()
 		lastX, lastY = x, y
 		ring:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
 	end
+	-- Stay on top even of TOOLTIP-strata frames that SetToplevel(true) themselves
+	-- above us on interaction (e.g. the Edit Mode settings flyout). We already run
+	-- an OnUpdate while shown, so re-topping here keeps the ring above them with no
+	-- perceptible lag (one C call/frame, and only while the opt-in ring is visible).
+	ring:Raise()
 end
 
 local function createRing()
@@ -79,6 +84,11 @@ local function createRing()
 	ring = CreateFrame("Frame", "LumenCursorRing", UIParent)
 	ring:SetFrameStrata("TOOLTIP")
 	ring:SetFrameLevel(9999)
+	-- Toplevel frames (e.g. the Edit Mode settings flyout, SetToplevel(true))
+	-- render ABOVE non-toplevel frames in the SAME strata regardless of frame
+	-- level -> a high level alone left the ring behind the flyout. Join the
+	-- toplevel bucket; the OnUpdate Raise() then keeps us topmost within it.
+	ring:SetToplevel(true)
 	ring:EnableMouse(false)
 	ring:SetPoint("CENTER", UIParent, "BOTTOMLEFT", 0, 0)
 	ringTex = ring:CreateTexture(nil, "OVERLAY")
