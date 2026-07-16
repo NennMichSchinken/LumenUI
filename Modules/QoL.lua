@@ -484,7 +484,7 @@ end
 
 -- ---------------------------------------------------------------------------
 --  Quick gossip — dungeon NPC dialogs without the mouse. While in a party/
---  scenario instance: (1) a gossip with exactly ONE option and no quests is
+--  raid/scenario instance: (1) a gossip with exactly ONE option and no quests is
 --  selected automatically. Blizzard itself only auto-skips when the NPC's
 --  option carries selectOptionWhenOnlyOption (GossipFrameShared.lua HandleShow)
 --  — this covers the NPCs that lack the flag (Pit-of-Saron-style "talk to
@@ -505,7 +505,10 @@ local lastAutoID, lastAutoAt = nil, 0
 local function gossipActive()
 	if not ns.Lumen.db.profile.qol.mplus.quickGossip then return false end
 	local inInstance, itype = IsInInstance()
-	return inInstance and (itype == "party" or itype == "scenario") or false
+	-- Instanced group content only (Florian 2026-07-17): dungeons, raids and
+	-- scenarios (delves) -- never the open world. Raid boss-RP gossips are the
+	-- reason the Shift escape hatch exists.
+	return inInstance and (itype == "party" or itype == "raid" or itype == "scenario") or false
 end
 
 local function byOrderIndex(a, b) return a.orderIndex < b.orderIndex end
