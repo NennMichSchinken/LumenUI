@@ -639,6 +639,15 @@ end
 -- Edit Mode flyout's "Open settings" jump for large modules. Name lookup keeps
 -- callers stable if the SECTIONS order ever changes.
 function Shell:OpenTo(sectionName, tabName)
+	-- Cold open? On a warm Shell the normal path is fine; but when OpenTo SHOWS the
+	-- panel and immediately selects a section, the target screen is built in the same
+	-- tick the panel became visible -> IsShown() is already true, so RenderContent
+	-- marks it _builtHidden=false and the Build()-OnShow rebuild safety net (which
+	-- only re-runs while _screen._builtHidden) is disarmed by this section switch.
+	-- Result: unresolved ScrollFrame widths -> blank slider values / missing first
+	-- row, and it even gets cached. Re-render once the layout settles (mirrors the
+	-- OnShow safety net; RenderContent(true) invalidates the degenerate cached build).
+	local wasShown = self._frame and self._frame:IsShown()
 	self:Show()
 	for i, sec in ipairs(SECTIONS) do
 		if sec[1] == sectionName then
@@ -647,6 +656,11 @@ function Shell:OpenTo(sectionName, tabName)
 				for j, t in ipairs(sec[2]) do
 					if t == tabName then self:SelectTab(j) break end
 				end
+			end
+			if not wasShown then
+				C_Timer.After(0, function()
+					if self._frame and self._frame:IsShown() then self:RenderContent(true) end
+				end)
 			end
 			return
 		end
