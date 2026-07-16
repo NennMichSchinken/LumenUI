@@ -864,28 +864,43 @@ local function buildBase(d, stack)
 		return label
 	end
 	local sortOpen = baseOpenState.sort or false
+	-- Sorting is a HALF-WIDTH (span=6) card, matching the Status band card below:
+	-- a full-width wrapper resolves the 6/12 column width on resize, the
+	-- collapsible header + flush body build into a sub-stack inside the column
+	-- (leftover width stays air, like Status). Kept collapsible (set-once summary).
+	local sortBand = CreateFrame("Frame", nil, d)
+	sortBand:SetFrameLevel(d:GetFrameLevel())
+	local sortCol = CreateFrame("Frame", nil, sortBand)
+	sortCol:SetFrameLevel(sortBand:GetFrameLevel())
+	sortCol:SetPoint("TOPLEFT", sortBand, "TOPLEFT", 0, 0)
+	sortCol:SetPoint("BOTTOMLEFT", sortBand, "BOTTOMLEFT", 0, 0)
+	local function sortColW(w) if w and w > 0 then sortCol:SetWidth(w * 6 / UI.GRID.cols) end end
+	sortBand:SetScript("OnSizeChanged", function(_, w) sortColW(w) end)
+	local cstack = ns.Shell.NewStack(sortCol)
 	-- Open: the content card follows FLUSH (-1: adjacent 1px borders merge into
 	-- one line, ccRowGap pattern) so header + card read as one object.
-	stack:place(W.Collapsible(d, { title = T("Sorting"), open = sortOpen,
+	cstack:place(W.Collapsible(sortCol, { title = T("Sorting"), open = sortOpen,
 		subtitle = T("Order and role priority"), attached = true,
 		summary = not sortOpen and sortSummary() or nil,
 		onToggle = function(v) baseOpenState.sort = v; ns.Shell:RenderContent(true) end }),
 		M.sectionHeaderH, sortOpen and -1 or M.sectionGap)
 	if sortOpen then
-	local sSort = stack:section(nil, { round = "bottom" })
+	local sSort = cstack:section(nil, { round = "bottom" })
 
-	-- Row 1: sort by (unit field) + (when "role") "Also in raid" next to it (tooltip).
-	local smr, smc = W.FieldRow(d, d, 1, { height = fieldH })
+	-- Row 1: "Sort by" (one unit field; leftover card width = air).
+	local smr, smc = W.FieldRow(sortCol, d, 1, { height = fieldH })
 	local sortSel = W.Select(smc[1], { label = T("Sort by"), options = SORT_MODE_OPTS,
 		get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end })
 	sortSel:SetAllPoints(smc[1])
+	sSort:place(smr, fieldH, rf().sortMode == "role" and R.tight or 0)
+
+	-- Row 2 (role only): "Also in raid" as its own row BELOW the dropdown — at
+	-- half width there is no room beside it (was inline before the span=6 pass).
 	if rf().sortMode == "role" then
-		local cbRaid = W.Checkbox(d, { label = T("Also sort by role in raid"),
+		sSort:place(checkRow(d, T("Also sort by role in raid"), {
 			tooltip = T("Off: your arrangement is kept in raids. On: role sorting also applies in raids. (Dungeon/party is always sorted.)"),
-			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") })
-		cbRaid:SetPoint("LEFT", sortSel._control, "RIGHT", L.general.sideGap, 0)
+			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, L.raidframes.base.sort.afterMode)
 	end
-	sSort:place(smr, fieldH, L.raidframes.base.sort.afterMode)
 
 	if rf().sortMode == "role" then
 		local function swapRole(i, j)
@@ -900,7 +915,7 @@ local function buildBase(d, stack)
 		local order = rf().sortRoleOrder or {}
 		local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
 		local cardH = #order * rowH + pad * 2
-		local cr, cc = W.FieldRow(d, d, 1, { height = cardH })
+		local cr, cc = W.FieldRow(sortCol, d, 1, { height = cardH })
 		local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
 		local prevRow
 		for i = 1, #order do
@@ -936,6 +951,11 @@ local function buildBase(d, stack)
 	end
 	sSort:close()
 	end
+	-- Height = the sub-stack's content (trailing sectionGap dropped), then place
+	-- the full-width wrapper into the outer stack so the column resolves to 6/12.
+	local sortH = -cstack:y() - M.sectionGap
+	stack:place(sortBand, sortH, M.sectionGap)
+	sortColW(sortBand:GetWidth())
 
 	-- ===== Status (center icon: ready check / summon) ======================
 	-- The Dead/Ghost/Offline/Rez center TEXT is always on (core correctness,
