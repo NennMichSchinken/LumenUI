@@ -241,6 +241,13 @@ function Shell:Build()
 	-- ESC closes via UISpecialFrames (hides the frame directly, NOT Shell:Hide) — make
 	-- sure a listening KeybindButton never survives the close with the keyboard grabbed.
 	f:HookScript("OnHide", function() if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end end)
+	-- Coexisting with an Edit Mode session: closing the Shell returns the lit
+	-- frame to clean (auras only show while its settings are open).
+	f:HookScript("OnHide", function()
+		if ns.EditMode and ns.EditMode.session and ns.Raidframes and ns.Raidframes.SetLitPreview then
+			ns.Raidframes:SetLitPreview(nil)
+		end
+	end)
 	tinsert(UISpecialFrames, "LumenShellFrame") -- ESC closes
 	self._frame = f
 
@@ -255,6 +262,10 @@ function Shell:Build()
 		-- Keep the panel at its intended physical size (UI scale / resolution may
 		-- have changed while it was closed).
 		Shell:ApplyScale()
+		-- Coexisting with an Edit Mode session: sit above the frame overlays (same
+		-- strata, so Raise() puts the toplevel Shell on top). The Done toolbar
+		-- (TOOLTIP) stays above.
+		if ns.EditMode and ns.EditMode.session then f:Raise() end
 		-- Re-measure tabs: on the first show after game start the font width was maybe
 		-- still 0 (tabs tiny). Anchors pull the positions along automatically.
 		if Shell._tabButtons then for _, t in ipairs(Shell._tabButtons) do if t.Fit then t:Fit() end end end
@@ -825,6 +836,48 @@ local function newStack(holder)
 				sw:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
 				panel._switch = sw
 			end
+			-- Header EYE toggle (card-eye system): shows/hides THIS card's layer in
+			-- the live preview (and, from the selected frame, in Edit Mode). Sits
+			-- left of the master switch if the card has one, else at the switch
+			-- spot. Replaces the preview's grouped filter popover — the eye lives
+			-- with the setting it controls (Florian 2026-07-16).
+			if o.eye then
+				local eb = CreateFrame("Button", nil, panel)
+				eb:SetSize(M.cardEyeBtn, M.cardEyeBtn)
+				-- Eye sits at the LEFT, BEFORE the title (Florian 2026-07-16: glued
+				-- to the master switch it read as part of the switch). The title
+				-- shifts right to make room.
+				eb:SetPoint("LEFT", panel, "TOPLEFT", pad, titleMidY)
+				local textX = pad + M.cardEyeBtn + S.s3
+				if panel._title then
+					panel._title:ClearAllPoints()
+					panel._title:SetPoint("TOPLEFT", panel, "TOPLEFT", textX, -M.cardHeadTop)
+				end
+				if panel._subtitle then
+					panel._subtitle:ClearAllPoints()
+					panel._subtitle:SetPoint("TOPLEFT", panel, "TOPLEFT", textX, -M.cardSubY)
+					panel._subtitle:SetPoint("RIGHT", panel, "RIGHT", -pad, 0)
+				end
+				local g = eb:CreateTexture(nil, "ARTWORK")
+				g:SetSize(M.cardEyeGlyph, M.cardEyeGlyph)
+				g:SetPoint("CENTER", eb, "CENTER", 0, 0)
+				g:SetSnapToPixelGrid(false); g:SetTexelSnappingBias(0)
+				local hovered = false
+				local function paint()
+					local on = o.eye.get()
+					g:SetTexture(TEX .. (on and "icon-eye" or "icon-eye-off"))
+					local col = hovered and P.goldIntHover or (on and P.goldInt or C.textMuted)
+					g:SetVertexColor(col.r, col.g, col.b)
+				end
+				paint()
+				eb:SetScript("OnEnter", function()
+					hovered = true; paint()
+					if o.eye.tip then ns.W.ShowTextTip(eb, o.eye.tip, nil, "TOP") end
+				end)
+				eb:SetScript("OnLeave", function() hovered = false; paint(); ns.W.HideTip() end)
+				eb:SetScript("OnClick", function() o.eye.set(not o.eye.get()); paint() end)
+				panel._eye = eb
+			end
 		end
 
 		local rowPad = outerPad + pad -- row indent of the box WITHIN holder
@@ -879,7 +932,8 @@ local function newStack(holder)
 			outerPad = 0, pad = M.sectionPad, fill = C.ink600, border = L.soft,
 			title = title, afterHeader = M.sectionAfterHeader,
 			count = opts and opts.count, action = opts and opts.action,
-			toggle = opts and opts.toggle, subtitle = opts and opts.subtitle,
+			toggle = opts and opts.toggle, eye = opts and opts.eye,
+			subtitle = opts and opts.subtitle,
 			-- Cards are rounded by default; opts.round = "bottom" for bodies
 			-- flush-attached under a collapsible header (seam edge square).
 			round = (opts and opts.round ~= nil) and opts.round or true,
@@ -938,7 +992,7 @@ local function newStack(holder)
 				fill = C.ink600, border = L.soft,
 				title = def.title, afterHeader = M.sectionAfterHeader,
 				count = def.count, action = def.action, toggle = def.toggle,
-				subtitle = def.subtitle,
+				eye = def.eye, subtitle = def.subtitle,
 				round = (def.round ~= nil) and def.round or true,
 			})
 			local rawClose = inner.close

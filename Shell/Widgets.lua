@@ -1188,6 +1188,7 @@ local function buildTip()
 	local tip = CreateFrame("Frame", nil, host)
 	tip:SetFrameStrata("TOOLTIP")
 	tip:SetWidth(M.tipW)
+	tip:SetClampedToScreen(true) -- stays fully readable near a screen edge (e.g. TOP-anchored)
 	tip:Hide()
 	UI.RoundFill(tip, C.ink850) -- darker than the popover -> clearer tooltip contrast
 	UI.RoundBorder(tip, L.mid, "OVERLAY") -- v2: neutral popover border (no gold top accent — Florian 2026-07-05)
@@ -1208,7 +1209,7 @@ local function buildTip()
 end
 
 -- Shared build for both modes: icon=nil -> pure text tooltip.
-local function applyTip(owner, icon, titleText, bodyText)
+local function applyTip(owner, icon, titleText, bodyText, anchor)
 	if not owner then return end
 	local t = tipObj or buildTip()
 	local hasIcon = icon ~= nil
@@ -1239,7 +1240,13 @@ local function applyTip(owner, icon, titleText, bodyText)
 
 	t.tip:SetHeight(M.tipPad + headH + (hasBody and (M.tipGap + bodyH) or 0) + M.tipPad)
 	t.tip:ClearAllPoints()
-	t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+	if anchor == "TOP" then
+		-- Open ABOVE the owner (grows upward), so it never covers the row it
+		-- belongs to — used by the card-header eye (Florian 2026-07-16).
+		t.tip:SetPoint("BOTTOMLEFT", owner, "TOPLEFT", 0, M.tipGap)
+	else
+		t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+	end
 	t.tip:Show(); t.tip:Raise()
 end
 
@@ -1251,8 +1258,8 @@ function W.ShowSpellTip(owner, spellID)
 	applyTip(owner, tx or 136243, nm or ("Spell " .. tostring(spellID)), ds)
 end
 
-function W.ShowTextTip(owner, title, body)
-	applyTip(owner, nil, title, body)
+function W.ShowTextTip(owner, title, body, anchor)
+	applyTip(owner, nil, title, body, anchor)
 end
 
 function W.HideTip()
@@ -2542,6 +2549,34 @@ function W.Collapsible(parent, o)
 		f._subtitle = sub
 	end
 
+	-- Optional header EYE (card-eye system): toggles this section's preview /
+	-- edit-mode layer. Own Button (doesn't trip the collapse click), left of the
+	-- title; the title shifts right. Mirrors makeBox's card eye.
+	if o.eye then
+		local eb = CreateFrame("Button", nil, f)
+		eb:SetSize(M.cardEyeBtn, M.cardEyeBtn)
+		eb:SetFrameLevel(f:GetFrameLevel() + 5)
+		eb:SetPoint("LEFT", f, "LEFT", M.sectionPad, 0)
+		title:ClearAllPoints()
+		title:SetPoint("LEFT", f, "LEFT", M.sectionPad + M.cardEyeBtn + S.s3, 0)
+		local g = eb:CreateTexture(nil, "ARTWORK")
+		g:SetSize(M.cardEyeGlyph, M.cardEyeGlyph)
+		g:SetPoint("CENTER", eb, "CENTER", 0, 0)
+		g:SetSnapToPixelGrid(false); g:SetTexelSnappingBias(0)
+		local hovered = false
+		local function paintEye()
+			local on = o.eye.get()
+			g:SetTexture(TEX .. (on and "icon-eye" or "icon-eye-off"))
+			local col = hovered and P.goldIntHover or (on and P.goldInt or C.textMuted)
+			g:SetVertexColor(col.r, col.g, col.b)
+		end
+		paintEye()
+		eb:SetScript("OnEnter", function() hovered = true; paintEye()
+			if o.eye.tip then W.ShowTextTip(eb, o.eye.tip, nil, "TOP") end end)
+		eb:SetScript("OnLeave", function() hovered = false; paintEye(); W.HideTip() end)
+		eb:SetScript("OnClick", function() o.eye.set(not o.eye.get()); paintEye() end)
+	end
+
 	-- Hover wash (subtle, like the tracking rows) — rounded like the card, so
 	-- the wash doesn't poke out of the corners.
 	local hov = UI.RoundFill(f, C.inkTint, "BORDER", shape); hov:SetAlpha(0)
@@ -2752,11 +2787,11 @@ end
 -- ---------------------------------------------------------------------------
 --  PreviewBand — content of the Shell's preview DOCK (the satellite window
 --  right of / below the panel, see Shell:SetDockLayout). Chrome: a v3 header
---  CARD (PREVIEW title left, right-aligned: context/size chip groups + filter
---  button + collapse chevron; the card is the drag handle) and the inset stage
---  with a caption line. The filter button opens a checkbox popover with the preview
---  layers (auras/shields/text/dispel/aggro) — state lives in the profile
---  table returned by o.eyes(); filters only HIDE, the next fill restores.
+--  CARD (PREVIEW title left, right-aligned: context/size chip groups + collapse
+--  chevron; the card is the drag handle) and the inset stage with a caption
+--  line. Per-layer visibility lives as an eye on each SETTING CARD now (the old
+--  funnel filter popover was removed, Florian 2026-07-16); o.eyes() is still the
+--  profile table the render reads to hide/restore layers.
 --  The owning MODULE fills band.holder with its preview frames (true
 --  on-screen size via SetScale on the holder) and reports the VISUAL extent
 --  + dock side via band:SetExtent(side, w, h, caption).
@@ -2766,9 +2801,8 @@ end
 --        sizes = optional { values = { .. }, get = fn, set = fn(v) },
 --        open = optional { get = fn, set = fn(v) } — collapse state,
 --        onLayout = fn(side, dockW or nil, dockH),
---        onChrome = optional fn(on) — dock window chrome for the Backdrop filter,
---        onResetPos = optional fn() — popover action row (re-dock the window),
---        eyeDefs = optional { { key =, label =, children? }, ... } }
+--        onChrome = optional fn(on) — dock window chrome (now always on),
+--        onResetPos = optional fn() — header action (re-dock the window) }
 -- ---------------------------------------------------------------------------
 function W.PreviewBand(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
@@ -2793,137 +2827,17 @@ function W.PreviewBand(parent, o)
 	lbl:SetText(T("PREVIEW"))
 	lbl:SetPoint("LEFT", head, "LEFT", M.sectionTitleX, 0)
 
-	-- Icon order (right to left): filter, collapse chevron — then the chip
-	-- groups chain further left (Florian's order, 2026-07-04).
-	-- Filter button (funnel-ish: three shrinking lines) + checkbox popover
-	-- with the preview layers. Highlighted while something is filtered out.
-	local defs = o.eyeDefs or {
-		{ key = "auras", label = T("Auras"), children = {
-			{ key = "hotsOwn",    label = T("HoTs") },
-			{ key = "defensives", label = T("Defensives") },
-			{ key = "major",      label = T("Major CDs") },
-			{ key = "debuffs",    label = T("Debuffs") },
-		} },
-		{ key = "shields",  label = T("Shields") },
-		{ key = "text",     label = T("Text") },
-		{ key = "icons",    label = T("Icons") },
-		{ key = "dispel",   label = T("Dispel") },
-		{ key = "aggro",    label = T("Aggro") },
-		{ key = "backdrop", label = T("Backdrop") },
-	}
-	local fbtn = CreateFrame("Button", nil, head)
-	fbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-	fbtn:SetPoint("RIGHT", head, "RIGHT", -M.pvDockPad, 0)
-	UI.RoundFill(fbtn, C.ink700, nil, nil, R_CTRL) -- lighter than the ink600 card, like a dropdown on a settings card
-	local fEdges = UI.RoundBorder(fbtn, L.mid, "OVERLAY", nil, R_CTRL)
-	local fGlyph = fbtn:CreateTexture(nil, "ARTWORK")
-	fGlyph:SetSize(M.pvGlyph, M.pvGlyph)
-	fGlyph:SetPoint("CENTER", fbtn, "CENTER", 0, 0)
-	fGlyph:SetTexture(TEX .. "icon-funnel")
-	fGlyph:SetSnapToPixelGrid(false); fGlyph:SetTexelSnappingBias(0)
-	-- "Filtered?" looks at the LEAVES (children replace their parent's state).
-	local function anyOff(t, list)
-		for _, def in ipairs(list) do
-			if def.children then
-				if anyOff(t, def.children) then return true end
-			elseif t[def.key] == false then
-				return true
-			end
-		end
-		return false
-	end
-	local function paintFilter()
-		local filtered = anyOff(o.eyes(), defs)
-		local col = filtered and C.gold250 or C.textMuted
-		fGlyph:SetVertexColor(col.r, col.g, col.b) -- tint the white Lucide glyph
-		for _, e in ipairs(fEdges) do UI.SetColor(e, filtered and L.strong or L.mid) end
-	end
-	paintFilter()
-
-	-- Filter popover: ONE grouped window (Florian: no window zoo) — parents
-	-- with children ("Auras") get a master checkbox that flips all children;
-	-- children are indented and toggle individually. Anchored per dock side
-	-- in SetExtent (right dock: opens OUTWARD so it never covers the frames).
-	local pop = CreateFrame("Frame", nil, f)
-	pop:SetFrameLevel(f:GetFrameLevel() + 20)
-	pop:SetClampedToScreen(true)
-	UI.RoundFill(pop, C.ink550)
-	UI.RoundBorder(pop, L.strong, "OVERLAY")
-	pop:Hide()
-	local rowIdx = 0
-	local function popRow(label, indent, isOn, onClick)
-		local row = CreateFrame("Button", nil, pop)
-		row:SetHeight(M.pvFilterRowH)
-		local y = -(M.pvFilterPad + rowIdx * M.pvFilterRowH)
-		rowIdx = rowIdx + 1
-		row:SetPoint("TOPLEFT", pop, "TOPLEFT", M.pvFilterPad + indent, y)
-		row:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -M.pvFilterPad, y)
-		local box = CreateFrame("Frame", nil, row)
-		box:SetSize(M.pvFilterCheck, M.pvFilterCheck)
-		box:SetPoint("LEFT", row, "LEFT", 0, 0)
-		UI.RoundBorder(box, L.mid, "OVERLAY", nil, RAD.xs)
-		local mark = box:CreateTexture(nil, "ARTWORK")
-		mark:SetPoint("TOPLEFT", box, "TOPLEFT", 3, -3)
-		mark:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -3, 3)
-		UI.SetColor(mark, C.gold500)
-		local rl = UI.FS(row, "value", C.textBody)
-		rl:SetPoint("LEFT", box, "RIGHT", S.s4, 0)
-		rl:SetText(label)
-		local function repaint() mark:SetShown(isOn()) end
-		repaint()
-		row:SetScript("OnClick", function()
-			onClick()
-			paintFilter()
-			if o.onEye then o.onEye() end
-		end)
-		return repaint
-	end
-	local popRepaints = {}
-	for _, def in ipairs(defs) do
-		if def.children then
-			local kids = def.children
-			local function allOn()
-				local t = o.eyes()
-				for _, c in ipairs(kids) do if t[c.key] == false then return false end end
-				return true
-			end
-			popRepaints[#popRepaints + 1] = popRow(def.label, 0, allOn, function()
-				local t, target = o.eyes(), not allOn()
-				for _, c in ipairs(kids) do t[c.key] = target end
-				for _, rp in ipairs(popRepaints) do rp() end
-			end)
-			for _, c in ipairs(kids) do
-				local key = c.key
-				popRepaints[#popRepaints + 1] = popRow(c.label,
-					M.pvFilterCheck + S.s4,
-					function() return o.eyes()[key] ~= false end,
-					function()
-						local t = o.eyes()
-						t[key] = (t[key] == false)
-						for _, rp in ipairs(popRepaints) do rp() end
-					end)
-			end
-		else
-			local key = def.key
-			popRepaints[#popRepaints + 1] = popRow(def.label, 0,
-				function() return o.eyes()[key] ~= false end,
-				function()
-					local t = o.eyes()
-					t[key] = (t[key] == false)
-					for _, rp in ipairs(popRepaints) do rp() end
-				end)
-		end
-	end
-	-- (Reset-position is a direct header button now, not a popover row — see below.)
-	pop:SetSize(M.pvFilterW, M.pvFilterPad * 2 + rowIdx * M.pvFilterRowH)
-	fbtn:SetScript("OnClick", function() pop:SetShown(not pop:IsShown()) end)
+	-- Icon order (right to left): collapse chevron — then the chip groups chain
+	-- further left. The old funnel filter popover is GONE (Florian 2026-07-16):
+	-- per-layer visibility now lives as an eye on each setting card, so the
+	-- preview stays clean and the control lives with the setting it toggles.
 
 	-- Collapse chevron (aura-section pattern): folds the dock away. Direction
 	-- follows the dock side (right dock folds LEFT onto the panel edge,
 	-- bottom dock folds UP); state lives in o.open.
 	local cbtn = CreateFrame("Button", nil, head)
 	cbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-	cbtn:SetPoint("RIGHT", fbtn, "LEFT", -S.s4, 0)
+	cbtn:SetPoint("RIGHT", head, "RIGHT", -M.pvDockPad, 0)
 	UI.RoundFill(cbtn, C.ink700, nil, nil, R_CTRL) -- lighter than the ink600 card, like a dropdown on a settings card
 	UI.RoundBorder(cbtn, L.mid, "OVERLAY", nil, R_CTRL)
 	local cGlyph = cbtn:CreateTexture(nil, "OVERLAY")
@@ -3051,7 +2965,6 @@ function W.PreviewBand(parent, o)
 	-- collapsed vertical face is gone, Florian 2026-07-05).
 	local function setOpen(v)
 		if o.open then o.open.set(v) end
-		pop:Hide()
 		if o.onEye then o.onEye() end
 	end
 	cbtn:SetScript("OnClick", function() setOpen(not isOpen()) end)
@@ -3068,21 +2981,12 @@ function W.PreviewBand(parent, o)
 		-- Chevron mirrors the fold-away direction: right dock folds LEFT onto
 		-- the panel edge, bottom dock folds UP.
 		chevDir(side == "right" and "left" or "up")
-		-- Backdrop filter: hide the band's own box (stage fill/border,
-		-- caption) and let the Shell strip the dock window chrome too.
-		local chrome = o.eyes().backdrop ~= false
-		stageFill:SetShown(chrome)
-		for _, e in ipairs(stageEdges) do e:SetShown(chrome) end
-		caption:SetShown(chrome)
-		if o.onChrome then o.onChrome(chrome) end
-		-- Filter popover per side: right dock opens OUTWARD (past the dock's
-		-- right edge, never over the frames), bottom dock opens UPWARD.
-		pop:ClearAllPoints()
-		if side == "right" then
-			pop:SetPoint("TOPLEFT", f, "TOPRIGHT", M.pvDockGap, -M.pvDockPad)
-		else
-			pop:SetPoint("BOTTOMRIGHT", fbtn, "TOPRIGHT", 0, S.s2)
-		end
+		-- Dock chrome is always on now (the Backdrop filter was removed with the
+		-- funnel popover; per-layer eyes live on the setting cards).
+		stageFill:SetShown(true)
+		for _, e in ipairs(stageEdges) do e:SetShown(true) end
+		caption:SetShown(true)
+		if o.onChrome then o.onChrome(true) end
 		local innerW = math.max(w + M.pvStagePad * 2, M.pvStageMinW,
 			headMinW - M.pvDockPad * 2)
 		local innerH = math.max(h + M.pvStagePad * 2 + M.pvCaptionH, M.pvMinStageH)

@@ -69,6 +69,8 @@ ns.RegisterLocale("deDE", {
 	-- ── Card subtitles / global switch descriptions (v3 card mockup) ────
 	["Health bar and texture settings"] = "Einstellungen für Lebensbalken und Texturen",
 	["Name and text color settings"] = "Einstellungen für Namen und Textfarben",
+	["Shields & heal absorb"] = "Schilde & Heilabsorb",
+	["Absorb overlay display"] = "Anzeige der Absorb-Overlays",
 	["Dispel highlight settings"] = "Einstellungen für Dispel-Highlights",
 	["Aggro warning settings"] = "Einstellungen für Aggro-Warnungen",
 	["Order and role priority"] = "Reihenfolge und Rollenverteilung",
@@ -174,6 +176,7 @@ ns.RegisterLocale("deDE", {
 	["Defensives & External"] = "Defensives & Externe",
 	["Major CDs"] = "Major CDs",
 	["Debuffs"] = "Debuffs",
+	["Show in preview"] = "In Vorschau zeigen",
 	["Amount & behavior"] = "Menge & Verhalten",
 	["Max. icons"] = "Max. Icons",
 	["Auto-fit (size from frame height)"] = "Auto-Fit (Größe aus Frame-Höhe)",
