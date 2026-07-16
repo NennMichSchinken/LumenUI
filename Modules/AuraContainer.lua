@@ -371,7 +371,11 @@ function RFC.SetUnit(button, unit)
 	button._rfcUnit = unit
 	if not unit then return end
 	for _, c in pairs(button._rfc) do
-		pcall(function() c:SetUnit(unit); c:UpdateAllAuras() end)
+		-- Direct pcalls (no closure): this runs per container inside the secure
+		-- header's unit-attribute hook, which fires on roster shuffles IN COMBAT --
+		-- a wrapper closure here would allocate garbage in a hot path (CLAUDE.md §9).
+		pcall(c.SetUnit, c, unit)
+		pcall(c.UpdateAllAuras, c)
 	end
 end
 
