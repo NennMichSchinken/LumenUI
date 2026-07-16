@@ -864,18 +864,29 @@ local function buildBase(d, stack)
 		return label
 	end
 	local sortOpen = baseOpenState.sort or false
-	-- Sorting is a HALF-WIDTH (span=6) card, matching the Status band card below:
-	-- a full-width wrapper resolves the 6/12 column width on resize, the
-	-- collapsible header + flush body build into a sub-stack inside the column
-	-- (leftover width stays air, like Status). Kept collapsible (set-once summary).
-	local sortBand = CreateFrame("Frame", nil, d)
-	sortBand:SetFrameLevel(d:GetFrameLevel())
-	local sortCol = CreateFrame("Frame", nil, sortBand)
-	sortCol:SetFrameLevel(sortBand:GetFrameLevel())
-	sortCol:SetPoint("TOPLEFT", sortBand, "TOPLEFT", 0, 0)
-	sortCol:SetPoint("BOTTOMLEFT", sortBand, "BOTTOMLEFT", 0, 0)
-	local function sortColW(w) if w and w > 0 then sortCol:SetWidth(w * 6 / UI.GRID.cols) end end
-	sortBand:SetScript("OnSizeChanged", function(_, w) sortColW(w) end)
+	-- Sorting (left) + Status (right) share ONE span=6 | span=6 row. Each column
+	-- keeps its NATURAL height (top-aligned, no stretch) because Sorting is a
+	-- collapsible whose height changes (collapse / role-mode list). A full-width
+	-- wrapper resolves the two half columns on resize; each side builds into its
+	-- own sub-stack.
+	local pairF = CreateFrame("Frame", nil, d)
+	pairF:SetFrameLevel(d:GetFrameLevel())
+	local sortCol = CreateFrame("Frame", nil, pairF)   -- left: Sorting collapsible
+	local statCol = CreateFrame("Frame", nil, pairF)   -- right: Status card
+	sortCol:SetFrameLevel(pairF:GetFrameLevel())
+	statCol:SetFrameLevel(pairF:GetFrameLevel())
+	sortCol:SetPoint("TOPLEFT", pairF, "TOPLEFT", 0, 0)
+	sortCol:SetPoint("BOTTOMLEFT", pairF, "BOTTOMLEFT", 0, 0)
+	local function pairLayout(w)
+		if not w or w <= 0 then return end
+		local cw = (w - UI.GRID.cardGap) / 2
+		sortCol:SetWidth(cw)
+		statCol:ClearAllPoints()
+		statCol:SetPoint("TOPLEFT", pairF, "TOPLEFT", cw + UI.GRID.cardGap, 0)
+		statCol:SetPoint("BOTTOMLEFT", pairF, "BOTTOMLEFT", cw + UI.GRID.cardGap, 0)
+		statCol:SetWidth(cw)
+	end
+	pairF:SetScript("OnSizeChanged", function(_, w) pairLayout(w) end)
 	local cstack = ns.Shell.NewStack(sortCol)
 	-- Open: the content card follows FLUSH (-1: adjacent 1px borders merge into
 	-- one line, ccRowGap pattern) so header + card read as one object.
@@ -951,19 +962,14 @@ local function buildBase(d, stack)
 	end
 	sSort:close()
 	end
-	-- Height = the sub-stack's content (trailing sectionGap dropped), then place
-	-- the full-width wrapper into the outer stack so the column resolves to 6/12.
+	-- Sub-stack content height (trailing sectionGap dropped).
 	local sortH = -cstack:y() - M.sectionGap
-	stack:place(sortBand, sortH, M.sectionGap)
-	sortColW(sortBand:GetWidth())
 
-	-- ===== Status (center icon: ready check / summon) ======================
+	-- ===== Status (center icon: ready check / summon) — RIGHT column ========
 	-- The Dead/Ghost/Offline/Rez center TEXT is always on (core correctness,
 	-- deliberately option-free); only the two icon feeds are toggleable.
-	local sb2 = stack:band({
-		{ span = 6, title = T("Status"), subtitle = T("Ready check and summon on the frames") },
-	})
-	local sStat = sb2.cards[1]
+	local rstack = ns.Shell.NewStack(statCol)
+	local sStat = rstack:section(T("Status"), { subtitle = T("Ready check and summon on the frames") })
 	sStat:place(checkRow(d, T("Show ready check"), {
 		tooltip = T("Blizzard's familiar icons in the frame center: hourglass, green check, red X. Results stay visible for a few seconds."),
 		get = tget("showReadyCheck"),
@@ -973,7 +979,13 @@ local function buildBase(d, stack)
 		get = tget("showSummon"),
 		set = function(v) rf().showSummon = v; if ns.Raidframes then ns.Raidframes:RefreshCenterIcons() end end }), M.optionRowH, R.tight)
 	sStat:close()
-	sb2.close()
+	local statH = -rstack:y() - M.sectionGap
+
+	-- Row height = the taller column (natural heights, top-aligned); then place
+	-- the full-width wrapper into the outer stack so the two halves resolve.
+	local pairH = math.max(sortH, statH)
+	stack:place(pairF, pairH, M.sectionGap)
+	pairLayout(pairF:GetWidth())
 
 	-- Hook the body into the outer stack + gate initially (module off -> all grey).
 	outerStack:place(body, bstack:height(), 0)
