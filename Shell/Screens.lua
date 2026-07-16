@@ -204,10 +204,10 @@ local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
 -- same session-only rule as the collapsibles above.
 local auraAdvState = {}
 
--- Base tab (card grid): "Advanced" disclosures per card (text/dispel/aggro) +
--- the collapsed Sorting card (sort) — same session-only rule as the aura
+-- Base tab (card grid): "Advanced" disclosures per card (text/dispel/aggro +
+-- the Sorting card's role-priority list) — same session-only rule as the aura
 -- sections above: navigating away resets to the calm default state.
-local baseAdvState, baseOpenState = {}, {}
+local baseAdvState = {}
 
 -- Called by the Shell when the MAIN SECTION changes (NOT on tab switches within
 -- a section). Open disclosures therefore persist while you move between a
@@ -216,9 +216,9 @@ local baseAdvState, baseOpenState = {}, {}
 -- Returns true if any state was cleared (so the Shell rebuilds the screens).
 function ns.SectionLeft(section)
 	if section ~= "Raidframes" then return false end
-	local had = next(baseAdvState) or next(baseOpenState) or next(auraAdvState)
+	local had = next(baseAdvState) or next(auraAdvState)
 		or next(auraOpenState) or next(iconOpenState)
-	baseAdvState, baseOpenState = {}, {}
+	baseAdvState = {}
 	auraAdvState, auraOpenState, iconOpenState = {}, {}, {}
 	return had ~= nil
 end
@@ -851,24 +851,13 @@ local function buildBase(d, stack)
 	b2.close()
 	refreshAggro()
 
-	-- ===== Sorting (collapsed card + state summary; set-once) ==============
-	local function sortSummary()
-		local isRole = rf().sortMode == "role"
-		local label = isRole and T("Role") or T("Group")
-		if isRole then
-			local parts = {}
-			-- ">" not "→": the arrow glyph is missing in Hanken Grotesk (renders as a box).
-			for _, role in ipairs(rf().sortRoleOrder or {}) do parts[#parts + 1] = ROLE_LABEL[role] or "?" end
-			if #parts > 0 then label = label .. " · " .. table.concat(parts, " > ") end
-		end
-		return label
-	end
-	local sortOpen = baseOpenState.sort or false
-	-- Sorting (left) + Status (right) share ONE span=6 | span=6 row. Each column
-	-- keeps its NATURAL height (top-aligned, no stretch) because Sorting is a
-	-- collapsible whose height changes (collapse / role-mode list). A full-width
-	-- wrapper resolves the two half columns on resize; each side builds into its
-	-- own sub-stack.
+	-- ===== Sorting (6) + Status (6): one paired row ========================
+	-- Sorting is a NORMAL card (no collapse). When role-sorting, the reorderable
+	-- role-priority list lives behind a "More options" disclosure (Florian
+	-- 2026-07-16) so the card stays calm and closer in height to the Status card
+	-- beside it. Sorting (left) + Status (right) share ONE span=6 | span=6 row;
+	-- each column keeps its natural height (top-aligned) and builds into its own
+	-- sub-stack. A full-width wrapper resolves the two half columns on resize.
 	local pairF = CreateFrame("Frame", nil, d)
 	pairF:SetFrameLevel(d:GetFrameLevel())
 	local sortCol = CreateFrame("Frame", nil, pairF)   -- left: Sorting collapsible
@@ -887,83 +876,84 @@ local function buildBase(d, stack)
 		statCol:SetWidth(cw)
 	end
 	pairF:SetScript("OnSizeChanged", function(_, w) pairLayout(w) end)
-	local cstack = ns.Shell.NewStack(sortCol)
-	-- Open: the content card follows FLUSH (-1: adjacent 1px borders merge into
-	-- one line, ccRowGap pattern) so header + card read as one object.
-	cstack:place(W.Collapsible(sortCol, { title = T("Sorting"), open = sortOpen,
-		subtitle = T("Order and role priority"), attached = true,
-		summary = not sortOpen and sortSummary() or nil,
-		onToggle = function(v) baseOpenState.sort = v; ns.Shell:RenderContent(true) end }),
-		M.sectionHeaderH, sortOpen and -1 or M.sectionGap)
-	if sortOpen then
-	local sSort = cstack:section(nil, { round = "bottom" })
+	-- LEFT column: Sorting (normal section card).
+	local lstack = ns.Shell.NewStack(sortCol)
+	local sSort = lstack:section(T("Sorting"), { subtitle = T("Order and role priority") })
 
 	-- Row 1: "Sort by" (one unit field; leftover card width = air).
 	local smr, smc = W.FieldRow(sortCol, d, 1, { height = fieldH })
 	local sortSel = W.Select(smc[1], { label = T("Sort by"), options = SORT_MODE_OPTS,
 		get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end })
 	sortSel:SetAllPoints(smc[1])
-	sSort:place(smr, fieldH, rf().sortMode == "role" and R.tight or 0)
+	sSort:place(smr, fieldH, rf().sortMode == "role" and R.row or 0)
 
-	-- Row 2 (role only): "Also in raid" as its own row BELOW the dropdown — at
-	-- half width there is no room beside it (was inline before the span=6 pass).
 	if rf().sortMode == "role" then
+		-- "Also in raid" as its own row below the dropdown.
 		sSort:place(checkRow(d, T("Also sort by role in raid"), {
 			tooltip = T("Off: your arrangement is kept in raids. On: role sorting also applies in raids. (Dungeon/party is always sorted.)"),
-			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, L.raidframes.base.sort.afterMode)
-	end
+			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, R.row)
 
-	if rf().sortMode == "role" then
-		local function swapRole(i, j)
-			local o = rf().sortRoleOrder
-			if not (o and o[i] and o[j]) then return end
-			o[i], o[j] = o[j], o[i]
-			relayout(); ns.Shell:RenderContent(true)
+		-- Advanced (Zusatzoptionen): the reorderable role-priority list — only
+		-- relevant when role-sorting, so it lives behind the disclosure below.
+		if baseAdvState.sort then
+			local function swapRole(i, j)
+				local o = rf().sortRoleOrder
+				if not (o and o[i] and o[j]) then return end
+				o[i], o[j] = o[j], o[i]
+				relayout(); ns.Shell:RenderContent(true)
+			end
+			-- Priority list: card exactly one unit field wide (aligned with "Sort
+			-- by"), role-colored rows (accent bar + wash) + ↑/↓ arrows in front
+			-- (unusable ones greyed out, no jumping).
+			local order = rf().sortRoleOrder or {}
+			local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
+			local cardH = #order * rowH + pad * 2
+			local cr, cc = W.FieldRow(sortCol, d, 1, { height = cardH })
+			local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
+			local prevRow
+			for i = 1, #order do
+				local role = order[i]
+				local acc = ROLE_ACCENT[role] or { r = 0.6, g = 0.6, b = 0.6 }
+				local row = CreateFrame("Frame", nil, card)
+				row:SetHeight(rowH)
+				row:SetPoint("LEFT", card, "LEFT", pad, 0)
+				row:SetPoint("RIGHT", card, "RIGHT", -pad, 0)
+				if prevRow then row:SetPoint("TOP", prevRow, "BOTTOM", 0, 0)
+				else row:SetPoint("TOP", card, "TOP", 0, -pad) end
+				local bg = row:CreateTexture(nil, "BACKGROUND")
+				bg:SetAllPoints(row); UI.SetColor(bg, C.ink600)
+				local wash = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+				wash:SetAllPoints(row); wash:SetColorTexture(acc.r, acc.g, acc.b, 0.10)
+				local barL = row:CreateTexture(nil, "ARTWORK")
+				barL:SetWidth(L.raidframes.base.sort.accentW)
+				barL:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+				barL:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+				barL:SetColorTexture(acc.r, acc.g, acc.b, 0.95)
+				local up = arrowButton(row, "up", function() swapRole(i, i - 1) end)
+				up:SetPoint("LEFT", row, "LEFT", 14, 0)
+				local down = arrowButton(row, "down", function() swapRole(i, i + 1) end)
+				down:SetPoint("LEFT", up, "RIGHT", 2, 0)
+				if i == 1 then up.setDim(true) end
+				if i == #order then down.setDim(true) end
+				local lbl = UI.FS(row, "listLabel", C.textStrong)
+				lbl:SetPoint("LEFT", down, "RIGHT", 16, 0)
+				lbl:SetText(ROLE_LABEL[role] or "?")
+				prevRow = row
+			end
+			sSort:place(cr, cardH, R.tight)
 		end
-		-- Priority list: card exactly one unit field wide (aligned with "Sort by"),
-		-- role-colored rows (accent bar + wash) + ↑/↓ arrows in front (unusable
-		-- ones greyed out, no jumping).
-		local order = rf().sortRoleOrder or {}
-		local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
-		local cardH = #order * rowH + pad * 2
-		local cr, cc = W.FieldRow(sortCol, d, 1, { height = cardH })
-		local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
-		local prevRow
-		for i = 1, #order do
-			local role = order[i]
-			local acc = ROLE_ACCENT[role] or { r = 0.6, g = 0.6, b = 0.6 }
-			local row = CreateFrame("Frame", nil, card)
-			row:SetHeight(rowH)
-			row:SetPoint("LEFT", card, "LEFT", pad, 0)
-			row:SetPoint("RIGHT", card, "RIGHT", -pad, 0)
-			if prevRow then row:SetPoint("TOP", prevRow, "BOTTOM", 0, 0)
-			else row:SetPoint("TOP", card, "TOP", 0, -pad) end
-			local bg = row:CreateTexture(nil, "BACKGROUND")
-			bg:SetAllPoints(row); UI.SetColor(bg, C.ink600)
-			local wash = row:CreateTexture(nil, "BACKGROUND", nil, 1)
-			wash:SetAllPoints(row); wash:SetColorTexture(acc.r, acc.g, acc.b, 0.10)
-			local barL = row:CreateTexture(nil, "ARTWORK")
-			barL:SetWidth(L.raidframes.base.sort.accentW)
-			barL:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-			barL:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-			barL:SetColorTexture(acc.r, acc.g, acc.b, 0.95)
-			local up = arrowButton(row, "up", function() swapRole(i, i - 1) end)
-			up:SetPoint("LEFT", row, "LEFT", 14, 0)
-			local down = arrowButton(row, "down", function() swapRole(i, i + 1) end)
-			down:SetPoint("LEFT", up, "RIGHT", 2, 0)
-			if i == 1 then up.setDim(true) end
-			if i == #order then down.setDim(true) end
-			local lbl = UI.FS(row, "listLabel", C.textStrong)
-			lbl:SetPoint("LEFT", down, "RIGHT", 16, 0)
-			lbl:SetText(ROLE_LABEL[role] or "?")
-			prevRow = row
-		end
-		sSort:place(cr, cardH, L.raidframes.base.sort.afterCard)
+
+		-- Disclosure footer: closed hint shows the current order (Tank > Heiler > DPS).
+		local hintParts = {}
+		for _, role in ipairs(rf().sortRoleOrder or {}) do hintParts[#hintParts + 1] = ROLE_LABEL[role] or "?" end
+		sSort:place(W.Disclosure(d, { open = baseAdvState.sort,
+			label = baseAdvState.sort and T("Less") or T("More options"),
+			hint = (not baseAdvState.sort) and table.concat(hintParts, " > ") or nil,
+			onToggle = function(v) baseAdvState.sort = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
 	end
 	sSort:close()
-	end
 	-- Sub-stack content height (trailing sectionGap dropped).
-	local sortH = -cstack:y() - M.sectionGap
+	local sortH = -lstack:y() - M.sectionGap
 
 	-- ===== Status (center icon: ready check / summon) — RIGHT column ========
 	-- The Dead/Ghost/Offline/Rez center TEXT is always on (core correctness,
