@@ -837,9 +837,15 @@ local function newStack(holder)
 				-- to the master switch it read as part of the switch). The title
 				-- shifts right to make room.
 				eb:SetPoint("LEFT", panel, "TOPLEFT", pad, titleMidY)
+				local textX = pad + M.cardEyeBtn + S.s3
 				if panel._title then
 					panel._title:ClearAllPoints()
-					panel._title:SetPoint("TOPLEFT", panel, "TOPLEFT", pad + M.cardEyeBtn + S.s3, -M.cardHeadTop)
+					panel._title:SetPoint("TOPLEFT", panel, "TOPLEFT", textX, -M.cardHeadTop)
+				end
+				if panel._subtitle then
+					panel._subtitle:ClearAllPoints()
+					panel._subtitle:SetPoint("TOPLEFT", panel, "TOPLEFT", textX, -M.cardSubY)
+					panel._subtitle:SetPoint("RIGHT", panel, "RIGHT", -pad, 0)
 				end
 				local g = eb:CreateTexture(nil, "ARTWORK")
 				g:SetSize(M.cardEyeGlyph, M.cardEyeGlyph)

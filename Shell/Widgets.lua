@@ -2549,6 +2549,34 @@ function W.Collapsible(parent, o)
 		f._subtitle = sub
 	end
 
+	-- Optional header EYE (card-eye system): toggles this section's preview /
+	-- edit-mode layer. Own Button (doesn't trip the collapse click), left of the
+	-- title; the title shifts right. Mirrors makeBox's card eye.
+	if o.eye then
+		local eb = CreateFrame("Button", nil, f)
+		eb:SetSize(M.cardEyeBtn, M.cardEyeBtn)
+		eb:SetFrameLevel(f:GetFrameLevel() + 5)
+		eb:SetPoint("LEFT", f, "LEFT", M.sectionPad, 0)
+		title:ClearAllPoints()
+		title:SetPoint("LEFT", f, "LEFT", M.sectionPad + M.cardEyeBtn + S.s3, 0)
+		local g = eb:CreateTexture(nil, "ARTWORK")
+		g:SetSize(M.cardEyeGlyph, M.cardEyeGlyph)
+		g:SetPoint("CENTER", eb, "CENTER", 0, 0)
+		g:SetSnapToPixelGrid(false); g:SetTexelSnappingBias(0)
+		local hovered = false
+		local function paintEye()
+			local on = o.eye.get()
+			g:SetTexture(TEX .. (on and "icon-eye" or "icon-eye-off"))
+			local col = hovered and P.goldIntHover or (on and P.goldInt or C.textMuted)
+			g:SetVertexColor(col.r, col.g, col.b)
+		end
+		paintEye()
+		eb:SetScript("OnEnter", function() hovered = true; paintEye()
+			if o.eye.tip then W.ShowTextTip(eb, o.eye.tip, nil, "TOP") end end)
+		eb:SetScript("OnLeave", function() hovered = false; paintEye(); W.HideTip() end)
+		eb:SetScript("OnClick", function() o.eye.set(not o.eye.get()); paintEye() end)
+	end
+
 	-- Hover wash (subtle, like the tracking rows) — rounded like the card, so
 	-- the wash doesn't poke out of the corners.
 	local hov = UI.RoundFill(f, C.inkTint, "BORDER", shape); hov:SetAlpha(0)
