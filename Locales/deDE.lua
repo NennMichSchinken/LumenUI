@@ -410,6 +410,8 @@ ns.RegisterLocale("deDE", {
 	["Puts your keystone into the Font of Power automatically when its window opens."] = "Legt deinen Schlüsselstein automatisch in den Machtquell, sobald sich dessen Fenster öffnet.",
 	["Announce instance reset"] = "Instanz-Reset im Chat ankündigen",
 	["Posts a short message to your group when you reset instances."] = "Schreibt eine kurze Nachricht an deine Gruppe, wenn du die Instanzen zurücksetzt.",
+	["Quick gossip"] = "Schneller NPC-Dialog",
+	["In dungeons: NPC dialogs with a single talk option are selected automatically (hold Shift to keep the window). With several options, press 1-9 to pick one."] = "In Dungeons: NPC-Dialoge mit nur einer Gesprächsoption werden automatisch ausgewählt (Shift halten öffnet das Fenster normal). Bei mehreren Optionen wählst du mit den Tasten 1-9.",
 	["Instances reset."] = "Instanzen zurückgesetzt.",
 	["Dead"] = "Tot",
 	["Ghost"] = "Geist",

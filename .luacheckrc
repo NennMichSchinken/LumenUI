@@ -55,6 +55,8 @@ read_globals = {
     -- Pull timer / Mythic+ / buff blocklist / tracker QoL
     "C_PartyInfo", "DoReadyCheck", "SendChatMessage", "CancelUnitBuff",
     "GetInstanceInfo", "IsEncounterInProgress", "C_ChallengeMode",
+    -- Quick gossip
+    "C_GossipInfo", "GossipFrame",
     -- UI scale
     "GetPhysicalScreenSize",
     -- Vendor QoL (repair + junk selling)
