@@ -209,24 +209,18 @@ local auraAdvState = {}
 -- sections above: navigating away resets to the calm default state.
 local baseAdvState, baseOpenState = {}, {}
 
--- Called by the Shell when navigating AWAY from a screen; returning true
--- drops the cached screen so the next visit rebuilds it (collapsed).
-local SCREEN_CTX = { ["Raidframes/Raid"] = "raid", ["Raidframes/Group"] = "party" }
-function ns.ScreenLeft(key)
-	if key == "Raidframes/Base" then
-		if next(baseAdvState) or next(baseOpenState) then
-			baseAdvState, baseOpenState = {}, {}
-			return true
-		end
-		return false
-	end
-	local ctx = SCREEN_CTX[key]
-	if not ctx then return false end
-	if auraOpenState[ctx] or iconOpenState[ctx] or auraAdvState[ctx] then
-		auraOpenState[ctx], iconOpenState[ctx], auraAdvState[ctx] = nil, nil, nil
-		return true
-	end
-	return false
+-- Called by the Shell when the MAIN SECTION changes (NOT on tab switches within
+-- a section). Open disclosures therefore persist while you move between a
+-- module's tabs (e.g. check Tracking, jump back to Auras) and only reset to the
+-- calm collapsed default once you leave the module entirely (Florian 2026-07-15).
+-- Returns true if any state was cleared (so the Shell rebuilds the screens).
+function ns.SectionLeft(section)
+	if section ~= "Raidframes" then return false end
+	local had = next(baseAdvState) or next(baseOpenState) or next(auraAdvState)
+		or next(auraOpenState) or next(iconOpenState)
+	baseAdvState, baseOpenState = {}, {}
+	auraAdvState, auraOpenState, iconOpenState = {}, {}, {}
+	return had ~= nil
 end
 
 -- Defined further below (needs PLACE_OPTS); forward-declared because buildRaid
