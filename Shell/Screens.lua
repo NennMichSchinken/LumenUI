@@ -852,36 +852,20 @@ local function buildBase(d, stack)
 	refreshAggro()
 
 	-- ===== Sorting (6) + Status (6): one paired row ========================
-	-- Sorting is a NORMAL card (no collapse). When role-sorting, the reorderable
-	-- role-priority list lives behind a "More options" disclosure (Florian
-	-- 2026-07-16) so the card stays calm and closer in height to the Status card
-	-- beside it. Sorting (left) + Status (right) share ONE span=6 | span=6 row;
-	-- each column keeps its natural height (top-aligned) and builds into its own
-	-- sub-stack. A full-width wrapper resolves the two half columns on resize.
-	local pairF = CreateFrame("Frame", nil, d)
-	pairF:SetFrameLevel(d:GetFrameLevel())
-	local sortCol = CreateFrame("Frame", nil, pairF)   -- left: Sorting collapsible
-	local statCol = CreateFrame("Frame", nil, pairF)   -- right: Status card
-	sortCol:SetFrameLevel(pairF:GetFrameLevel())
-	statCol:SetFrameLevel(pairF:GetFrameLevel())
-	sortCol:SetPoint("TOPLEFT", pairF, "TOPLEFT", 0, 0)
-	sortCol:SetPoint("BOTTOMLEFT", pairF, "BOTTOMLEFT", 0, 0)
-	local function pairLayout(w)
-		if not w or w <= 0 then return end
-		local cw = (w - UI.GRID.cardGap) / 2
-		sortCol:SetWidth(cw)
-		statCol:ClearAllPoints()
-		statCol:SetPoint("TOPLEFT", pairF, "TOPLEFT", cw + UI.GRID.cardGap, 0)
-		statCol:SetPoint("BOTTOMLEFT", pairF, "BOTTOMLEFT", cw + UI.GRID.cardGap, 0)
-		statCol:SetWidth(cw)
-	end
-	pairF:SetScript("OnSizeChanged", function(_, w) pairLayout(w) end)
-	-- LEFT column: Sorting (normal section card).
-	local lstack = ns.Shell.NewStack(sortCol)
-	local sSort = lstack:section(T("Sorting"), { subtitle = T("Order and role priority") })
+	-- Both are plain span=6 band cards, so the band stretches them to a shared
+	-- height (equal-height-per-row, like every other band). Sorting is a NORMAL
+	-- card; when role-sorting, the reorderable role-priority list lives behind a
+	-- "More options" disclosure (Florian 2026-07-16) so the card stays calm.
+	local sortBand = stack:band({
+		{ span = 6, title = T("Sorting"), subtitle = T("Order and role priority") },
+		{ span = 6, title = T("Status"),  subtitle = T("Ready check and summon on the frames") },
+	})
+
+	-- LEFT card: Sorting.
+	local sSort = sortBand.cards[1]
 
 	-- Row 1: "Sort by" (one unit field; leftover card width = air).
-	local smr, smc = W.FieldRow(sortCol, d, 1, { height = fieldH })
+	local smr, smc = W.FieldRow(d, d, 1, { height = fieldH })
 	local sortSel = W.Select(smc[1], { label = T("Sort by"), options = SORT_MODE_OPTS,
 		get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end })
 	sortSel:SetAllPoints(smc[1])
@@ -908,7 +892,7 @@ local function buildBase(d, stack)
 			local order = rf().sortRoleOrder or {}
 			local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
 			local cardH = #order * rowH + pad * 2
-			local cr, cc = W.FieldRow(sortCol, d, 1, { height = cardH })
+			local cr, cc = W.FieldRow(d, d, 1, { height = cardH })
 			local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
 			local prevRow
 			for i = 1, #order do
@@ -952,14 +936,11 @@ local function buildBase(d, stack)
 			onToggle = function(v) baseAdvState.sort = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
 	end
 	sSort:close()
-	-- Sub-stack content height (trailing sectionGap dropped).
-	local sortH = -lstack:y() - M.sectionGap
 
-	-- ===== Status (center icon: ready check / summon) — RIGHT column ========
-	-- The Dead/Ghost/Offline/Rez center TEXT is always on (core correctness,
-	-- deliberately option-free); only the two icon feeds are toggleable.
-	local rstack = ns.Shell.NewStack(statCol)
-	local sStat = rstack:section(T("Status"), { subtitle = T("Ready check and summon on the frames") })
+	-- RIGHT card: Status (ready check / summon). The Dead/Ghost/Offline/Rez
+	-- center TEXT is always on (core correctness, option-free); only the two
+	-- icon feeds are toggleable.
+	local sStat = sortBand.cards[2]
 	sStat:place(checkRow(d, T("Show ready check"), {
 		tooltip = T("Blizzard's familiar icons in the frame center: hourglass, green check, red X. Results stay visible for a few seconds."),
 		get = tget("showReadyCheck"),
@@ -969,13 +950,7 @@ local function buildBase(d, stack)
 		get = tget("showSummon"),
 		set = function(v) rf().showSummon = v; if ns.Raidframes then ns.Raidframes:RefreshCenterIcons() end end }), M.optionRowH, R.tight)
 	sStat:close()
-	local statH = -rstack:y() - M.sectionGap
-
-	-- Row height = the taller column (natural heights, top-aligned); then place
-	-- the full-width wrapper into the outer stack so the two halves resolve.
-	local pairH = math.max(sortH, statH)
-	stack:place(pairF, pairH, M.sectionGap)
-	pairLayout(pairF:GetWidth())
+	sortBand.close()
 
 	-- Hook the body into the outer stack + gate initially (module off -> all grey).
 	outerStack:place(body, bstack:height(), 0)
