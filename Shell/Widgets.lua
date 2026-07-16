@@ -1188,6 +1188,7 @@ local function buildTip()
 	local tip = CreateFrame("Frame", nil, host)
 	tip:SetFrameStrata("TOOLTIP")
 	tip:SetWidth(M.tipW)
+	tip:SetClampedToScreen(true) -- stays fully readable near a screen edge (e.g. TOP-anchored)
 	tip:Hide()
 	UI.RoundFill(tip, C.ink850) -- darker than the popover -> clearer tooltip contrast
 	UI.RoundBorder(tip, L.mid, "OVERLAY") -- v2: neutral popover border (no gold top accent — Florian 2026-07-05)
@@ -1208,7 +1209,7 @@ local function buildTip()
 end
 
 -- Shared build for both modes: icon=nil -> pure text tooltip.
-local function applyTip(owner, icon, titleText, bodyText)
+local function applyTip(owner, icon, titleText, bodyText, anchor)
 	if not owner then return end
 	local t = tipObj or buildTip()
 	local hasIcon = icon ~= nil
@@ -1239,7 +1240,13 @@ local function applyTip(owner, icon, titleText, bodyText)
 
 	t.tip:SetHeight(M.tipPad + headH + (hasBody and (M.tipGap + bodyH) or 0) + M.tipPad)
 	t.tip:ClearAllPoints()
-	t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+	if anchor == "TOP" then
+		-- Open ABOVE the owner (grows upward), so it never covers the row it
+		-- belongs to — used by the card-header eye (Florian 2026-07-16).
+		t.tip:SetPoint("BOTTOMLEFT", owner, "TOPLEFT", 0, M.tipGap)
+	else
+		t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+	end
 	t.tip:Show(); t.tip:Raise()
 end
 
@@ -1251,8 +1258,8 @@ function W.ShowSpellTip(owner, spellID)
 	applyTip(owner, tx or 136243, nm or ("Spell " .. tostring(spellID)), ds)
 end
 
-function W.ShowTextTip(owner, title, body)
-	applyTip(owner, nil, title, body)
+function W.ShowTextTip(owner, title, body, anchor)
+	applyTip(owner, nil, title, body, anchor)
 end
 
 function W.HideTip()

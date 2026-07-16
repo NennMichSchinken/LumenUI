@@ -148,6 +148,21 @@ end
 local function previewRefresh()
 	if ns.Raidframes then ns.Raidframes:RefreshShellPreview() end
 end
+-- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/major/debuffs/
+-- shields/text/icons/dispel/aggro) lives in previewEyes as a bool (true = shown,
+-- false = hidden). The eye on the card header flips it and repaints the preview
+-- (and, stage 2, the selected Edit-Mode frame). Same keys the render path reads
+-- (pvEyePass), so this is a straight visibility switch — no rebuild.
+local function eyeToggle(key, tip)
+	return {
+		tip = tip,
+		get = function() return previewEyes()[key] ~= false end,
+		set = function(v)
+			previewEyes()[key] = (v ~= false) and true or false
+			previewRefresh()
+		end,
+	}
+end
 -- Open state lives in the SHELL (sidebar "Open preview" button = the single
 -- toggle, v3; session-only — the shell always starts with the preview closed).
 
@@ -517,16 +532,17 @@ local function buildRaid(d, stack, ctx)
 				end,
 			}
 		end
+		local eyeTip = T("Show in preview")
 		local ab1 = stack:band({
-			{ span = 6, title = T("HoTs"),                  toggle = catToggle("hotsOwn") },
-			{ span = 6, title = T("Defensives & External"), toggle = catToggle("defensives") },
+			{ span = 6, title = T("HoTs"),                  toggle = catToggle("hotsOwn"),    eye = eyeToggle("hotsOwn", eyeTip) },
+			{ span = 6, title = T("Defensives & External"), toggle = catToggle("defensives"), eye = eyeToggle("defensives", eyeTip) },
 		})
 		auraCat(d, ab1.cards[1], "hotsOwn",    false, ctx, sfx, auraRefresh)
 		auraCat(d, ab1.cards[2], "defensives", false, ctx, sfx, auraRefresh)
 		ab1.close()
 		local ab2 = stack:band({
-			{ span = 6, title = T("Major CDs"), toggle = catToggle("major") },
-			{ span = 6, title = T("Debuffs"),   toggle = catToggle("debuffs") },
+			{ span = 6, title = T("Major CDs"), toggle = catToggle("major"),   eye = eyeToggle("major", eyeTip) },
+			{ span = 6, title = T("Debuffs"),   toggle = catToggle("debuffs"), eye = eyeToggle("debuffs", eyeTip) },
 		})
 		auraCat(d, ab2.cards[1], "major",   false, ctx, sfx, auraRefresh)
 		auraCat(d, ab2.cards[2], "debuffs", true,  ctx, sfx, auraRefresh)

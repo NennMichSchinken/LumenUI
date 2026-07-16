@@ -192,6 +192,14 @@ local FAKE_DEBUFF = {
 	"Interface\\Icons\\Ability_Creature_Poison_03",
 	"Interface\\Icons\\Spell_Nature_NullifyDisease",
 }
+-- Major raid cooldowns (Bloodlust / Barrier / Tranquility / Aura Mastery) so the
+-- preview reads as big CDs, not HoTs (Florian 2026-07-16).
+local FAKE_MAJOR = {
+	"Interface\\Icons\\Spell_Nature_BloodLust",
+	"Interface\\Icons\\Spell_Holy_PowerWordBarrier",
+	"Interface\\Icons\\Spell_Nature_Tranquility",
+	"Interface\\Icons\\Spell_Holy_AuraMastery",
+}
 
 -- Aura indicators: category registry. filter = Blizzard aura filter for GetAuraDataByIndex
 -- (secret-safe). subExclude/subInclude refine secret-safely via IsAuraFilteredOutByInstanceID:
@@ -204,7 +212,7 @@ local FAKE_DEBUFF = {
 local AURA_CATS = {
 	{ key = "hotsOwn",    filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
 	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
-	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_HOTS },
+	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_MAJOR },
 	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
 -- Debuff filter modes (Blizzard standard): "raid" = Blizzard's curated raid-relevant
@@ -1671,6 +1679,35 @@ function Raidframes:RenderAurasLive(f)
 	end
 end
 
+-- Preview icons for a category: prefer the player's ACTUALLY-tracked spells (the
+-- active spec's whitelist for the category type) so the sample reads per-class /
+-- per-spec; fall back to the generic fake set (empty whitelist, or debuffs which
+-- aren't tracked). Cached per spec + invalidated at the preview redraw roots
+-- (RefreshShellPreview / RefreshPreview) so it never allocates in the fill loop.
+local pvIcons = { spec = -1, lists = {} }
+local function invalidatePreviewIcons() pvIcons.spec = -1 end
+local function previewIconsFor(c)
+	if not c.whitelist then return c.fake or FAKE_HOTS end
+	local sid = currentSpecID()
+	if pvIcons.spec ~= sid then
+		pvIcons.spec = sid
+		for k in pairs(pvIcons.lists) do pvIcons.lists[k] = nil end
+	end
+	local list = pvIcons.lists[c.key]
+	if list == nil then
+		list = false   -- cached "nothing tracked" (avoid re-scanning each frame)
+		if sid ~= 0 then
+			local entries = Raidframes:WhitelistEntries(sid, c.whitelist)
+			if #entries > 0 then
+				list = {}
+				for i = 1, #entries do list[i] = entries[i].icon end
+			end
+		end
+		pvIcons.lists[c.key] = list
+	end
+	return list or c.fake or FAKE_HOTS
+end
+
 -- Fill aura icons — TEST MODE (fake HoTs with sample swipe; runs out of combat).
 function Raidframes:RenderAurasFake(f)
 	local A = db().auras
@@ -1682,7 +1719,7 @@ function Raidframes:RenderAurasFake(f)
 		if cat and cat["enabled" .. sfx] and holder then
 			local n = min(cat["maxIcons" .. sfx] or 5, 3)
 			local showSwipe = cat["showSwipe" .. sfx]
-			local fakeTex = c.fake or FAKE_HOTS
+			local fakeTex = previewIconsFor(c)
 			for k = 1, n do
 				local ic = holder.icons[k]
 				if ic then
@@ -1796,6 +1833,7 @@ function Raidframes:AttachShellPreview(band, spec)
 end
 
 function Raidframes:RefreshShellPreview()
+	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
 	local band, spec
 	for b, sp in pairs(shellBands) do
 		if b:IsVisible() then band, spec = b, sp break end
@@ -1920,6 +1958,7 @@ end
 -- Lay out ctx's fake sample (5 party / 20 raid) at ctx's size/spacing and move
 -- the holder to ctx's saved position. Called on show + on every slider change.
 function Raidframes:RefreshPreview(ctx)
+	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
 	ensureEditPreviews()
 	local holder = epHolders[ctx]
 	local L = db()[ctx]
