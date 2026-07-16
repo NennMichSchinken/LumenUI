@@ -205,7 +205,7 @@ local defaults = {
 			cursor = {
 				enabled      = false,                      -- cursor ring off by default (opt-in)
 				classColor   = true,                       -- tint the ring in the player's class color
-				color        = { r = 0.83, g = 0.64, b = 0.31 }, -- custom ring color (Lumen gold)
+				color        = { r = 0.914, g = 0.733, b = 0.412 }, -- custom ring color (Lumen brand gold #E9BB69)
 				size         = 28,                         -- ring diameter in px
 				thickness    = 3,                          -- ring thickness step (1 thin .. 5 thick)
 				onlyInCombat = false,                      -- show only while in combat
