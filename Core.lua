@@ -260,7 +260,7 @@ local defaults = {
 	global = {
 		auraSigs = {},
 		language = "auto",   -- UI language: "auto" (system language) | "enUS" | "deDE"
-		shellScale = 0.8,    -- user multiplier on the responsive Suite-Shell scale (0.8 = Florian's sweet spot)
+		shellScale = 0.7,    -- user multiplier on the responsive Suite-Shell scale (0.7 = Florian's sweet spot, 2026-07-16)
 	},
 }
 

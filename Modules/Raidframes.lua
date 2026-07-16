@@ -1834,6 +1834,14 @@ end
 
 function Raidframes:RefreshShellPreview()
 	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
+	-- During an Edit Mode session the world previews mirror the same settings —
+	-- refresh them regardless of the dock band's visibility (it starts collapsed),
+	-- so live tab edits (size, opacity, auras, card eyes) show on the placed frames.
+	-- (RefreshPreview self-guards via ensureEditPreviews.)
+	if ns.EditMode and ns.EditMode.session then
+		self:RefreshPreview("party")
+		self:RefreshPreview("raid")
+	end
 	local band, spec
 	for b, sp in pairs(shellBands) do
 		if b:IsVisible() then band, spec = b, sp break end
@@ -1966,10 +1974,15 @@ function Raidframes:RefreshPreview(ctx)
 	local horizontal = (L.orientation == "horizontal")
 	local n = (ctx == "raid") and 20 or GROUP_SIZE
 	local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
+	-- The LIT context (the one whose settings are open in the Shell) shows its
+	-- eye-on layers (card eyes = db().previewEyes); every other context stays
+	-- clean (bars + names only) so the world isn't cluttered while placing.
+	local eyes = PREVIEW_EYES
+	if self._litCtx == ctx then eyes = db().previewEyes or {} end
 	local pool = epPools[ctx]
 	for i = 1, n do
 		local f = epFrame(ctx, i)
-		pvFillOne(f, list[i], ctx, PREVIEW_EYES)
+		pvFillOne(f, list[i], ctx, eyes)
 		local idx   = i - 1
 		local group = floor(idx / GROUP_SIZE)
 		local slot  = idx % GROUP_SIZE
@@ -2000,17 +2013,33 @@ function Raidframes:RaisePreview(ctx)
 	if epHolders[other] then epHolders[other]:SetFrameStrata("HIGH") end
 end
 
+-- Which context is "lit" = shows its eye-on layers in Edit Mode (the one whose
+-- settings are open in the Shell). nil = both clean. Set by the flyout's "Open
+-- settings" and cleared when the Shell closes / the session ends.
+function Raidframes:SetLitPreview(ctx)
+	if self._litCtx == ctx then return end
+	self._litCtx = ctx
+	if ns.EditMode and ns.EditMode.session and epHolders.party then
+		self:RefreshPreview("party")
+		self:RefreshPreview("raid")
+	end
+end
+
 function Raidframes:ShowEditPreviews(on)
 	ensureEditPreviews()
+	self._litCtx = nil   -- session boundary: start clean, nothing lit
 	if on then
 		self:HideHeader()
 		if container then container:Hide() end
 		self:RefreshPreview("party")
 		self:RefreshPreview("raid")
-		epHolders.party:SetFrameStrata("HIGH") -- defined starting order; grab raises one above
-		epHolders.raid:SetFrameStrata("HIGH")
 		epHolders.party:Show()
 		epHolders.raid:Show()
+		-- Defined z-order from the START (both stacked at the same default pos):
+		-- without this they sit on the same strata and their bars INTERLEAVE (the
+		-- back frame shows through the front, backgrounds look missing) until the
+		-- first click raised one. Group on top by default.
+		self:RaisePreview("party")
 	else
 		epHolders.party:Hide()
 		epHolders.raid:Hide()
@@ -2264,6 +2293,14 @@ end
 -- Settings/roster changes funnel through here -> relayout the secure header.
 function Raidframes:UpdateLayout()
 	if not container then return end
+	-- During an Edit Mode session the PREVIEWS are the display — never rebuild/show
+	-- the live secure header (it would pop up behind the previews when a tab setting
+	-- changes while the Shell coexists). Just refresh the previews with the new
+	-- settings; a full live layout follows when the session ends (ShowEditPreviews).
+	if ns.EditMode and ns.EditMode.session then
+		self:RefreshShellPreview()
+		return
+	end
 	local d = db()
 	-- Module off: build/show NOTHING live. Important, because roster/world events
 	-- (e.g. PLAYER_ENTERING_WORLD after /reload) would otherwise rebuild and show
@@ -2593,7 +2630,13 @@ function Raidframes:Setup()
 						get = function() return db()[ctx].spacing end,
 						set = function(v) db()[ctx].spacing = v; Raidframes:RefreshPreview(ctx) end },
 				},
-				openSettings = function() if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end end,
+				-- Non-destructive: the session STAYS open (no CloseSession). The Shell
+				-- opens alongside and this context lights up (SetLitPreview) so you
+				-- see its auras/shields on the real placed frame while you edit.
+				openSettings = function()
+					Raidframes:SetLitPreview(ctx)
+					if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end
+				end,
 				onRaise = function() Raidframes:RaisePreview(ctx) end })
 		end
 		regPreview("party", "raidframes_group", "Group Frame", "Group")

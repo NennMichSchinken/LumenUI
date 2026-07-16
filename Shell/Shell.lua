@@ -241,6 +241,13 @@ function Shell:Build()
 	-- ESC closes via UISpecialFrames (hides the frame directly, NOT Shell:Hide) — make
 	-- sure a listening KeybindButton never survives the close with the keyboard grabbed.
 	f:HookScript("OnHide", function() if ns.W and ns.W.StopActiveKeybind then ns.W.StopActiveKeybind() end end)
+	-- Coexisting with an Edit Mode session: closing the Shell returns the lit
+	-- frame to clean (auras only show while its settings are open).
+	f:HookScript("OnHide", function()
+		if ns.EditMode and ns.EditMode.session and ns.Raidframes and ns.Raidframes.SetLitPreview then
+			ns.Raidframes:SetLitPreview(nil)
+		end
+	end)
 	tinsert(UISpecialFrames, "LumenShellFrame") -- ESC closes
 	self._frame = f
 
@@ -255,6 +262,10 @@ function Shell:Build()
 		-- Keep the panel at its intended physical size (UI scale / resolution may
 		-- have changed while it was closed).
 		Shell:ApplyScale()
+		-- Coexisting with an Edit Mode session: sit above the frame overlays (same
+		-- strata, so Raise() puts the toplevel Shell on top). The Done toolbar
+		-- (TOOLTIP) stays above.
+		if ns.EditMode and ns.EditMode.session then f:Raise() end
 		-- Re-measure tabs: on the first show after game start the font width was maybe
 		-- still 0 (tabs tiny). Anchors pull the positions along automatically.
 		if Shell._tabButtons then for _, t in ipairs(Shell._tabButtons) do if t.Fit then t:Fit() end end end

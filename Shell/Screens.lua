@@ -146,6 +146,8 @@ local function previewEyes()
 	return t.previewEyes
 end
 local function previewRefresh()
+	-- RefreshShellPreview also refreshes the world Edit-Mode previews during a
+	-- session (single funnel), so a card-eye toggle updates the lit frame too.
 	if ns.Raidframes then ns.Raidframes:RefreshShellPreview() end
 end
 -- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/major/debuffs/
