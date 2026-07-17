@@ -772,6 +772,15 @@ function EditMode:Select(frame)
 	self.selected = frame
 	if frame and self.items[frame] then
 		self.items[frame].overlay:SetSelected(true)
+		-- Shell already open (coexisting)? Selecting another element jumps straight
+		-- to its settings tab + relights it — no second "Open settings" click
+		-- (Florian 2026-07-16). When the Shell is closed, selection just shows the
+		-- flyout (below); its "Open settings" is the explicit opener.
+		local info = self.items[frame]
+		if info.quick and info.quick.openSettings
+			and ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown() then
+			info.quick.openSettings()
+		end
 	end
 	-- NB: selection no longer opens the flyout — that's driven explicitly so a
 	-- DRAG doesn't pop it open on release (only a plain click does; see endDrag).
@@ -1015,8 +1024,10 @@ local function ensureKeyboard()
 		end
 		if key == "ESCAPE" then
 			self:SetPropagateKeyboardInput(false)
-			-- Esc first backs out of link mode, then ends the session.
+			-- Esc staggers: link mode -> open Shell -> the session itself.
 			if EditMode.linkSource then EditMode:CancelLink()
+			elseif ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown() then
+				ns.Shell:Hide()   -- Shell OnHide clears the lit frame (back to clean)
 			else EditMode:CloseSession(true) end
 			return
 		end
@@ -1185,8 +1196,12 @@ local function buildContent(frame, info)
 		y = y - (M.buttonH + S.s3)
 	end
 	if q.openSettings then
+		-- Non-destructive (Florian 2026-07-16): keep the session OPEN and let the
+		-- Shell come up alongside — the element's settings + its lit frame coexist
+		-- with Edit Mode. The flyout closes (Shell has the full settings); ESC
+		-- closes the Shell first, then the session.
 		addBtn(T("Open settings"), "secondary", function()
-			EditMode:CloseSession(false)
+			EditMode:_hidePanel()
 			q.openSettings()
 		end)
 	end
@@ -1215,6 +1230,12 @@ function EditMode:_updatePanel()
 	local frame = self.selected
 	local info = frame and self.items[frame]
 	if not (self.active and info and info.quick) then
+		if panel then panel._forFrame = nil; panel:Hide() end
+		return
+	end
+	-- Coexisting with the Shell (it holds the full settings): suppress the flyout
+	-- so it doesn't sit on top of the open Shell (Florian 2026-07-16).
+	if ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown() then
 		if panel then panel._forFrame = nil; panel:Hide() end
 		return
 	end
@@ -1396,6 +1417,13 @@ function EditMode:OpenSession()
 	-- (it keeps its section/tab state itself).
 	self._reopenShell = (ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown()) or false
 	if self._reopenShell then ns.Shell:Hide() end
+	-- Coexistence: while a session runs the Shell sits ABOVE the frame overlays
+	-- (which are FULLSCREEN_DIALOG). It's toplevel, so raising its strata to match
+	-- + toplevel keeps the whole Shell on top of the previews/overlays; the Done
+	-- toolbar (TOOLTIP) stays above it. Restored on CloseSession.
+	if ns.Shell and ns.Shell._frame then
+		ns.Shell._frame:SetFrameStrata("FULLSCREEN_DIALOG")
+	end
 	ensureToolbar()
 	-- Constant physical size like the Shell (same scale source).
 	if ns.Shell and ns.Shell._frame then toolbar:SetScale(ns.Shell._frame:GetScale()) end
@@ -1424,7 +1452,13 @@ function EditMode:CloseSession(reopenShell)
 	evt:UnregisterEvent("PLAYER_REGEN_DISABLED")
 	self:_refresh()
 	-- Positions are already saved per drag release / nudge — nothing to flush.
-	if reopenShell and self._reopenShell and ns.Shell and not InCombatLockdown() then
+	-- Only reopen if the Shell isn't already up (it may coexist with the session
+	-- now — "Open settings" leaves it open; then don't flip it hidden->shown).
+	local shellUp = ns.Shell and ns.Shell._frame and ns.Shell._frame:IsShown()
+	-- Restore the normal config-window strata (raised during the session so it sat
+	-- above the frame overlays).
+	if ns.Shell and ns.Shell._frame then ns.Shell._frame:SetFrameStrata("DIALOG") end
+	if reopenShell and self._reopenShell and ns.Shell and not InCombatLockdown() and not shellUp then
 		ns.Shell:Show()
 	end
 	self._reopenShell = false
