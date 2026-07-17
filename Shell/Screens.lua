@@ -1993,6 +1993,37 @@ local function buildQoLBase(d, stack)
 	tc:close()
 	bb.close()
 
+	-- ===== Windows band (6, ONE card) =======================================
+	-- Movable Blizzard windows: one switch + a reset button. The positions
+	-- themselves live implicitly in the profile (saved per window on drag).
+	local wb = stack:band({
+		{ span = 6, title = T("Windows"), subtitle = T("Move Blizzard windows freely") },
+	})
+	local wc = wb.cards[1]
+	local function qw() return ns.Lumen.db.profile.qol.windows end
+
+	local rowWin = switchRow(d, T("Movable windows"), {
+		get = function() return qw().enabled end,
+		set = function(v) qw().enabled = v; if ns.QoL then ns.QoL:ApplyWindows() end end,
+		tooltip = T("Hold Shift and drag a Blizzard window (map, character panel, spellbook ...) to move it. Each window reopens where you left it.") })
+	wc:place(rowWin, rowH, R.row)
+
+	local winBtnRow = CreateFrame("Frame", nil, d)
+	local winResetBtn = W.Button(winBtnRow, { text = T("Reset window positions"), variant = "ghost",
+		onClick = function()
+			W.Confirm({
+				title = T("Reset window positions?"),
+				body = T("All Blizzard windows return to their default positions the next time they are opened."),
+				confirmText = T("Reset"), cancelText = T("Cancel"),
+				onConfirm = function() if ns.QoL then ns.QoL:ResetWindowPositions() end end,
+			})
+		end })
+	winResetBtn:SetPoint("LEFT", winBtnRow, "LEFT", 0, 0)
+	wc:place(winBtnRow, M.buttonH, R.tight)
+
+	wc:close()
+	wb.close()
+
 	refreshCursor()
 	refreshVendor()
 	refreshPull()
