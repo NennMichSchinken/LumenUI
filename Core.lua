@@ -237,6 +237,7 @@ local defaults = {
 			mplus = {
 				autoKeystone  = false, -- auto-insert the keystone when the pedestal opens
 				resetAnnounce = false, -- announce instance resets to the group
+				quickGossip   = false, -- dungeon gossip: auto-select single options, 1-9 keys
 			},
 			buffs = {
 				suppressOutfit = false, -- auto-cancel cosmetic profession-gear buffs (chef's hat etc.)
@@ -273,7 +274,7 @@ local defaults = {
 	global = {
 		auraSigs = {},
 		language = "auto",   -- UI language: "auto" (system language) | "enUS" | "deDE"
-		shellScale = 0.8,    -- user multiplier on the responsive Suite-Shell scale (0.8 = Florian's sweet spot)
+		shellScale = 0.7,    -- user multiplier on the responsive Suite-Shell scale (0.7 = Florian's sweet spot, 2026-07-16)
 	},
 }
 

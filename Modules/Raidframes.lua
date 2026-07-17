@@ -192,6 +192,14 @@ local FAKE_DEBUFF = {
 	"Interface\\Icons\\Ability_Creature_Poison_03",
 	"Interface\\Icons\\Spell_Nature_NullifyDisease",
 }
+-- Major raid cooldowns (Bloodlust / Barrier / Tranquility / Aura Mastery) so the
+-- preview reads as big CDs, not HoTs (Florian 2026-07-16).
+local FAKE_MAJOR = {
+	"Interface\\Icons\\Spell_Nature_BloodLust",
+	"Interface\\Icons\\Spell_Holy_PowerWordBarrier",
+	"Interface\\Icons\\Spell_Nature_Tranquility",
+	"Interface\\Icons\\Spell_Holy_AuraMastery",
+}
 
 -- Aura indicators: category registry. filter = Blizzard aura filter for GetAuraDataByIndex
 -- (secret-safe). subExclude/subInclude refine secret-safely via IsAuraFilteredOutByInstanceID:
@@ -204,7 +212,7 @@ local FAKE_DEBUFF = {
 local AURA_CATS = {
 	{ key = "hotsOwn",    filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
 	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
-	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_HOTS },
+	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_MAJOR },
 	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
 -- Debuff filter modes (Blizzard standard): "raid" = Blizzard's curated raid-relevant
@@ -1701,28 +1709,51 @@ function Raidframes:RenderAurasLive(f)
 	end
 end
 
+-- Preview icons for a category: prefer the player's ACTUALLY-tracked spells (the
+-- active spec's whitelist for the category type) so the sample reads per-class /
+-- per-spec; fall back to the generic fake set (empty whitelist, or debuffs which
+-- aren't tracked). Cached per spec + invalidated at the preview redraw roots
+-- (RefreshShellPreview / RefreshPreview) so it never allocates in the fill loop.
+local pvIcons = { spec = -1, lists = {} }
+local function invalidatePreviewIcons() pvIcons.spec = -1 end
+local function previewIconsFor(c)
+	if not c.whitelist then return c.fake or FAKE_HOTS end
+	local sid = currentSpecID()
+	if pvIcons.spec ~= sid then
+		pvIcons.spec = sid
+		for k in pairs(pvIcons.lists) do pvIcons.lists[k] = nil end
+	end
+	local list = pvIcons.lists[c.key]
+	if list == nil then
+		list = false   -- cached "nothing tracked" (avoid re-scanning each frame)
+		if sid ~= 0 then
+			local entries = Raidframes:WhitelistEntries(sid, c.whitelist)
+			if #entries > 0 then
+				list = {}
+				for i = 1, #entries do list[i] = entries[i].icon end
+			end
+		end
+		pvIcons.lists[c.key] = list
+	end
+	return list or c.fake or FAKE_HOTS
+end
+
 -- Fill aura icons — TEST MODE (fake HoTs with sample swipe; runs out of combat).
 function Raidframes:RenderAurasFake(f)
 	local A = db().auras
 	if not A then return end
 	local sfx = auraCtxSuffix()        -- display knobs are per context (Feature 1)
-	local spec = currentSpecID()
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
 		if cat and cat["enabled" .. sfx] and holder then
 			local n = min(cat["maxIcons" .. sfx] or 5, 3)
 			local showSwipe = cat["showSwipe" .. sfx]
-			-- Icon source: the category's ACTUAL whitelist for the active spec so
-			-- the preview is honest (Major CDs show Major CDs, not HoTs). Fall back
-			-- to the static fake list when the whitelist is empty or the category
-			-- is filter-mode (debuffs have no whitelist).
-			local wlIcons
-			if c.whitelist and spec and spec ~= 0 then
-				local ents = self:WhitelistEntries(spec, c.whitelist)
-				if ents and #ents > 0 then wlIcons = ents end
-			end
-			local fakeTex = c.fake or FAKE_HOTS
+			-- Icon source: the player's actually-tracked spells for the category
+			-- (cached per spec via previewIconsFor -- the dev-side cache replaces
+			-- the older per-render WhitelistEntries scan; falls back to the static
+			-- fake list when nothing is tracked or the category is filter-mode).
+			local fakeTex = previewIconsFor(c)
 			-- Duration-text options mirror the native path (per context): show
 			-- on/off, size, and outline (same outline set as the name text).
 			local durOn = cat["showDuration" .. sfx]
@@ -1732,11 +1763,7 @@ function Raidframes:RenderAurasFake(f)
 			for k = 1, n do
 				local ic = holder.icons[k]
 				if ic then
-					if wlIcons then
-						ic.tex:SetTexture(wlIcons[((k - 1) % #wlIcons) + 1].icon)
-					else
-						ic.tex:SetTexture(fakeTex[((k - 1) % #fakeTex) + 1])
-					end
+					ic.tex:SetTexture(fakeTex[((k - 1) % #fakeTex) + 1])
 					local dur = 6 + k * 4   -- sample duration for the swipe + remaining text
 					if showSwipe and ic.cd then
 						ic.cd:SetCooldown(GetTime() - k * 1.5, dur)
@@ -1857,6 +1884,15 @@ function Raidframes:AttachShellPreview(band, spec)
 end
 
 function Raidframes:RefreshShellPreview()
+	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
+	-- During an Edit Mode session the world previews mirror the same settings —
+	-- refresh them regardless of the dock band's visibility (it starts collapsed),
+	-- so live tab edits (size, opacity, auras, card eyes) show on the placed frames.
+	-- (RefreshPreview self-guards via ensureEditPreviews.)
+	if ns.EditMode and ns.EditMode.session then
+		self:RefreshPreview("party")
+		self:RefreshPreview("raid")
+	end
 	local band, spec
 	for b, sp in pairs(shellBands) do
 		if b:IsVisible() then band, spec = b, sp break end
@@ -1981,6 +2017,7 @@ end
 -- Lay out ctx's fake sample (5 party / 20 raid) at ctx's size/spacing and move
 -- the holder to ctx's saved position. Called on show + on every slider change.
 function Raidframes:RefreshPreview(ctx)
+	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
 	ensureEditPreviews()
 	local holder = epHolders[ctx]
 	local L = db()[ctx]
@@ -1988,10 +2025,15 @@ function Raidframes:RefreshPreview(ctx)
 	local horizontal = (L.orientation == "horizontal")
 	local n = (ctx == "raid") and 20 or GROUP_SIZE
 	local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
+	-- The LIT context (the one whose settings are open in the Shell) shows its
+	-- eye-on layers (card eyes = db().previewEyes); every other context stays
+	-- clean (bars + names only) so the world isn't cluttered while placing.
+	local eyes = PREVIEW_EYES
+	if self._litCtx == ctx then eyes = db().previewEyes or {} end
 	local pool = epPools[ctx]
 	for i = 1, n do
 		local f = epFrame(ctx, i)
-		pvFillOne(f, list[i], ctx, PREVIEW_EYES)
+		pvFillOne(f, list[i], ctx, eyes)
 		local idx   = i - 1
 		local group = floor(idx / GROUP_SIZE)
 		local slot  = idx % GROUP_SIZE
@@ -2022,17 +2064,33 @@ function Raidframes:RaisePreview(ctx)
 	if epHolders[other] then epHolders[other]:SetFrameStrata("HIGH") end
 end
 
+-- Which context is "lit" = shows its eye-on layers in Edit Mode (the one whose
+-- settings are open in the Shell). nil = both clean. Set by the flyout's "Open
+-- settings" and cleared when the Shell closes / the session ends.
+function Raidframes:SetLitPreview(ctx)
+	if self._litCtx == ctx then return end
+	self._litCtx = ctx
+	if ns.EditMode and ns.EditMode.session and epHolders.party then
+		self:RefreshPreview("party")
+		self:RefreshPreview("raid")
+	end
+end
+
 function Raidframes:ShowEditPreviews(on)
 	ensureEditPreviews()
+	self._litCtx = nil   -- session boundary: start clean, nothing lit
 	if on then
 		self:HideHeader()
 		if container then container:Hide() end
 		self:RefreshPreview("party")
 		self:RefreshPreview("raid")
-		epHolders.party:SetFrameStrata("HIGH") -- defined starting order; grab raises one above
-		epHolders.raid:SetFrameStrata("HIGH")
 		epHolders.party:Show()
 		epHolders.raid:Show()
+		-- Defined z-order from the START (both stacked at the same default pos):
+		-- without this they sit on the same strata and their bars INTERLEAVE (the
+		-- back frame shows through the front, backgrounds look missing) until the
+		-- first click raised one. Group on top by default.
+		self:RaisePreview("party")
 	else
 		epHolders.party:Hide()
 		epHolders.raid:Hide()
@@ -2295,6 +2353,14 @@ end
 -- Settings/roster changes funnel through here -> relayout the secure header.
 function Raidframes:UpdateLayout()
 	if not container then return end
+	-- During an Edit Mode session the PREVIEWS are the display — never rebuild/show
+	-- the live secure header (it would pop up behind the previews when a tab setting
+	-- changes while the Shell coexists). Just refresh the previews with the new
+	-- settings; a full live layout follows when the session ends (ShowEditPreviews).
+	if ns.EditMode and ns.EditMode.session then
+		self:RefreshShellPreview()
+		return
+	end
 	local d = db()
 	-- Module off: build/show NOTHING live. Important, because roster/world events
 	-- (e.g. PLAYER_ENTERING_WORLD after /reload) would otherwise rebuild and show
@@ -2624,7 +2690,13 @@ function Raidframes:Setup()
 						get = function() return db()[ctx].spacing end,
 						set = function(v) db()[ctx].spacing = v; Raidframes:RefreshPreview(ctx) end },
 				},
-				openSettings = function() if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end end,
+				-- Non-destructive: the session STAYS open (no CloseSession). The Shell
+				-- opens alongside and this context lights up (SetLitPreview) so you
+				-- see its auras/shields on the real placed frame while you edit.
+				openSettings = function()
+					Raidframes:SetLitPreview(ctx)
+					if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end
+				end,
 				onRaise = function() Raidframes:RaisePreview(ctx) end })
 		end
 		regPreview("party", "raidframes_group", "Group Frame", "Group")
