@@ -1943,6 +1943,10 @@ local function buildQoLBase(d, stack)
 		tooltip = T("Posts a short message to your group when you reset instances.") })
 	mc:place(rowReset, rowH, 0)
 
+	local rowGossip = switchRow(d, T("Quick gossip"), { get = mpget("quickGossip"), set = mpset("quickGossip"),
+		tooltip = T("In dungeons and raids: NPC dialogs with a single talk option are selected automatically (hold Shift to keep the window). With several options, press 1-9 to pick one.") })
+	mc:place(rowGossip, rowH, 0)
+
 	mc:close()
 	pb.close()
 

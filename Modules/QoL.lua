@@ -13,6 +13,9 @@ local ADDON, ns = ...
 --  movable Ready/Pull button block (MRT-style, no chat typing needed).
 --  Trackers: placeable battle-res-pool + Bloodlust icons (charge badge,
 --  cooldown swipe, greyed while unavailable).
+--  Quick gossip: dungeon NPC dialogs without the mouse — single options are
+--  selected automatically (Shift keeps the window), several options get 1-9
+--  number keys. Event-driven (GOSSIP_SHOW), nothing runs outside a dialog.
 -- ===========================================================================
 
 local QoL = {}
@@ -44,6 +47,11 @@ local IsInRaid = IsInRaid
 local GetTime = GetTime
 local IsItemKeystoneByID = C_Item and C_Item.IsItemKeystoneByID
 local CancelUnitBuff = CancelUnitBuff
+local IsInInstance = IsInInstance
+local IsShiftKeyDown = IsShiftKeyDown
+local C_GossipInfo = C_GossipInfo
+local strfind, tsort, tonumber = string.find, table.sort, tonumber
+local wipe, min = wipe, math.min
 
 -- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
 local TEXDIR = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
@@ -475,6 +483,126 @@ local function installResetAnnounce()
 end
 
 -- ---------------------------------------------------------------------------
+--  Quick gossip — dungeon NPC dialogs without the mouse. While in a party/
+--  raid/scenario instance: (1) a gossip with exactly ONE option and no quests is
+--  selected automatically. Blizzard itself only auto-skips when the NPC's
+--  option carries selectOptionWhenOnlyOption (GossipFrameShared.lua HandleShow)
+--  — this covers the NPCs that lack the flag (Pit-of-Saron-style "talk to
+--  continue"); holding SHIFT keeps the window (escape hatch for single-option
+--  gossips that start events). Confirmation popups are NEVER auto-accepted.
+--  (2) With SEVERAL options (buff picks etc.) the number keys 1-9 select one;
+--  the visible options get "1. " prefixes. Selection goes through the official
+--  addon API GossipFrame:SelectGossipOption(i) (same sorted order as the
+--  prefixes). The keyboard catcher exists only while a multi-option gossip is
+--  open and never in combat (SetPropagateKeyboardInput is combat-restricted;
+--  everything unhandled propagates -- memory lumen-secure-binding-gotchas).
+-- ---------------------------------------------------------------------------
+local gossipKb                       -- keyboard catcher (lazy)
+local gossipHooked = false           -- GossipFrame.Update re-render hook installed
+local gossipNums = {}                -- reused: gossipOptionID -> displayed number
+local lastAutoID, lastAutoAt = nil, 0
+
+local function gossipActive()
+	if not ns.Lumen.db.profile.qol.mplus.quickGossip then return false end
+	local inInstance, itype = IsInInstance()
+	-- Instanced group content only (Florian 2026-07-17): dungeons, raids and
+	-- scenarios (delves) -- never the open world. Raid boss-RP gossips are the
+	-- reason the Shift escape hatch exists.
+	return inInstance and (itype == "party" or itype == "raid" or itype == "scenario") or false
+end
+
+local function byOrderIndex(a, b) return a.orderIndex < b.orderIndex end
+
+-- Prefix the visible option buttons with their number key ("1. Name"). Runs
+-- deferred after Blizzard populated the scroll box; identifies option buttons
+-- by their elementData (quest buttons carry questID, options gossipOptionID).
+-- Buttons are pooled/recycled -> the prefix pattern check prevents doubling.
+local function decorateGossip()
+	if not gossipActive() then return end
+	if not (GossipFrame and GossipFrame:IsShown() and GossipFrame.GreetingPanel) then return end
+	local sb = GossipFrame.GreetingPanel.ScrollBox
+	if not (sb and sb.ForEachFrame) then return end
+	local opts = C_GossipInfo.GetOptions()
+	if #opts < 2 then return end
+	tsort(opts, byOrderIndex)
+	wipe(gossipNums)
+	for i = 1, min(#opts, 9) do
+		if opts[i].gossipOptionID then gossipNums[opts[i].gossipOptionID] = i end
+	end
+	sb:ForEachFrame(function(btn, elementData)
+		local info = elementData and elementData.info
+		local num = info and info.gossipOptionID and gossipNums[info.gossipOptionID]
+		if num and btn.GetText then
+			local txt = btn:GetText()
+			-- Keep Blizzard's measured height (no Resize) -- the short prefix
+			-- must not re-flow the row after the extents were computed.
+			if txt and not strfind(txt, "^%d+%. ") then btn:SetText(num .. ". " .. txt) end
+		end
+	end)
+end
+
+local function hideGossipKeys()
+	if gossipKb then gossipKb:EnableKeyboard(false); gossipKb:Hide() end
+end
+
+local function ensureGossipKeys()
+	if gossipKb then return end
+	gossipKb = CreateFrame("Frame", nil, UIParent)
+	gossipKb:EnableKeyboard(false)
+	gossipKb:Hide()
+	-- HARD RULES (memory lumen-secure-binding-gotchas): SetPropagateKeyboardInput
+	-- only inside OnKeyDown, everything we don't handle MUST propagate, and the
+	-- catcher never has the keyboard while in combat (hidden on REGEN_DISABLED).
+	gossipKb:SetScript("OnKeyDown", function(self, key)
+		local n = strfind(key, "^%d$") and key or (strfind(key, "^NUMPAD%d$") and key:sub(-1))
+		local idx = n and tonumber(n)
+		if idx and idx >= 1 and GossipFrame and GossipFrame:IsShown()
+			and GossipFrame.SelectGossipOption then
+			self:SetPropagateKeyboardInput(false)
+			GossipFrame:SelectGossipOption(idx) -- no-ops on an out-of-range index
+			return
+		end
+		self:SetPropagateKeyboardInput(true)
+	end)
+end
+
+local function onGossipShow()
+	if not gossipActive() then return end
+	local opts = C_GossipInfo.GetOptions()
+	-- (1) Auto-select the single option (no quests offered, Shift not held).
+	if #opts == 1 and not IsShiftKeyDown()
+		and C_GossipInfo.GetNumAvailableQuests() == 0
+		and C_GossipInfo.GetNumActiveQuests() == 0 then
+		local id = opts[1].gossipOptionID
+		local now = GetTime()
+		-- Chain guard: dialog chains re-fire GOSSIP_SHOW per step (fine, each
+		-- step has a new option) -- but never re-pick the SAME option in quick
+		-- succession (a gossip that re-opens itself would loop otherwise).
+		if id and (id ~= lastAutoID or now - lastAutoAt > 1) then
+			lastAutoID, lastAutoAt = id, now
+			C_GossipInfo.SelectOptionByIndex(opts[1].orderIndex)
+			return
+		end
+	end
+	-- (2) Several options -> number prefixes + key selection (out of combat).
+	if #opts > 1 then
+		if not gossipHooked and GossipFrame and GossipFrame.Update then
+			gossipHooked = true
+			-- Blizzard re-renders the list on QUEST_LOG_UPDATE -> re-decorate.
+			hooksecurefunc(GossipFrame, "Update", function()
+				if gossipActive() then C_Timer.After(0, decorateGossip) end
+			end)
+		end
+		C_Timer.After(0, decorateGossip) -- scroll box populates this frame; defer one
+		if not InCombatLockdown() then
+			ensureGossipKeys()
+			gossipKb:EnableKeyboard(true)
+			gossipKb:Show()
+		end
+	end
+end
+
+-- ---------------------------------------------------------------------------
 --  Trackers — battle-res pool + Bloodlust availability as placeable icons
 --  (mockup option B: real spell icon, charge badge, cooldown swipe, greyed
 --  while unavailable). Brez pool: C_Spell.GetSpellCharges(20484/Rebirth) IS
@@ -677,6 +805,8 @@ function QoL:Setup()
 	driver:RegisterEvent("PLAYER_REGEN_ENABLED")
 	driver:RegisterEvent("MERCHANT_SHOW")
 	driver:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN")
+	driver:RegisterEvent("GOSSIP_SHOW")
+	driver:RegisterEvent("GOSSIP_CLOSED")
 	-- Tracker visibility (brez pool / lust icon in group instances)
 	driver:RegisterEvent("ENCOUNTER_START")
 	driver:RegisterEvent("ENCOUNTER_END")
@@ -698,6 +828,10 @@ function QoL:Setup()
 			onMerchantShow()
 		elseif event == "CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN" then
 			onKeystoneReceptacle()
+		elseif event == "GOSSIP_SHOW" then
+			onGossipShow()
+		elseif event == "GOSSIP_CLOSED" then
+			hideGossipKeys()
 		elseif event == "ENCOUNTER_START" then
 			local _, itype = GetInstanceInfo()
 			trackerState.encounter = (itype == "raid")
@@ -715,8 +849,11 @@ function QoL:Setup()
 		elseif event == "PLAYER_REGEN_ENABLED" then
 			updateVisibility()
 			cancelOutfits() -- catch outfit buffs that appeared during combat
-		else -- combat start -> only the cursor visibility can change
+		else -- combat start: cursor visibility + drop the gossip keyboard (the
+			-- catcher must never hold the keyboard in combat -- propagation
+			-- calls are combat-restricted for insecure frames)
 			updateVisibility()
+			hideGossipKeys()
 		end
 	end)
 	installResetAnnounce()
