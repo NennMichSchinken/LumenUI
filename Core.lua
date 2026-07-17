@@ -248,6 +248,12 @@ local defaults = {
 				brez = { enabled = false, size = 40, pos = { point = "CENTER", x = -30, y = -240 } },
 				lust = { enabled = false, size = 40, pos = { point = "CENTER", x = 30, y = -240 } },
 			},
+			windows = {
+				-- Movable Blizzard windows (Shift+drag). Saved spots per frame
+				-- name; empty until the user actually moves a window.
+				enabled   = false,
+				positions = {},
+			},
 		},
 
 		-- Edit Mode links (Phase 2): explicit coupling of movable elements.
@@ -480,6 +486,7 @@ function Lumen:RefreshAll()
 	if ns.QoL then
 		ns.QoL:ApplyCursor(); ns.QoL:ApplyPull()
 		ns.QoL:ApplyOutfitSuppress(); ns.QoL:ApplyTrackers()
+		ns.QoL:ApplyWindows()
 	end
 	-- UI scale is profile-bound -> re-assert on profile switch/import.
 	self:ApplyUIScale()
