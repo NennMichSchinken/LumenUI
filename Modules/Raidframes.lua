@@ -1841,8 +1841,8 @@ end
 -- ===========================================================================
 
 -- Curated preview roster: full bar, shield, incoming heal, dispellable debuff,
--- heal absorb, aggro — every render feature visible at a glance (each one can
--- be filtered out via the band's filter popover).
+-- heal absorb, aggro (BOTH stages: yellow warn + red has-aggro) — every render
+-- feature visible at a glance (each one can be filtered out via the eyes).
 -- `auras` = curated per-category preview icon counts (see RenderAurasFake):
 -- varied per frame like a real group; {} = deliberately clean (HP readable);
 -- NO field = full-load frame (maxIcons everywhere, judges max/auto-fit).
@@ -1852,7 +1852,7 @@ local PREVIEW_FAKE = {
 	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, absorb = 0.14, role = "DAMAGER",
 		auras = {} },
 	{ name = "Kaelura",     class = "PRIEST", hp = 0.66, predict = 0.20, role = "HEALER" },
-	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, dispel = "Magic", role = "DAMAGER",
+	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, dispel = "Magic", aggro = 2, role = "DAMAGER",
 		auras = { hotsOwn = 1, debuffs = 1 } },
 	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, healAbsorb = 0.18, aggro = 3, role = "TANK",
 		auras = { defensives = 1, debuffs = 2 } },
