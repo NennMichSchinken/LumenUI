@@ -154,27 +154,47 @@ end
 
 -- Sample roster (test mode)
 local FAKE_MAX = 600000
+-- `auras` = curated per-category preview icon counts (see RenderAurasFake):
+-- varied like a real raid snapshot; {} = clean frame, NO field = full load.
 local FAKE = {
-	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3, role = "HEALER", lead = true },
-	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25, role = "DAMAGER" },
-	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse", role = "DAMAGER" },
-	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison", role = "TANK" },
-	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1, role = "DAMAGER" },
+	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3, role = "HEALER", lead = true,
+		auras = { hotsOwn = 2, defensives = 1 } },
+	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25, role = "DAMAGER",
+		auras = {} },
+	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse", role = "DAMAGER",
+		auras = { debuffs = 1 } },
+	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison", role = "TANK",
+		auras = { defensives = 1, debuffs = 1 } },
+	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1, role = "DAMAGER",
+		auras = { hotsOwn = 1 } },
 	{ name = "Kaelura",    class = "PRIEST",  hp = 0.77, healAbsorb = 0.20, role = "HEALER" },
-	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic", role = "DAMAGER" },
-	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25, role = "HEALER" },
-	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, healAbsorb = 0.35, role = "TANK" },
-	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, dispel = "Disease", role = "HEALER" },
-	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, absorb = 0.10, role = "DAMAGER" },
-	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, predict = 0.20, role = "TANK" },
-	{ name = "Brightwing", class = "PALADIN", hp = 0.50, predict = 0.30, role = "HEALER" },
-	{ name = "Embertide",  class = "MAGE",    hp = 0.50, dispel = "Curse", role = "DAMAGER" },
-	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, healAbsorb = 0.30, role = "DAMAGER" },
+	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic", role = "DAMAGER",
+		auras = { hotsOwn = 1, debuffs = 2 } },
+	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25, role = "HEALER",
+		auras = { hotsOwn = 3 } },
+	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, healAbsorb = 0.35, role = "TANK",
+		auras = { defensives = 2 } },
+	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, dispel = "Disease", role = "HEALER",
+		auras = { debuffs = 1, major = 1 } },
+	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, absorb = 0.10, role = "DAMAGER",
+		auras = {} },
+	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, predict = 0.20, role = "TANK",
+		auras = { defensives = 1 } },
+	{ name = "Brightwing", class = "PALADIN", hp = 0.50, predict = 0.30, role = "HEALER",
+		auras = { hotsOwn = 2, major = 1 } },
+	{ name = "Embertide",  class = "MAGE",    hp = 0.50, dispel = "Curse", role = "DAMAGER",
+		auras = { hotsOwn = 1, debuffs = 1 } },
+	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, healAbsorb = 0.30, role = "DAMAGER",
+		auras = { major = 1 } },
 	{ name = "Solveig",    class = "PRIEST",  hp = 0.40, healAbsorb = 0.25, role = "DAMAGER" },
-	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, dispel = "Poison", role = "DAMAGER" },
-	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, absorb = 0.30, role = "DAMAGER" },
-	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, predict = 0.15, role = "DAMAGER" },
-	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15, role = "DAMAGER" },
+	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, dispel = "Poison", role = "DAMAGER",
+		auras = { debuffs = 1 } },
+	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, absorb = 0.30, role = "DAMAGER",
+		auras = { hotsOwn = 1 } },
+	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, predict = 0.15, role = "DAMAGER",
+		auras = { hotsOwn = 2, defensives = 1 } },
+	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15, role = "DAMAGER",
+		auras = { major = 2 } },
 }
 
 local GROUP_SIZE = 5   -- fixed group size: raid groups & dungeon group are always 5 (never mixed)
@@ -1725,7 +1745,16 @@ function Raidframes:RenderAurasFake(f)
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
 		if cat and cat["enabled" .. sfx] and holder then
-			local n = min(cat["maxIcons" .. sfx] or 5, 3)
+			-- Varied preview (Florian 2026-07-17): each fake entry carries curated
+			-- per-category icon counts (`auras`), so the roster reads like a real
+			-- group snapshot instead of max icons everywhere. DETERMINISTIC on
+			-- purpose — the preview re-renders on every slider tick, random counts
+			-- would reshuffle mid-drag. Entries WITHOUT an `auras` table are the
+			-- deliberate full-load frames (maxIcons of every enabled category —
+			-- for judging max icons / auto-fit).
+			local maxN = cat["maxIcons" .. sfx] or 5
+			local plan = f.fake.auras
+			local n = plan and min(plan[c.key] or 0, maxN) or maxN
 			local showSwipe = cat["showSwipe" .. sfx]
 			local fakeTex = previewIconsFor(c)
 			for k = 1, n do
@@ -1763,12 +1792,19 @@ end
 -- Curated preview roster: full bar, shield, incoming heal, dispellable debuff,
 -- heal absorb, aggro — every render feature visible at a glance (each one can
 -- be filtered out via the band's filter popover).
+-- `auras` = curated per-category preview icon counts (see RenderAurasFake):
+-- varied per frame like a real group; {} = deliberately clean (HP readable);
+-- NO field = full-load frame (maxIcons everywhere, judges max/auto-fit).
 local PREVIEW_FAKE = {
-	{ name = "Owlday",      class = "DRUID",  hp = 1.00, role = "HEALER", lead = true },
-	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, absorb = 0.14, role = "DAMAGER" },
+	{ name = "Owlday",      class = "DRUID",  hp = 1.00, role = "HEALER", lead = true,
+		auras = { hotsOwn = 2, defensives = 1 } },
+	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, absorb = 0.14, role = "DAMAGER",
+		auras = {} },
 	{ name = "Kaelura",     class = "PRIEST", hp = 0.66, predict = 0.20, role = "HEALER" },
-	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, dispel = "Magic", role = "DAMAGER" },
-	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, healAbsorb = 0.18, aggro = 3, role = "TANK" },
+	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, dispel = "Magic", role = "DAMAGER",
+		auras = { hotsOwn = 1, debuffs = 1 } },
+	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, healAbsorb = 0.18, aggro = 3, role = "TANK",
+		auras = { defensives = 1, debuffs = 2 } },
 }
 local shellBands = {}   -- band -> spec: { kind = "base" } | { kind = "ctx", ctx = "raid"|"party" }
 local pvFrames = {}     -- shared preview pool (one band visible at a time)
