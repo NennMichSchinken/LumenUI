@@ -57,6 +57,8 @@ read_globals = {
     "GetInstanceInfo", "IsEncounterInProgress", "C_ChallengeMode",
     -- Quick gossip
     "C_GossipInfo", "GossipFrame",
+    -- Movable windows QoL
+    "GetScreenWidth", "GetScreenHeight",
     -- UI scale
     "GetPhysicalScreenSize",
     -- Vendor QoL (repair + junk selling)

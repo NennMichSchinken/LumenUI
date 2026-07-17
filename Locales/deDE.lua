@@ -436,4 +436,11 @@ ns.RegisterLocale("deDE", {
 	["Repaired all items for %s."] = "Ausrüstung repariert für %s.",
 	["Repaired all items for %s (guild bank)."] = "Ausrüstung repariert für %s (Gildenbank).",
 	["Not enough gold to repair."] = "Nicht genug Gold zum Reparieren.",
+	["Windows"] = "Fenster",
+	["Move Blizzard windows freely"] = "Blizzard-Fenster frei verschieben",
+	["Movable windows"] = "Fenster verschiebbar",
+	["Hold Shift and drag a Blizzard window (map, character panel, spellbook ...) to move it. Each window reopens where you left it."] = "Halte Shift und ziehe ein Blizzard-Fenster (Karte, Charakterfenster, Zauberbuch ...), um es zu verschieben. Jedes Fenster öffnet sich wieder dort, wo du es abgelegt hast.",
+	["Reset window positions"] = "Fensterpositionen zurücksetzen",
+	["Reset window positions?"] = "Fensterpositionen zurücksetzen?",
+	["All Blizzard windows return to their default positions the next time they are opened."] = "Alle Blizzard-Fenster erscheinen beim nächsten Öffnen wieder an ihren Standardpositionen.",
 })
