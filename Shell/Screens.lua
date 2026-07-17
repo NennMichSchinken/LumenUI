@@ -145,10 +145,35 @@ local function previewEyes()
 	if not t.previewEyes then t.previewEyes = { auras = true, shields = true, text = true } end
 	return t.previewEyes
 end
+local pvBands = {}   -- created PreviewBands (Base/Raid/Group) for eye-sync repaints
 local function previewRefresh()
 	-- RefreshShellPreview also refreshes the world Edit-Mode previews during a
 	-- session (single funnel), so a card-eye toggle updates the lit frame too.
 	if ns.Raidframes then ns.Raidframes:RefreshShellPreview() end
+	-- Central eye popover sync (single funnel, both directions): repaint the
+	-- card eyes of the current screen AND the dock's eye button/popover rows.
+	if ns.Shell and ns.Shell.RepaintEyes then ns.Shell:RepaintEyes() end
+	for band in pairs(pvBands) do
+		if band.RepaintEyes then band:RepaintEyes() end
+	end
+end
+-- Row list for the dock's central eye popover — mirrors the card eyes 1:1
+-- (labels = the card titles the eyes live on). Lives HERE next to the
+-- eyeToggle call sites so both can't drift apart.
+local function previewEyeDefs()
+	return {
+		{ key = "auras", label = T("Aura indicators"), children = {
+			{ key = "hotsOwn",    label = T("HoTs") },
+			{ key = "defensives", label = T("Defensives & External") },
+			{ key = "major",      label = T("Major CDs") },
+			{ key = "debuffs",    label = T("Debuffs") },
+		} },
+		{ key = "shields", label = T("Shields & heal absorb") },
+		{ key = "text",    label = T("Text") },
+		{ key = "icons",   label = T("Role & leader icons") },
+		{ key = "dispel",  label = T("Dispel display") },
+		{ key = "aggro",   label = T("Aggro warning") },
+	}
 end
 -- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/major/debuffs/
 -- shields/text/icons/dispel/aggro) lives in previewEyes as a bool (true = shown,
@@ -173,6 +198,7 @@ local function previewDock(spec)
 	return function(holder)
 		local band = W.PreviewBand(holder, {
 			eyes = previewEyes,
+			eyeDefs = previewEyeDefs(),
 			onEye = previewRefresh,
 			onLayout = function(side, w, h) ns.Shell:SetDockLayout(side, w, h) end,
 			onChrome = function(v) ns.Shell:SetDockChrome(v) end,
@@ -201,6 +227,7 @@ local function previewDock(spec)
 			} or nil,
 		})
 		if ns.Raidframes then ns.Raidframes:AttachShellPreview(band, spec) end
+		pvBands[band] = true   -- eye-sync repaint target (previewRefresh)
 		holder._onShow = previewRefresh
 	end
 end
