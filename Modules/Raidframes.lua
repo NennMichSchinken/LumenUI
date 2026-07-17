@@ -903,6 +903,14 @@ local function makeAuraIcon(holder)
 	ic.cd:SetAllPoints(ic.tex)
 	ic.cd:SetDrawEdge(false)
 	ic.cd:SetHideCountdownNumbers(true)
+	-- Click-to-configure: ONLY the non-secure dock-preview pool gets mouse
+	-- scripts — live secure frames must never have their clicks intercepted.
+	if holder._host and holder._host._c2c then
+		ic:EnableMouse(true)
+		ic:SetScript("OnEnter", function() Raidframes:_C2CIconEnter(holder) end)
+		ic:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
+		ic:SetScript("OnMouseDown", function() Raidframes:_C2CIconClick(holder) end)
+	end
 	ic:Hide()
 	return ic
 end
@@ -921,6 +929,7 @@ local function layoutAuraCat(f, key, cat, size)
 		holder = CreateFrame("Frame", nil, f.overlay)
 		holder:SetAllPoints(f)
 		holder.icons = {}
+		holder._host, holder._cat = f, key   -- click-to-configure needs owner + category
 		f.auraHolders[key] = holder
 	end
 	holder:Show()
@@ -1764,12 +1773,107 @@ local PREVIEW_FAKE = {
 local shellBands = {}   -- band -> spec: { kind = "base" } | { kind = "ctx", ctx = "raid"|"party" }
 local pvFrames = {}     -- shared preview pool (one band visible at a time)
 
+-- ---------------------------------------------------------------------------
+--  Click-to-configure (dock preview only): hovering a preview element shows a
+--  gold ring + "click to edit" tooltip; clicking jumps to its settings card
+--  (Shell:JumpTo). The mouse layer exists SOLELY on the non-secure dock pool
+--  (f._c2c) — live secure frames and the world test pool stay untouched.
+-- ---------------------------------------------------------------------------
+local C2C_LABELS = {
+	hotsOwn    = "HoTs",
+	defensives = "Defensives & External",
+	major      = "Major CDs",
+	debuffs    = "Debuffs",
+}
+local c2cRing
+local function c2cGetRing()
+	if c2cRing then return c2cRing end
+	local r = CreateFrame("Frame", nil, UIParent)
+	r:Hide()
+	r:EnableMouse(false)
+	local function redge()
+		local t = r:CreateTexture(nil, "OVERLAY")
+		-- brand gold (C1), same tone as the frame mouseover border (combat-path file, kept literal)
+		t:SetColorTexture(0.91, 0.73, 0.41, 1)
+		return t
+	end
+	local e1, e2, e3, e4 = redge(), redge(), redge(), redge()
+	e1:SetPoint("TOPLEFT"); e1:SetPoint("TOPRIGHT"); e1:SetHeight(2)
+	e2:SetPoint("BOTTOMLEFT"); e2:SetPoint("BOTTOMRIGHT"); e2:SetHeight(2)
+	e3:SetPoint("TOPLEFT"); e3:SetPoint("BOTTOMLEFT"); e3:SetWidth(2)
+	e4:SetPoint("TOPRIGHT"); e4:SetPoint("BOTTOMRIGHT"); e4:SetWidth(2)
+	c2cRing = r
+	return r
+end
+local function c2cJump(host, cardKey)
+	if not (ns.Shell and ns.Shell.JumpTo) then return end
+	Raidframes:_C2CLeave()
+	ns.Shell:JumpTo("Raidframes", (host._pvCtx == "raid") and "Raid" or "Group", cardKey)
+end
+function Raidframes:_C2CLeave()
+	if c2cRing then c2cRing:Hide() end
+	if ns.W and ns.W.HideTip then ns.W.HideTip() end
+end
+-- Ring around all VISIBLE icons of the hovered category. Bounds arithmetic is
+-- valid because holder and icons share one effective scale.
+local C2C_PAD = 3
+function Raidframes:_C2CIconEnter(holder)
+	local minL, maxR, minB, maxT
+	for i = 1, #holder.icons do
+		local ic = holder.icons[i]
+		if ic:IsShown() then
+			local l, rt, b, t = ic:GetLeft(), ic:GetRight(), ic:GetBottom(), ic:GetTop()
+			if l then
+				if not minL or l < minL then minL = l end
+				if not maxR or rt > maxR then maxR = rt end
+				if not minB or b < minB then minB = b end
+				if not maxT or t > maxT then maxT = t end
+			end
+		end
+	end
+	if not minL then return end
+	local r = c2cGetRing()
+	r:SetParent(holder)
+	r:SetFrameLevel(holder:GetFrameLevel() + 10)
+	r:ClearAllPoints()
+	local hl, hb = holder:GetLeft() or 0, holder:GetBottom() or 0
+	r:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", minL - hl - C2C_PAD, minB - hb - C2C_PAD)
+	r:SetSize((maxR - minL) + C2C_PAD * 2, (maxT - minB) + C2C_PAD * 2)
+	r:Show()
+	if ns.W and ns.W.ShowTextTip then
+		ns.W.ShowTextTip(r, ns.T(C2C_LABELS[holder._cat] or ""), ns.T("Click to edit"))
+	end
+end
+function Raidframes:_C2CIconClick(holder)
+	c2cJump(holder._host, "aura-" .. (holder._cat or ""))
+end
+
 local function pvFrame(i, holder)
 	local f = pvFrames[i]
 	if not f then
 		f = CreateFrame("Frame", nil, holder)
+		f._c2c = true   -- BEFORE any icon creation: makeAuraIcon keys off this
 		Decorate(f)
 		f:EnableMouse(false)
+		-- Click-to-configure hotspot for the name text.
+		local nb = CreateFrame("Button", nil, f.overlay)
+		nb:SetFrameLevel(f.overlay:GetFrameLevel() + 12)
+		nb:SetPoint("TOPLEFT", f.name, "TOPLEFT", -3, 3)
+		nb:SetPoint("BOTTOMRIGHT", f.name, "BOTTOMRIGHT", 3, -3)
+		nb:SetScript("OnEnter", function()
+			local r = c2cGetRing()
+			r:SetParent(nb)
+			r:SetFrameLevel(nb:GetFrameLevel() + 1)
+			r:ClearAllPoints()
+			r:SetAllPoints(nb)
+			r:Show()
+			if ns.W and ns.W.ShowTextTip then
+				ns.W.ShowTextTip(r, ns.T("Text — name"), ns.T("Click to edit"))
+			end
+		end)
+		nb:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
+		nb:SetScript("OnClick", function() c2cJump(f, "text-name") end)
+		f._c2cName = nb
 		pvFrames[i] = f
 	end
 	f:SetParent(holder)
@@ -1817,12 +1921,15 @@ end
 
 local function pvFillOne(f, fake, ctx, eyes)
 	previewCtx = ctx
+	f._pvCtx = ctx   -- click-to-configure: which tab a click on this frame targets
 	f.fake = pvEffectiveFake(fake, eyes)
 	f.unit = nil
 	pvResetLayers(f)
 	Raidframes:ApplyConfig(f)
 	Raidframes:UpdateUnit(f)
 	pvEyePass(f, eyes)
+	-- Name hotspot only while the name is actually visible (config + text eye).
+	if f._c2cName then f._c2cName:SetShown(f.name:IsShown()) end
 	previewCtx = nil
 	f:Show()
 end
