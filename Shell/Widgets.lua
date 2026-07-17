@@ -2883,6 +2883,128 @@ function W.PreviewBand(parent, o)
 		resetAnchor = rbtn
 	end
 
+	-- Central eye popover (Florian 2026-07-17): ONE overview of all preview
+	-- layers, left of the reset button — the eyes stay on their cards as the
+	-- contextual access, this is the collection point (no tab hopping to hide
+	-- shields while judging auras). Reads/writes the SAME previewEyes state the
+	-- card eyes use, so both access points sync automatically: rows call
+	-- o.onEye (repaints card eyes via the Shell), card eyes funnel back through
+	-- band:RepaintEyes. Row list comes from o.eyeDefs (built next to the
+	-- eyeToggle call sites in Screens — no second catalog that can drift).
+	local ebtn, eyePop
+	local eyeRepaints = {}
+	local eGlyph, eEdges
+	local function paintEyeBtn()
+		if not ebtn then return end
+		local t = o.eyes and o.eyes() or {}
+		local filtered = false
+		local function scan(list)
+			for _, def in ipairs(list) do
+				if def.children then scan(def.children)
+				elseif t[def.key] == false then filtered = true end
+			end
+		end
+		scan(o.eyeDefs)
+		eGlyph:SetTexture(TEX .. (filtered and "icon-eye-off" or "icon-eye"))
+		local col = filtered and C.gold250 or C.textMuted
+		eGlyph:SetVertexColor(col.r, col.g, col.b)
+		for _, e in ipairs(eEdges) do UI.SetColor(e, filtered and L.strong or L.mid) end
+	end
+	if o.eyeDefs then
+		ebtn = CreateFrame("Button", nil, head)
+		ebtn:SetSize(M.pvIconBtn, M.pvIconBtn)
+		ebtn:SetPoint("RIGHT", resetAnchor, "LEFT", -S.s4, 0)
+		UI.RoundFill(ebtn, C.ink700, nil, nil, R_CTRL)
+		eEdges = UI.RoundBorder(ebtn, L.mid, "OVERLAY", nil, R_CTRL)
+		eGlyph = ebtn:CreateTexture(nil, "ARTWORK")
+		eGlyph:SetSize(M.pvGlyph, M.pvGlyph)
+		eGlyph:SetPoint("CENTER", ebtn, "CENTER", 0, 0)
+		eGlyph:SetSnapToPixelGrid(false); eGlyph:SetTexelSnappingBias(0)
+
+		eyePop = CreateFrame("Frame", nil, f)
+		eyePop:SetFrameLevel(f:GetFrameLevel() + 40)
+		eyePop:SetClampedToScreen(true)
+		UI.RoundFill(eyePop, C.ink550, nil, nil, RAD.lg)
+		UI.RoundBorder(eyePop, L.strong, "OVERLAY", nil, RAD.lg)
+		eyePop:Hide()
+		local rowIdx, popW = 0, M.pvFilterW
+		local function popRow(label, indent, isOn, onClick)
+			local row = CreateFrame("Button", nil, eyePop)
+			row:SetHeight(M.pvFilterRowH)
+			local y = -(M.pvFilterPad + rowIdx * M.pvFilterRowH)
+			rowIdx = rowIdx + 1
+			row:SetPoint("TOPLEFT", eyePop, "TOPLEFT", M.pvFilterPad + indent, y)
+			row:SetPoint("TOPRIGHT", eyePop, "TOPRIGHT", -M.pvFilterPad, y)
+			local box = CreateFrame("Frame", nil, row)
+			box:SetSize(M.pvFilterCheck, M.pvFilterCheck)
+			box:SetPoint("LEFT", row, "LEFT", 0, 0)
+			UI.RoundBorder(box, L.mid, "OVERLAY", nil, RAD.xs)
+			local mark = box:CreateTexture(nil, "ARTWORK")
+			mark:SetPoint("TOPLEFT", box, "TOPLEFT", 3, -3)
+			mark:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -3, 3)
+			UI.SetColor(mark, C.gold500)
+			local rl = UI.FS(row, "value", C.textBody)
+			rl:SetPoint("LEFT", box, "RIGHT", S.s4, 0)
+			rl:SetText(label)
+			-- Popover width follows the longest (localized) label.
+			popW = math.max(popW, M.pvFilterPad * 2 + indent + M.pvFilterCheck
+				+ S.s4 + math.ceil(rl:GetStringWidth()))
+			local function repaint() mark:SetShown(isOn()) end
+			repaint()
+			row:SetScript("OnClick", function()
+				onClick()
+				for _, rp in ipairs(eyeRepaints) do rp() end
+				paintEyeBtn()
+				if o.onEye then o.onEye() end
+			end)
+			eyeRepaints[#eyeRepaints + 1] = repaint
+		end
+		for _, def in ipairs(o.eyeDefs) do
+			if def.children then
+				-- Parent row ("Aura indicators"): flips all category children.
+				local kids = def.children
+				local function allOn()
+					local t = o.eyes()
+					for _, c in ipairs(kids) do if t[c.key] == false then return false end end
+					return true
+				end
+				popRow(def.label, 0, allOn, function()
+					local t, target = o.eyes(), not allOn()
+					for _, c in ipairs(kids) do t[c.key] = target end
+				end)
+				for _, c in ipairs(kids) do
+					local key = c.key
+					popRow(c.label, M.pvFilterCheck + S.s4,
+						function() return o.eyes()[key] ~= false end,
+						function() local t = o.eyes(); t[key] = (t[key] == false) end)
+				end
+			else
+				local key = def.key
+				popRow(def.label, 0,
+					function() return o.eyes()[key] ~= false end,
+					function() local t = o.eyes(); t[key] = (t[key] == false) end)
+			end
+		end
+		eyePop:SetSize(popW, M.pvFilterPad * 2 + rowIdx * M.pvFilterRowH)
+		ebtn:SetScript("OnClick", function()
+			if eyePop:IsShown() then eyePop:Hide() return end
+			for _, rp in ipairs(eyeRepaints) do rp() end
+			paintEyeBtn()
+			eyePop:Show()
+		end)
+		paintEyeBtn()
+		resetAnchor = ebtn
+	end
+	-- Card-eye clicks funnel through here (Screens' previewRefresh) so both
+	-- access points stay in sync while the popover is open.
+	function f:RepaintEyes()
+		paintEyeBtn()
+		if eyePop and eyePop:IsShown() then
+			for _, rp in ipairs(eyeRepaints) do rp() end
+		end
+	end
+	f._eyePop = eyePop
+
 	local repaints = {}
 	local chipsW = 0
 	local chainAnchor, chainGap = resetAnchor, M.pvChipGroupGap
@@ -2930,6 +3052,7 @@ function W.PreviewBand(parent, o)
 	-- Minimum dock width so the header row never collapses onto itself.
 	local headMinW = M.sectionTitleX + math.ceil(lbl:GetStringWidth()) + S.s7
 		+ chipsW + M.pvIconBtn + S.s4 + M.pvIconBtn + M.pvDockPad * 2
+		+ (ebtn and (S.s4 + M.pvIconBtn) or 0)
 
 	-- Body below the header card (aligned to it — the card is already inset):
 	-- the stage.
@@ -2988,6 +3111,16 @@ function W.PreviewBand(parent, o)
 		-- Chevron mirrors the fold-away direction: right dock folds LEFT onto
 		-- the panel edge, bottom dock folds UP.
 		chevDir(side == "right" and "left" or "up")
+		-- Eye popover opens away from the stage (old grouped-filter rule):
+		-- right dock -> outward right, bottom dock -> upward above the header.
+		if eyePop then
+			eyePop:ClearAllPoints()
+			if side == "right" then
+				eyePop:SetPoint("TOPLEFT", head, "TOPRIGHT", S.s3, 0)
+			else
+				eyePop:SetPoint("BOTTOMRIGHT", head, "TOPRIGHT", 0, S.s3)
+			end
+		end
 		-- Dock chrome is always on now (the Backdrop filter was removed with the
 		-- funnel popover; per-layer eyes live on the setting cards).
 		stageFill:SetShown(true)

@@ -749,6 +749,15 @@ function Shell:_ResolveJump(cardKey)
 	C_Timer.After(0, attempt)
 end
 
+-- Repaint the current screen's card-eye glyphs from their get() state — called
+-- by the preview's central eye popover (and previewRefresh) after an external
+-- toggle, so card eyes and popover never diverge.
+function Shell:RepaintEyes()
+	local scr = self._screen
+	if not (scr and scr._eyePaints) then return end
+	for _, p in ipairs(scr._eyePaints) do p() end
+end
+
 -- Apply a composed badge text to the tab-strip badge (internal; used by
 -- SetTabBadge and by the screen cache when re-showing a cached screen).
 function Shell:_ApplyBadge(text)
@@ -948,6 +957,14 @@ local function newStack(holder)
 				eb:SetScript("OnLeave", function() hovered = false; paint(); ns.W.HideTip() end)
 				eb:SetScript("OnClick", function() o.eye.set(not o.eye.get()); paint() end)
 				panel._eye = eb
+				-- Central eye-popover sync: register the paint on the screen so
+				-- external toggles (dock popover / same key on another tab)
+				-- repaint this glyph (Shell:RepaintEyes + cache re-show).
+				local scr = Shell._screen
+				if scr then
+					scr._eyePaints = scr._eyePaints or {}
+					scr._eyePaints[#scr._eyePaints + 1] = paint
+				end
 			end
 		end
 
@@ -1322,6 +1339,12 @@ function Shell:RenderContent(changed)
 		-- screen's list again, not in the last-built screen's.
 		if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(hit.popovers) end
 		hit.frame:Show()
+		-- Eye state may have changed from ANOTHER access point since this screen
+		-- was built (dock popover, or the same key's eye on another tab —
+		-- aura keys exist on Raid AND Group): repaint from get() on re-show.
+		if hit.frame._eyePaints then
+			for _, p in ipairs(hit.frame._eyePaints) do p() end
+		end
 		holderParent:SetHeight(hit.height)
 		if hit.badge then self:_ApplyBadge(hit.badge) end
 		if self._scroll then
