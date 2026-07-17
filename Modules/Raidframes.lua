@@ -1855,25 +1855,32 @@ local function pvFrame(i, holder)
 		f._c2c = true   -- BEFORE any icon creation: makeAuraIcon keys off this
 		Decorate(f)
 		f:EnableMouse(false)
-		-- Click-to-configure hotspot for the name text.
-		local nb = CreateFrame("Button", nil, f.overlay)
-		nb:SetFrameLevel(f.overlay:GetFrameLevel() + 12)
-		nb:SetPoint("TOPLEFT", f.name, "TOPLEFT", -3, 3)
-		nb:SetPoint("BOTTOMRIGHT", f.name, "BOTTOMRIGHT", 3, -3)
-		nb:SetScript("OnEnter", function()
-			local r = c2cGetRing()
-			r:SetParent(nb)
-			r:SetFrameLevel(nb:GetFrameLevel() + 1)
-			r:ClearAllPoints()
-			r:SetAllPoints(nb)
-			r:Show()
-			if ns.W and ns.W.ShowTextTip then
-				ns.W.ShowTextTip(r, ns.T("Text — name"), ns.T("Click to edit"))
-			end
-		end)
-		nb:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
-		nb:SetScript("OnClick", function() c2cJump(f, "text-name") end)
-		f._c2cName = nb
+		-- Click-to-configure hotspots: ring + tooltip on hover, jump on click.
+		-- Anchored to the element's region; pvFillOne gates each on visibility.
+		local function hotspot(region, label, cardKey)
+			local b = CreateFrame("Button", nil, f.overlay)
+			b:SetFrameLevel(f.overlay:GetFrameLevel() + 12)
+			b:SetPoint("TOPLEFT", region, "TOPLEFT", -3, 3)
+			b:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", 3, -3)
+			b:SetScript("OnEnter", function()
+				local r = c2cGetRing()
+				r:SetParent(b)
+				r:SetFrameLevel(b:GetFrameLevel() + 1)
+				r:ClearAllPoints()
+				r:SetAllPoints(b)
+				r:Show()
+				if ns.W and ns.W.ShowTextTip then
+					ns.W.ShowTextTip(r, ns.T(label), ns.T("Click to edit"))
+				end
+			end)
+			b:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
+			b:SetScript("OnClick", function() c2cJump(f, cardKey) end)
+			return b
+		end
+		f._c2cName = hotspot(f.name,     "Text — name",       "text-name")
+		f._c2cHP   = hotspot(f.htext,    "Text — HP display", "text-hp")
+		f._c2cRole = hotspot(f.roleIcon, "Role icon",         "icon-role")
+		f._c2cLead = hotspot(f.leadIcon, "Leader icon",       "icon-lead")
 		pvFrames[i] = f
 	end
 	f:SetParent(holder)
@@ -1928,8 +1935,13 @@ local function pvFillOne(f, fake, ctx, eyes)
 	Raidframes:ApplyConfig(f)
 	Raidframes:UpdateUnit(f)
 	pvEyePass(f, eyes)
-	-- Name hotspot only while the name is actually visible (config + text eye).
-	if f._c2cName then f._c2cName:SetShown(f.name:IsShown()) end
+	-- Hotspots only while their element is actually visible (config + eyes).
+	if f._c2cName then
+		f._c2cName:SetShown(f.name:IsShown())
+		f._c2cHP:SetShown(f.htext:IsShown())
+		f._c2cRole:SetShown(f.roleIcon:IsShown())
+		f._c2cLead:SetShown(f.leadIcon:IsShown())
+	end
 	previewCtx = nil
 	f:Show()
 end

@@ -216,17 +216,6 @@ local auraOpenState, iconOpenState = {}, {}
 local function auraOpen(ctx) return auraOpenState[ctx] or false end
 local function setAuraOpen(ctx, v) auraOpenState[ctx] = v end
 
--- Click-to-configure (preview dock): called by Shell:JumpTo BEFORE the target
--- screen renders — open the context's collapsed aura section so the aura cards
--- exist to scroll to. Other card keys need no preparation (their bands are
--- always built).
-ns.ShellJumpPrep = function(section, tab, cardKey)
-	if section ~= "Raidframes" or not cardKey then return end
-	if cardKey:find("^aura%-") then
-		setAuraOpen((tab == "Raid") and "raid" or "party", true)
-	end
-end
-
 -- Register a jumpable card's panel frame with the Shell (no-op outside a build).
 local function regJump(key, cardBox)
 	if ns.Shell and ns.Shell.RegisterJumpCard and cardBox and cardBox._panel then
@@ -235,6 +224,20 @@ local function regJump(key, cardBox)
 end
 local function iconOpen(ctx) return iconOpenState[ctx] or false end
 local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
+
+-- Click-to-configure (preview dock): called by Shell:JumpTo BEFORE the target
+-- screen renders — open the context's collapsed aura/icon section so the target
+-- cards exist to scroll to. Other card keys need no preparation (their bands
+-- are always built).
+ns.ShellJumpPrep = function(section, tab, cardKey)
+	if section ~= "Raidframes" or not cardKey then return end
+	local ctx = (tab == "Raid") and "raid" or "party"
+	if cardKey:find("^aura%-") then
+		setAuraOpen(ctx, true)
+	elseif cardKey:find("^icon%-") then
+		setIconOpen(ctx, true)
+	end
+end
 -- "More options" disclosure per aura category card ([ctx][cat] = true) —
 -- same session-only rule as the collapsibles above.
 local auraAdvState = {}
@@ -421,6 +424,7 @@ local function buildRaid(d, stack, ctx)
 	sName:close()
 
 	local sHP = tb.cards[2]
+	regJump("text-hp", sHP)
 	local hr1, hc1 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 	local hpPos = W.Select(hc1[1], { label = T("HP text position"), options = POINT_OPTS, get = vget(ctx, "healthTextPoint"), set = vset(ctx, "healthTextPoint") })
 	hpPos:SetAllPoints(hc1[1])
@@ -477,6 +481,8 @@ local function buildRaid(d, stack, ctx)
 		})
 
 		local sRole = ib.cards[1]
+		regJump("icon-role", ib.cards[1])
+		regJump("icon-lead", ib.cards[2])
 		local ir1, ic1 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 		local rolePos = W.Select(ic1[1], { label = T("Role icon position"), options = POINT_OPTS,
 			get = vget(ctx, "rolePoint"), set = vset(ctx, "rolePoint") })
