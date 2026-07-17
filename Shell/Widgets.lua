@@ -1247,7 +1247,14 @@ local function applyTip(owner, icon, titleText, bodyText, anchor)
 	else
 		t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
 	end
-	t.tip:Show(); t.tip:Raise()
+	-- Same-strata rivals: the Edit Mode flyout/toolbar also live on TOOLTIP strata
+	-- and are toplevel (every click raises their frame level). Raise() alone is
+	-- unreliable here — the tip's new rect isn't resolved yet at this point, so
+	-- overlap detection can miss. A fixed high level always wins: the rivals only
+	-- get raised above frames they overlap while those are SHOWN, and the tip is
+	-- hidden whenever they are clicked.
+	t.tip:SetFrameLevel(9000)
+	t.tip:Show()
 end
 
 function W.ShowSpellTip(owner, spellID)

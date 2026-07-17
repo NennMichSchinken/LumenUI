@@ -3,7 +3,7 @@
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## IconTexture: Interface\AddOns\LumenUI\Textures\Logo
 ## Author: NennMichSchinken
-## Version: 0.9.202
+## Version: 0.9.203
 ## SavedVariables: LumenDB
 ## OptionalDeps: MiniCC
 ## X-Website: https://github.com/NennMichSchinken

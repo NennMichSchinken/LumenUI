@@ -1113,16 +1113,15 @@ local function Decorate(f)
 	end
 	f.eT, f.eB, f.eL, f.eR = edge(), edge(), edge(), edge()
 
-	-- Aggro warning: a complete own layer with a clearly higher frame level ABOVE the
-	-- aura holders (which are children of f.overlay) so that overlay fill, border AND
-	-- "Aggro" text sit above the aura icons. White textures -> color via SetVertexColor.
-	f.aggroLayer = CreateFrame("Frame", nil, f)
-	f.aggroLayer:SetAllPoints(f)
-	f.aggroLayer:SetFrameLevel(base + 10)
-	f.aggroFill = f.aggroLayer:CreateTexture(nil, "ARTWORK")
+	-- Aggro warning: same construction as the dispel overlay — textures directly on
+	-- f.overlay, BELOW the aura band (holders are child frames of f.overlay and thus
+	-- render above any of its textures). Unified rule: dispel/aggro are area/border
+	-- signals that stay visible around the icons; the icons + duration text carry
+	-- detail info and must never be occluded. White textures -> color via SetVertexColor.
+	f.aggroFill = f.overlay:CreateTexture(nil, "ARTWORK", nil, 2)
 	f.aggroFill:SetColorTexture(1, 1, 1, 1); f.aggroFill:SetAllPoints(f.health); f.aggroFill:Hide()
 	local function aedge()
-		local t = f.aggroLayer:CreateTexture(nil, "OVERLAY")
+		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
 		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t
 	end
 	f.aT, f.aB, f.aL, f.aR = aedge(), aedge(), aedge(), aedge()
@@ -1130,12 +1129,12 @@ local function Decorate(f)
 	f.aB:SetPoint("BOTTOMLEFT"); f.aB:SetPoint("BOTTOMRIGHT"); f.aB:SetHeight(2)
 	f.aL:SetPoint("TOPLEFT"); f.aL:SetPoint("BOTTOMLEFT"); f.aL:SetWidth(2)
 	f.aR:SetPoint("TOPRIGHT"); f.aR:SetPoint("BOTTOMRIGHT"); f.aR:SetWidth(2)
-	f.aggroText = f.aggroLayer:CreateFontString(nil, "OVERLAY")
+	f.aggroText = f.overlay:CreateFontString(nil, "OVERLAY")
 	f.aggroText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 
 	-- Indicator icons: role (Blizzard LFG atlases) + leader/assistant crown.
-	-- Own layer ABOVE the aggro layer — the icons stay readable even while
+	-- Own layer ABOVE the aura band — the icons stay readable even while
 	-- the aggro overlay/border is up. Anchored/sized per context in
 	-- ApplyConfig, filled in the render pass.
 	f.iconLayer = CreateFrame("Frame", nil, f)
