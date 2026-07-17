@@ -177,6 +177,7 @@ ns.RegisterLocale("deDE", {
 	["Major CDs"] = "Major CDs",
 	["Debuffs"] = "Debuffs",
 	["Show in preview"] = "In Vorschau zeigen",
+	["Click to edit"] = "Zum Bearbeiten klicken",
 	["Amount & behavior"] = "Menge & Verhalten",
 	["Max. icons"] = "Max. Icons",
 	["Auto-fit (size from frame height)"] = "Auto-Fit (Größe aus Frame-Höhe)",
