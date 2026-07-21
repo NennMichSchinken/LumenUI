@@ -30,37 +30,43 @@ UI.hex = hex
 --  widget/screen code.
 -- ---------------------------------------------------------------------------
 local P = {
-	-- A: surfaces (layering; the sidebar is DELIBERATELY the lightest base surface)
-	-- v3 COOL TINT (2026-07-04, from Florian's card mockup: "bisschen ins
-	-- Blau" instead of neutral grey) — same lightness ladder as v2, hue shifted
-	-- toward blue. Derived values, pending Florian's eye; v2 neutrals in ().
-	inset        = hex("14161A"), -- A1: edit boxes, open dropdown lists, slider value box, scroll troughs (151617)
-	sidebar      = hex("1E2128"), -- A2: nav column (1F2022)
-	panel        = hex("1A1D23"), -- A3: main window surface (1B1D1E)
-	card         = hex("1C1F26"), -- A4: section cards (1D1F20)
-	element      = hex("282C35"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs (292A2B)
-	elementHover = hex("333844"), -- A6: hover step for A5 (333436)
+	-- v3 MONOCHROME-CALM (2026-07-21, Florian-agreed full redesign): off-white
+	-- on near-black, NEVER pure #000/#FFF. Hierarchy comes from elevation +
+	-- subtle white hairlines, NOT from tinted fills. Accent = LIGHT ITSELF
+	-- (pure light) — brightness IS the accent; gold is RETIRED from the chrome
+	-- (incl. the wordmark). Semantic colour (class/role/dispel) lives only in
+	-- the preview island, never in the chrome.
+	-- The A/B/C/D/E slot NAMES are kept so the legacy aliases below keep
+	-- resolving; only the VALUES change (C is no longer gold but the light accent).
+	page         = hex("050506"), -- app background / dim behind the panel
+	inset        = hex("161618"), -- A1: edit boxes, open dropdown lists, slider value box, troughs
+	sidebar      = hex("0B0B0D"), -- A2: nav column (now SEAMLESS with the panel — hierarchy via the active pill)
+	panel        = hex("0B0B0D"), -- A3: main window surface
+	card         = hex("141416"), -- A4: section cards (the ONE uniform card surface)
+	element      = hex("161618"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs
+	elementHover = hex("232327"), -- A6: hover step for A5
 
-	-- B: lines (cool-tinted with the A ladder)
-	borderSoft   = hex("2F343E"), -- B1: card/row borders, fine separators (2F3134)
-	borderStrong = hex("3A404C"), -- B2: control borders, hover edges, focus (363739)
+	-- B: lines — pure white; UI.line applies the (low) alpha. THE tuning spot.
+	borderSoft   = hex("FFFFFF"), -- B1: card/row borders, fine separators (used at ~.06 alpha)
+	borderStrong = hex("FFFFFF"), -- B2: control borders, hover edges, focus (used at ~.14 alpha)
 
-	-- C: gold — two-gold rule: C1 = brand (non-clickable), C2/C3 = interactive
-	goldBrand    = hex("E9BB69"), -- C1: wordmark, logo, section headers, accent bars, text accents
-	goldInt      = hex("CDA255"), -- C2: active nav/tab fill, primary button fill, secondary outline+text
-	goldIntHover = hex("D4AF6D"), -- C3: hover step for C2
+	-- C: accent = pure light. Brightness is the accent (bright = active/
+	-- interactive, grey = quiet). Names kept from the two-gold era; all three now
+	-- point at the neutral light accent so every former gold call site goes mono.
+	goldBrand    = hex("ECEDEF"), -- C1 (was brand gold): brand/headers/text-accents -> off-white
+	goldInt      = hex("F4F4F6"), -- C2: active nav/tab fill, primary button fill, control accents
+	goldIntHover = hex("FFFFFF"), -- C3: hover step (a touch brighter)
 
 	-- D: text
-	textPrimary  = hex("D0D0D1"), -- D1: names, labels, button text
-	textSecondary= hex("808283"), -- D2: descriptions, hints, min/max numbers
-	textDisabled = hex("3A404C"), -- D3: greyed-out controls (= B2, deliberate reuse)
-	textOnGold   = hex("1B1D1E"), -- D4: text on gold fills (= A3, deliberate reuse)
+	textPrimary  = hex("ECEDEF"), -- D1: off-white — names, labels, button text
+	textSecondary= hex("8A8A90"), -- D2: muted — descriptions, hints, min/max numbers
+	textDisabled = hex("57575D"), -- D3: faint — greyed-out controls
+	textOnGold   = hex("0B0B0D"), -- D4: text/knob ON the light accent (dark, so it reads)
 
-	-- E: status
+	-- E: status (the one non-mono colour — destructive actions)
 	danger       = hex("C74B4B"), -- E1: destructive text + outline
 	dangerHover  = hex("D65C5C"), -- E2: hover step for E1
-	-- (E3 stays free: the v1 success green was dropped 2026-07-03 — add actions
-	-- are secondary gold now; red remains the only status color.)
+	-- (E3 stays free.)
 }
 UI.P = P
 
@@ -69,11 +75,11 @@ UI.P = P
 -- remaining aliases here shrink away.
 UI.C = {
 	-- grounds (old warm ink ramp -> new neutral surfaces)
-	ink900   = P.inset,        -- app background / dim
+	ink900   = P.page,         -- app background / dim (darkest — behind the panel)
 	ink850   = P.panel,        -- main panel
 	ink800   = P.panel,        -- (was: glow center; flat now)
 	ink700   = P.element,      -- closed dropdown header / keybind field (A5 per v2 spec)
-	ink650   = P.inset,        -- icon-tile shadow
+	ink650   = P.page,         -- icon-tile shadow
 	ink600   = P.card,         -- raised card
 	ink550   = P.inset,        -- popover / open dropdown list (A1 per v2 spec)
 	ink520   = P.card,         -- sub-box (grouping is carried by borders now, not a lighter fill)
@@ -110,19 +116,18 @@ local function withA(c, a) return { r = c.r, g = c.g, b = c.b, a = a } end
 UI.goldA = goldA
 UI.dangerA = dangerA
 
--- v2: structural lines are NEUTRAL (B1/B2) instead of gold-at-opacity; gold
--- only remains on ACTIVE/open states and hover washes (interactive accent).
--- Border guideline (Florian 2026-07-05): borders are a SUBTLE separator, not
--- the primary design element — 2px ring assets carry render stability, the
--- reduced opacity below makes them read fine again. THE tuning spot.
+-- v3 MONOCHROME: lines are pure WHITE at LOW alpha (rim-subtle, per the mono
+-- redesign — hierarchy leans on elevation + fill, not on heavy borders). The
+-- active/open state is now the pure-light ACCENT (goldInt = light), not gold.
+-- THE tuning spot: nudge these alphas if cards read too flat or too caged.
 UI.line = {
-	faint   = withA(P.borderSoft, 0.60),   -- fine separators (content)
-	divider = withA(P.borderSoft, 0.80),   -- structural divider lines header/footer/nav
-	soft    = withA(P.borderSoft, 0.70),   -- soft control borders (cards, rows)
-	mid     = withA(P.borderStrong, 0.85), -- standard control borders
-	strong  = withA(P.goldInt, 1),         -- active / open (stays gold)
-	washSoft = goldA(0.07),
-	wash     = goldA(0.12),
+	faint   = withA(P.borderSoft, 0.05),   -- line-2: finest separators (content)
+	divider = withA(P.borderSoft, 0.11),   -- structural divider lines header/nav
+	soft    = withA(P.borderSoft, 0.08),   -- app border: card/row borders (a touch up pre-shadow)
+	mid     = withA(P.borderStrong, 0.16), -- standard control borders
+	strong  = withA(P.goldInt, 1),         -- active / open (now the pure-light accent)
+	washSoft = goldA(0.06),
+	wash     = goldA(0.10),
 	dangerLine = dangerA(0.55),
 	dangerWash = dangerA(0.12),
 }
@@ -133,14 +138,25 @@ UI.line = {
 -- Built from the real addon-folder name (ADDON) so the path survives a folder
 -- rename (e.g. Lumen -> LumenUI). ADDON is the first vararg = the folder name.
 local FP = "Interface\\AddOns\\" .. ADDON .. "\\Fonts\\"
+-- v3 (2026-07-21): ONE clean UI sans everywhere — Inter (SIL OFL). The mockup
+-- dropped Cinzel's serif display face + Hanken for a single uniform sans (the
+-- SF-Pro-like look; SF Pro itself is Apple-proprietary and can't be bundled).
+-- Inter switches heading case to sentence case automatically (Cinzel was caps-
+-- only). The old Cinzel/Hanken TTFs stay in Fonts/ for now (easy revert).
 UI.FONT = {
-	cinzelSemi   = FP .. "Cinzel-SemiBold.ttf",
-	cinzelBold   = FP .. "Cinzel-Bold.ttf",
-	hankenReg    = FP .. "HankenGrotesk-Regular.ttf",
-	hankenMed    = FP .. "HankenGrotesk-Medium.ttf",
-	hankenSemi   = FP .. "HankenGrotesk-SemiBold.ttf",
-	hankenBold   = FP .. "HankenGrotesk-Bold.ttf",
+	interReg  = FP .. "Inter-Regular.ttf",
+	interMed  = FP .. "Inter-Medium.ttf",
+	interSemi = FP .. "Inter-SemiBold.ttf",
+	interBold = FP .. "Inter-Bold.ttf",
 }
+-- Back-compat aliases: every existing role/call site (UI.ROLE, button variants,
+-- ESC-menu button) keeps its key and now resolves to the matching Inter weight.
+UI.FONT.cinzelSemi = UI.FONT.interSemi -- display/headings/wordmark
+UI.FONT.cinzelBold = UI.FONT.interBold
+UI.FONT.hankenReg  = UI.FONT.interReg
+UI.FONT.hankenMed  = UI.FONT.interMed
+UI.FONT.hankenSemi = UI.FONT.interSemi
+UI.FONT.hankenBold = UI.FONT.interBold
 
 -- (Font warm-up happens BELOW UI.ROLE — it warms every actually used
 -- font+size pair, so it needs the role table first.)
@@ -635,8 +651,8 @@ end
 --    XS 4  — checkboxes, slider track, small badges/chips (count chip, tab badge)
 --    SM 6  — color swatches, small icons with a hover face, header chips
 --    MD 8  — buttons, dropdowns, tabs, text fields, segments, slider thumb/boxes
---    LG 10 — cards, panels, group boxes, floating popovers/menus/tooltip
---    XL 16 — main window (panel/sidebar/dock) + modal dialogs
+--    LG 18 — cards, panels, group boxes, floating popovers/menus/tooltip (v3: 10->18)
+--    XL 22 — main window (panel/sidebar/dock) + modal dialogs (v3: 16->22)
 --  Nesting rule stays: outer radius = inner radius + padding.
 --  Shapes: "full" (default) | "top" | "bottom" | "left" | "right" — the
 --  half-rounded variants are for flush-attached surfaces (collapsible header
@@ -648,9 +664,14 @@ end
 --  texture with a solid quad) — UI.SetColor routes them to SetVertexColor.
 -- ---------------------------------------------------------------------------
 local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
-local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [16] = 17 } -- source px covering the corner (+1px straight buffer)
+local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [16] = 17, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer)
 local ROUND_SUFFIX = { top = "-top", bottom = "-btm", left = "-left", right = "-right" } -- else full
-UI.RADIUS = { xs = 4, sm = 6, md = 8, lg = 10, xl = 16 } -- THE scale (see table above)
+-- v3 (2026-07-21): radii bumped toward GENEROUS on the headline surfaces —
+-- cards lg 10->18, chrome xl 16->22 (new 9-slice assets generated for both;
+-- 14 was too subtle at the 0.80 panel scale, bumped to 18). Controls (md/sm/xs)
+-- unchanged: keeps the control/segment assets intact and avoids churn on the
+-- small elements that already read well.
+UI.RADIUS = { xs = 4, sm = 6, md = 8, lg = 18, xl = 22 } -- THE scale (see table above)
 UI.ROUND_R        = UI.RADIUS.lg -- cards/panels/popovers (default radius)
 UI.ROUND_R_CHROME = UI.RADIUS.xl -- main chrome: panel, sidebar, preview dock + modals
 UI.ROUND_R_CTRL   = UI.RADIUS.md -- control faces: fields, buttons, segments, inset boxes
