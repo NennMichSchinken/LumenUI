@@ -68,7 +68,8 @@ ns.RegisterLocale("deDE", {
 
 	-- ── Card subtitles / global switch descriptions (v3 card mockup) ────
 	["Health bar and texture settings"] = "Einstellungen für Lebensbalken und Texturen",
-	["Name and text color settings"] = "Einstellungen für Namen und Textfarben",
+	["Text style"] = "Textstil",
+	["Color & outline — shared by Raid & Group"] = "Farbe & Umrandung — für Raid & Gruppe",
 	["Shields & heal absorb"] = "Schilde & Heilabsorb",
 	["Absorb overlay display"] = "Anzeige der Absorb-Overlays",
 	["Dispel highlight settings"] = "Einstellungen für Dispel-Highlights",

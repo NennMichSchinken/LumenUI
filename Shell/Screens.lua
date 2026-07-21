@@ -428,11 +428,15 @@ local function buildRaid(d, stack, ctx)
 	-- Last non-off mode; restored when the HP header toggle switches back on.
 	local hpMode = (rf()[ctx] or {}).healthTextType
 	if hpMode == nil or hpMode == "Keine" then hpMode = "Aktuell" end
+	-- Both text cards carry the shared "text" preview eye (one text layer; the
+	-- eye also lives on the Base tab's Text card and in the dock popover — all
+	-- stay in sync via _eyePaints). The master toggle sits right of the eye.
+	local textEyeTip = T("Show in preview")
 	local tb = stack:band({
-		{ span = 6, title = T("Text — name"), toggle = {
+		{ span = 6, title = T("Text — name"), eye = eyeToggle("text", textEyeTip), toggle = {
 			get = vget(ctx, "showName"),
 			set = function(v) vset(ctx, "showName")(v); refreshName() end } },
-		{ span = 6, title = T("Text — HP display"), toggle = {
+		{ span = 6, title = T("Text — HP display"), eye = eyeToggle("text", textEyeTip), toggle = {
 			get = function() return (rf()[ctx] or {}).healthTextType ~= "Keine" end,
 			set = function(v) vset(ctx, "healthTextType")(v and hpMode or "Keine"); refreshHP() end } },
 	})
@@ -704,8 +708,11 @@ local function buildBase(d, stack)
 	-- the Raid/Group builder.)
 	local b1 = stack:band({
 		{ span = 8, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
-		{ span = 4, title = T("Text"), subtitle = T("Name and text color settings"),
-			eye = eyeToggle("text", T("Show in preview")) },
+		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
+		-- preview layer — the "text" preview eye lives on the per-context Text —
+		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
+		-- doesn't read as "the text on/off card".
+		{ span = 4, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
 	})
 	local sBar = b1.cards[1]
 
