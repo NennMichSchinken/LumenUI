@@ -52,8 +52,59 @@ function Shell:ApplyScale()
 end
 
 -- ---------------------------------------------------------------------------
---  Nav item (left rail) — v2: active = solid interactive-gold fill (C2) with
---  dark on-gold text (two-gold rule); inactive hover = element-hover surface.
+--  Sliding indicator (v3) — ONE pill that TWEENS to the active item, mirroring
+--  the reference mockup's Navigation component. Nav slides in Y (fixed width),
+--  the tab strip slides in X + resizes to the tab width. The motion is a SHORT,
+--  self-terminating ease-out (§9-safe: it stops itself after SLIDE_DUR, NOT a
+--  persistent OnUpdate). ind._ref = the frame the (ox,oy) offsets are relative to.
+-- ---------------------------------------------------------------------------
+local SLIDE_DUR = 0.28
+local function slideTo(ind, ox, oy, w, h, animate)
+	w = math.max(1, w); h = math.max(1, h)
+	local function apply(x, y, ww, hh)
+		ind:ClearAllPoints()
+		ind:SetPoint("TOPLEFT", ind._ref, "TOPLEFT", x, y)
+		ind:SetSize(ww, hh)
+	end
+	if (not animate) or ind._cx == nil then
+		ind._cx, ind._cy, ind._cw, ind._ch = ox, oy, w, h
+		ind:SetScript("OnUpdate", nil)
+		apply(ox, oy, w, h); ind:Show()
+		return
+	end
+	local sx, sy, sw, sh = ind._cx, ind._cy, ind._cw, ind._ch
+	ind:Show()
+	local el = 0
+	ind:SetScript("OnUpdate", function(self, dt)
+		el = el + dt
+		local t = el / SLIDE_DUR; if t > 1 then t = 1 end
+		local e = 1 - (1 - t) * (1 - t) * (1 - t) -- ease-out cubic
+		local x  = sx + (ox - sx) * e
+		local y  = sy + (oy - sy) * e
+		local ww = sw + (w - sw) * e
+		local hh = sh + (h - sh) * e
+		self._cx, self._cy, self._cw, self._ch = x, y, ww, hh
+		apply(x, y, ww, hh)
+		if t >= 1 then self:SetScript("OnUpdate", nil) end
+	end)
+end
+
+-- Geometry of `item` in `ref`'s LOCAL coordinate units (what SetPoint offsets on
+-- a child of `ref` expect). item and ref share the same effective scale (both
+-- inside the 0.80-scaled panel), so their GetLeft/GetTop DELTAS are already in
+-- that shared local space — no scale conversion (an earlier ×ratio over-shot the
+-- pill by one row/tab). GetWidth/GetHeight are likewise local (= SetSize units).
+-- Returns nil while positions are unresolved (panel hidden) -> caller retries.
+local function itemRectIn(item, ref)
+	local iL, iT = item:GetLeft(), item:GetTop()
+	local rL, rT = ref:GetLeft(), ref:GetTop()
+	if not (iL and iT and rL and rT) then return nil end
+	return (iL - rL), (iT - rT), item:GetWidth(), item:GetHeight()
+end
+
+-- ---------------------------------------------------------------------------
+--  Nav item (left rail) — v3: text-only, the active pill is the shared sliding
+--  indicator; the item only carries the label + a faint hover pill.
 -- ---------------------------------------------------------------------------
 local function makeNavItem(parent, label, iconFile)
 	local b = CreateFrame("Button", nil, parent)
@@ -84,8 +135,12 @@ local function makeNavItem(parent, label, iconFile)
 		icon:SetVertexColor(C.textBody.r, C.textBody.g, C.textBody.b)
 	end
 
-	local txt = FS(b, "nav", C.textBody)
-	txt:SetPoint("LEFT", icon or b, icon and "RIGHT" or "LEFT", icon and S.navIconGap or S.panelGutter, 0)
+	-- v3 mono nav (mockup): idle = MUTED text, no pill; hover = a faint pill +
+	-- brighter text; active = a SUBTLE elevated pill (elementHover) + BRIGHT text
+	-- (the sliding-highlight language — bright = active, grey = quiet). No bright
+	-- fill / dark-text here (that treatment belongs to the tabs).
+	local txt = FS(b, "nav", C.textMuted)
+	txt:SetPoint("LEFT", icon or b, icon and "RIGHT" or "LEFT", icon and S.navIconGap or S.navGutter, 0)
 	txt:SetText(label)
 
 	b._bg, b._txt, b._icon = bg, txt, icon
@@ -95,7 +150,8 @@ local function makeNavItem(parent, label, iconFile)
 				ns.W.ShowTextTip(self, T("Coming soon"), T("This module is still in progress and will be unlocked in a later version."))
 			end
 		elseif not self._active then
-			setColor(self._bg, P.elementHover); self._bg:Show()
+			setColor(self._bg, P.element); self._bg:Show()
+			self._txt:SetTextColor(P.textPrimary.r, P.textPrimary.g, P.textPrimary.b)
 		end
 	end)
 	b:SetScript("OnLeave", function(self)
@@ -103,13 +159,13 @@ local function makeNavItem(parent, label, iconFile)
 			if ns.W and ns.W.HideTip then ns.W.HideTip() end
 		elseif not self._active then
 			self._bg:Hide()
+			self._txt:SetTextColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b)
 		end
 	end)
 	function b:SetActive(on)
 		self._active = on
-		if on then setColor(self._bg, P.goldInt) end
-		self._bg:SetShown(on)
-		local col = on and P.textOnGold or (self._soon and P.textDisabled or C.textBody)
+		self._bg:Hide() -- the active pill is the shared sliding indicator now; item shows only text
+		local col = on and P.textPrimary or (self._soon and P.textDisabled or P.textSecondary)
 		self._txt:SetTextColor(col.r, col.g, col.b)
 		if self._icon then self._icon:SetVertexColor(col.r, col.g, col.b) end
 	end
@@ -131,7 +187,8 @@ end
 -- ---------------------------------------------------------------------------
 local function makeTab(parent, label)
 	local b = CreateFrame("Button", nil, parent)
-	local txt = FS(b, "tab", C.textBody)
+	b:SetFrameLevel(parent:GetFrameLevel() + 3) -- above the sliding pill (tabStrip+2) so the label stays on top
+	local txt = FS(b, "tab", C.textMuted)
 	txt:SetText(label)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 	b:SetHeight(S.tabH)
@@ -141,36 +198,22 @@ local function makeTab(parent, label)
 	function b:Fit() self:SetWidth(math.floor(txt:GetStringWidth() + 44 + 0.5)) end
 	b:Fit()
 
-	-- State surface: element (inactive) / element-hover / interactive gold (active).
-	-- Rounded at MD per the radius scale ("Tabs" row); recolors stay UI.SetColor.
-	local base = UI.RoundFill(b, P.element, "BACKGROUND", nil, UI.RADIUS.md)
-	local edges = UI.RoundBorder(b, L.soft, "OVERLAY", nil, UI.RADIUS.md)
-	b._txt, b._base, b._edges = txt, base, edges
-
+	-- v3: the active pill is the shared sliding indicator (Shell._tabSlider) with
+	-- its baked underglow — it slides + resizes to the active tab. The tab itself
+	-- only changes TEXT color: active/hover = BRIGHT (#ECEDEF), idle = muted.
+	-- (No weight change active/inactive: SemiBold vs Medium have different glyph
+	-- widths -> the centered text would jump in the fixed-width button.)
+	b._txt = txt
 	b:SetScript("OnEnter", function(self)
-		if not self._active then
-			setColor(self._base, P.elementHover)
-			for _, e in ipairs(self._edges) do setColor(e, L.mid) end
-		end
+		if not self._active then self._txt:SetTextColor(P.textPrimary.r, P.textPrimary.g, P.textPrimary.b) end
 	end)
 	b:SetScript("OnLeave", function(self)
-		if not self._active then
-			setColor(self._base, P.element)
-			for _, e in ipairs(self._edges) do setColor(e, L.soft) end
-		end
+		if not self._active then self._txt:SetTextColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b) end
 	end)
 	function b:SetActive(on)
 		self._active = on
-		setColor(self._base, on and P.goldInt or P.element)
-		local ec = on and L.strong or L.soft
-		for _, e in ipairs(self._edges) do setColor(e, ec) end
-		local tc = on and P.textOnGold or C.textBody
+		local tc = on and P.textPrimary or P.textSecondary
 		self._txt:SetTextColor(tc.r, tc.g, tc.b)
-		-- NO weight change active/inactive: SemiBold vs Medium have different glyph
-		-- widths -> the centered text would "jump" in the fixed-width button (the width
-		-- was measured once via Fit() with the tab-role font = hankenMed). The active tab
-		-- stands out via the gold fill; the weight stays constant (hankenMed) so
-		-- nothing jumps.
 	end
 	return b
 end
@@ -269,6 +312,15 @@ function Shell:Build()
 		-- Re-measure tabs: on the first show after game start the font width was maybe
 		-- still 0 (tabs tiny). Anchors pull the positions along automatically.
 		if Shell._tabButtons then for _, t in ipairs(Shell._tabButtons) do if t.Fit then t:Fit() end end end
+		-- v3: snap the sliding indicators to the now-resolved item positions (at
+		-- build time the panel was hidden -> item rects were nil). One frame later,
+		-- when the subtree has valid rects (mirrors the screen-rebuild timing below).
+		C_Timer.After(0, function()
+			if Shell._frame and Shell._frame:IsShown() then
+				Shell:UpdateNavIndicator(false)
+				Shell:UpdateTabIndicator(false)
+			end
+		end)
 		-- The screen built in Build() ran while the panel was hidden (sizes
 		-- unresolved) -> rebuild it. ONE FRAME LATER, not inside OnShow: at this
 		-- point the subtree has no valid rects yet after /reload — a build now
@@ -309,34 +361,57 @@ function Shell:Build()
 	nav:SetWidth(S.navWidth)
 	nav:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
 	nav:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
-	-- v2: the sidebar is DELIBERATELY the lightest base surface (A2) — light nav
-	-- column against the darker work area. Left-rounded: it sits flush in the
-	-- panel's left edge, so its corners must follow the panel's chrome curve.
-	UI.RoundFill(nav, P.sidebar, "BACKGROUND", "left", UI.ROUND_R_CHROME)
+	-- v3: the sidebar is SEAMLESS with the panel (same #0B0B0D), so it gets NO own
+	-- fill — the panel's rounded fill + border then wrap CONSISTENTLY around the
+	-- nav's top/left/bottom (a nav fill, being a child texture, overpainted the
+	-- panel border on those edges -> the navbar looked "bigger" / borderless there).
+	self._nav = nav
+	-- Subtle vertical divider at the nav/content boundary (mockup). Pixel-snap the
+	-- THICKNESS only (whole px at scale 0.80 -> never a 0.x hairline); position
+	-- stays plain SetPoint (per the border pixel-snap rule). Runs the FULL panel
+	-- height (it sits mid-panel at the nav's right edge, clear of the rounded corners).
+	local navDiv = nav:CreateTexture(nil, "ARTWORK")
+	navDiv:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
+	navDiv:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", 0, 0)
+	setColor(navDiv, L.divider)
+	local function snapNavDiv() PixelUtil.SetWidth(navDiv, 1) end
+	snapNavDiv(); C_Timer.After(0, snapNavDiv)
+
+	-- v3 sliding nav indicator: ONE subtle elevated pill (#232327) that tweens
+	-- vertically to the active module. Created BEFORE the nav items so they (and
+	-- their labels) draw ON TOP of it. Positioned by Shell:UpdateNavIndicator.
+	local navSlider = CreateFrame("Frame", nil, nav)
+	navSlider:SetFrameLevel(nav:GetFrameLevel())
+	navSlider._ref = nav
+	UI.RoundFill(navSlider, P.elementHover, "ARTWORK", nil, 12)
+	navSlider:Hide()
+	self._navSlider = navSlider
 
 	-- Brand block at the top of the sidebar: wordmark + tagline, left-aligned on
-	-- the same gutter as the nav labels, divider below.
+	-- the same gutter as the nav labels. v3: NO divider under it (mockup) — brand
+	-- is just a positioning container now; the MODULES gap is set explicitly
+	-- below (anchored off the tagline's own bottom, not this frame's edge —
+	-- anchoring off the frame previously left a big dead gap under a short
+	-- tagline, per Florian's mockup-comparison 2026-07-22).
 	local brand = CreateFrame("Frame", nil, nav)
 	brand:SetHeight(S.navBrandH)
 	brand:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, 0)
 	brand:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
-	local bsep = brand:CreateTexture(nil, "ARTWORK")
-	bsep:SetHeight(1); bsep:SetPoint("BOTTOMLEFT", brand, "BOTTOMLEFT", 0, 0)
-	bsep:SetPoint("BOTTOMRIGHT", brand, "BOTTOMRIGHT", 0, 0); setColor(bsep, L.divider)
 
-	local word = FS(brand, "wordmark", P.goldBrand) -- C1 brand gold (non-clickable)
+	local word = FS(brand, "wordmark", P.goldBrand) -- v3: off-white (mono), non-clickable
 	word:SetText(UI.Track("LUMENUI", " ")) -- tracking emulation (single space: fits the column)
-	word:SetPoint("TOPLEFT", brand, "TOPLEFT", S.panelGutter, -22)
+	word:SetPoint("TOPLEFT", brand, "TOPLEFT", S.navGutter, -40) -- v3: pushed down to sit on the tab-row height (more top air), navGutter left inset
 	local tag = FS(brand, "tagline", P.textSecondary)
-	tag:SetText(UI.Track("a focused ui suite", " "))
-	tag:SetPoint("TOPLEFT", word, "BOTTOMLEFT", 0, -6)
+	tag:SetText(UI.Track("A FOCUSED UI SUITE", " ")) -- v3: uppercase tracked, matches the mockup
+	tag:SetPoint("TOPLEFT", word, "BOTTOMLEFT", 0, -9) -- mockup ratio (7px @ 1x -> ~9 design-px)
 
 	-- "MODULES" caption above the nav list (v3 mockup, stage 3): a small tracked
-	-- uppercase label, same left gutter as the nav items. The first nav item
-	-- anchors below it (see the nav loop).
+	-- uppercase label, same left gutter as the nav items (tag is already inset by
+	-- navGutter, so x=0 here). Anchored off the TAGLINE's real bottom, not the
+	-- brand frame's edge, so it doesn't inherit dead space from navBrandH.
 	local navLabel = FS(nav, "caption", C.textMuted)
 	navLabel:SetText(UI.Track("MODULES", " "))
-	navLabel:SetPoint("TOPLEFT", brand, "BOTTOMLEFT", S.panelGutter, -S.s6)
+	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -42) -- mockup ratio (34px @ 1x -> ~42 design-px)
 
 	-- Version chip (stage 3): muted "v<x.y.z>" pinned to the very bottom-right of
 	-- the sidebar so it never floats when the preview button is hidden (Florian
@@ -391,6 +466,35 @@ function Shell:Build()
 	tabStrip:SetHeight(S.tabH)
 	tabStrip:SetPoint("TOPLEFT", main, "TOPLEFT", S.panelGutter, -S.contentTopGap)
 	tabStrip:SetPoint("TOPRIGHT", main, "TOPRIGHT", -S.panelGutter, -S.contentTopGap)
+
+	-- v3: solid rounded backing behind the tabs, so the tab row reads as a
+	-- distinct strip (esp. later over the dot field). COMPACT — hugs the tabs:
+	-- LEFT + padding frames the first tab, RIGHT follows the last tab (re-anchored
+	-- per section in RebuildTabs). Created BEFORE the tabs so they draw on top.
+	local tabStripBg = CreateFrame("Frame", nil, tabStrip)
+	tabStripBg:SetFrameLevel(tabStrip:GetFrameLevel() + 1) -- above the strip frame, below the slider
+	-- v3: fully-round capsule (rounded-full, like the mockup) via the pill assets
+	-- at the exact strip height (round-fill 9-slice can't do radius > half-height).
+	UI.PillFill(tabStripBg, P.card, "BACKGROUND", S.tabH)
+	UI.PillBorder(tabStripBg, L.soft, "BORDER", S.tabH)
+	tabStripBg:Hide()
+	self._tabStripBg = tabStripBg
+
+	-- v3 sliding tab pill: ONE semi-transparent white pill (~10%) + baked underglow
+	-- that tweens + resizes to the active tab. Created BEFORE the tabs so they draw
+	-- on top. Positioned by Shell:UpdateTabIndicator.
+	local tabSlider = CreateFrame("Frame", nil, tabStrip)
+	tabSlider:SetFrameLevel(tabStrip:GetFrameLevel() + 2) -- above the strip backing, below the tab text
+	tabSlider._ref = tabStrip
+	local tglow = tabSlider:CreateTexture(nil, "BACKGROUND")
+	tglow:SetTexture(TEX .. "tab-glow")
+	tglow:SetSnapToPixelGrid(false); tglow:SetTexelSnappingBias(0)
+	tglow:SetPoint("TOPLEFT", tabSlider, "TOPLEFT", -S.tabGlowX, S.tabGlowTop)
+	tglow:SetPoint("BOTTOMRIGHT", tabSlider, "BOTTOMRIGHT", S.tabGlowX, -S.tabGlowBot)
+	tglow:SetVertexColor(1, 1, 1, 0.36) -- white glow, subtle; spills a bit past the pill edge (softness baked into the alpha)
+	UI.PillFill(tabSlider, { r = 1, g = 1, b = 1, a = 0.10 }, "ARTWORK", S.tabH - S.tabStripPad * 2) -- white/10 capsule (fully round)
+	tabSlider:Hide()
+	self._tabSlider = tabSlider
 
 	-- Info badge on the right of the tab strip (v2 refinement no. 4, e.g. the
 	-- active spec on the Tracking tab). Screens fill it via Shell:SetTabBadge;
@@ -542,18 +646,11 @@ function Shell:Build()
 	self._navButtons = {}
 	local prev
 	for i, sec in ipairs(SECTIONS) do
-		local nb = makeNavItem(nav, sec[1], sec.icon)
+		local nb = makeNavItem(nav, sec[1]) -- v3: text-only nav (icons dropped per the mockup; pass sec.icon to restore)
 		if prev then
-			if sec.sep then
-				local div = nav:CreateTexture(nil, "ARTWORK")
-				div:SetHeight(1)
-				setColor(div, L.divider)
-				div:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", S.s4, -S.s3)
-				div:SetPoint("TOPRIGHT", prev, "BOTTOMRIGHT", -S.s4, -S.s3)
-				nb:SetPoint("TOP", prev, "BOTTOM", 0, -(S.s3 * 2 + 1))
-			else
-				nb:SetPoint("TOP", prev, "BOTTOM", 0, -2)
-			end
+			-- v3: uniform spacing, NO group divider lines (mockup) — sec.sep kept in
+			-- SECTIONS for later but no longer draws a line or an extra gap.
+			nb:SetPoint("TOP", prev, "BOTTOM", 0, -S.navItemGap)
 		else
 			nb:SetPoint("TOP", navLabel, "BOTTOM", 0, -S.navGroupGap)
 		end
@@ -601,7 +698,7 @@ function Shell:RebuildTabs(sectionIndex)
 		if not tb then
 			tb = makeTab(self._tabStrip, label)
 			if i > 1 then tb:SetPoint("LEFT", pool[i - 1], "RIGHT", S.s3, 0)
-			else tb:SetPoint("LEFT", self._tabStrip, "LEFT", 0, 0) end
+			else tb:SetPoint("LEFT", self._tabStrip, "LEFT", S.tabStripPad, 0) end -- v3: inset by the strip padding
 			tb:SetScript("OnClick", function(selfBtn) Shell:SelectTab(selfBtn._index) end)
 			pool[i] = tb
 		end
@@ -613,14 +710,53 @@ function Shell:RebuildTabs(sectionIndex)
 		self._tabButtons[i] = tb
 	end
 	for i = #tabs + 1, #pool do pool[i]:Hide() end
+	-- v3: re-anchor the solid strip backing to hug this section's tabs. The RIGHT
+	-- anchor rides the last tab frame, so it auto-follows the deferred Fit() resize.
+	local last = self._tabButtons[#tabs]
+	if last then
+		local sb = self._tabStripBg
+		sb:ClearAllPoints()
+		sb:SetPoint("TOPLEFT", self._tabStrip, "TOPLEFT", 0, 0)
+		sb:SetPoint("BOTTOMLEFT", self._tabStrip, "BOTTOMLEFT", 0, 0)
+		sb:SetPoint("RIGHT", last, "RIGHT", S.tabStripPad, 0)
+		sb:Show()
+	else
+		self._tabStripBg:Hide()
+	end
 	-- Re-measure one frame later: on the very first build (panel still hidden /
 	-- fonts maybe not ready) GetStringWidth returns 0 -> tiny tabs.
 	C_Timer.After(0, function()
 		for _, t in ipairs(self._tabButtons) do if t.Fit then t:Fit() end end
+		self:UpdateTabIndicator(false) -- snap the pill to the final (post-Fit) tab widths
 	end)
 	-- Return to the tab that was active the last time this section was open
 	-- (session memory; falls back to the first tab).
 	Shell:SelectTab(self._lastTab[sectionIndex] or 1)
+end
+
+-- v3 sliding indicators: reposition the nav / tab pill to the active item.
+-- Geometry read from the item frames (scale-safe via itemRectIn). animate=false
+-- at build/show time (positions just resolved), animate=true on a user click.
+-- Silently no-ops while positions are unresolved (panel hidden) -> OnShow retries.
+function Shell:UpdateNavIndicator(animate)
+	local ind = self._navSlider
+	if not ind then return end
+	local sec = SECTIONS[self._section or 0]
+	local item = self._navButtons[self._section or 0]
+	if (not item) or (sec and sec.soon) then ind:Hide(); ind._cx = nil; return end
+	local ox, oy, w, h = itemRectIn(item, self._nav)
+	if not ox then return end
+	slideTo(ind, ox + S.navPillPadX, oy - S.navPillPadY, w - S.navPillPadX * 2, h - S.navPillPadY * 2, animate)
+end
+
+function Shell:UpdateTabIndicator(animate)
+	local ind = self._tabSlider
+	if not ind then return end
+	local item = self._tabButtons[self._tab or 0]
+	if not item then ind:Hide(); ind._cx = nil; return end
+	local ox, oy, w, h = itemRectIn(item, self._tabStrip)
+	if not ox then return end
+	slideTo(ind, ox, oy - S.tabStripPad, w, h - S.tabStripPad * 2, animate)
 end
 
 function Shell:SelectSection(index)
@@ -628,9 +764,12 @@ function Shell:SelectSection(index)
 	local sec = SECTIONS[index]
 	-- Never highlight coming-soon modules as active (they stay muted + chip).
 	for i, nb in ipairs(self._navButtons) do nb:SetActive(i == index and not sec.soon) end
+	self:UpdateNavIndicator(self._frame and self._frame:IsShown())
 	if sec.soon then
 		-- No tabs, no tab selection — render the placeholder page directly.
 		for _, t in ipairs(self._tabPool) do t:Hide() end
+		if self._tabStripBg then self._tabStripBg:Hide() end
+		if self._tabSlider then self._tabSlider:Hide(); self._tabSlider._cx = nil end
 		wipe(self._tabButtons)
 		self._tab = nil
 		self:RenderContent()
@@ -643,6 +782,7 @@ function Shell:SelectTab(index)
 	self._tab = index
 	if self._section then self._lastTab[self._section] = index end
 	for i, tb in ipairs(self._tabButtons) do tb:SetActive(i == index) end
+	self:UpdateTabIndicator(self._frame and self._frame:IsShown())
 	self:RenderContent()
 end
 

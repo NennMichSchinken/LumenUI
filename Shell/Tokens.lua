@@ -253,16 +253,22 @@ UI.S = {
 	s1 = 2, s2 = 6, s3 = 8, s4 = 12, s5 = 14, s6 = 16, s7 = 20, s8 = 24, s9 = 36,
 	cardPad     = 20,
 	panelGutter = 30, -- content padding (spec 24 screen px)
-	navWidth    = 275, -- sidebar (spec 220 screen px)
-	navBrandH   = 88, -- brand block (wordmark + tagline) at the top of the sidebar
-	                  -- (spec "Header 56" maps to app headers, not this block — kept as is)
-	tabH        = 48, -- tab strip / tab button height (spec 38 screen px -> 47.5, on-grid 48)
+	navWidth    = 315, -- sidebar (v3: +40 wider so the navbar gains L/R breathing room without cramping content)
+	navGutter   = 50, -- v3: nav-specific left inset for wordmark/tagline/MODULES/items (more air than the content panelGutter)
+	navBrandH   = 108, -- brand block (wordmark + tagline) at the top of the sidebar
+	                  -- (v3: taller -> more air between the tagline and the MODULES caption / first item)
+	tabH        = 52, -- tab strip / tab button height (v3: +4 taller, more generous row)
+	tabStripPad = 7,  -- v3: inner padding of the tab-strip capsule around the tab pills (also the pill's vertical inset; pill height = tabH - 2*this = 38)
+	tabGlowX    = 26, -- v3: baked glow horizontal bleed beyond the sliding tab pill (soft halo LARGER than the tab, spills past the strip edge)
+	tabGlowTop  = 18, -- v3: glow bleed above the pill (broad halo, not just an underglow)
+	tabGlowBot  = 22, -- v3: glow bleed below the pill
 	navItemH    = 58, -- sidebar nav row height (Florian 2026-07-05: +8 taller)
-	navPillPadX = 12, -- active-pill inset from the sidebar edges (v3 nav mockup)
+	navPillPadX = 32, -- active-pill / hover-pill inset from the sidebar edges (v3: more L/R air, matches the wider navGutter)
 	navPillPadY = 4,  -- active-pill vertical inset within the nav row
 	navIconSize = 18, -- nav-row Lucide icon (TGA rendered at 32px, shown ~18)
 	navIconGap  = 10, -- gap: nav icon -> label
-	navGroupGap = 10, -- "MODULES" caption -> first nav item
+	navGroupGap = 18, -- "MODULES" caption -> first nav item (mockup ratio: 14px @ 1x -> ~18 design-px)
+	navItemGap  = 4,  -- v3: uniform gap between nav rows (group divider lines removed per the mockup)
 	closeGlyph  = 18, -- close-button "x" glyph (Lucide) inside the 34px button
 	scrollBarW  = 4,  -- width of the content scrollbar
 	scrollBarGap = 14, -- gap ScrollFrame -> scrollbar (in the gutter)
@@ -554,7 +560,7 @@ UI.LAYOUT = {
 -- (v2: no footer and no full-width header anymore — the sidebar runs the full
 -- panel height and carries the brand block; see S.navBrandH.)
 UI.PANEL = {
-	w = 1750, h = 1250, scale = 0.80,
+	w = 1790, h = 1250, scale = 0.80, -- v3: +40 wider (the nav gained +40; content width unchanged)
 }
 
 -- ---------------------------------------------------------------------------
@@ -664,7 +670,7 @@ end
 --  texture with a solid quad) — UI.SetColor routes them to SetVertexColor.
 -- ---------------------------------------------------------------------------
 local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
-local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [16] = 17, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer)
+local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [12] = 13, [16] = 17, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer)
 local ROUND_SUFFIX = { top = "-top", bottom = "-btm", left = "-left", right = "-right" } -- else full
 -- v3 (2026-07-21): radii bumped toward GENEROUS on the headline surfaces —
 -- cards lg 10->18, chrome xl 16->22 (new 9-slice assets generated for both;
@@ -712,7 +718,7 @@ end
 -- (32 / 28 switches; 4 slider bars) so only the straight middle stretches
 -- horizontally — vertical scale stays 1:1 and the end caps keep their curve.
 -- h must match the frame's height exactly.
-local PILL_MARGIN = { [32] = 17, [28] = 15, [22] = 12, [18] = 10, [4] = 3 } -- cap width (radius + 1px buffer)
+local PILL_MARGIN = { [52] = 27, [48] = 25, [38] = 20, [36] = 19, [32] = 17, [28] = 15, [22] = 12, [18] = 10, [4] = 3 } -- cap width (radius + 1px buffer)
 
 local function pillTexture(parent, file, col, layer, h)
 	local m = PILL_MARGIN[h]
