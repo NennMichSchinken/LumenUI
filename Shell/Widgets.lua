@@ -307,27 +307,38 @@ function W.Slider(parent, o)
 	thumb:SetHitRectInsets(-2, -2, -2, -2)
 	thumb:SetScript("OnMouseDown", beginDrag)
 	thumb:SetScript("OnMouseUp", endDrag)
+	-- Force the value EditBox to actually re-rasterize. `box:SetText` with an
+	-- UNCHANGED string is a no-op — so a box that first painted blank (built
+	-- hidden / cold glyph cache) keeps the blank layout through visual()'s SetText
+	-- and even through a tab-return re-show (report 2026-07-21, first Group-tab
+	-- slider). Clear first so the set is always a real change; min/max labels are
+	-- plain FontStrings that self-heal but re-set them here for free.
+	local function repaint()
+		visual(cur)
+		if not typing then box:SetText(""); box:SetText(cur .. unit) end
+		if minL then minL:SetText(tostring(minV)); maxL:SetText(tostring(maxV)) end
+	end
 	-- Track width is only known after the layout -> redraw on size change.
 	track:SetScript("OnSizeChanged", function() visual(cur) end)
 	-- Cold-start self-heal (report 2026-07-03): the very first build after a game
 	-- start can run before the track width resolves — fill/thumb land at width 0
-	-- and, if OnSizeChanged doesn't fire in that window, stay invisible. The
-	-- value EditBox additionally keeps its blank first text layout even after
-	-- the glyph cache warms (FontStrings self-heal, EditBoxes re-layout only on
-	-- the next SetText). Repainting whenever the slider becomes visible covers
-	-- both — and keeps reused (cached) screens fresh for free.
-	track:SetScript("OnShow", function() visual(cur) end)
+	-- and, if OnSizeChanged doesn't fire in that window, stay invisible. The value
+	-- EditBox additionally keeps its blank first text layout even after the glyph
+	-- cache warms. Repainting (force-re-set) whenever the slider becomes visible
+	-- covers both — and keeps reused (cached) screens fresh for free.
+	track:SetScript("OnShow", repaint)
 
 	visual(cur)
 	-- Cold-start glyph repaint (report 2026-07-14, QoL tab): when the slider is built
-	-- into an ALREADY-VISIBLE parent (opening a tab on a cold client), OnShow never fires,
-	-- so the value box + min/max labels keep the blank layout the cold glyph cache produced
-	-- on the first paint. A one-shot deferred re-set (next frame, after that first paint
-	-- forced rasterization) repaints them — same mechanism W.Button uses from creation.
-	C_Timer.After(0, function()
-		visual(cur)
-		if minL then minL:SetText(tostring(minV)); maxL:SetText(tostring(maxV)) end
-	end)
+	-- into an ALREADY-VISIBLE parent (opening a tab on a cold client), OnShow never
+	-- fires, so the box + min/max labels keep the blank layout the cold glyph cache
+	-- produced on the first paint. One next-frame re-set isn't always enough for the
+	-- VERY FIRST widget of a screen (the atlas can still be cold a frame later, and
+	-- the track width may not have resolved yet — report 2026-07-21, first Group-tab
+	-- slider missing entirely on cold start / reload). Retry over the first ~0.3s.
+	for _, delay in ipairs({ 0, 0.05, 0.15, 0.3 }) do
+		C_Timer.After(delay, repaint)
+	end
 	f.SetValueExternal = function(_, v) cur = v; visual(v) end
 	-- Grey out + lock interaction (for dependent sections, e.g. "Show name" off).
 	-- RECOLOR instead of frame alpha: alpha'd gold over the dark inset boxes
@@ -2582,6 +2593,14 @@ function W.Collapsible(parent, o)
 			if o.eye.tip then W.ShowTextTip(eb, o.eye.tip, nil, "TOP") end end)
 		eb:SetScript("OnLeave", function() hovered = false; paintEye(); W.HideTip() end)
 		eb:SetScript("OnClick", function() o.eye.set(not o.eye.get()); paintEye() end)
+		-- Central eye-popover sync: register the paint on the screen so external
+		-- toggles (dock popover / same key on another tab) repaint this glyph too
+		-- (Shell:RepaintEyes + cache re-show). Mirrors makeBox's card eye.
+		local scr = ns.Shell and ns.Shell._screen
+		if scr then
+			scr._eyePaints = scr._eyePaints or {}
+			scr._eyePaints[#scr._eyePaints + 1] = paintEye
+		end
 	end
 
 	-- Hover wash (subtle, like the tracking rows) — rounded like the card, so
