@@ -45,12 +45,14 @@ local InCombatLockdown = InCombatLockdown
 -- 2026-07-13). Converted to UIParent units per drag (depends on UI scale).
 local TOL_PX = 4
 
--- Brand gold (palette C1 #E9BB69 — kept literal here: this file loads before
--- Shell/Tokens; runtime-built parts below use the real tokens instead).
-local GOLD_R, GOLD_G, GOLD_B = 0.91, 0.73, 0.41
--- C2 interactive gold #CDA255 (coupled) + muted text #808283 (idle chain icon).
-local GOLDINT_R, GOLDINT_G, GOLDINT_B = 0.80, 0.64, 0.33
-local MUTED_R, MUTED_G, MUTED_B = 0.50, 0.51, 0.51
+-- v3 mono (2026-07-21): the in-world edit accents go monochrome too (Florian's
+-- call) — no warm gold on the game frames either. Kept literal here because this
+-- file loads before Shell/Tokens; values mirror the mono palette so the literal
+-- fallbacks match the UI.P paths. Off-white = C1 (P.goldBrand #ECEDEF), pure
+-- light = C2 accent (P.goldInt #F4F4F6), muted grey = P.textSecondary.
+local GOLD_R, GOLD_G, GOLD_B = 0.925, 0.929, 0.937 -- off-white #ECEDEF (guides, selection)
+local GOLDINT_R, GOLDINT_G, GOLDINT_B = 0.957, 0.957, 0.965 -- pure-light accent #F4F4F6 (coupled/active)
+local MUTED_R, MUTED_G, MUTED_B = 0.541, 0.541, 0.565 -- muted #8A8A90 (idle chain icon)
 
 local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
 local CHAIN = 20 -- chain-icon edge length (top-right of the overlay)
