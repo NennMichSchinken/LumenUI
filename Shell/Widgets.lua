@@ -2821,17 +2821,22 @@ end
 
 -- ---------------------------------------------------------------------------
 --  OptionRow — stacked settings row (stacked-row standard, design bible §8):
---  soft top hairline, label LEFT, ONE compact control (switch / checkbox /
+--  soft BOTTOM hairline, label LEFT, ONE compact control (switch / checkbox /
 --  28px color chip — all switchSmallH tall) attached RIGHT via row:Attach().
 --  All rows share one height (M.optionRowH) so nothing jumps inside a card;
 --  SetWidgetEnabled greys the label together with the attached control.
+--  Line at the BOTTOM, not the top (Florian 2026-07-22): a top line on the
+--  first row doubled up with the card-header divider right above it; owning the
+--  separator on the bottom means the first row has none (no double line under
+--  the header) and the LAST row closes the group cleanly. Flush-stacked rows
+--  keep every in-between separator at the same boundary as before.
 -- ---------------------------------------------------------------------------
 function W.OptionRow(parent, label)
 	local row = CreateFrame("Frame", nil, parent)
 	local line = row:CreateTexture(nil, "ARTWORK")
 	UI.SetColor(line, L.faint)
-	line:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-	line:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+	line:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+	line:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
 	-- Thickness pixel-snapped, position plain (the UI.Border rule): a naive
 	-- 1px height rounds away under the panel scale depending on the row's y
 	-- position — bit the aggro "Color" row on 2026-07-11.
