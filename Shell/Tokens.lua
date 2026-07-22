@@ -30,32 +30,46 @@ UI.hex = hex
 --  widget/screen code.
 -- ---------------------------------------------------------------------------
 local P = {
-	-- v3 MONOCHROME-CALM (2026-07-21, Florian-agreed full redesign): off-white
-	-- on near-black, NEVER pure #000/#FFF. Hierarchy comes from elevation +
-	-- subtle white hairlines, NOT from tinted fills. Accent = LIGHT ITSELF
-	-- (pure light) — brightness IS the accent; gold is RETIRED from the chrome
-	-- (incl. the wordmark). Semantic colour (class/role/dispel) lives only in
-	-- the preview island, never in the chrome.
-	-- The A/B/C/D/E slot NAMES are kept so the legacy aliases below keep
-	-- resolving; only the VALUES change (C is no longer gold but the light accent).
-	page         = hex("050506"), -- app background / dim behind the panel
-	inset        = hex("161618"), -- A1: edit boxes, open dropdown lists, slider value box, troughs
-	sidebar      = hex("0B0B0D"), -- A2: nav column (now SEAMLESS with the panel — hierarchy via the active pill)
-	panel        = hex("0B0B0D"), -- A3: main window surface
-	card         = hex("141416"), -- A4: section cards (the ONE uniform card surface)
-	element      = hex("161618"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs
-	elementHover = hex("232327"), -- A6: hover step for A5
+	-- v3 MONOCHROME-CALM + OBSIDIAN LAYERS (2026-07-22, Florian's Design-System
+	-- doc). Graduated blue-black surfaces: the visible STEP between layers (panel
+	-- -> sidebar -> card -> input) is what reads calm/premium — the earlier v3
+	-- palette had panel and sidebar identical, so nothing lifted. Accent = LIGHT
+	-- ITSELF for now (monochrome, no chrome colour); a real user-chosen
+	-- AccentColor can be swapped in later via the Accent engine below with NO
+	-- component edits. Semantic colour (class/role/dispel) lives only in the
+	-- preview island, never in the chrome.
+	-- NEVER pure #000/#FFF. The A/B/C/D/E slot NAMES are load-bearing (referenced
+	-- directly across Shell/Widgets/Screens/EditMode) — keep every key; the
+	-- forward-looking semantic API is UI.Surface/UI.Text/UI.Border below.
 
-	-- B: lines — pure white; UI.line applies the (low) alpha. THE tuning spot.
-	borderSoft   = hex("FFFFFF"), -- B1: card/row borders, fine separators (used at ~.06 alpha)
-	borderStrong = hex("FFFFFF"), -- B2: control borders, hover edges, focus (used at ~.14 alpha)
+	-- A: surface layers — PURE NEUTRAL, anchored at panel #0C0C0C (Florian
+	-- 2026-07-22). The DEPTH comes from the lightness STEP between layers (panel ->
+	-- sidebar -> card -> input), NOT from any hue — so this is fully neutral grey
+	-- (R=G=B), the most flexible canvas for a future user-chosen AccentColor: warm
+	-- (gold/orange/red) and cool (blue/violet) accents both sit cleanly on a
+	-- neutral ground, whereas a tinted base would fight the opposite temperature.
+	-- The lightness steps are preserved 1:1 from the tinted version, so cards stay
+	-- as lifted/premium as before — it never collapses back to the flat "panel ==
+	-- card" black. Panel is a hair darker than the earlier value (reads deeper).
+	page         = hex("070707"), -- dim behind the panel (a step under Window)
+	panel        = hex("0C0C0C"), -- A3: main window surface (doc: Window)
+	sidebar      = hex("111111"), -- A2: nav column (a real step lighter than the panel)
+	card         = hex("151515"), -- A4: section cards (doc: Cards)
+	inset        = hex("191919"), -- A1: edit boxes, open dropdown lists, slider value box, troughs (doc: Inputs)
+	element      = hex("191919"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs (= Inputs layer)
+	elementHover = hex("222222"), -- A6: hover step (doc: Hover)
 
-	-- C: accent = pure light. Brightness is the accent (bright = active/
-	-- interactive, grey = quiet). Names kept from the two-gold era; all three now
-	-- point at the neutral light accent so every former gold call site goes mono.
-	goldBrand    = hex("ECEDEF"), -- C1 (was brand gold): brand/headers/text-accents -> off-white
-	goldInt      = hex("F4F4F6"), -- C2: active nav/tab fill, primary button fill, control accents
-	goldIntHover = hex("FFFFFF"), -- C3: hover step (a touch brighter)
+	-- B: lines — pure white; UI.line / UI.Border apply the (low) alpha. THE tuning spot.
+	borderSoft   = hex("FFFFFF"), -- B1: card/row borders, fine separators (used at ~.05 alpha)
+	borderStrong = hex("FFFFFF"), -- B2: control borders, hover edges, focus (used at ~.10 alpha)
+
+	-- C: interactive accent = pure light (monochrome-now). Brightness IS the
+	-- accent (bright = active/interactive, grey = quiet). Names kept from the
+	-- two-gold era; goldInt is the ACCENT BASE the engine below derives from —
+	-- swap it (or call UI.SetAccent) to introduce a coloured theme later.
+	goldBrand    = hex("F4F4F4"), -- C1 (was brand gold): brand/headers/wordmark -> heading off-white (non-clickable)
+	goldInt      = hex("F4F4F6"), -- C2 = ACCENT BASE: active nav/tab fill, primary button fill, control accents
+	goldIntHover = hex("FFFFFF"), -- C3: accent hover (a touch brighter)
 	-- Softened light for FILLED toggle tracks: the switch ON track. A pure-white
 	-- fill "blooms" (irradiation) next to the dark OFF track + dark knob, reading
 	-- larger/harder than OFF; this calmer light keeps it clearly "on" without the
@@ -64,15 +78,17 @@ local P = {
 	-- Slider VALUE readout (default/blurred): leads clearly over the muted field
 	-- label but is NOT the blaring pure-white accent — a card of 4 sliders side by
 	-- side put 4 near-white values in a row and read "overloaded" (Florian
-	-- 2026-07-22). Brightens to textPrimary while the value box has focus (the
-	-- "typeable" affordance).
+	-- 2026-07-22). Brightens to textPrimary while the value box has focus.
 	sliderValue  = hex("C2C2C8"),
 
-	-- D: text
-	textPrimary  = hex("ECEDEF"), -- D1: off-white — names, labels, button text
-	textSecondary= hex("8A8A90"), -- D2: muted — descriptions, hints, min/max numbers
-	textDisabled = hex("57575D"), -- D3: faint — greyed-out controls
-	textOnGold   = hex("0B0B0D"), -- D4: text/knob ON the light accent (dark, so it reads)
+	-- D: text — FOUR tiers (doc: Heading / Body / Description / Disabled). The new
+	-- Body tier is what calms the page: row & checkbox labels drop off the bright
+	-- Heading so card titles keep the hierarchy alone.
+	textPrimary  = hex("F4F4F4"), -- D1 Heading: card titles, wordmark, active nav, values
+	textBody     = hex("D7D7D7"), -- D2 Body: row & checkbox labels (the calm mid tier)
+	textSecondary= hex("9A9FA5"), -- D3 Description: descriptions, hints, field labels, idle nav, min/max
+	textDisabled = hex("666A70"), -- D4 Disabled: greyed-out controls
+	textOnGold   = hex("0C0C0C"), -- text/knob ON the light accent (dark = Window, so it reads)
 
 	-- E: status (the one non-mono colour — destructive actions)
 	danger       = hex("C74B4B"), -- E1: destructive text + outline
@@ -81,38 +97,101 @@ local P = {
 }
 UI.P = P
 
+local function withA(c, a) return { r = c.r, g = c.g, b = c.b, a = a } end
+
+-- ---------------------------------------------------------------------------
+--  ACCENT ENGINE (v3, 2026-07-22) — the whole app derives its interactive
+--  accent from ONE base colour. Today the accent is LIGHT ITSELF (monochrome
+--  premium look, per Florian: build it clean-mono first, keep the colour option
+--  ready). Later a user could pick any hue via UI.SetAccent and every derived
+--  state recomputes with no component edits. Components should read UI.Accent.*
+--  (or the legacy C.gold* aliases that point at the base), never a raw hex.
+--  NOTE (migration): the legacy C.gold*/UI.line aliases below still bind to the
+--  base VALUE at load; a live SetAccent rebuilds UI.Accent.* (the forward API).
+--  Re-pointing every legacy call site onto UI.Accent.* is a later phase.
+-- ---------------------------------------------------------------------------
+local function mixTo(c, o, t) -- linear blend c -> o by t (0..1)
+	return { r = c.r + (o.r - c.r) * t, g = c.g + (o.g - c.g) * t, b = c.b + (o.b - c.b) * t, a = 1 }
+end
+local WHITE = { r = 1, g = 1, b = 1 }
+local BLACK = { r = 0, g = 0, b = 0 }
+function UI.BuildAccent(base)
+	return {
+		color     = base,                 -- fills, active nav/tab, primary button
+		hover     = mixTo(base, WHITE, 0.35), -- brighter on hover
+		pressed   = mixTo(base, BLACK, 0.12), -- slightly darker while pressed
+		selection = withA(base, 0.14),    -- selected-row / range wash
+		focus     = withA(base, 0.55),    -- keyboard-focus ring
+		glow      = withA(base, 0.35),    -- soft glow behind an active pill/indicator
+	}
+end
+UI.ACCENT_BASE = P.goldInt
+UI.Accent = UI.BuildAccent(UI.ACCENT_BASE)
+-- Swap the interactive accent at runtime (future user theme). Rebuilds the
+-- derived table IN PLACE so existing UI.Accent references stay valid.
+function UI.SetAccent(col)
+	local a = UI.BuildAccent(col)
+	for k, v in pairs(a) do UI.Accent[k] = v end
+	UI.ACCENT_BASE = col
+end
+
+-- ---------------------------------------------------------------------------
+--  SEMANTIC TOKENS (v3 Design-System doc) — the forward-looking API. Components
+--  should name a role (Surface.Card, Text.Body, Border.Default, Accent.color),
+--  never a colour. Legacy UI.C.* aliases keep the existing ~7900 lines working
+--  until call sites migrate onto these names.
+-- ---------------------------------------------------------------------------
+UI.Surface = {
+	Window  = P.panel,
+	Sidebar = P.sidebar,
+	Card    = P.card,
+	Input   = P.inset,
+	Hover   = P.elementHover,
+}
+UI.Text = {
+	Primary     = P.textPrimary,   -- Heading (brightest)
+	Secondary   = P.textBody,      -- Body (mid — row labels)
+	Description  = P.textSecondary, -- muted description/hint
+	Disabled    = P.textDisabled,
+}
+UI.Border = {
+	Default  = withA(P.borderSoft, 0.05),
+	Hover    = withA(P.borderStrong, 0.08),
+	Selected = withA(P.borderStrong, 0.12),
+}
+
 -- Legacy token names -> palette roles. Widgets/Screens/Shell still read UI.C.*;
--- redesign phases 2/3 migrate the call sites onto UI.P directly, then the
--- remaining aliases here shrink away.
+-- later phases migrate the call sites onto UI.Surface/UI.Text/UI.Accent, then
+-- the remaining aliases here shrink away.
 UI.C = {
-	-- grounds (old warm ink ramp -> new neutral surfaces)
+	-- grounds (Obsidian surface layers)
 	ink900   = P.page,         -- app background / dim (darkest — behind the panel)
 	ink850   = P.panel,        -- main panel
 	ink800   = P.panel,        -- (was: glow center; flat now)
-	ink700   = P.element,      -- closed dropdown header / keybind field (A5 per v2 spec)
+	ink700   = P.element,      -- closed dropdown header / keybind field (A5)
 	ink650   = P.page,         -- icon-tile shadow
 	ink600   = P.card,         -- raised card
-	ink550   = P.inset,        -- popover / open dropdown list (A1 per v2 spec)
+	ink550   = P.inset,        -- popover / open dropdown list (A1)
 	ink520   = P.card,         -- sub-box (grouping is carried by borders now, not a lighter fill)
 	inkTint  = P.element,      -- (was: icon-tile gradient top; flat now)
-	sliderTrack = P.elementHover, -- unfilled slider track (Florian 2026-07-22: was P.element, nearly invisible against P.card -- needs to read as a visible channel showing the full range, like the mockup)
+	sliderTrack = P.elementHover, -- unfilled slider track (visible channel showing the full range)
 
-	-- gold
+	-- accent (light; = ACCENT BASE via P.goldInt)
 	gold500  = P.goldInt,      -- interactive accent: control borders, icons, active
 	switchOn = P.switchOn,     -- softened light for the switch ON track (anti-bloom)
 	sliderValue = P.sliderValue, -- slider readout (blurred): leads over the label, not pure white
 	gold400  = P.goldIntHover, -- button hover
-	gold300  = P.goldBrand,    -- wordmark / display heading
-	gold250  = P.goldBrand,    -- brand-gold text accents (tooltip title, active list rows)
+	gold300  = P.goldBrand,    -- wordmark / display heading (Heading)
+	gold250  = P.goldBrand,    -- brand text accents (tooltip title, active list rows)
 	gold200  = P.goldIntHover, -- link hover
-	gold100  = P.textPrimary,  -- (was: lightest gold-white) -> neutral primary text
+	gold100  = P.textPrimary,  -- neutral primary text (Heading)
 
 	-- text
-	textStrong  = P.textPrimary,
-	textHeading = P.textPrimary,
-	textBody    = P.textPrimary,   -- checkbox/row labels
-	textMuted   = P.textSecondary,
-	textFaint   = P.textSecondary, -- muted-but-readable (true disabled uses P.textDisabled)
+	textStrong  = P.textPrimary, -- Heading: values, selected/active text
+	textHeading = P.textPrimary, -- Heading: card/group titles
+	textBody    = P.textBody,    -- Body: checkbox/row labels (calm mid tier)
+	textMuted   = P.textSecondary, -- Description
+	textFaint   = P.textSecondary, -- Description (muted-but-readable; true disabled uses P.textDisabled)
 	onGold      = P.textOnGold,
 
 	-- status
@@ -125,20 +204,19 @@ local g = UI.C.gold500
 local d = UI.C.danger500
 local function goldA(a) return { r = g.r, g = g.g, b = g.b, a = a } end
 local function dangerA(a) return { r = d.r, g = d.g, b = d.b, a = a } end
-local function withA(c, a) return { r = c.r, g = c.g, b = c.b, a = a } end
 UI.goldA = goldA
 UI.dangerA = dangerA
 
--- v3 MONOCHROME: lines are pure WHITE at LOW alpha (rim-subtle, per the mono
--- redesign — hierarchy leans on elevation + fill, not on heavy borders). The
--- active/open state is now the pure-light ACCENT (goldInt = light), not gold.
--- THE tuning spot: nudge these alphas if cards read too flat or too caged.
+-- v3 MONOCHROME: lines are pure WHITE at LOW alpha (rim-subtle — hierarchy leans
+-- on the graduated Obsidian layers + fill, not on heavy borders; softened a touch
+-- from v3a now that the layer steps carry the separation). The active/open state
+-- is the pure-light ACCENT (goldInt), not gold. THE tuning spot.
 UI.line = {
-	faint   = withA(P.borderSoft, 0.05),   -- line-2: finest separators (content)
-	divider = withA(P.borderSoft, 0.11),   -- structural divider lines header/nav
-	soft    = withA(P.borderSoft, 0.08),   -- app border: card/row borders (a touch up pre-shadow)
-	mid     = withA(P.borderStrong, 0.16), -- standard control borders
-	strong  = withA(P.goldInt, 1),         -- active / open (now the pure-light accent)
+	faint   = withA(P.borderSoft, 0.04),   -- line-2: finest separators (content)
+	divider = withA(P.borderSoft, 0.10),   -- structural divider lines header/nav
+	soft    = withA(P.borderSoft, 0.05),   -- app border: card/row borders (Default)
+	mid     = withA(P.borderStrong, 0.10), -- standard control borders (softer; layers do the separating)
+	strong  = withA(P.goldInt, 1),         -- active / open (the pure-light accent)
 	washSoft = goldA(0.06),
 	wash     = goldA(0.10),
 	dangerLine = dangerA(0.55),
