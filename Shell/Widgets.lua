@@ -227,7 +227,7 @@ function W.Slider(parent, o)
 	if compact then
 		box:SetSize(M.sliderCompactValW, M.sliderCompactValH)
 		box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-		UI:SetFont(box, "value", C.gold500)
+		UI:SetFont(box, "value", C.sliderValue) -- calm light, not pure white (brightens on focus)
 		box:SetJustifyH("RIGHT")
 		-- Bare value text (Florian 2026-07-22, Option A follow-up): the mockup
 		-- shows the value flush with the track's right edge, no box/fill/border
@@ -298,7 +298,7 @@ function W.Slider(parent, o)
 		typing = false
 		if ns.EditMode then ns.EditMode._fieldFocused = false end
 		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, L.soft) end
-		else self:SetTextColor(C.gold500.r, C.gold500.g, C.gold500.b) end
+		else self:SetTextColor(C.sliderValue.r, C.sliderValue.g, C.sliderValue.b) end
 		self:SetText(cur .. unit) -- reset to the canonical state
 	end)
 	-- Live clamp to max already while typing: 5555 jumps immediately to the max value,
@@ -382,9 +382,14 @@ function W.Slider(parent, o)
 		local barC = on and C.gold500 or P.textDisabled
 		UI.SetColor(fillbar, barC)
 		UI.SetColor(tt, barC)
-		local capC = on and (compact and C.textStrong or C.gold300) or C.textFaint
+		-- Enabled colours must MATCH the creation-time compact styling (muted label
+		-- + calm value), or a dependent slider (Name/HP cards call SetWidgetEnabled
+		-- via refreshName/HP) would get re-brightened to white and diverge from the
+		-- untoggled sliders (Size & arrangement) that never run this path (Florian
+		-- 2026-07-22). Classic (non-compact) keeps its bright caption/value.
+		local capC = on and (compact and C.textMuted or C.gold300) or C.textFaint
 		cap:SetTextColor(capC.r, capC.g, capC.b)
-		local valC = on and (compact and C.gold500 or C.textStrong) or C.textFaint
+		local valC = on and (compact and C.sliderValue or C.textStrong) or C.textFaint
 		box:SetTextColor(valC.r, valC.g, valC.b)
 		if minL then
 			local endC = on and C.textMuted or P.textDisabled

@@ -61,6 +61,12 @@ local P = {
 	-- larger/harder than OFF; this calmer light keeps it clearly "on" without the
 	-- blare and matches OFF's soft, round feel (Florian 2026-07-22).
 	switchOn     = hex("D6D6DA"),
+	-- Slider VALUE readout (default/blurred): leads clearly over the muted field
+	-- label but is NOT the blaring pure-white accent — a card of 4 sliders side by
+	-- side put 4 near-white values in a row and read "overloaded" (Florian
+	-- 2026-07-22). Brightens to textPrimary while the value box has focus (the
+	-- "typeable" affordance).
+	sliderValue  = hex("C2C2C8"),
 
 	-- D: text
 	textPrimary  = hex("ECEDEF"), -- D1: off-white — names, labels, button text
@@ -94,6 +100,7 @@ UI.C = {
 	-- gold
 	gold500  = P.goldInt,      -- interactive accent: control borders, icons, active
 	switchOn = P.switchOn,     -- softened light for the switch ON track (anti-bloom)
+	sliderValue = P.sliderValue, -- slider readout (blurred): leads over the label, not pure white
 	gold400  = P.goldIntHover, -- button hover
 	gold300  = P.goldBrand,    -- wordmark / display heading
 	gold250  = P.goldBrand,    -- brand-gold text accents (tooltip title, active list rows)
