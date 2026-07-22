@@ -1264,14 +1264,22 @@ local function newStack(holder)
 		bandF:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, y)
 		local n = #defs
 		local cols = {}
+		local spanSum = 0
 		for i = 1, n do
 			local colF = CreateFrame("Frame", nil, bandF)
 			colF:SetFrameLevel(bandF:GetFrameLevel())
 			cols[i] = colF
+			spanSum = spanSum + (defs[i].span or G.cols)
 		end
+		-- Underfilled band (spans sum < 12, e.g. a lone trailing span-6 card):
+		-- reserve the gutter for the EMPTY remainder too, so the card gets the same
+		-- width as a paired span-6 card and its edges line up with the 6+6 cards
+		-- above/below. Without this a lone span-6 was cardGap/2 wider (n-1=0 gutters)
+		-- than a Dispel-style paired card and stuck out (Florian 2026-07-22).
+		local phantomGutter = (spanSum < G.cols) and 1 or 0
 		local function layout(w)
 			if not w or w <= 0 then return end
-			local usable = w - G.cardGap * (n - 1)
+			local usable = w - G.cardGap * (n - 1 + phantomGutter)
 			local x = 0
 			for i = 1, n do
 				local cw = usable * (defs[i].span or G.cols) / G.cols
