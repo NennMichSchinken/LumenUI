@@ -711,12 +711,15 @@ local function buildBase(d, stack)
 	-- (Boxed sliders come from the file-level sliderBox helper, shared with
 	-- the Raid/Group builder.)
 	local b1 = stack:band({
-		{ span = 8, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
+		-- 6+6 (Florian 2026-07-22): Health bar's widest content is the 2 opacity
+		-- sliders, which fit a 6-card (field cells are constant width regardless of
+		-- span) — so the old 8+4 just wasted width. Now Text style gets a 6-card too.
+		{ span = 6, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
 		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
 		-- preview layer — the "text" preview eye lives on the per-context Text —
 		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
 		-- doesn't read as "the text on/off card".
-		{ span = 4, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
+		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
 	})
 	local sBar = b1.cards[1]
 
@@ -764,13 +767,13 @@ local function buildBase(d, stack)
 	end
 	sText:place(switchRow(d, T("Name in class color"), { get = tget("nameClassColor"),
 		set = function(v) rf().nameClassColor = v; relayout(); refreshNameCol() end }), M.optionRowH, R.row)
-	-- Narrow 4-card -> ONE unit field per row (§8).
-	local txR1, txc1 = W.FieldRow(d, d, 1, { height = fieldH })
-	W.Segment(txc1[1], { label = T("Name outline"), options = OUTLINE_SEG_OPTS, get = tget("nameOutline"), set = tset("nameOutline") }):SetAllPoints(txc1[1])
-	sText:place(txR1, fieldH, R.tight)
-	local txR2, txc2 = W.FieldRow(d, d, 1, { height = fieldH })
-	W.Segment(txc2[1], { label = T("HP outline"), options = OUTLINE_SEG_OPTS, get = tget("healthTextOutline"), set = tset("healthTextOutline") }):SetAllPoints(txc2[1])
-	sText:place(txR2, fieldH, R.row)
+	-- Outline segments HUG their content (Florian 2026-07-22): 4 short options
+	-- stretched across the full 6-card read too wide, so the strip is sized to the
+	-- options + padding and left-aligned, exactly like the tab bar.
+	local nameOut = W.Segment(d, { label = T("Name outline"), hug = true, options = OUTLINE_SEG_OPTS, get = tget("nameOutline"), set = tset("nameOutline") })
+	sText:place(nameOut, fieldH, R.tight)
+	local hpOut = W.Segment(d, { label = T("HP outline"), hug = true, options = OUTLINE_SEG_OPTS, get = tget("healthTextOutline"), set = tset("healthTextOutline") })
+	sText:place(hpOut, fieldH, R.row)
 	-- Advanced: the two text colors as chip rows (rarely touched — most run
 	-- class color/white; curation 2026-07-04).
 	if baseAdvState.text then
@@ -1367,7 +1370,7 @@ local function ccCatalogRow(d, s, b, spec)
 		end })
 	trash:SetPoint("RIGHT", row, "RIGHT", -PAD, 0)
 
-	local sw = W.Switch(row, {
+	local sw = W.Switch(row, { small = true, -- match the raidframe rows (Florian 2026-07-22: the full switch read too big/fat here)
 		get = function() return b.enabled ~= false end,
 		set = function(v) b.enabled = v; ccApply(); if row._setEnabled then row._setEnabled(v) end end })
 	sw:SetPoint("RIGHT", trash, "LEFT", -GAPX, 0)

@@ -303,6 +303,7 @@ UI.R = {
 UI.WIDGET = {
 	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
 	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
+	segHugPad   = 20, -- horizontal padding per cell for a content-width (hug) segment (tab-like, not stretched)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
 	sortArrowGlyph = 14, -- sort up/down arrow glyph (Lucide chevron-up/down)
 	buttonH     = 48, -- button height (v3 2026-07-22: 48, deliberately < controlH 51 + fully-round PILL shape, matching the mockup where buttons are shorter pills than the taller selects; uses the existing pill-*-h48 assets)
@@ -777,6 +778,54 @@ function UI.RoundKnob(parent, col, layer, size, r)
 	t:SetSize(size, size)
 	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
 	return t
+end
+
+-- ---------------------------------------------------------------------------
+--  Sliding indicator engine (v3) — ONE pill that TWEENS to the active item.
+--  A SHORT, self-terminating ease-out-cubic (§9-safe: the OnUpdate stops itself
+--  after SLIDE_DUR, NOT a persistent per-frame poll). Shared by the Shell chrome
+--  (tabs slide in X + resize; nav slides in Y) AND the Segment control (Widgets),
+--  so they animate identically. ind._ref = the frame the (ox,oy) offsets anchor to.
+-- ---------------------------------------------------------------------------
+UI.SLIDE_DUR = 0.28
+function UI.slideTo(ind, ox, oy, w, h, animate)
+	w = math.max(1, w); h = math.max(1, h)
+	local function apply(x, y, ww, hh)
+		ind:ClearAllPoints()
+		ind:SetPoint("TOPLEFT", ind._ref, "TOPLEFT", x, y)
+		ind:SetSize(ww, hh)
+	end
+	if (not animate) or ind._cx == nil then
+		ind._cx, ind._cy, ind._cw, ind._ch = ox, oy, w, h
+		ind:SetScript("OnUpdate", nil)
+		apply(ox, oy, w, h); ind:Show()
+		return
+	end
+	local sx, sy, sw, sh = ind._cx, ind._cy, ind._cw, ind._ch
+	ind:Show()
+	local el = 0
+	ind:SetScript("OnUpdate", function(self, dt)
+		el = el + dt
+		local t = el / UI.SLIDE_DUR; if t > 1 then t = 1 end
+		local e = 1 - (1 - t) * (1 - t) * (1 - t) -- ease-out cubic
+		local x  = sx + (ox - sx) * e
+		local y  = sy + (oy - sy) * e
+		local ww = sw + (w - sw) * e
+		local hh = sh + (h - sh) * e
+		self._cx, self._cy, self._cw, self._ch = x, y, ww, hh
+		apply(x, y, ww, hh)
+		if t >= 1 then self:SetScript("OnUpdate", nil) end
+	end)
+end
+
+-- Geometry of `item` in `ref`'s LOCAL coordinate units (item and ref share the
+-- same effective scale, so their GetLeft/GetTop deltas are already local — no
+-- scale conversion). Returns nil while positions are unresolved (parent hidden).
+function UI.itemRectIn(item, ref)
+	local iL, iT = item:GetLeft(), item:GetTop()
+	local rL, rT = ref:GetLeft(), ref:GetTop()
+	if not (iL and iT and rL and rT) then return nil end
+	return (iL - rL), (iT - rT), item:GetWidth(), item:GetHeight()
 end
 
 -- WoW inline color escape ("|cffRRGGBB") from a palette color — keeps hex values

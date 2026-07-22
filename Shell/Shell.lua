@@ -58,7 +58,6 @@ end
 --  self-terminating ease-out (§9-safe: it stops itself after SLIDE_DUR, NOT a
 --  persistent OnUpdate). ind._ref = the frame the (ox,oy) offsets are relative to.
 -- ---------------------------------------------------------------------------
-local SLIDE_DUR = 0.28
 
 -- ---------------------------------------------------------------------------
 --  Dot-field background (v3) — a fine tiled dot pattern, CONTENT area only
@@ -81,35 +80,7 @@ local SLIDE_DUR = 0.28
 local DOT_TILE_PX = 72 -- 3x3 cells at 24px pitch (the diagonal opacity tiering needs the full 3x3 unit to stay seamless)
 local DOT_ALPHA = 0.35
 local DOT_COLOR = { r = 168 / 255, g = 168 / 255, b = 176 / 255 }
-local function slideTo(ind, ox, oy, w, h, animate)
-	w = math.max(1, w); h = math.max(1, h)
-	local function apply(x, y, ww, hh)
-		ind:ClearAllPoints()
-		ind:SetPoint("TOPLEFT", ind._ref, "TOPLEFT", x, y)
-		ind:SetSize(ww, hh)
-	end
-	if (not animate) or ind._cx == nil then
-		ind._cx, ind._cy, ind._cw, ind._ch = ox, oy, w, h
-		ind:SetScript("OnUpdate", nil)
-		apply(ox, oy, w, h); ind:Show()
-		return
-	end
-	local sx, sy, sw, sh = ind._cx, ind._cy, ind._cw, ind._ch
-	ind:Show()
-	local el = 0
-	ind:SetScript("OnUpdate", function(self, dt)
-		el = el + dt
-		local t = el / SLIDE_DUR; if t > 1 then t = 1 end
-		local e = 1 - (1 - t) * (1 - t) * (1 - t) -- ease-out cubic
-		local x  = sx + (ox - sx) * e
-		local y  = sy + (oy - sy) * e
-		local ww = sw + (w - sw) * e
-		local hh = sh + (h - sh) * e
-		self._cx, self._cy, self._cw, self._ch = x, y, ww, hh
-		apply(x, y, ww, hh)
-		if t >= 1 then self:SetScript("OnUpdate", nil) end
-	end)
-end
+local slideTo = UI.slideTo -- hoisted to UI (Tokens); shared with W.Segment
 
 -- Geometry of `item` in `ref`'s LOCAL coordinate units (what SetPoint offsets on
 -- a child of `ref` expect). item and ref share the same effective scale (both
@@ -117,12 +88,7 @@ end
 -- that shared local space — no scale conversion (an earlier ×ratio over-shot the
 -- pill by one row/tab). GetWidth/GetHeight are likewise local (= SetSize units).
 -- Returns nil while positions are unresolved (panel hidden) -> caller retries.
-local function itemRectIn(item, ref)
-	local iL, iT = item:GetLeft(), item:GetTop()
-	local rL, rT = ref:GetLeft(), ref:GetTop()
-	if not (iL and iT and rL and rT) then return nil end
-	return (iL - rL), (iT - rT), item:GetWidth(), item:GetHeight()
-end
+local itemRectIn = UI.itemRectIn -- hoisted to UI (Tokens); shared with W.Segment
 
 -- ---------------------------------------------------------------------------
 --  Nav item (left rail) — v3: text-only, the active pill is the shared sliding

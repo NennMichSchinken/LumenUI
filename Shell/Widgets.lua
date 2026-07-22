@@ -56,7 +56,7 @@ function W.SquareIcon(parent, size)
 	local t = CreateFrame("Frame", nil, parent)
 	t:SetSize(size, size)
 	UI.Fill(t, C.ink850)
-	UI.Border(t, L.strong, 1, "OVERLAY")
+	UI.Border(t, L.soft, 1, "OVERLAY") -- subtle edge, not a bright-white frame (Florian 2026-07-22: the icon border read too thick)
 	local tex = t:CreateTexture(nil, "ARTWORK")
 	tex:SetPoint("TOPLEFT", t, "TOPLEFT", 1, -1)
 	tex:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -1, 1)
@@ -1478,7 +1478,7 @@ function W.Segment(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	if o.width then f:SetWidth(o.width) end
 
-	local cellH = o.cellH or CONTROL_H
+	local cellH = o.cellH or S.tabH -- 1:1 with the tab bar (Florian 2026-07-22): same height + pill + glow
 	local topY = 0
 	if o.label then
 		local _, yo = fieldLabel(f, o.label); topY = yo
@@ -1487,55 +1487,61 @@ function W.Segment(parent, o)
 		f:SetHeight(cellH)
 	end
 
+	-- Strip backing + a sliding translucent PILL for the active option (tab style,
+	-- Florian 2026-07-22): same "switch between mutually-exclusive options" logic as
+	-- the tabs, and it takes the solid-white active cell out of the picture. §9-safe:
+	-- UI.slideTo is a short self-terminating tween (shared with the Shell tabs), not
+	-- a per-frame poll.
+	local hug = o.hug -- content-width strip (like the tabs), not stretched to fill
 	local bar = CreateFrame("Frame", nil, f)
 	bar:SetHeight(cellH)
 	bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
-	bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
-	UI.RoundFill(bar, C.ink700, nil, nil, R_CTRL)
-	UI.RoundBorder(bar, L.mid, "OVERLAY", nil, R_CTRL)
+	if not hug then bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY) end -- hug sets its own width
+	UI.PillFill(bar, C.ink700, "BACKGROUND", cellH) -- fully-round capsule strip (1:1 with the tab bar)
+	UI.PillBorder(bar, L.soft, "OVERLAY", cellH)
 	f._control = bar
 
-	-- Not `(get() or value)` — get() may legitimately return `false` (e.g. inside/outside with
-	-- value=false as default "inside"); the `or` would swallow the false value -> no cell
-	-- active. So check for nil explicitly.
+	-- Sliding pill = the tab pill: white/10 capsule inset by tabStripPad so its
+	-- height = tabH - 2*pad = 38 (reuses pill-h38). NO glow — the tabs' underglow
+	-- read too heavy on the smaller inline segments (Florian 2026-07-22).
+	local pad = S.tabStripPad
+	local slider = CreateFrame("Frame", nil, bar)
+	slider:SetFrameLevel(bar:GetFrameLevel() + 1) -- above the strip, below the cell text
+	slider._ref = bar
+	UI.PillFill(slider, { r = 1, g = 1, b = 1, a = 0.10 }, "ARTWORK", cellH - pad * 2)
+	slider:Hide()
+
+	-- Not `(get() or value)` — get() may legitimately return `false` (e.g. inside/
+	-- outside with value=false as default "inside"); `or` would swallow it. Check nil.
 	local cur = o.get and o.get()
 	if cur == nil then cur = o.value end
 	local cells = {}
-	local function paint()
-		for _, c in ipairs(cells) do
-			local active = (c._val == cur)
-			if active then
-				UI.SetColor(c._fill, C.gold500)
-				c._txt:SetTextColor(C.onGold.r, C.onGold.g, C.onGold.b)
-			else
-				UI.SetColor(c._fill, CLEAR)
-				c._txt:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b)
-			end
-		end
+
+	-- Slide the pill onto the active cell. Geometry resolves only after layout/show,
+	-- so callers retry from OnSizeChanged + OnShow (like the tab indicator).
+	local function positionSlider(animate)
+		local active
+		for _, c in ipairs(cells) do if c._val == cur then active = c; break end end
+		if not active then slider:Hide(); return end
+		local ox, oy, w, h = UI.itemRectIn(active, bar)
+		if not ox then return end
+		UI.slideTo(slider, ox + pad, oy - pad, w - pad * 2, h - pad * 2, animate)
 	end
+	local function paint(animate)
+		for _, c in ipairs(cells) do
+			local col = (c._val == cur) and C.textStrong or C.textMuted
+			c._txt:SetTextColor(col.r, col.g, col.b)
+		end
+		positionSlider(animate)
+	end
+
 	for i, op in ipairs(opts) do
 		local cell = CreateFrame("Button", nil, bar)
-		-- Active-cell fill follows the bar's rounded corners: first cell rounds
-		-- left, last cell right, middle cells stay plain squares.
-		local fill
-		if n == 1 then fill = UI.RoundFill(cell, CLEAR, "BACKGROUND", nil, R_CTRL)
-		elseif i == 1 then fill = UI.RoundFill(cell, CLEAR, "BACKGROUND", "left", R_CTRL)
-		elseif i == n then fill = UI.RoundFill(cell, CLEAR, "BACKGROUND", "right", R_CTRL)
-		else
-			fill = cell:CreateTexture(nil, "BACKGROUND")
-			fill:SetAllPoints(cell); fill:SetColorTexture(0, 0, 0, 0)
-		end
+		cell:SetFrameLevel(bar:GetFrameLevel() + 2) -- text draws above the sliding pill
 		local txt = UI.FS(cell, "selectText", C.textMuted)
 		txt:SetPoint("CENTER", cell, "CENTER", 0, 0)
 		txt:SetText(op.label); txt:SetWordWrap(false)
-		if i > 1 then -- 1px separator on the left edge (between the cells)
-			local div = cell:CreateTexture(nil, "OVERLAY")
-			div:SetWidth(1)
-			div:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
-			div:SetPoint("BOTTOMLEFT", cell, "BOTTOMLEFT", 0, 0)
-			UI.SetColor(div, L.mid)
-		end
-		cell._fill, cell._txt, cell._val = fill, txt, op.value
+		cell._txt, cell._val = txt, op.value
 		cell:SetScript("OnEnter", function()
 			if cell._val ~= cur then txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b) end
 			-- Tip anchors to the bar (not the cell) so it stays put across cells.
@@ -1547,28 +1553,55 @@ function W.Segment(parent, o)
 		end)
 		cell:SetScript("OnClick", function()
 			if cur == cell._val then return end
-			cur = cell._val; paint()
+			cur = cell._val; paint(true)
 			if o.set then o.set(cur) end
 		end)
 		cells[i] = cell
 	end
 
-	-- Equal-width cells only at layout time (width is still 0 at build time).
-	bar:SetScript("OnSizeChanged", function(self2, w)
-		w = w or self2:GetWidth() or 0
-		if w <= 0 then return end
-		local cw = w / n
-		for i, c in ipairs(cells) do
-			c:ClearAllPoints()
-			c:SetPoint("TOP", bar, "TOP", 0, 0)
-			c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
-			c:SetPoint("LEFT", bar, "LEFT", (i - 1) * cw, 0)
-			c:SetWidth(cw)
+	-- Layout: hug = each cell as wide as its text + padding (content-width strip,
+	-- like the tabs — left-aligned, never over-stretched); default = equal-width
+	-- cells across the field cell. Both snap the pill once widths resolve (text /
+	-- bar width are 0 at build time, so hug retries on a few short timers + OnShow).
+	if hug then
+		local function fitHug()
+			local x = 0
+			for _, c in ipairs(cells) do
+				local tw = math.ceil(c._txt:GetStringWidth() or 0)
+				if tw <= 0 then return end -- font not measured yet; a later retry catches it
+				local cw = tw + M.segHugPad * 2
+				c:ClearAllPoints()
+				c:SetPoint("TOP", bar, "TOP", 0, 0)
+				c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
+				c:SetPoint("LEFT", bar, "LEFT", x, 0)
+				c:SetWidth(cw)
+				x = x + cw
+			end
+			bar:SetWidth(x)
+			positionSlider(false)
 		end
-	end)
-	paint()
+		fitHug()
+		for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do C_Timer.After(dl, fitHug) end
+		bar:HookScript("OnShow", fitHug)
+	else
+		bar:SetScript("OnSizeChanged", function(self2, w)
+			w = w or self2:GetWidth() or 0
+			if w <= 0 then return end
+			local cw = w / n
+			for i, c in ipairs(cells) do
+				c:ClearAllPoints()
+				c:SetPoint("TOP", bar, "TOP", 0, 0)
+				c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
+				c:SetPoint("LEFT", bar, "LEFT", (i - 1) * cw, 0)
+				c:SetWidth(cw)
+			end
+			positionSlider(false)
+		end)
+		bar:HookScript("OnShow", function() positionSlider(false) end) -- build-time rects were nil
+	end
+	paint(false)
 
-	f.SetValueExternal = function(_, v) cur = v; paint() end
+	f.SetValueExternal = function(_, v) cur = v; paint(true) end
 	f.SetWidgetEnabled = function(_, on)
 		f:SetAlpha(on and 1 or 0.35)
 		for _, c in ipairs(cells) do c:EnableMouse(on) end
@@ -1711,8 +1744,12 @@ function W.KeybindButton(parent, o)
 		return k
 	end
 	local function setBorder()
-		if listening or cur ~= "" then
+		if listening then -- capturing a key: bright ring as live feedback (transient)
 			for _, e in ipairs(solid) do UI.SetColor(e, C.gold500); e:Show() end
+			for _, e in ipairs(faint) do e:Hide() end
+		elseif cur ~= "" then -- bound: subtle ring (Florian 2026-07-22: the bright white
+			-- ring read too heavy on the input fields); the bright label already signals "set".
+			for _, e in ipairs(solid) do UI.SetColor(e, L.mid); e:Show() end
 			for _, e in ipairs(faint) do e:Hide() end
 		else
 			for _, e in ipairs(solid) do e:Hide() end
