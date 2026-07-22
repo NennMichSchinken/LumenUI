@@ -2618,7 +2618,7 @@ function W.Collapsible(parent, o)
 	o = o or {}
 	local f = CreateFrame("Button", nil, parent)
 	f:SetHeight(M.sectionHeaderH)
-	-- Rounded card (r8). o.attached: the caller places the body card FLUSH
+	-- Rounded card (default card radius). o.attached: the caller places the body card FLUSH
 	-- below when open -> only the top corners round (the body card uses
 	-- round = "bottom"), so header + body read as one rounded object.
 	local shape = (o.open and o.attached) and "top" or nil

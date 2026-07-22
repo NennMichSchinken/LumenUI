@@ -737,7 +737,7 @@ end
 -- ---------------------------------------------------------------------------
 local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\round\\" -- round-fill/round-edge 9-slice assets
 local PILL_TEX     = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\pill\\"  -- pill-fill/pill-edge capsules + circle discs
-local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [12] = 13, [14] = 15, [16] = 17, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer)
+local ROUND_MARGIN = { [4] = 5, [6] = 7, [12] = 13, [14] = 15, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer); radii = UI.RADIUS scale + nav-pill r12
 local ROUND_SUFFIX = { top = "-top", bottom = "-btm", left = "-left", right = "-right" } -- else full
 -- v3 (2026-07-21): radii bumped toward GENEROUS on the headline surfaces —
 -- cards lg 10->18, chrome xl 16->22 (new 9-slice assets generated for both;
@@ -786,7 +786,7 @@ end
 -- (32 / 28 switches; 4 slider bars) so only the straight middle stretches
 -- horizontally — vertical scale stays 1:1 and the end caps keep their curve.
 -- h must match the frame's height exactly.
-local PILL_MARGIN = { [52] = 27, [48] = 25, [38] = 20, [36] = 19, [32] = 17, [28] = 15, [22] = 12, [18] = 10, [4] = 3 } -- cap width (radius + 1px buffer)
+local PILL_MARGIN = { [52] = 27, [48] = 25, [38] = 20, [32] = 17, [28] = 15, [4] = 3 } -- cap width (radius + 1px buffer); heights = tab/segment 52+38, button 48, switch 32+28, slider bar 4
 
 local function pillTexture(parent, file, col, layer, h)
 	local m = PILL_MARGIN[h]
