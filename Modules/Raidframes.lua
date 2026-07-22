@@ -47,7 +47,7 @@ local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
 local AbbrevNum = _G.AbbreviateNumbersAlt or _G.AbbreviateNumbers or tostring
 
 -- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
-local T = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local T = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\bars\\" -- Raidframes draws bar/absorb textures (lumen-*, blizzard-*)
 local SHIELD_OVL_TEX = T .. "blizzard-shield"      -- 256x40, opaque, diagonal stripes + shading
 local HEALABS_TEX    = T .. "blizzard-absorb.png"  -- 256x128, semi-transparent, heal-absorb pattern
 local STRIPE_TEX_W   = 256                          -- texture width of both stripe textures (for TexCoord tiling)

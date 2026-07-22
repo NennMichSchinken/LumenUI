@@ -21,7 +21,9 @@ ns.Shell = Shell
 --  so Shell chrome AND widget toolkit use the same ones (DRY).
 -- ---------------------------------------------------------------------------
 local setColor, fill, border, FS = UI.SetColor, UI.Fill, UI.Border, UI.FS
-local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEX       = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\icons\\" -- chrome icons (nav, close, eye)
+local TEX_ROUND = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\round\\" -- the dot-field corner mask (round-fill-r22)
+local TEX_SHELL = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\shell\\" -- chrome bg + glow (dot-tile, dot-vignette, tab-glow)
 
 -- ---------------------------------------------------------------------------
 --  Responsive panel scale (ElvUI-style). SetScale is RELATIVE to UIParent, so a
@@ -343,12 +345,12 @@ function Shell:Build()
 	-- "walled in" instead of flush against the border (Florian 2026-07-22).
 	do
 		local mask = f:CreateMaskTexture(nil, "BACKGROUND")
-		mask:SetTexture(TEX .. "round-fill-r22", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+		mask:SetTexture(TEX_ROUND .. "round-fill-r22", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
 		mask:SetTextureSliceMargins(23, 23, 23, 23) -- matches Tokens.lua ROUND_MARGIN[22]
 		mask:SetAllPoints(f)
 
 		local dotBg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
-		dotBg:SetTexture(TEX .. "dot-tile", true, true)
+		dotBg:SetTexture(TEX_SHELL .. "dot-tile", true, true)
 		dotBg:SetSnapToPixelGrid(false); dotBg:SetTexelSnappingBias(0)
 		dotBg:SetPoint("TOPLEFT", f, "TOPLEFT", S.navWidth, 0)
 		dotBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
@@ -357,7 +359,7 @@ function Shell:Build()
 		dotBg:AddMaskTexture(mask)
 
 		local dotVign = f:CreateTexture(nil, "BACKGROUND", nil, 2)
-		dotVign:SetTexture(TEX .. "dot-vignette")
+		dotVign:SetTexture(TEX_SHELL .. "dot-vignette")
 		dotVign:SetSnapToPixelGrid(false); dotVign:SetTexelSnappingBias(0)
 		dotVign:SetAllPoints(dotBg)
 		dotVign:SetVertexColor(Surface.Window.r, Surface.Window.g, Surface.Window.b, 1)
@@ -506,7 +508,7 @@ function Shell:Build()
 	tabSlider:SetFrameLevel(tabStrip:GetFrameLevel() + 2) -- above the strip backing, below the tab text
 	tabSlider._ref = tabStrip
 	local tglow = tabSlider:CreateTexture(nil, "BACKGROUND")
-	tglow:SetTexture(TEX .. "tab-glow")
+	tglow:SetTexture(TEX_SHELL .. "tab-glow")
 	tglow:SetSnapToPixelGrid(false); tglow:SetTexelSnappingBias(0)
 	tglow:SetPoint("TOPLEFT", tabSlider, "TOPLEFT", -S.tabGlowX, S.tabGlowTop)
 	tglow:SetPoint("BOTTOMRIGHT", tabSlider, "BOTTOMRIGHT", S.tabGlowX, -S.tabGlowBot)

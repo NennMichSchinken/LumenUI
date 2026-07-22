@@ -59,7 +59,7 @@ local GOLD_R, GOLD_G, GOLD_B = 0.957, 0.957, 0.957 -- #F4F4F4
 local GOLDINT_R, GOLDINT_G, GOLDINT_B = 0.957, 0.957, 0.965 -- #F4F4F6
 local MUTED_R, MUTED_G, MUTED_B = 0.604, 0.624, 0.647 -- #9A9FA5
 
-local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\icons\\" -- EditMode only draws icon-* textures
 local CHAIN = 20 -- chain-icon edge length (top-right of the overlay)
 
 -- ---------------------------------------------------------------------------

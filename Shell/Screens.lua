@@ -17,7 +17,7 @@ local W  = ns.W
 local M, L = UI.WIDGET, UI.LAYOUT
 local Surface, Text, Status = UI.Surface, UI.Text, UI.Status
 local T = ns.T   -- localization: T("english") -> display in the active language
-local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\icons\\" -- Screens only draws icon-* textures
 
 ns.Screens = ns.Screens or {}
 

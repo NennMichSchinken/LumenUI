@@ -19,7 +19,7 @@ local Surface, Text, Border, Accent, Status = UI.Surface, UI.Text, UI.Border, UI
 local LO = UI.LAYOUT -- screen-specific measures
 local T = ns.T   -- localization: T("english") -> display in the active language
 -- Texture folder, built from the real addon-folder name (survives a rename).
-local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\icons\\" -- Widgets only draws icon-* textures
 
 local W = {}
 ns.W = W

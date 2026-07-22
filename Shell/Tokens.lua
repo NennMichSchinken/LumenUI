@@ -735,7 +735,8 @@ end
 --  NOTE: never recolor these via SetColorTexture (that would replace the file
 --  texture with a solid quad) — UI.SetColor routes them to SetVertexColor.
 -- ---------------------------------------------------------------------------
-local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\round\\" -- round-fill/round-edge 9-slice assets
+local PILL_TEX     = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\pill\\"  -- pill-fill/pill-edge capsules + circle discs
 local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [12] = 13, [14] = 15, [16] = 17, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer)
 local ROUND_SUFFIX = { top = "-top", bottom = "-btm", left = "-left", right = "-right" } -- else full
 -- v3 (2026-07-21): radii bumped toward GENEROUS on the headline surfaces —
@@ -790,7 +791,7 @@ local PILL_MARGIN = { [52] = 27, [48] = 25, [38] = 20, [36] = 19, [32] = 17, [28
 local function pillTexture(parent, file, col, layer, h)
 	local m = PILL_MARGIN[h]
 	local t = markRound(parent:CreateTexture(nil, layer or "BACKGROUND"))
-	t:SetTexture(ROUND_TEX .. file .. "-h" .. h)
+	t:SetTexture(PILL_TEX .. file .. "-h" .. h)
 	t:SetTextureSliceMargins(m, 0, m, 0)
 	t:SetAllPoints(parent)
 	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
@@ -810,7 +811,7 @@ end
 -- anchors it; recolor via UI.SetColor/SetVertexColor.
 function UI.Circle(parent, col, layer, size)
 	local t = markRound(parent:CreateTexture(nil, layer or "ARTWORK"))
-	t:SetTexture(ROUND_TEX .. "circle-" .. size)
+	t:SetTexture(PILL_TEX .. "circle-" .. size)
 	t:SetSize(size, size)
 	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
 	return t

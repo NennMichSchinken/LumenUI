@@ -61,7 +61,7 @@ local GetScreenHeight = GetScreenHeight
 local C_AddOns = C_AddOns
 
 -- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
-local TEXDIR = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEXDIR = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\cursor\\" -- QoL draws the cursor-ring-* textures
 -- Thickness = pre-baked ring steps (constant outer diameter, ring grows inward;
 -- a single texture can't change stroke width by scaling). 1 = thin .. 5 = thick.
 local RING_STEPS = 5
