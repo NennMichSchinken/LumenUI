@@ -170,9 +170,13 @@ local function previewEyeDefs()
 		} },
 		{ key = "shields", label = T("Shields & heal absorb") },
 		{ key = "text",    label = T("Text") },
-		{ key = "icons",   label = T("Role & leader icons") },
+		{ key = "icons",   label = T("Role & leader icons"), children = {
+			{ key = "roleIcon",   label = T("Role icon") },
+			{ key = "leaderIcon", label = T("Leader icon") },
+		} },
 		{ key = "dispel",  label = T("Dispel display") },
 		{ key = "aggro",   label = T("Aggro warning") },
+		{ key = "background", label = T("Background") }, -- the preview stage backdrop (Florian 2026-07-22)
 	}
 end
 -- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/major/debuffs/
@@ -495,8 +499,9 @@ local function buildRaid(d, stack, ctx)
 	-- Same pattern as the aura section below: collapsed by default, state
 	-- remembered per context, toggling re-renders the screen.
 	local iOpen = iconOpen(ctx)
+	-- Eye lives on the CARDS, not the section header (Florian 2026-07-22, matching
+	-- the Aura section): both cards share the one "icons" preview layer.
 	local iconHead = W.Collapsible(d, { title = T("Role & leader icons"), open = iOpen,
-		eye = eyeToggle("icons", T("Show in preview")),
 		onToggle = function(v) setIconOpen(ctx, v); ns.Shell:RenderContent(true) end })
 	-- Closed headers used to stack flush (gap 0, borders merged); with rounded
 	-- cards they need a small gap so each reads as its own card (no pinched seam).
@@ -507,10 +512,10 @@ local function buildRaid(d, stack, ctx)
 		local roleDeps, leadDeps = {}, {}
 		local refreshRole, refreshLead
 		local ib = stack:band({
-			{ span = 6, title = T("Role icon"), toggle = {
+			{ span = 6, title = T("Role icon"), eye = eyeToggle("roleIcon", T("Show in preview")), toggle = {
 				get = vget(ctx, "roleShow"),
 				set = function(v) vset(ctx, "roleShow")(v); refreshRole() end } },
-			{ span = 6, title = T("Leader icon"), toggle = {
+			{ span = 6, title = T("Leader icon"), eye = eyeToggle("leaderIcon", T("Show in preview")), toggle = {
 				get = vget(ctx, "leadShow"),
 				set = function(v) vset(ctx, "leadShow")(v); refreshLead() end } },
 		})

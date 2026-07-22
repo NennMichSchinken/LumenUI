@@ -1945,7 +1945,10 @@ local function pvEyePass(f, eyes)
 		f.shieldStripe:Hide(); f.backfillStripe:Hide(); f.healStripe:Hide()
 	end
 	if eyes.text == false then f.name:Hide(); f.htext:Hide() end
-	if eyes.icons == false then f.roleIcon:Hide(); f.leadIcon:Hide() end
+	-- Role and leader are SEPARATE preview layers (Florian 2026-07-22): each card's
+	-- eye toggles only its own icon (grouped under "Role & leader icons").
+	if eyes.roleIcon == false then f.roleIcon:Hide() end
+	if eyes.leaderIcon == false then f.leadIcon:Hide() end
 end
 
 -- Dispel/aggro filters work at the DATA level (a recolored health bar can't

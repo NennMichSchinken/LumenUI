@@ -130,6 +130,7 @@ ns.RegisterLocale("deDE", {
 	["Incoming healing previewed on the health bar."] = "Eingehende Heilung als Vorschau am Lebensbalken.",
 	["Class color as fill color"] = "Klassenfarbe als Füllfarbe",
 	["Fill color"] = "Füllfarbe",
+	["Background"] = "Hintergrund",
 	["Background color"] = "Hintergrundfarbe",
 	["Transparency"] = "Transparenz",
 	["Background opacity"] = "Hintergrund-Deckkraft",

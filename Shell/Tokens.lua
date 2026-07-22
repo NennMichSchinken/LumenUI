@@ -304,6 +304,8 @@ UI.WIDGET = {
 	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
 	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
 	segHugPad   = 20, -- horizontal padding per cell for a content-width (hug) segment (tab-like, not stretched)
+	menuItemPadX = 6, -- horizontal inset of a dropdown item's rounded hover pill (nav-item language)
+	menuItemPadY = 3, -- vertical inset of the pill (also the gap between stacked pills)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
 	sortArrowGlyph = 14, -- sort up/down arrow glyph (Lucide chevron-up/down)
 	buttonH     = 48, -- button height (v3 2026-07-22: 48, deliberately < controlH 51 + fully-round PILL shape, matching the mockup where buttons are shorter pills than the taller selects; uses the existing pill-*-h48 assets)
@@ -315,7 +317,9 @@ UI.WIDGET = {
 	checkBox    = 20, -- box edge length (spec 16 screen px)
 	checkLabelGap = 10,
 
-	selectRowH  = 38, -- dropdown menu row height (Florian 2026-07-05: 34 read too cramped)
+	selectRowH  = 50, -- dropdown menu row height (Florian 2026-07-22: 38 -> 44 -> 50, comfortable list rows)
+	selectMenuPad = 10, -- inner padding of the dropdown popover (was 6; more air around the list + search)
+	selectCheckSize = 15, -- selected-item check glyph (Lucide check, right-aligned like the mockup's ItemIndicator)
 
 	-- Stacked option row (W.OptionRow — stacked-row standard, design bible §8):
 	-- hairline on top, label left, compact control (switchSmallH tall) right.
@@ -415,12 +419,12 @@ UI.WIDGET = {
 	spBtnW         = 210, -- width of the "+ Add spell" trigger button
 	spW            = 340, -- width of the spell-picker popover
 	spPad          = 10,  -- inner padding of the popover
-	spSearchH      = 32,  -- height of the search field
+	spSearchH      = 44,  -- height of the search field (Florian 2026-07-22: 32 -> 44, taller/roomier; shared by W.Select + SpellPicker)
 	spRowH         = 40,  -- height of a picker list row (roomier: +4px air top & bottom)
 	spVisibleRows  = 7,   -- simultaneously visible rows (rest scrolls)
 	spScrollW      = 4,   -- width of the picker scrollbar (also used by W.Select)
 	spScrollGap    = 6,   -- gap list <-> scrollbar
-	selectMaxRows  = 8,   -- W.Select: max. simultaneously visible options (rest scrolls)
+	selectMaxRows  = 6,   -- W.Select: max. simultaneously visible options (rest scrolls) — Florian 2026-07-22: 8 -> 6
 
 	-- Switch (pill on/off toggle) — reusable beyond Click-Cast. Grown +8 screen
 	-- px in height (Florian 2026-07-05 in-game review: switches read too small).

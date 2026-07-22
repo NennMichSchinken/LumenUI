@@ -480,8 +480,8 @@ function W.Select(parent, o)
 	menu:SetFrameStrata("FULLSCREEN_DIALOG")
 	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
 	menu:Hide()
-	UI.RoundFill(menu, C.ink550) -- floating surface: card radius (8)
-	UI.RoundBorder(menu, L.mid, "OVERLAY")
+	UI.RoundFill(menu, C.ink550) -- floating surface: subtly elevated inset (#161618); selection uses a check, hover an elementHover pill
+	UI.RoundBorder(menu, L.soft, "OVERLAY") -- borderless-ish (Florian 2026-07-22: L.mid read too boxy)
 
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
 
@@ -496,25 +496,22 @@ function W.Select(parent, o)
 	end
 	closer:SetScript("OnClick", closeMenu)
 
-	-- Build the menu rows once. Clear separation selected vs. hovered:
-	--  • active (selected) row -> gold bar on the LEFT + interactive-gold text (C2,
-	--    two-gold rule: a selectable row is clickable, so no brand gold here)
-	--  • hovered row           -> element-hover wash + lighter text
-	-- The gold bar marks the selection permanently, the wash only the hover
-	-- — so selected and hover no longer look almost the same (Florian feedback).
-	-- Rows unified with the SpellPicker list (Florian 2026-07-05, one dropdown
-	-- language): uniform element cells + faint separators, hover = elementHover
-	-- step; the gold left bar stays the SELECTION marker.
-	local pad, rowH, gap = 6, M.selectRowH, 0
+	-- Menu rows = the sidebar-nav language 1:1 (Florian 2026-07-22): plain text on
+	-- the dark menu when idle, a rounded inset pill on hover/selection + bright text.
+	--  • selected -> elementHover pill (persistent, the brighter step)
+	--  • hovered  -> element pill
+	--  • idle     -> no pill, muted text
+	-- No separators, no gold left bar (the pill carries both hover AND selection).
+	local pad, rowH, gap = M.selectMenuPad, M.selectRowH, 0
 	local function paintItem(item, hovered)
 		local active = (item._val == cur)
-		item._bar:SetShown(active)
+		item._check:SetShown(active) -- selection = a right-aligned check (mockup ItemIndicator)
 		if hovered then
-			item._wash:SetColorTexture(P.elementHover.r, P.elementHover.g, P.elementHover.b, 1)
-			item._txt:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
+			UI.SetColor(item._pill, P.elementHover); item._pill:Show()
+			item._txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
 		else
-			item._wash:SetColorTexture(P.element.r, P.element.g, P.element.b, 1)
-			local tc = active and UI.P.goldInt or C.textStrong
+			item._pill:Hide()
+			local tc = active and C.textStrong or C.textMuted -- selected stays bright, the rest quiet
 			item._txt:SetTextColor(tc.r, tc.g, tc.b)
 		end
 	end
@@ -563,26 +560,24 @@ function W.Select(parent, o)
 		item:SetHeight(rowH)
 		item:SetPoint("LEFT", child, "LEFT", 0, 0)
 		item:SetPoint("RIGHT", child, "RIGHT", 0, 0)
-		local wash = item:CreateTexture(nil, "BACKGROUND")
-		wash:SetAllPoints(item)
-		wash:SetColorTexture(0, 0, 0, 0)
-		-- Faint separator between rows (SpellPicker pattern).
-		local isep = item:CreateTexture(nil, "ARTWORK")
-		isep:SetHeight(1)
-		isep:SetPoint("BOTTOMLEFT", item, "BOTTOMLEFT", 8, 0)
-		isep:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", -8, 0)
-		UI.SetColor(isep, L.faint)
-		-- Gold bar on the left (selection marker), full row height.
-		local bar = item:CreateTexture(nil, "ARTWORK")
-		bar:SetWidth(3)
-		bar:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 0)
-		bar:SetPoint("BOTTOMLEFT", item, "BOTTOMLEFT", 0, 0)
-		UI.SetColor(bar, C.gold500)
-		bar:Hide()
-		local itxt = UI.FS(item, "selectText", C.textStrong)
-		itxt:SetPoint("LEFT", item, "LEFT", 12, 0)
+		-- Rounded inset hover pill (nav-item language), hidden when idle.
+		local pill = UI.RoundFill(item, P.element, "BACKGROUND", nil, RAD.md)
+		pill:ClearAllPoints()
+		pill:SetPoint("TOPLEFT", item, "TOPLEFT", M.menuItemPadX, -M.menuItemPadY)
+		pill:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", -M.menuItemPadX, M.menuItemPadY)
+		pill:Hide()
+		-- Right-aligned check = the SELECTION indicator (mockup ItemIndicator).
+		local check = item:CreateTexture(nil, "OVERLAY")
+		check:SetSize(M.selectCheckSize, M.selectCheckSize)
+		check:SetPoint("RIGHT", item, "RIGHT", -(M.menuItemPadX + 10), 0)
+		check:SetTexture(TEX .. "icon-check")
+		check:SetSnapToPixelGrid(false); check:SetTexelSnappingBias(0)
+		check:SetVertexColor(C.gold500.r, C.gold500.g, C.gold500.b)
+		check:Hide()
+		local itxt = UI.FS(item, "selectText", C.textMuted)
+		itxt:SetPoint("LEFT", item, "LEFT", M.menuItemPadX + 10, 0)
 		itxt:SetText(op.label)
-		item._wash, item._txt, item._val, item._bar = wash, itxt, op.value, bar
+		item._pill, item._txt, item._val, item._check = pill, itxt, op.value, check
 		item._search = (op.label or ""):lower() -- filter basis (lowercased)
 		item:SetScript("OnEnter", function(self) paintItem(self, true) end)
 		item:SetScript("OnLeave", function(self) paintItem(self, false) end)
@@ -1350,14 +1345,14 @@ function W.Checkbox(parent, o)
 	local boxbg = UI.RoundFill(box, CLEAR, "BACKGROUND", nil, RAD.xs)
 	local edges = UI.RoundBorder(box, L.mid, "OVERLAY", nil, RAD.xs)
 
-	-- Checkmark: Blizzard's check texture, desaturated + ink-tinted -> cleaner than
-	-- self-drawn lines (Florian feedback). Centered, slightly past the box (transparent
-	-- edge of the texture) for good proportion.
+	-- Checkmark: our own Lucide check glyph (shared with the dropdown selection
+	-- indicator — Florian 2026-07-22, replacing Blizzard's UI-CheckBox-Check).
+	-- Tinted dark (C.onGold) so it reads on the light-accent box when checked.
 	local check = box:CreateTexture(nil, "OVERLAY")
-	check:SetTexture([[Interface\Buttons\UI-CheckBox-Check]])
-	check:SetDesaturated(true)
+	check:SetTexture(TEX .. "icon-check")
+	check:SetSnapToPixelGrid(false); check:SetTexelSnappingBias(0)
 	check:SetVertexColor(C.onGold.r, C.onGold.g, C.onGold.b, 1)
-	check:SetSize(BOX + 8, BOX + 8)
+	check:SetSize(BOX - 4, BOX - 4)
 	check:SetPoint("CENTER", box, "CENTER", 0, 0)
 
 	local lbl = UI.FS(b, "checkLabel", C.textBody)
@@ -2952,6 +2947,11 @@ end
 function W.PreviewBand(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetAllPoints(parent)
+	local stageFill -- forward-declared: the eye popover's "Background" row toggles it via RepaintEyes (created below with the stage)
+	-- The stage fill AND the dock's own fill are BOTH P.panel, so hiding just the
+	-- stage reveals an identical colour = no visible change. The "Background" eye
+	-- hides both, so the shell's dotted content shows through (frames "float").
+	local dockFrame = parent:GetParent() -- the Shell dock (carries ._fill)
 
 	-- Header CARD (v3 top-card style, like the Base "enable" card): a rounded
 	-- fill+border card inset from the dock edges, holding the title + all
@@ -3046,7 +3046,9 @@ function W.PreviewBand(parent, o)
 		eGlyph:SetTexture(TEX .. (filtered and "icon-eye-off" or "icon-eye"))
 		local col = filtered and C.gold250 or C.textMuted
 		eGlyph:SetVertexColor(col.r, col.g, col.b)
-		for _, e in ipairs(eEdges) do UI.SetColor(e, filtered and L.strong or L.mid) end
+		-- Filtered = the glyph goes accent; keep the border subtle (Florian 2026-07-22:
+		-- the L.strong ring read as a hard white outline).
+		for _, e in ipairs(eEdges) do UI.SetColor(e, L.mid) end
 	end
 	if o.eyeDefs then
 		ebtn = CreateFrame("Button", nil, head)
@@ -3063,7 +3065,7 @@ function W.PreviewBand(parent, o)
 		eyePop:SetFrameLevel(f:GetFrameLevel() + 40)
 		eyePop:SetClampedToScreen(true)
 		UI.RoundFill(eyePop, C.ink550, nil, nil, RAD.lg)
-		UI.RoundBorder(eyePop, L.strong, "OVERLAY", nil, RAD.lg)
+		UI.RoundBorder(eyePop, L.soft, "OVERLAY", nil, RAD.lg) -- subtle, matches the new dropdown (Florian 2026-07-22: L.strong read as a hard white outline)
 		eyePop:Hide()
 		local rowIdx, popW = 0, M.pvFilterW
 		local function popRow(label, indent, isOn, onClick)
@@ -3137,6 +3139,14 @@ function W.PreviewBand(parent, o)
 	-- access points stay in sync while the popover is open.
 	function f:RepaintEyes()
 		paintEyeBtn()
+		-- The "Background" eye toggles the stage backdrop live (RepaintEyes runs on
+		-- every eye click via previewRefresh; SetExtent only fires on a re-layout).
+		-- Hide the dock fill too, else the identical-coloured dock shows through.
+		if stageFill and o.eyes then
+			local show = o.eyes().background ~= false
+			stageFill:SetShown(show)
+			if dockFrame and dockFrame._fill then dockFrame._fill:SetShown(show) end
+		end
 		if eyePop and eyePop:IsShown() then
 			for _, rp in ipairs(eyeRepaints) do rp() end
 		end
@@ -3210,7 +3220,7 @@ function W.PreviewBand(parent, o)
 	stage:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, 0)
 	stage:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
 	stage:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
-	local stageFill = UI.RoundFill(stage, P.panel, nil, nil, R_CTRL)
+	stageFill = UI.RoundFill(stage, P.panel, nil, nil, R_CTRL) -- assigns the forward-declared upvalue
 	local stageEdges = {} -- no stage border (merges with the page-colored dock body)
 	-- Unscaled positioning pivot: anchor offsets are interpreted in the ANCHORED
 	-- frame's own (scaled) units — the pivot stays at scale 1, so the module's
@@ -3259,9 +3269,11 @@ function W.PreviewBand(parent, o)
 				eyePop:SetPoint("BOTTOMRIGHT", head, "TOPRIGHT", 0, S.s3)
 			end
 		end
-		-- Dock chrome is always on now (the Backdrop filter was removed with the
-		-- funnel popover; per-layer eyes live on the setting cards).
-		stageFill:SetShown(true)
+		-- Stage backdrop is togglable again via the eye popover's "Background" row
+		-- (Florian 2026-07-22): hidden -> stage + dock fills off, shell dots show through.
+		local bgShow = not o.eyes or o.eyes().background ~= false
+		stageFill:SetShown(bgShow)
+		if dockFrame and dockFrame._fill then dockFrame._fill:SetShown(bgShow) end
 		for _, e in ipairs(stageEdges) do e:SetShown(true) end
 		caption:SetShown(true)
 		if o.onChrome then o.onChrome(true) end
