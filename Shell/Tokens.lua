@@ -1,9 +1,13 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Suite-Shell Design Tokens
---  Source of truth: design line v2 (Florian's flat prototype, 2026-07-02).
---  Central, so the Shell + widget toolkit read consistently from it.
+--  Lumen — Suite-Shell Design Tokens (v3 Design System, 2026-07-22)
+--  THE source of truth. Components read SEMANTIC tokens only — never a raw hex,
+--  never a legacy alias: UI.Surface (window/sidebar/card/input/hover/scrim),
+--  UI.Text (primary/secondary/description/disabled/value/onAccent), UI.Border
+--  (faint/default/hover/divider/active), UI.Accent (color/hover/pressed/
+--  selection/focus/glow/wash/switchOn), UI.Status (danger*). The raw palette
+--  (UI.P) + Accent engine (UI.SetAccent) live here and ONLY here.
 -- ===========================================================================
 
 local UI = {}
@@ -59,7 +63,7 @@ local P = {
 	element      = hex("191919"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs (= Inputs layer)
 	elementHover = hex("222222"), -- A6: hover step (doc: Hover)
 
-	-- B: lines — pure white; UI.line / UI.Border apply the (low) alpha. THE tuning spot.
+	-- B: lines — pure white; UI.Border applies the (low) alpha. THE tuning spot.
 	borderSoft   = hex("FFFFFF"), -- B1: card/row borders, fine separators (used at ~.05 alpha)
 	borderStrong = hex("FFFFFF"), -- B2: control borders, hover edges, focus (used at ~.10 alpha)
 
@@ -104,11 +108,9 @@ local function withA(c, a) return { r = c.r, g = c.g, b = c.b, a = a } end
 --  accent from ONE base colour. Today the accent is LIGHT ITSELF (monochrome
 --  premium look, per Florian: build it clean-mono first, keep the colour option
 --  ready). Later a user could pick any hue via UI.SetAccent and every derived
---  state recomputes with no component edits. Components should read UI.Accent.*
---  (or the legacy C.gold* aliases that point at the base), never a raw hex.
---  NOTE (migration): the legacy C.gold*/UI.line aliases below still bind to the
---  base VALUE at load; a live SetAccent rebuilds UI.Accent.* (the forward API).
---  Re-pointing every legacy call site onto UI.Accent.* is a later phase.
+--  state recomputes with no component edits. Components read UI.Accent.* (and
+--  UI.Surface/UI.Text/UI.Border/UI.Status), never a raw hex — the legacy UI.C
+--  and UI.line alias tables are gone.
 -- ---------------------------------------------------------------------------
 local function mixTo(c, o, t) -- linear blend c -> o by t (0..1)
 	return { r = c.r + (o.r - c.r) * t, g = c.g + (o.g - c.g) * t, b = c.b + (o.b - c.b) * t, a = 1 }
@@ -183,68 +185,10 @@ UI.Status = {
 	dangerWash  = withA(P.danger, 0.12), -- destructive fill wash
 }
 
--- Legacy token names -> palette roles. Widgets/Screens/Shell still read UI.C.*;
--- later phases migrate the call sites onto UI.Surface/UI.Text/UI.Accent, then
--- the remaining aliases here shrink away.
-UI.C = {
-	-- grounds (Obsidian surface layers)
-	ink900   = P.page,         -- app background / dim (darkest — behind the panel)
-	ink850   = P.panel,        -- main panel
-	ink800   = P.panel,        -- (was: glow center; flat now)
-	ink700   = P.element,      -- closed dropdown header / keybind field (A5)
-	ink650   = P.page,         -- icon-tile shadow
-	ink600   = P.card,         -- raised card
-	ink550   = P.inset,        -- popover / open dropdown list (A1)
-	ink520   = P.card,         -- sub-box (grouping is carried by borders now, not a lighter fill)
-	inkTint  = P.element,      -- (was: icon-tile gradient top; flat now)
-	sliderTrack = P.elementHover, -- unfilled slider track (visible channel showing the full range)
-
-	-- accent (light; = ACCENT BASE via P.goldInt)
-	gold500  = P.goldInt,      -- interactive accent: control borders, icons, active
-	switchOn = P.switchOn,     -- softened light for the switch ON track (anti-bloom)
-	sliderValue = P.sliderValue, -- slider readout (blurred): leads over the label, not pure white
-	gold400  = P.goldIntHover, -- button hover
-	gold300  = P.goldBrand,    -- wordmark / display heading (Heading)
-	gold250  = P.goldBrand,    -- brand text accents (tooltip title, active list rows)
-	gold200  = P.goldIntHover, -- link hover
-	gold100  = P.textPrimary,  -- neutral primary text (Heading)
-
-	-- text
-	textStrong  = P.textPrimary, -- Heading: values, selected/active text
-	textHeading = P.textPrimary, -- Heading: card/group titles
-	textBody    = P.textBody,    -- Body: checkbox/row labels (calm mid tier)
-	textMuted   = P.textSecondary, -- Description
-	textFaint   = P.textSecondary, -- Description (muted-but-readable; true disabled uses P.textDisabled)
-	onGold      = P.textOnGold,
-
-	-- status
-	danger500 = P.danger,
-	danger300 = P.dangerHover,
-}
-
--- Gold/danger in standard opacities (washes, active borders) — as {r,g,b,a}.
-local g = UI.C.gold500
-local d = UI.C.danger500
-local function goldA(a) return { r = g.r, g = g.g, b = g.b, a = a } end
-local function dangerA(a) return { r = d.r, g = d.g, b = d.b, a = a } end
-UI.goldA = goldA
-UI.dangerA = dangerA
-
--- v3 MONOCHROME: lines are pure WHITE at LOW alpha (rim-subtle — hierarchy leans
--- on the graduated Obsidian layers + fill, not on heavy borders; softened a touch
--- from v3a now that the layer steps carry the separation). The active/open state
--- is the pure-light ACCENT (goldInt), not gold. THE tuning spot.
-UI.line = {
-	faint   = withA(P.borderSoft, 0.04),   -- line-2: finest separators (content)
-	divider = withA(P.borderSoft, 0.10),   -- structural divider lines header/nav
-	soft    = withA(P.borderSoft, 0.05),   -- app border: card/row borders (Default)
-	mid     = withA(P.borderStrong, 0.10), -- standard control borders (softer; layers do the separating)
-	strong  = withA(P.goldInt, 1),         -- active / open (the pure-light accent)
-	washSoft = goldA(0.06),
-	wash     = goldA(0.10),
-	dangerLine = dangerA(0.55),
-	dangerWash = dangerA(0.12),
-}
+-- Danger colour at an arbitrary alpha (destructive control variants). Reads the
+-- palette directly (UI.C is gone — every call site now uses UI.Surface/Text/
+-- Border/Accent/Status).
+function UI.dangerA(a) return withA(P.danger, a) end
 
 -- ---------------------------------------------------------------------------
 --  Fonts — bundled under <addon>/Fonts/ (Cinzel + Hanken Grotesk, SIL OFL)
@@ -264,57 +208,48 @@ UI.FONT = {
 	interBold = FP .. "Inter-Bold.ttf",
 }
 -- Semantic weight names (v3 cleanup): components/roles name a WEIGHT, not a
--- typeface — so the bundled font can be swapped in one place. These are the
--- clean forward names; the cinzel/hanken aliases below are legacy and get
--- removed once every call site + UI.ROLE entry reads a weight name.
+-- typeface — so the bundled font can be swapped in one place. Every UI.ROLE
+-- entry + call site reads these; the old cinzel/hanken aliases are gone.
 UI.FONT.regular  = UI.FONT.interReg
 UI.FONT.medium   = UI.FONT.interMed
 UI.FONT.semibold = UI.FONT.interSemi
 UI.FONT.bold     = UI.FONT.interBold
--- Legacy back-compat aliases (Cinzel/Hanken era). REMOVE in the final cleanup
--- phase once UI.ROLE + the remaining call sites use the weight names above.
-UI.FONT.cinzelSemi = UI.FONT.interSemi -- display/headings/wordmark
-UI.FONT.cinzelBold = UI.FONT.interBold
-UI.FONT.hankenReg  = UI.FONT.interReg
-UI.FONT.hankenMed  = UI.FONT.interMed
-UI.FONT.hankenSemi = UI.FONT.interSemi
-UI.FONT.hankenBold = UI.FONT.interBold
 
 -- (Font warm-up happens BELOW UI.ROLE — it warms every actually used
 -- font+size pair, so it needs the role table first.)
 
 -- Roles -> { path, size, flags }. Sizes from typography.css.
 UI.ROLE = {
-	wordmark = { UI.FONT.cinzelBold, 23, "" }, -- LUMENUI (mockup ratio: 18px@680w -> ~23px design-px, Bold = nearest cut to 680)
-	display  = { UI.FONT.cinzelSemi, 22, "" },
-	section  = { UI.FONT.cinzelSemi, 20, "" }, -- section heading (Cinzel)
-	nav      = { UI.FONT.hankenMed,  18, "" },
-	body     = { UI.FONT.hankenReg,  14, "" },
-	label    = { UI.FONT.hankenMed,  14, "" },
-	tab      = { UI.FONT.hankenMed,  18, "" },
-	caption  = { UI.FONT.hankenReg,  12, "" },
-	hint     = { UI.FONT.hankenReg,  16, "" }, -- description/hint text under controls
-	tagline  = { UI.FONT.hankenMed,  12, "" }, -- mockup ratio: 10px@500w -> Medium
-	navGroupLabel = { UI.FONT.hankenSemi, 12, "" }, -- "MODULES" nav-group caption (mockup: 10px@600w -> SemiBold; distinct from the shared "caption" role so it doesn't collapse onto the tagline's weight)
+	wordmark = { UI.FONT.bold, 23, "" }, -- LUMENUI (mockup ratio: 18px@680w -> ~23px design-px, Bold = nearest cut to 680)
+	display  = { UI.FONT.semibold, 22, "" },
+	section  = { UI.FONT.semibold, 20, "" }, -- section heading (Cinzel)
+	nav      = { UI.FONT.medium,  18, "" },
+	body     = { UI.FONT.regular,  14, "" },
+	label    = { UI.FONT.medium,  14, "" },
+	tab      = { UI.FONT.medium,  18, "" },
+	caption  = { UI.FONT.regular,  12, "" },
+	hint     = { UI.FONT.regular,  16, "" }, -- description/hint text under controls
+	tagline  = { UI.FONT.medium,  12, "" }, -- mockup ratio: 10px@500w -> Medium
+	navGroupLabel = { UI.FONT.semibold, 12, "" }, -- "MODULES" nav-group caption (mockup: 10px@600w -> SemiBold; distinct from the shared "caption" role so it doesn't collapse onto the tagline's weight)
 
 	-- Widget toolkit (phase 2) — small, control-near roles. Sizes on the
 	-- 4px grid (12/16/20). Change here centrally -> propagates everywhere.
-	fieldLabel = { UI.FONT.hankenMed,  16, "" }, -- MUTED label above a control (slider/dropdown/segment); coloured C.textMuted, not bright (mockup .flabel)
-	sectionHead= { UI.FONT.cinzelSemi, 20, "" }, -- card/section titles + tab heading
-	groupTitle = { UI.FONT.cinzelSemi, 16, "" }, -- GroupPanel title / IconTile letter
-	sliderCap  = { UI.FONT.cinzelSemi, 16, "" }, -- slider caption
-	value      = { UI.FONT.hankenSemi, 14, "" }, -- value box (mockup ratio: 12px@580w -> nearest cut SemiBold)
-	ends       = { UI.FONT.hankenMed,  14, "" }, -- slider min/max numbers
-	selectText = { UI.FONT.hankenMed,  16, "" }, -- dropdown header + rows
-	checkLabel = { UI.FONT.hankenMed,  16, "" }, -- checkbox label
-	listLabel  = { UI.FONT.hankenMed,  18, "" }, -- list row (role sort list)
+	fieldLabel = { UI.FONT.medium,  16, "" }, -- MUTED label above a control (slider/dropdown/segment); coloured Text.Description, not bright (mockup .flabel)
+	sectionHead= { UI.FONT.semibold, 20, "" }, -- card/section titles + tab heading
+	groupTitle = { UI.FONT.semibold, 16, "" }, -- GroupPanel title / IconTile letter
+	sliderCap  = { UI.FONT.semibold, 16, "" }, -- slider caption
+	value      = { UI.FONT.semibold, 14, "" }, -- value box (mockup ratio: 12px@580w -> nearest cut SemiBold)
+	ends       = { UI.FONT.medium,  14, "" }, -- slider min/max numbers
+	selectText = { UI.FONT.medium,  16, "" }, -- dropdown header + rows
+	checkLabel = { UI.FONT.medium,  16, "" }, -- checkbox label
+	listLabel  = { UI.FONT.medium,  18, "" }, -- list row (role sort list)
 	-- (subDivider role retired with SectionDivider/SectionLabel.)
-	btn        = { UI.FONT.hankenSemi, 16, "" }, -- button label (weight per variant, see Widgets)
+	btn        = { UI.FONT.semibold, 16, "" }, -- button label (weight per variant, see Widgets)
 
 	-- Custom Lumen tooltip — own roles so font size/weight can be tuned
 	-- independently (Florian adjusts these himself).
-	tipTitle = { UI.FONT.hankenSemi, 18, "" }, -- tooltip title / spell name (gold)
-	tipBody  = { UI.FONT.hankenReg,  16, "" }, -- tooltip text / spell description
+	tipTitle = { UI.FONT.semibold, 18, "" }, -- tooltip title / spell name (gold)
+	tipBody  = { UI.FONT.regular,  16, "" }, -- tooltip text / spell description
 }
 
 -- Font warm-up: on a COLD START the FIRST SetFont per custom TTF renders empty
