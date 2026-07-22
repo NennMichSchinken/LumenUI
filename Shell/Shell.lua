@@ -9,7 +9,8 @@ local ADDON, ns = ...
 -- ===========================================================================
 
 local UI = ns.UI
-local C, L, S, PANEL, P = UI.C, UI.line, UI.S, UI.PANEL, UI.P
+local S, PANEL = UI.S, UI.PANEL
+local Surface, Text, Border, Accent = UI.Surface, UI.Text, UI.Border, UI.Accent
 local T = ns.T   -- localization: T("english") -> display in the active language
 
 local Shell = {}
@@ -103,7 +104,7 @@ local function makeNavItem(parent, label, iconFile)
 	-- One state surface, recolored per state (active gold / hover charcoal).
 	-- v3 nav mockup (Florian 2026-07-05): a rounded PILL inset from the sidebar
 	-- edges instead of the full-width fill.
-	local bg = UI.RoundFill(b, P.goldInt, "BACKGROUND", nil, UI.RADIUS.md)
+	local bg = UI.RoundFill(b, Accent.color, "BACKGROUND", nil, UI.RADIUS.md)
 	bg:ClearAllPoints()
 	bg:SetPoint("TOPLEFT", b, "TOPLEFT", S.navPillPadX, -S.navPillPadY)
 	bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -S.navPillPadX, S.navPillPadY)
@@ -120,14 +121,14 @@ local function makeNavItem(parent, label, iconFile)
 		icon:SetTexture(TEX .. iconFile)
 		icon:SetSnapToPixelGrid(false)
 		icon:SetTexelSnappingBias(0)
-		icon:SetVertexColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		icon:SetVertexColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
 	end
 
 	-- v3 mono nav (mockup): idle = MUTED text, no pill; hover = a faint pill +
 	-- brighter text; active = a SUBTLE elevated pill (elementHover) + BRIGHT text
 	-- (the sliding-highlight language — bright = active, grey = quiet). No bright
 	-- fill / dark-text here (that treatment belongs to the tabs).
-	local txt = FS(b, "nav", C.textMuted)
+	local txt = FS(b, "nav", Text.Description)
 	txt:SetPoint("LEFT", icon or b, icon and "RIGHT" or "LEFT", icon and S.navIconGap or S.navGutter, 0)
 	txt:SetText(label)
 
@@ -138,8 +139,8 @@ local function makeNavItem(parent, label, iconFile)
 				ns.W.ShowTextTip(self, T("Coming soon"), T("This module is still in progress and will be unlocked in a later version."))
 			end
 		elseif not self._active then
-			setColor(self._bg, P.element); self._bg:Show()
-			self._txt:SetTextColor(P.textPrimary.r, P.textPrimary.g, P.textPrimary.b)
+			setColor(self._bg, Surface.Input); self._bg:Show()
+			self._txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 		end
 	end)
 	b:SetScript("OnLeave", function(self)
@@ -147,13 +148,13 @@ local function makeNavItem(parent, label, iconFile)
 			if ns.W and ns.W.HideTip then ns.W.HideTip() end
 		elseif not self._active then
 			self._bg:Hide()
-			self._txt:SetTextColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b)
+			self._txt:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b)
 		end
 	end)
 	function b:SetActive(on)
 		self._active = on
 		self._bg:Hide() -- the active pill is the shared sliding indicator now; item shows only text
-		local col = on and P.textPrimary or (self._soon and P.textDisabled or P.textSecondary)
+		local col = on and Text.Primary or (self._soon and Text.Disabled or Text.Description)
 		self._txt:SetTextColor(col.r, col.g, col.b)
 		if self._icon then self._icon:SetVertexColor(col.r, col.g, col.b) end
 	end
@@ -162,8 +163,8 @@ local function makeNavItem(parent, label, iconFile)
 	function b:SetComingSoon(on)
 		self._soon = on
 		if on then
-			self._txt:SetTextColor(P.textDisabled.r, P.textDisabled.g, P.textDisabled.b)
-			if self._icon then self._icon:SetVertexColor(P.textDisabled.r, P.textDisabled.g, P.textDisabled.b) end
+			self._txt:SetTextColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
+			if self._icon then self._icon:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b) end
 		end
 	end
 	return b
@@ -176,7 +177,7 @@ end
 local function makeTab(parent, label)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetFrameLevel(parent:GetFrameLevel() + 3) -- above the sliding pill (tabStrip+2) so the label stays on top
-	local txt = FS(b, "tab", C.textMuted)
+	local txt = FS(b, "tab", Text.Description)
 	txt:SetText(label)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 	b:SetHeight(S.tabH)
@@ -193,14 +194,14 @@ local function makeTab(parent, label)
 	-- widths -> the centered text would jump in the fixed-width button.)
 	b._txt = txt
 	b:SetScript("OnEnter", function(self)
-		if not self._active then self._txt:SetTextColor(P.textPrimary.r, P.textPrimary.g, P.textPrimary.b) end
+		if not self._active then self._txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end
 	end)
 	b:SetScript("OnLeave", function(self)
-		if not self._active then self._txt:SetTextColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b) end
+		if not self._active then self._txt:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b) end
 	end)
 	function b:SetActive(on)
 		self._active = on
-		local tc = on and P.textPrimary or P.textSecondary
+		local tc = on and Text.Primary or Text.Description
 		self._txt:SetTextColor(tc.r, tc.g, tc.b)
 	end
 	return b
@@ -216,7 +217,7 @@ local function makeCloseButton(parent, onClick)
 	b:SetSize(34, 34)
 
 	-- Rounded hover surface (matches the radius scale / other icon-button hovers).
-	local hoverFill = UI.RoundFill(b, P.elementHover, "BACKGROUND", nil, UI.RADIUS.sm)
+	local hoverFill = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
 	hoverFill:Hide()
 
 	-- X: Lucide "x" glyph (stage-3 glyph swap), tinted; brightens on hover.
@@ -225,10 +226,10 @@ local function makeCloseButton(parent, onClick)
 	x:SetPoint("CENTER", b, "CENTER", 0, 0)
 	x:SetTexture(TEX .. "icon-x")
 	x:SetSnapToPixelGrid(false); x:SetTexelSnappingBias(0)
-	x:SetVertexColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b)
+	x:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
 
-	b:SetScript("OnEnter", function() hoverFill:Show(); x:SetVertexColor(P.textPrimary.r, P.textPrimary.g, P.textPrimary.b) end)
-	b:SetScript("OnLeave", function() hoverFill:Hide(); x:SetVertexColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b) end)
+	b:SetScript("OnEnter", function() hoverFill:Show(); x:SetVertexColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end)
+	b:SetScript("OnLeave", function() hoverFill:Hide(); x:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b) end)
 	b:SetScript("OnClick", onClick)
 	return b
 end
@@ -330,8 +331,8 @@ function Shell:Build()
 	-- v2: flat main surface (A3), no glow gradient, no rune ornaments.
 	-- Rounded main chrome (Florian 2026-07-05): outer radius = inner radius +
 	-- padding -> chrome rounds at R_CHROME (16), the cards inside keep 8.
-	UI.RoundFill(f, P.panel, "BACKGROUND", nil, UI.ROUND_R_CHROME)
-	UI.RoundBorder(f, L.mid, nil, nil, UI.ROUND_R_CHROME)
+	UI.RoundFill(f, Surface.Window, "BACKGROUND", nil, UI.ROUND_R_CHROME)
+	UI.RoundBorder(f, Border.hover, nil, nil, UI.ROUND_R_CHROME)
 
 	-- Dot-field background — CONTENT area only (excludes the nav column entirely;
 	-- the sidebar stays plain/flat, Florian 2026-07-22). Clipped to the panel's
@@ -359,7 +360,7 @@ function Shell:Build()
 		dotVign:SetTexture(TEX .. "dot-vignette")
 		dotVign:SetSnapToPixelGrid(false); dotVign:SetTexelSnappingBias(0)
 		dotVign:SetAllPoints(dotBg)
-		dotVign:SetVertexColor(P.panel.r, P.panel.g, P.panel.b, 1)
+		dotVign:SetVertexColor(Surface.Window.r, Surface.Window.g, Surface.Window.b, 1)
 		dotVign:AddMaskTexture(mask)
 	end
 
@@ -391,7 +392,7 @@ function Shell:Build()
 	local navDiv = nav:CreateTexture(nil, "ARTWORK")
 	navDiv:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
 	navDiv:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", 0, 0)
-	setColor(navDiv, L.divider)
+	setColor(navDiv, Border.divider)
 	local function snapNavDiv() PixelUtil.SetWidth(navDiv, 1) end
 	snapNavDiv(); C_Timer.After(0, snapNavDiv)
 
@@ -401,7 +402,7 @@ function Shell:Build()
 	local navSlider = CreateFrame("Frame", nil, nav)
 	navSlider:SetFrameLevel(nav:GetFrameLevel())
 	navSlider._ref = nav
-	UI.RoundFill(navSlider, P.elementHover, "ARTWORK", nil, 12)
+	UI.RoundFill(navSlider, Surface.Hover, "ARTWORK", nil, 12)
 	navSlider:Hide()
 	self._navSlider = navSlider
 
@@ -416,10 +417,10 @@ function Shell:Build()
 	brand:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, 0)
 	brand:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
 
-	local word = FS(brand, "wordmark", P.goldBrand) -- v3: off-white (mono), non-clickable
+	local word = FS(brand, "wordmark", Text.Primary) -- v3: off-white (mono), non-clickable
 	word:SetText(UI.Track("LUMENUI", " ")) -- tracking emulation (single space: fits the column)
 	word:SetPoint("TOPLEFT", brand, "TOPLEFT", S.navGutter, -40) -- v3: pushed down to sit on the tab-row height (more top air), navGutter left inset
-	local tag = FS(brand, "tagline", P.textSecondary)
+	local tag = FS(brand, "tagline", Text.Description)
 	tag:SetText(UI.Track("A FOCUSED UI SUITE", " ")) -- v3: uppercase tracked, matches the mockup
 	tag:SetPoint("TOPLEFT", word, "BOTTOMLEFT", 0, -9) -- mockup ratio (7px @ 1x -> ~9 design-px)
 
@@ -427,7 +428,7 @@ function Shell:Build()
 	-- uppercase label, same left gutter as the nav items (tag is already inset by
 	-- navGutter, so x=0 here). Anchored off the TAGLINE's real bottom, not the
 	-- brand frame's edge, so it doesn't inherit dead space from navBrandH.
-	local navLabel = FS(nav, "navGroupLabel", C.textMuted)
+	local navLabel = FS(nav, "navGroupLabel", Text.Description)
 	navLabel:SetText(UI.Track("MODULES", " "))
 	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -42) -- mockup ratio (34px @ 1x -> ~42 design-px)
 
@@ -439,12 +440,12 @@ function Shell:Build()
 	local hasChip = ver ~= ""
 	if hasChip then
 		local chip = CreateFrame("Frame", nil, nav)
-		local cfs = FS(chip, "caption", C.textMuted)
+		local cfs = FS(chip, "caption", Text.Description)
 		cfs:SetText("v" .. ver)
 		cfs:SetPoint("CENTER", chip, "CENTER", 0, 0)
 		chip:SetSize(math.ceil(cfs:GetStringWidth()) + S.s5, chipH)
 		chip:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
-		UI.RoundBorder(chip, L.soft, "OVERLAY", nil, UI.RADIUS.xs)
+		UI.RoundBorder(chip, Border.default, "OVERLAY", nil, UI.RADIUS.xs)
 	end
 
 	-- Edit Mode button (v2): a suite-global action, so it lives in the global
@@ -475,7 +476,7 @@ function Shell:Build()
 	-- Vertical nav divider: on MAIN (draws over nav + its buttons), left edge.
 	local nsep = main:CreateTexture(nil, "OVERLAY")
 	nsep:SetWidth(1); nsep:SetPoint("TOPLEFT", main, "TOPLEFT", 0, 0)
-	nsep:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0); setColor(nsep, L.divider)
+	nsep:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0); setColor(nsep, Border.divider)
 
 	-- Tab-Strip (main starts at the panel top). Air ABOVE the strip = the same
 	-- contentTopGap as BELOW it (Florian 2026-07-05: unequal gaps read like
@@ -493,8 +494,8 @@ function Shell:Build()
 	tabStripBg:SetFrameLevel(tabStrip:GetFrameLevel() + 1) -- above the strip frame, below the slider
 	-- v3: fully-round capsule (rounded-full, like the mockup) via the pill assets
 	-- at the exact strip height (round-fill 9-slice can't do radius > half-height).
-	UI.PillFill(tabStripBg, P.card, "BACKGROUND", S.tabH)
-	UI.PillBorder(tabStripBg, L.soft, "BORDER", S.tabH)
+	UI.PillFill(tabStripBg, Surface.Card, "BACKGROUND", S.tabH)
+	UI.PillBorder(tabStripBg, Border.default, "BORDER", S.tabH)
 	tabStripBg:Hide()
 	self._tabStripBg = tabStripBg
 
@@ -524,9 +525,9 @@ function Shell:Build()
 	-- the tab strip's right is only panelGutter in — so pull the badge left past
 	-- the X + a comfortable gap. Vertical stays centered on the tab strip (RIGHT anchor).
 	badge:SetPoint("RIGHT", tabStrip, "RIGHT", -(34 + 14 - S.panelGutter + S.s8), 0)
-	UI.RoundFill(badge, P.element, nil, nil, UI.RADIUS.xs)
-	UI.RoundBorder(badge, L.soft, "OVERLAY", nil, UI.RADIUS.xs)
-	local badgeTxt = FS(badge, "caption", C.textMuted)
+	UI.RoundFill(badge, Surface.Input, nil, nil, UI.RADIUS.xs)
+	UI.RoundBorder(badge, Border.default, "OVERLAY", nil, UI.RADIUS.xs)
+	local badgeTxt = FS(badge, "caption", Text.Description)
 	badgeTxt:SetPoint("CENTER", badge, "CENTER", 0, 0)
 	badge._txt = badgeTxt
 	badge:Hide()
@@ -546,8 +547,8 @@ function Shell:Build()
 	dock:SetSize(MW.pvStageMinW, MW.pvMinStageH)
 	-- Fill/border kept as handles: Shell:SetDockChrome strips them for the
 	-- preview's "Backdrop" filter (frames float freely on the screen).
-	dock._fill = UI.RoundFill(dock, P.panel, nil, nil, UI.ROUND_R_CHROME)
-	dock._edges = UI.RoundBorder(dock, L.mid, nil, nil, UI.ROUND_R_CHROME)
+	dock._fill = UI.RoundFill(dock, Surface.Window, nil, nil, UI.ROUND_R_CHROME)
+	dock._edges = UI.RoundBorder(dock, Border.hover, nil, nil, UI.ROUND_R_CHROME)
 	-- (The former gold accent bar on the panel-facing edge was removed with the
 	-- rounded chrome — Florian 2026-07-05.)
 	dock:EnableMouse(true)
@@ -587,7 +588,7 @@ function Shell:Build()
 	sbTrack:SetPoint("TOPLEFT", scroll, "TOPRIGHT", S.scrollBarGap, 0)
 	sbTrack:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", S.scrollBarGap, 0)
 	local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
-	trackTex:SetAllPoints(sbTrack); setColor(trackTex, C.ink700)
+	trackTex:SetAllPoints(sbTrack); setColor(trackTex, Surface.Input)
 
 	-- Thumb anchored via TOP (= horizontally centered), width separate -> can widen
 	-- on hover (easier to grab). updateBar sets height/position.
@@ -602,7 +603,7 @@ function Shell:Build()
 	thumb._w = S.scrollBarW
 	local thumbTex = thumb:CreateTexture(nil, "OVERLAY")
 	thumbTex:SetAllPoints(thumb)
-	local function paintThumb(a) thumbTex:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, a) end
+	local function paintThumb(a) thumbTex:SetColorTexture(Accent.color.r, Accent.color.g, Accent.color.b, a) end
 	paintThumb(0.55)
 
 	local function updateBar()
@@ -862,7 +863,7 @@ local function flashCard(card)
 		fl = CreateFrame("Frame", nil, card)
 		fl:SetAllPoints(card)
 		fl:SetFrameLevel(card:GetFrameLevel() + 9)
-		UI.RoundBorder(fl, UI.C.gold500, "OVERLAY", nil, UI.RADIUS.lg)
+		UI.RoundBorder(fl, UI.Accent.color, "OVERLAY", nil, UI.RADIUS.lg)
 		local ag = fl:CreateAnimationGroup()
 		local a = ag:CreateAnimation("Alpha")
 		a:SetFromAlpha(1); a:SetToAlpha(0)
@@ -945,7 +946,7 @@ function Shell:SetTabBadge(label, value)
 	end
 	local text = label
 	if value and value ~= "" then
-		text = label .. " " .. UI.ColorCode(P.textPrimary) .. value .. "|r"
+		text = label .. " " .. UI.ColorCode(Text.Primary) .. value .. "|r"
 	end
 	self._lastBadge = text
 	self:_ApplyBadge(text)
@@ -1019,7 +1020,7 @@ local function newStack(holder)
 		local headerH, topInset = 0, pad
 		if o.title and o.titleStyle == "light" then
 			headerH, topInset = M.subgroupTitleH, 0
-			local t = FS(panel, "groupTitle", C.gold300)
+			local t = FS(panel, "groupTitle", Text.Primary)
 			t:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.subgroupPad)
 			t:SetText(o.title)
 			panel._title = t
@@ -1028,7 +1029,7 @@ local function newStack(holder)
 			-- title + optional muted description line; no header bar, no divider,
 			-- no accent bar.
 			headerH, topInset = (o.subtitle and M.cardHeadSubH or M.cardHeadH), (o.afterHeader or 0)
-			local titleFS = FS(panel, "sectionHead", C.gold300)
+			local titleFS = FS(panel, "sectionHead", Text.Primary)
 			titleFS:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.cardHeadTop)
 			titleFS:SetText(o.title)
 			panel._title = titleFS
@@ -1039,7 +1040,7 @@ local function newStack(holder)
 			if not titleH or titleH <= 0 then titleH = 20 end -- cold font fallback (= sectionHead size)
 			local titleMidY = -M.cardHeadTop - titleH / 2
 			if o.subtitle then
-				local subFS = FS(panel, "caption", C.textMuted)
+				local subFS = FS(panel, "caption", Text.Description)
 				subFS:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.cardSubY)
 				subFS:SetPoint("RIGHT", panel, "RIGHT", -pad, 0)
 				subFS:SetJustifyH("LEFT")
@@ -1051,24 +1052,24 @@ local function newStack(holder)
 			if o.count ~= nil then
 				local nonzero = (tonumber(o.count) or 0) > 0
 				local chip = CreateFrame("Frame", nil, panel)
-				local cfs = FS(chip, "caption", nonzero and P.goldBrand or C.textMuted)
+				local cfs = FS(chip, "caption", nonzero and Text.Primary or Text.Description)
 				cfs:SetText(tostring(o.count))
 				cfs:SetPoint("CENTER", chip, "CENTER", 0, 0)
 				chip:SetSize(math.max(M.sectionCountH, math.ceil(cfs:GetStringWidth()) + M.sectionCountPad * 2), M.sectionCountH)
 				chip:SetPoint("LEFT", titleFS, "RIGHT", M.sectionCountGap, 0)
-				UI.RoundBorder(chip, nonzero and UI.goldA(0.40) or L.soft, "OVERLAY", nil, UI.RADIUS.xs)
+				UI.RoundBorder(chip, nonzero and UI.accentA(0.40) or Border.default, "OVERLAY", nil, UI.RADIUS.xs)
 			end
 			-- v2 refinement no. 2: quiet header action (e.g. "Restore defaults") on the
 			-- right — declutters the card footer; muted, golden on hover.
 			if o.action then
 				local act = CreateFrame("Button", nil, panel)
-				local afs = FS(act, "value", C.textMuted)
+				local afs = FS(act, "value", Text.Description)
 				afs:SetText(o.action.text or "")
 				afs:SetPoint("CENTER", act, "CENTER", 0, 0)
 				act:SetSize(math.ceil(afs:GetStringWidth()) + 12, M.cardHeadH)
 				act:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
-				act:SetScript("OnEnter", function() afs:SetTextColor(P.goldIntHover.r, P.goldIntHover.g, P.goldIntHover.b) end)
-				act:SetScript("OnLeave", function() afs:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b) end)
+				act:SetScript("OnEnter", function() afs:SetTextColor(Accent.hover.r, Accent.hover.g, Accent.hover.b) end)
+				act:SetScript("OnLeave", function() afs:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b) end)
 				if o.action.onClick then act:SetScript("OnClick", o.action.onClick) end
 			end
 			-- Header master toggle (card grid system): small switch on the right
@@ -1109,7 +1110,7 @@ local function newStack(holder)
 				local function paint()
 					local on = o.eye.get()
 					g:SetTexture(TEX .. (on and "icon-eye" or "icon-eye-off"))
-					local col = hovered and P.goldIntHover or (on and P.goldInt or C.textMuted)
+					local col = hovered and Accent.hover or (on and Accent.color or Text.Description)
 					g:SetVertexColor(col.r, col.g, col.b)
 				end
 				paint()
@@ -1138,7 +1139,7 @@ local function newStack(holder)
 			-- subgroup label style.
 			if o.title and o.titleStyle ~= "light" then
 				local divider = panel:CreateTexture(nil, "ARTWORK")
-				UI.SetColor(divider, L.faint)
+				UI.SetColor(divider, Border.faint)
 				divider:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -headerH)
 				divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -pad, -headerH)
 				PixelUtil.SetHeight(divider, 1)
@@ -1176,7 +1177,7 @@ local function newStack(holder)
 			if pending then iy = iy - pending; pending = nil end -- apply pending BEFORE the box
 			local sub = makeBox(iy, {
 				holder = host, outerPad = rowPad, pad = M.subgroupPad,
-				fill = C.ink520, border = L.faint,
+				fill = Surface.Card, border = Border.faint,
 				title = o2.title, titleStyle = o2.title and "light" or nil,
 			})
 			local rawClose = sub.close
@@ -1204,7 +1205,7 @@ local function newStack(holder)
 	function stack:section(title, opts)
 		local M = UI.WIDGET
 		local inner = makeBox(y, {
-			outerPad = 0, pad = M.sectionPad, fill = C.ink600, border = L.soft,
+			outerPad = 0, pad = M.sectionPad, fill = Surface.Card, border = Border.default,
 			title = title, afterHeader = M.sectionAfterHeader,
 			count = opts and opts.count, action = opts and opts.action,
 			toggle = opts and opts.toggle, eye = opts and opts.eye,
@@ -1272,7 +1273,7 @@ local function newStack(holder)
 		for i, def in ipairs(defs) do
 			local inner = makeBox(0, {
 				holder = cols[i], outerPad = 0, pad = M.sectionPad,
-				fill = C.ink600, border = L.soft,
+				fill = Surface.Card, border = Border.default,
 				title = def.title, afterHeader = M.sectionAfterHeader,
 				count = def.count, action = def.action, toggle = def.toggle,
 				eye = def.eye, subtitle = def.subtitle,
@@ -1612,14 +1613,14 @@ function Shell:ComingSoon(d, stack, name)
 	local card = CreateFrame("Frame", nil, holder)
 	card:SetSize(440, 170)
 	card:SetPoint("CENTER", holder, "CENTER", 0, 0)
-	UI.RoundFill(card, C.ink600)
-	UI.RoundBorder(card, L.soft, "OVERLAY")
+	UI.RoundFill(card, Surface.Card)
+	UI.RoundBorder(card, Border.default, "OVERLAY")
 
-	local head = FS(card, "section", C.gold300)
+	local head = FS(card, "section", Text.Primary)
 	head:SetText(UI.Track("COMING SOON", " "))
 	head:SetPoint("TOP", card, "TOP", 0, -40)
 
-	local body = FS(card, "hint", C.textMuted)
+	local body = FS(card, "hint", Text.Description)
 	body:SetJustifyH("CENTER"); body:SetWordWrap(true)
 	body:SetPoint("TOPLEFT", card, "TOPLEFT", 28, -84)
 	body:SetPoint("TOPRIGHT", card, "TOPRIGHT", -28, -84)
