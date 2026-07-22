@@ -56,6 +56,11 @@ local P = {
 	goldBrand    = hex("ECEDEF"), -- C1 (was brand gold): brand/headers/text-accents -> off-white
 	goldInt      = hex("F4F4F6"), -- C2: active nav/tab fill, primary button fill, control accents
 	goldIntHover = hex("FFFFFF"), -- C3: hover step (a touch brighter)
+	-- Softened light for FILLED toggle tracks: the switch ON track. A pure-white
+	-- fill "blooms" (irradiation) next to the dark OFF track + dark knob, reading
+	-- larger/harder than OFF; this calmer light keeps it clearly "on" without the
+	-- blare and matches OFF's soft, round feel (Florian 2026-07-22).
+	switchOn     = hex("D6D6DA"),
 
 	-- D: text
 	textPrimary  = hex("ECEDEF"), -- D1: off-white — names, labels, button text
@@ -88,6 +93,7 @@ UI.C = {
 
 	-- gold
 	gold500  = P.goldInt,      -- interactive accent: control borders, icons, active
+	switchOn = P.switchOn,     -- softened light for the switch ON track (anti-bloom)
 	gold400  = P.goldIntHover, -- button hover
 	gold300  = P.goldBrand,    -- wordmark / display heading
 	gold250  = P.goldBrand,    -- brand-gold text accents (tooltip title, active list rows)

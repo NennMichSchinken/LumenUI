@@ -1380,10 +1380,13 @@ function W.Checkbox(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  Switch — rounded-RECTANGLE on/off toggle (gold-filled track + rounded-square
---  knob slides right when on). Reusable for any boolean. o = { get, set }.
---  Squared off the old pill/circle (Florian 2026-07-05: cleaner, matches the
---  radius scale + the rounded-square checkboxes) — track = sm6, knob = xs4.
+--  Switch — rounded CAPSULE on/off toggle (pill track + circular knob that
+--  slides right when on). Reusable for any boolean. o = { get, set }.
+--  v3 (2026-07-22): back to a fully-round switch (Florian) — pill-<h> track +
+--  circle-<h-2pad> knob. The knob INVERTS with state so it stays visible either
+--  way: OFF = light knob on the dark track, ON = dark knob on the light-accent
+--  track (a light knob on the light track would vanish — the cost of a pure-
+--  light accent on filled controls, solved by inverting the knob).
 -- ---------------------------------------------------------------------------
 function W.Switch(parent, o)
 	local b = CreateFrame("Button", nil, parent)
@@ -1391,25 +1394,34 @@ function W.Switch(parent, o)
 	-- collapsible-header master toggles).
 	local swH = o.small and M.switchSmallH or M.switchH
 	b:SetSize(o.small and M.switchSmallW or M.switchW, swH)
-	local track = UI.RoundFill(b, C.ink700, "BACKGROUND", nil, UI.RADIUS.sm)
-	local edges = UI.RoundBorder(b, L.mid, "OVERLAY", nil, UI.RADIUS.sm)
+	local track = UI.PillFill(b, C.ink700, "BACKGROUND", swH)
+	-- The pill-fill traces the FULL radius (~h/2) to the bounding box, but the
+	-- pill-edge ring sits on a 1px-inset path (radius-1). So the bright ON fill
+	-- overhangs the ring by ~1px at the caps and reads squarer/larger than the
+	-- OFF state (which shows only the inset ring). Inset the fill 1px so its curve
+	-- lands ON the ring = both states share the exact same rounded outline
+	-- (Florian 2026-07-22; OFF fill is dark-on-dark so the inset is invisible there).
+	track:ClearAllPoints()
+	track:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1)
+	track:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+	local edges = UI.PillBorder(b, L.mid, "OVERLAY", swH)
 	local pad = M.switchKnobPad
 	local kS = swH - pad * 2
-	local knob = UI.RoundKnob(b, C.textMuted, "OVERLAY", kS, UI.RADIUS.xs)
+	local knob = UI.Circle(b, C.textBody, "OVERLAY", kS)
 
 	local val = (o.get and o.get()) or false
 	local function apply(on)
 		knob:ClearAllPoints()
 		if on then
-			UI.SetColor(track, C.gold500)
-			for _, e in ipairs(edges) do UI.SetColor(e, C.gold500) end
+			UI.SetColor(track, C.switchOn) -- softened light (anti-bloom, matches OFF's size/feel)
+			for _, e in ipairs(edges) do UI.SetColor(e, C.switchOn) end
 			knob:SetPoint("RIGHT", b, "RIGHT", -pad, 0)
-			UI.SetColor(knob, C.ink850) -- dark knob on gold
+			UI.SetColor(knob, C.ink850) -- dark knob on the light track
 		else
 			UI.SetColor(track, C.ink700)
 			for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
 			knob:SetPoint("LEFT", b, "LEFT", pad, 0)
-			UI.SetColor(knob, C.textMuted)
+			UI.SetColor(knob, C.textBody) -- light knob on the dark track
 		end
 	end
 	apply(val)
