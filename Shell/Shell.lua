@@ -510,8 +510,9 @@ function Shell:Build()
 	tglow:SetSnapToPixelGrid(false); tglow:SetTexelSnappingBias(0)
 	tglow:SetPoint("TOPLEFT", tabSlider, "TOPLEFT", -S.tabGlowX, S.tabGlowTop)
 	tglow:SetPoint("BOTTOMRIGHT", tabSlider, "BOTTOMRIGHT", S.tabGlowX, -S.tabGlowBot)
-	tglow:SetVertexColor(1, 1, 1, 0.36) -- white glow, subtle; spills a bit past the pill edge (softness baked into the alpha)
-	UI.PillFill(tabSlider, { r = 1, g = 1, b = 1, a = 0.10 }, "ARTWORK", S.tabH - S.tabStripPad * 2) -- white/10 capsule (fully round)
+	local gl = Accent.glow
+	tglow:SetVertexColor(gl.r, gl.g, gl.b, gl.a) -- accent glow (mono = white; tints automatically if a colour accent is set); softness baked into the alpha
+	UI.PillFill(tabSlider, Accent.wash, "ARTWORK", S.tabH - S.tabStripPad * 2) -- accent-wash capsule (fully round)
 	tabSlider:Hide()
 	self._tabSlider = tabSlider
 

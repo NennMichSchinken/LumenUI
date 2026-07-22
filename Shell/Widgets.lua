@@ -1504,7 +1504,7 @@ function W.Segment(parent, o)
 	local slider = CreateFrame("Frame", nil, bar)
 	slider:SetFrameLevel(bar:GetFrameLevel() + 1) -- above the strip, below the cell text
 	slider._ref = bar
-	UI.PillFill(slider, { r = 1, g = 1, b = 1, a = 0.10 }, "ARTWORK", cellH - pad * 2)
+	UI.PillFill(slider, Accent.wash, "ARTWORK", cellH - pad * 2) -- accent-wash pill (tints if a colour accent is set)
 	slider:Hide()
 
 	-- Not `(get() or value)` — get() may legitimately return `false` (e.g. inside/
@@ -2543,7 +2543,7 @@ function W.MenuButton(parent, o)
 		itxt:SetPoint("LEFT", item, "LEFT", 10, 0)
 		itxt:SetText(op.label)
 		item:SetScript("OnEnter", function()
-			wash:SetColorTexture(Surface.Input.r, Surface.Input.g, Surface.Input.b, 1)
+			wash:SetColorTexture(Surface.Hover.r, Surface.Hover.g, Surface.Hover.b, 1) -- lift off the Surface.Input menu bg
 			itxt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 		end)
 		item:SetScript("OnLeave", function()

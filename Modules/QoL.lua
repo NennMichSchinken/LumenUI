@@ -295,7 +295,7 @@ local function makeToolButton(parent, labelText, onClick)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 	txt:SetText(labelText)
 	b:SetScript("OnEnter", function()
-		UI.SetColor(fill, Surface.Card) -- lighter face only, border stays quiet
+		UI.SetColor(fill, Surface.Hover) -- lighter face on hover, border stays quiet
 		txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 	end)
 	b:SetScript("OnLeave", function()
