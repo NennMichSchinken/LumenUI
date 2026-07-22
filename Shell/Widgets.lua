@@ -748,7 +748,20 @@ function W.Select(parent, o)
 			end
 		end
 		btn:EnableMouseWheel(true)
-		btn:SetScript("OnMouseWheel", function(_, delta) if not menu:IsShown() then cycle(delta) end end)
+		-- Wheel-preview is gated behind SHIFT/CTRL (Florian 2026-07-22): a plain
+		-- scroll over the dropdown kept silently changing the texture while paging
+		-- past it. No modifier -> forward the wheel to the Shell scroll frame so the
+		-- page scrolls as usual; hold Shift/Ctrl to cycle+preview textures.
+		btn:SetScript("OnMouseWheel", function(_, delta)
+			if menu:IsShown() then return end
+			if IsShiftKeyDown() or IsControlKeyDown() then
+				cycle(delta)
+			else
+				local sc = ns.Shell and ns.Shell._scroll
+				local h = sc and sc:GetScript("OnMouseWheel")
+				if h then h(sc, delta) end
+			end
+		end)
 	end
 
 	f.SetValueExternal = function(_, v) cur = v; refreshLabel() end

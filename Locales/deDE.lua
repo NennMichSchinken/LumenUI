@@ -125,7 +125,7 @@ ns.RegisterLocale("deDE", {
 	["Heal-absorb texture"] = "Healabsorb-Textur",
 	["Lumen Shield"] = "Lumen Schild",
 	["Lumen Heal-absorb"] = "Lumen Heilabsorb",
-	["Scroll the mouse wheel over a texture dropdown to preview textures live. In the open menu, the search box at the top filters."] = "Mausrad über einem Textur-Dropdown blättert live durch die Texturen (Vorschau). Im geöffneten Menü filtert das Suchfeld am Kopf.",
+	["Shift-scroll a texture dropdown to preview live."] = "Shift + Mausrad über einem Textur-Dropdown = Live-Vorschau.",
 	["Heal prediction"] = "Heilvorhersage",
 	["Incoming healing previewed on the health bar."] = "Eingehende Heilung als Vorschau am Lebensbalken.",
 	["Class color as fill color"] = "Klassenfarbe als Füllfarbe",

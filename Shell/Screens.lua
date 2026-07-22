@@ -744,7 +744,7 @@ local function buildBase(d, stack)
 	W.Select(tc1[1], { label = T("Bar texture"), options = textureOptions(), wheelPreview = true, search = true, get = tget("healthTexture"), set = tset("healthTexture") }):SetAllPoints(tc1[1])
 	sBar:place(tr1, fieldH, L.raidframes.base.healthbar.afterTexHint)
 	-- Visible hint (instead of a hover tooltip) for the mouse-wheel preview + search field of the texture dropdowns.
-	local texHint = W.Hint(d, T("Scroll the mouse wheel over a texture dropdown to preview textures live. In the open menu, the search box at the top filters."))
+	local texHint = W.Hint(d, T("Shift-scroll a texture dropdown to preview live."))
 	sBar:place(texHint, M.hintH, R.row)
 
 	-- Background + health-bar opacity (boxed sliders, two unit cells).
