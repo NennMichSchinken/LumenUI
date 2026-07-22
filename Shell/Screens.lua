@@ -345,6 +345,7 @@ local function subHeadRow(d, label)
 	UI.SetColor(hline, UI.line.faint)
 	hline:SetPoint("TOPLEFT", head, "TOPLEFT", 0, 0)
 	hline:SetPoint("TOPRIGHT", head, "TOPRIGHT", 0, 0)
+	head._topLine = hline -- card stacker hides this when the boundary is already lined (no double divider)
 	local function snapH() PixelUtil.SetHeight(hline, 1) end
 	snapH()
 	C_Timer.After(0, snapH)
@@ -1821,18 +1822,22 @@ local function buildGlobalProfile(d, stack)
 		{ span = 6, title = T("Import"), subtitle = T("Take someone else's code — granular per module.") },
 	})
 
-	-- Export card
+	-- Export card — textarea on top, button below-right (mirrors the Import card
+	-- so both textareas sit at the same height and line up; Florian 2026-07-22).
 	local sExp = sb.cards[1]
-	local genBtn = W.Button(d, { text = T("Generate export code"), variant = "ghost",
+	local expTA = W.Textarea(d, { height = G.taH, readOnly = true,
+		placeholder = T("No code yet — click \"Generate export code\", then select here (Ctrl+A) and copy (Ctrl+C)."),
+		get = function() return shareExport end })
+	sExp:place(expTA, G.taH, R.row)
+	local genRow = CreateFrame("Frame", nil, d)
+	genRow:SetHeight(M.buttonH)
+	local genBtn = W.Button(genRow, { text = T("Generate export code"), variant = "ghost",
 		onClick = function()
 			shareExport = (ns.Share and ns.Share:Export()) or ""
 			ns.Shell:RenderContent(true)
 		end })
-	sExp:placeLeft(genBtn, M.buttonH, G.afterExportBtn)
-	local expTA = W.Textarea(d, { height = G.taH, readOnly = true,
-		placeholder = T("No code yet — click \"Generate export code\", then select here (Ctrl+A) and copy (Ctrl+C)."),
-		get = function() return shareExport end })
-	sExp:place(expTA, G.taH, R.tight)
+	genBtn:ClearAllPoints(); genBtn:SetPoint("RIGHT", genRow, "RIGHT", 0, 0)
+	sExp:place(genRow, M.buttonH, R.tight)
 	sExp:close()
 
 	-- Import card

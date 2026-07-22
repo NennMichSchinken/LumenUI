@@ -698,7 +698,10 @@ function W.Select(parent, o)
 		if search then search:SetText(""); searchPH:Show(); relayout() end
 		closer:Show(); menu:Show()
 		if menu._updateBar then menu._updateBar() end
-		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
+		-- Open = no border-status change (Florian 2026-07-22): the bright L.strong
+		-- edge read too heavy/"fett" against the open list. The list itself is the
+		-- open indicator; keep the trigger's quiet idle border.
+		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
 		if search then search:SetFocus() end
 	end
 
@@ -1016,7 +1019,7 @@ function W.SpellPicker(parent, o)
 		ph:Show()
 		populate()
 		closer:Show(); menu:Show()
-		for _, e in ipairs(bEdges) do UI.SetColor(e, L.strong) end
+		for _, e in ipairs(bEdges) do UI.SetColor(e, L.soft) end -- quiet open border (see W.Select openMenu)
 		search:SetFocus()
 	end
 	closeMenu = function()
@@ -2216,7 +2219,7 @@ function W.TextInput(parent, o)
 	box:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
 	UI.RoundFill(box, C.ink700, nil, nil, R_CTRL)
-	UI.RoundBorder(box, L.mid, "OVERLAY", nil, R_CTRL)
+	UI.RoundBorder(box, L.soft, "OVERLAY", nil, R_CTRL) -- subtle edge, matches the dropdown (Florian 2026-07-22: L.mid read too strong)
 	-- Same text role as the dropdown headers (selectText): inputs and selects
 	-- sit side by side in rows (Profile tab) and must read as one control family.
 	UI:SetFont(box, "selectText", C.textStrong)
@@ -2328,9 +2331,12 @@ end
 local BTN_SIZE = UI.ROLE.btn[2]
 local BTN_VARIANTS = {
 	primary = {
-		bg = P.goldInt, bgHover = P.goldIntHover,
+		-- Softened light (switchOn), not pure accent: a pure-white fill blooms
+		-- (irradiation) and read TALLER/fatter than the outlined dropdown of the
+		-- same height (Florian 2026-07-22). Hover steps up to the full accent.
+		bg = P.switchOn, bgHover = P.goldInt,
 		txt = C.onGold, txtHover = C.onGold,
-		line = P.goldInt, lineHover = P.goldIntHover, pad = 26, font = UI.FONT.hankenBold,
+		line = P.switchOn, lineHover = P.goldInt, pad = 26, font = UI.FONT.hankenBold,
 	},
 	secondary = {
 		bg = nil, bgHover = UI.goldA(0.08),
@@ -2356,7 +2362,9 @@ function W.Button(parent, o)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetHeight(M.buttonH)
 
-	local bg = UI.RoundFill(b, CLEAR, "BACKGROUND", nil, R_CTRL)
+	-- Fully-round PILL (Florian 2026-07-22: mockup buttons are pills). h48 assets
+	-- exist; the cap radius = h/2 so any button width stays a clean capsule.
+	local bg = UI.PillFill(b, CLEAR, "BACKGROUND", M.buttonH)
 
 	-- v2: FLAT fills only (the old primary gold gradient is gone — flat design line).
 	local function paintBg(hover)
@@ -2368,7 +2376,7 @@ function W.Button(parent, o)
 	end
 	paintBg(false)
 
-	local edges = UI.RoundBorder(b, v.line, "OVERLAY", nil, R_CTRL)
+	local edges = UI.PillBorder(b, v.line, "OVERLAY", M.buttonH)
 	local txt = UI.FS(b, "btn", v.txt)
 	local okFont = txt:SetFont(v.font, BTN_SIZE, "") -- weight per variant (see BTN_VARIANTS)
 	txt:SetText(o.text or "")
@@ -2684,12 +2692,15 @@ function W.Disclosure(parent, o)
 	local f = CreateFrame("Button", nil, parent)
 	f:SetHeight(M.disclosureH)
 
-	-- Hairline on top: separates the footer from the card content.
+	-- Hairline on top: separates the footer from the card content. Hidden by the
+	-- card stacker when the boundary above already carries a line (a preceding
+	-- OptionRow's bottom line), so the two don't read as a double divider.
 	local sep = f:CreateTexture(nil, "OVERLAY")
 	PixelUtil.SetHeight(sep, 1)
 	sep:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 	sep:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
 	UI.SetColor(sep, L.faint)
+	f._topLine = sep
 
 	-- Chevron: Lucide chevron-up when open, chevron-right when closed (muted;
 	-- brightens to gold on hover via paint()).
@@ -2846,6 +2857,8 @@ end
 -- ---------------------------------------------------------------------------
 function W.OptionRow(parent, label)
 	local row = CreateFrame("Frame", nil, parent)
+	row._bottomLine = true -- owns the group separator on its bottom edge; the card
+	-- stacker reads this to de-dup a following subHeadRow/Disclosure top line.
 	local line = row:CreateTexture(nil, "ARTWORK")
 	UI.SetColor(line, L.faint)
 	line:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)

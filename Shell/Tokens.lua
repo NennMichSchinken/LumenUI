@@ -301,11 +301,11 @@ UI.R = {
 --  table conversions land on the 5px design grid instead (see UI.S note).
 -- ---------------------------------------------------------------------------
 UI.WIDGET = {
-	controlH    = 45, -- dropdown/input height (spec 36 screen px)
-	selectChevSize = 14, -- dropdown chevron glyph (Lucide chevron-down)
+	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
+	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
 	sortArrowGlyph = 14, -- sort up/down arrow glyph (Lucide chevron-up/down)
-	buttonH     = 45, -- button height (= controlH: uniform, hierarchy comes from the variant colors — Florian 2026-07-05)
+	buttonH     = 48, -- button height (v3 2026-07-22: 48, deliberately < controlH 51 + fully-round PILL shape, matching the mockup where buttons are shorter pills than the taller selects; uses the existing pill-*-h48 assets)
 	btnIcon     = 18, -- optional leading Lucide icon inside a W.Button (Edit Mode button)
 	btnIconGap  = 8,  -- gap icon -> button label
 	fieldGap    = 26, -- vertical gap label -> control below
@@ -525,7 +525,7 @@ UI.LAYOUT = {
 		afterList    = 8,   -- last box -> "+ add" button
 		emptyH       = 30,  -- height of the "(no bindings)" row
 		-- dimensions (catalog rows)
-		rowH     = 60,  -- card row height (keeps ~7px air around the keybind field at controlH 45)
+		rowH     = 66,  -- card row height (keeps ~7px air around the keybind field at controlH 51)
 		rowGap   = 8,   -- gap between rounded row cards (Option b: no longer flush)
 		                -- so adjacent rows share ONE 1px line (no doubled border)
 		rowPad   = 20,  -- inner left/right padding inside a row card
@@ -684,14 +684,15 @@ end
 --  texture with a solid quad) — UI.SetColor routes them to SetVertexColor.
 -- ---------------------------------------------------------------------------
 local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
-local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [12] = 13, [16] = 17, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer)
+local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [12] = 13, [14] = 15, [16] = 17, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer)
 local ROUND_SUFFIX = { top = "-top", bottom = "-btm", left = "-left", right = "-right" } -- else full
 -- v3 (2026-07-21): radii bumped toward GENEROUS on the headline surfaces —
 -- cards lg 10->18, chrome xl 16->22 (new 9-slice assets generated for both;
--- 14 was too subtle at the 0.80 panel scale, bumped to 18). Controls (md/sm/xs)
--- unchanged: keeps the control/segment assets intact and avoids churn on the
--- small elements that already read well.
-UI.RADIUS = { xs = 4, sm = 6, md = 8, lg = 18, xl = 22 } -- THE scale (see table above)
+-- 14 was too subtle at the 0.80 panel scale, bumped to 18). Controls: sm/xs
+-- unchanged; md later bumped 8->14 (v3 2026-07-22) so control faces (dropdowns/
+-- buttons/segments/inputs) match the mockup's rounder select — r14 assets baked,
+-- old r8 control assets now unused but left in place (harmless).
+UI.RADIUS = { xs = 4, sm = 6, md = 14, lg = 18, xl = 22 } -- THE scale (see table above; md 8->14 in v3 2026-07-22 = control faces rounder to match the mockup's ~11px@1x select radius. r14 fill/left/right/edge assets baked)
 UI.ROUND_R        = UI.RADIUS.lg -- cards/panels/popovers (default radius)
 UI.ROUND_R_CHROME = UI.RADIUS.xl -- main chrome: panel, sidebar, preview dock + modals
 UI.ROUND_R_CTRL   = UI.RADIUS.md -- control faces: fields, buttons, segments, inset boxes

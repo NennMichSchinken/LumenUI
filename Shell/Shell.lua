@@ -1181,6 +1181,12 @@ local function newStack(holder)
 
 		local rowPad = outerPad + pad -- row indent of the box WITHIN holder
 		local inner, iy, pending = {}, topY - headerH - topInset, nil
+		-- Divider de-dup (Florian 2026-07-22): track whether the boundary at the
+		-- cursor already carries a hairline (the header divider, or a preceding
+		-- OptionRow's bottom line). A subHeadRow/Disclosure draws its OWN top line;
+		-- when the boundary is already lined, hide it so the two don't read as a
+		-- double divider. A lineless element (FieldRow/segment) leaves it unlined.
+		local boundaryLined = (o.title and o.titleStyle ~= "light") and true or false
 		local function anchor(widget, h, full)
 			if pending then iy = iy - pending end
 			widget:SetParent(host)
@@ -1190,8 +1196,12 @@ local function newStack(holder)
 			if h then widget:SetHeight(h) end
 			iy = iy - (h or widget:GetHeight())
 		end
-		function inner.place(_, widget, h, gap) anchor(widget, h, true); pending = gap or 22 end
-		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); pending = gap or 22 end
+		local function placed(widget)
+			if widget._topLine then widget._topLine:SetShown(not boundaryLined) end
+			boundaryLined = widget._bottomLine and true or false
+		end
+		function inner.place(_, widget, h, gap) anchor(widget, h, true); placed(widget); pending = gap or 22 end
+		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); placed(widget); pending = gap or 22 end
 		function inner.gap(_, dy) iy = iy - (dy or 8) end
 		function inner.y() return iy end
 		-- Nested lighter sub-box at the current position; same API.
