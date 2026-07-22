@@ -117,16 +117,25 @@ local WHITE = { r = 1, g = 1, b = 1 }
 local BLACK = { r = 0, g = 0, b = 0 }
 function UI.BuildAccent(base)
 	return {
-		color     = base,                 -- fills, active nav/tab, primary button
+		color     = base,                 -- fills, active nav/tab, primary button, active borders
 		hover     = mixTo(base, WHITE, 0.35), -- brighter on hover
 		pressed   = mixTo(base, BLACK, 0.12), -- slightly darker while pressed
 		selection = withA(base, 0.14),    -- selected-row / range wash
 		focus     = withA(base, 0.55),    -- keyboard-focus ring
 		glow      = withA(base, 0.35),    -- soft glow behind an active pill/indicator
+		wash      = withA(base, 0.10),    -- accent wash (open/hover fills)
+		washSoft  = withA(base, 0.06),    -- faint accent wash
+		-- switchOn (filled toggle track) is a FIXED softened light in mono (anti-
+		-- bloom, see P.switchOn); set after the build so it survives a live
+		-- SetAccent until a coloured theme derives its own softened track.
 	}
 end
 UI.ACCENT_BASE = P.goldInt
 UI.Accent = UI.BuildAccent(UI.ACCENT_BASE)
+UI.Accent.switchOn = P.switchOn -- softened light for the switch ON track (anti-bloom)
+-- Accent colour at an arbitrary alpha (replaces the old UI.goldA). Reads the
+-- live base so a future SetAccent flows through.
+function UI.accentA(a) return withA(UI.ACCENT_BASE, a) end
 -- Swap the interactive accent at runtime (future user theme). Rebuilds the
 -- derived table IN PLACE so existing UI.Accent references stay valid.
 function UI.SetAccent(col)
@@ -142,22 +151,36 @@ end
 --  until call sites migrate onto these names.
 -- ---------------------------------------------------------------------------
 UI.Surface = {
-	Window  = P.panel,
-	Sidebar = P.sidebar,
-	Card    = P.card,
-	Input   = P.inset,
-	Hover   = P.elementHover,
+	Window  = P.panel,        -- main window surface
+	Sidebar = P.sidebar,      -- nav column
+	Card    = P.card,         -- section cards
+	Input   = P.inset,        -- edit boxes, dropdowns (closed & open), rows, neutral buttons, inactive tabs
+	Hover   = P.elementHover, -- hover step; also the unfilled slider track channel
+	Scrim   = P.page,         -- dim behind the panel + soft icon shadow
 }
 UI.Text = {
-	Primary     = P.textPrimary,   -- Heading (brightest)
-	Secondary   = P.textBody,      -- Body (mid — row labels)
-	Description  = P.textSecondary, -- muted description/hint
-	Disabled    = P.textDisabled,
+	Primary     = P.textPrimary,   -- Heading (brightest): titles, wordmark, active nav, values
+	Secondary   = P.textBody,      -- Body (mid): row & checkbox labels
+	Description = P.textSecondary,  -- muted: descriptions, hints, field labels, min/max, idle nav
+	Disabled    = P.textDisabled,  -- greyed-out
+	Value       = P.sliderValue,   -- slider readout (leads over the label, not pure white)
+	OnAccent    = P.textOnGold,    -- text/knob ON the light accent (dark, so it reads)
 }
+-- Border lines — pure white at LOW alpha (hierarchy leans on the graduated
+-- surface layers + fill, not on heavy borders). "active" = the pure-light accent
+-- for open/selected edges. THE tuning spot.
 UI.Border = {
-	Default  = withA(P.borderSoft, 0.05),
-	Hover    = withA(P.borderStrong, 0.08),
-	Selected = withA(P.borderStrong, 0.12),
+	faint    = withA(P.borderSoft, 0.04),   -- finest content separators
+	default  = withA(P.borderSoft, 0.05),   -- card / row borders
+	hover    = withA(P.borderStrong, 0.10), -- standard control borders / hover edges
+	divider  = withA(P.borderSoft, 0.10),   -- structural divider lines (header / nav)
+	active   = UI.Accent.color,             -- active / open border (= accent)
+}
+UI.Status = {
+	danger      = P.danger,
+	dangerHover = P.dangerHover,
+	dangerLine  = withA(P.danger, 0.55), -- destructive outline
+	dangerWash  = withA(P.danger, 0.12), -- destructive fill wash
 }
 
 -- Legacy token names -> palette roles. Widgets/Screens/Shell still read UI.C.*;
@@ -240,8 +263,16 @@ UI.FONT = {
 	interSemi = FP .. "Inter-SemiBold.ttf",
 	interBold = FP .. "Inter-Bold.ttf",
 }
--- Back-compat aliases: every existing role/call site (UI.ROLE, button variants,
--- ESC-menu button) keeps its key and now resolves to the matching Inter weight.
+-- Semantic weight names (v3 cleanup): components/roles name a WEIGHT, not a
+-- typeface — so the bundled font can be swapped in one place. These are the
+-- clean forward names; the cinzel/hanken aliases below are legacy and get
+-- removed once every call site + UI.ROLE entry reads a weight name.
+UI.FONT.regular  = UI.FONT.interReg
+UI.FONT.medium   = UI.FONT.interMed
+UI.FONT.semibold = UI.FONT.interSemi
+UI.FONT.bold     = UI.FONT.interBold
+-- Legacy back-compat aliases (Cinzel/Hanken era). REMOVE in the final cleanup
+-- phase once UI.ROLE + the remaining call sites use the weight names above.
 UI.FONT.cinzelSemi = UI.FONT.interSemi -- display/headings/wordmark
 UI.FONT.cinzelBold = UI.FONT.interBold
 UI.FONT.hankenReg  = UI.FONT.interReg
