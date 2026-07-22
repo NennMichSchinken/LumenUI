@@ -2550,6 +2550,7 @@ local blizzParent                 -- permanently hidden parent frame
 local blizzSuppressed = false     -- are WE currently suppressing? (controls the popup)
 local blizzInit = false           -- attach hooks/watcher only once
 local blizzHooked = {}            -- SetParent hook per frame only once
+local blizzReparenting = false    -- re-entrancy guard for the SetParent hook (see blizzResetParent)
 local blizzLoose  = {}            -- frames not reparentable in combat -> catch up on regen
 
 -- Deliberately do NOT touch the Manager (left leader/marker bar): it contains leader
@@ -2562,10 +2563,21 @@ end
 
 local function blizzResetParent(self, parent)
 	if not blizzSuppressed or parent == blizzParent then return end
+	-- Re-entrancy guard: our SetParent(blizzParent) below fires this same hook
+	-- chain. The `parent == blizzParent` check stops OUR own recursion, but a
+	-- SECOND addon that also hooks SetParent + reparents the container to ITS
+	-- hidden parent (e.g. another raid-frame suite) would ping-pong with us
+	-- forever -> C stack overflow. This flag makes us yank the parent back at
+	-- most once per event, so the container simply lands wherever the last
+	-- writer put it (both parents are hidden -> no visible difference) instead
+	-- of crashing.
+	if blizzReparenting then return end
 	if InCombatLockdown() and self:IsProtected() then
 		blizzLoose[self] = true            -- forbidden in combat -> on PLAYER_REGEN_ENABLED
 	else
+		blizzReparenting = true
 		self:SetParent(blizzParent)
+		blizzReparenting = false
 	end
 end
 
