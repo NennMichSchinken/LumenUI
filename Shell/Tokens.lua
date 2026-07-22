@@ -666,7 +666,10 @@ function UI.Fill(parent, col, layer)
 	return t
 end
 
--- 1px hairline border (4 edges) around frame, gold-at-opacity. Returns the 4 edge
+-- Draw a 1px hairline border (4 edges) around a frame in the given colour.
+-- Named UI.Stroke (not UI.Border) because UI.Border is the border-COLOUR token
+-- table; this is the drawing primitive, the hairline counterpart to UI.Fill.
+-- Returns the 4 edge
 -- textures (for later recoloring, e.g. hover/active).
 --
 -- IMPORTANT RULE (hard-learned, DO NOT revert): ONLY the THICKNESS is pixel-
@@ -678,7 +681,7 @@ end
 -- "off" and the 1px line fell between two pixels -> vanished (the recurring tab/
 -- dropdown/button border bug). Plain anchoring glues the line ALWAYS to the edge ->
 -- the whole bug class is eliminated.
-function UI.Border(frame, col, thick, layer)
+function UI.Stroke(frame, col, thick, layer)
 	thick = thick or 1
 	local edges = {}
 	local function mk()

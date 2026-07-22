@@ -331,7 +331,7 @@ local function createButtons()
 	sep:SetPoint("TOPRIGHT", btnFrame, "TOPRIGHT", 0, -BTN_H)
 	sep:SetHeight(1)
 	UI.SetColor(sep, UI.Border.hover)
-	UI.Border(btnFrame, UI.Border.hover, 1, "OVERLAY")
+	UI.Stroke(btnFrame, UI.Border.hover, 1, "OVERLAY")
 
 	if ns.EditMode then
 		ns.EditMode:Register(btnFrame, ns.T("Ready & Pull"), function(pt, x, y)
