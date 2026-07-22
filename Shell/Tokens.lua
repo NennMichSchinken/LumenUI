@@ -183,7 +183,7 @@ UI.ROLE = {
 
 	-- Widget toolkit (phase 2) — small, control-near roles. Sizes on the
 	-- 4px grid (12/16/20). Change here centrally -> propagates everywhere.
-	fieldLabel = { UI.FONT.hankenMed,  16, "" }, -- gold label above a control (dropdown etc.)
+	fieldLabel = { UI.FONT.hankenMed,  16, "" }, -- MUTED label above a control (slider/dropdown/segment); coloured C.textMuted, not bright (mockup .flabel)
 	sectionHead= { UI.FONT.cinzelSemi, 20, "" }, -- card/section titles + tab heading
 	groupTitle = { UI.FONT.cinzelSemi, 16, "" }, -- GroupPanel title / IconTile letter
 	sliderCap  = { UI.FONT.cinzelSemi, 16, "" }, -- slider caption

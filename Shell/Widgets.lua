@@ -108,7 +108,11 @@ end
 --  The caller anchors its control at TOPLEFT/RIGHT, container, ..., 0, yOff.
 -- ---------------------------------------------------------------------------
 local function fieldLabel(parent, text)
-	local lbl = UI.FS(parent, "fieldLabel", C.textStrong)
+	-- Muted, not bright (Florian 2026-07-22 + mockup .flabel = --txt-2 #8A8A90):
+	-- every slider/select/segment cell carries one of these labels, so bright-
+	-- white on all of them made the screens read "overloaded". The VALUE readout
+	-- beside it stays bright — the label recedes, the value + control lead.
+	local lbl = UI.FS(parent, "fieldLabel", C.textMuted)
 	lbl:SetText(text)
 	lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 	lbl:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
@@ -132,7 +136,7 @@ function W.Slider(parent, o)
 	-- Compact = a field cell: label in the same small style as Select/Swatch
 	-- labels (the Cinzel slider cap is too wide there and wraps). Classic
 	-- keeps the display cap.
-	local cap = UI.FS(f, compact and "fieldLabel" or "sliderCap", compact and C.textStrong or C.gold300)
+	local cap = UI.FS(f, compact and "fieldLabel" or "sliderCap", compact and C.textMuted or C.gold300)
 	cap:SetText(o.label or "")
 	cap:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -2)
 	if compact then -- keep the label clear of the inline value on the right
