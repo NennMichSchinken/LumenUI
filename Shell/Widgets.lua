@@ -14,8 +14,9 @@ local ADDON, ns = ...
 -- ===========================================================================
 
 local UI = ns.UI
-local C, L, S, M, P = UI.C, UI.line, UI.S, UI.WIDGET, UI.P
-local LO = UI.LAYOUT -- screen-specific measures (NOTE: L is UI.line in this file)
+local S, M = UI.S, UI.WIDGET
+local Surface, Text, Border, Accent, Status = UI.Surface, UI.Text, UI.Border, UI.Accent, UI.Status
+local LO = UI.LAYOUT -- screen-specific measures
 local T = ns.T   -- localization: T("english") -> display in the active language
 -- Texture folder, built from the real addon-folder name (survives a rename).
 local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
@@ -55,8 +56,8 @@ end
 function W.SquareIcon(parent, size)
 	local t = CreateFrame("Frame", nil, parent)
 	t:SetSize(size, size)
-	UI.Fill(t, C.ink850)
-	UI.Border(t, L.soft, 1, "OVERLAY") -- subtle edge, not a bright-white frame (Florian 2026-07-22: the icon border read too thick)
+	UI.Fill(t, Surface.Window)
+	UI.Border(t, Border.default, 1, "OVERLAY") -- subtle edge, not a bright-white frame (Florian 2026-07-22: the icon border read too thick)
 	local tex = t:CreateTexture(nil, "ARTWORK")
 	tex:SetPoint("TOPLEFT", t, "TOPLEFT", 1, -1)
 	tex:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -1, 1)
@@ -64,7 +65,7 @@ function W.SquareIcon(parent, size)
 	t.tex = tex
 	function t:SetIcon(icon)
 		if icon then tex:SetTexture(icon)
-		else tex:SetColorTexture(C.ink700.r, C.ink700.g, C.ink700.b, 1) end
+		else tex:SetColorTexture(Surface.Input.r, Surface.Input.g, Surface.Input.b, 1) end
 	end
 	return t
 end
@@ -81,7 +82,7 @@ function W.IconButton(parent, o)
 	-- Hover surface (v2 close-button pattern): the color step alone is too
 	-- subtle on small glyphs (danger E1->E2 is near-invisible at 22px). It
 	-- extends iconBtnHoverPad past the glyph so it reads as a button face.
-	local bg = UI.RoundFill(b, P.elementHover, "BACKGROUND", nil, RAD.sm)
+	local bg = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, RAD.sm)
 	bg:ClearAllPoints()
 	bg:SetPoint("TOPLEFT", b, "TOPLEFT", -M.iconBtnHoverPad, M.iconBtnHoverPad)
 	bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", M.iconBtnHoverPad, -M.iconBtnHoverPad)
@@ -93,7 +94,7 @@ function W.IconButton(parent, o)
 	tex:SetSnapToPixelGrid(false)
 	tex:SetTexelSnappingBias(0)
 	-- Two-gold rule: clickable icon = interactive gold (C2), hover = C3.
-	local col, hov = o.color or C.gold500, o.hoverColor or C.gold400
+	local col, hov = o.color or Accent.color, o.hoverColor or Accent.hover
 	tex:SetVertexColor(col.r, col.g, col.b, 1)
 	b:SetScript("OnEnter", function() bg:Show(); tex:SetVertexColor(hov.r, hov.g, hov.b, 1); if o.tooltip then W.ShowTextTip(b, o.tooltip) end end)
 	b:SetScript("OnLeave", function() bg:Hide(); tex:SetVertexColor(col.r, col.g, col.b, 1); if o.tooltip then W.HideTip() end end)
@@ -112,7 +113,7 @@ local function fieldLabel(parent, text)
 	-- every slider/select/segment cell carries one of these labels, so bright-
 	-- white on all of them made the screens read "overloaded". The VALUE readout
 	-- beside it stays bright — the label recedes, the value + control lead.
-	local lbl = UI.FS(parent, "fieldLabel", C.textMuted)
+	local lbl = UI.FS(parent, "fieldLabel", Text.Description)
 	lbl:SetText(text)
 	lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 	lbl:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
@@ -136,7 +137,7 @@ function W.Slider(parent, o)
 	-- Compact = a field cell: label in the same small style as Select/Swatch
 	-- labels (the Cinzel slider cap is too wide there and wraps). Classic
 	-- keeps the display cap.
-	local cap = UI.FS(f, compact and "fieldLabel" or "sliderCap", compact and C.textMuted or C.gold300)
+	local cap = UI.FS(f, compact and "fieldLabel" or "sliderCap", compact and Text.Description or Text.Primary)
 	cap:SetText(o.label or "")
 	cap:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -2)
 	if compact then -- keep the label clear of the inline value on the right
@@ -167,10 +168,10 @@ function W.Slider(parent, o)
 		track:SetPoint("LEFT", row, "LEFT", thumbR, 0)
 		track:SetPoint("RIGHT", row, "RIGHT", -thumbR, 0)
 	else
-		minL = UI.FS(row, "ends", C.textMuted)
+		minL = UI.FS(row, "ends", Text.Description)
 		minL:SetText(tostring(minV)); minL:SetWidth(M.sliderEndW); minL:SetJustifyH("RIGHT")
 		minL:SetPoint("LEFT", row, "LEFT", 0, 0)
-		maxL = UI.FS(row, "ends", C.textMuted)
+		maxL = UI.FS(row, "ends", Text.Description)
 		maxL:SetText(tostring(maxV)); maxL:SetWidth(M.sliderEndW); maxL:SetJustifyH("LEFT")
 		maxL:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 		track:SetPoint("LEFT", minL, "RIGHT", M.sliderEndPad, 0)
@@ -196,14 +197,14 @@ function W.Slider(parent, o)
 	-- the bar's top/bottom edges to whole physical pixels makes the thickness
 	-- IDENTICAL everywhere; the 3px pill caps lose a hair of curve smoothness,
 	-- imperceptible at this size and worth it for uniform bars.
-	local bg = UI.PillFill(track, C.sliderTrack, "ARTWORK", 4)
+	local bg = UI.PillFill(track, Surface.Hover, "ARTWORK", 4)
 	bg:ClearAllPoints()
 	bg:SetSnapToPixelGrid(true)
 	bg:SetHeight(M.sliderBarH)
 	bg:SetPoint("LEFT", track, "LEFT", 0, 0)
 	bg:SetPoint("RIGHT", track, "RIGHT", 0, 0)
 
-	local fillbar = UI.PillFill(track, C.gold500, "OVERLAY", 4)
+	local fillbar = UI.PillFill(track, Accent.color, "OVERLAY", 4)
 	fillbar:ClearAllPoints()
 	fillbar:SetSnapToPixelGrid(true)
 	fillbar:SetHeight(M.sliderBarH)
@@ -215,7 +216,7 @@ function W.Slider(parent, o)
 	-- border, gold disc on top. Both sizes need a matching circle-<n> asset.
 	local tBack = UI.Circle(thumb, { r = 0.10, g = 0.09, b = 0.08, a = 1 }, "ARTWORK", M.sliderThumb + 4)
 	tBack:SetPoint("CENTER", thumb, "CENTER", 0, 0)
-	local tt = UI.Circle(thumb, C.gold500, "OVERLAY", M.sliderThumb)
+	local tt = UI.Circle(thumb, Accent.color, "OVERLAY", M.sliderThumb)
 	tt:SetPoint("CENTER", thumb, "CENTER", 0, 0)
 
 	-- Value — editable EditBox: click, type a number, Enter confirms (clamped
@@ -227,7 +228,7 @@ function W.Slider(parent, o)
 	if compact then
 		box:SetSize(M.sliderCompactValW, M.sliderCompactValH)
 		box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-		UI:SetFont(box, "value", C.sliderValue) -- calm light, not pure white (brightens on focus)
+		UI:SetFont(box, "value", Text.Value) -- calm light, not pure white (brightens on focus)
 		box:SetJustifyH("RIGHT")
 		-- Bare value text (Florian 2026-07-22, Option A follow-up): the mockup
 		-- shows the value flush with the track's right edge, no box/fill/border
@@ -238,9 +239,9 @@ function W.Slider(parent, o)
 	else
 		box:SetSize(M.valueBoxW, M.valueBoxH)
 		box:SetPoint("TOP", row, "BOTTOM", 0, -M.valueBoxGap)
-		UI.RoundFill(box, C.ink700, nil, nil, R_CTRL)
-		boxEdges = UI.RoundBorder(box, L.soft, "OVERLAY", nil, R_CTRL)
-		UI:SetFont(box, "value", C.textStrong)
+		UI.RoundFill(box, Surface.Input, nil, nil, R_CTRL)
+		boxEdges = UI.RoundBorder(box, Border.default, "OVERLAY", nil, R_CTRL)
+		UI:SetFont(box, "value", Text.Primary)
 		box:SetJustifyH("CENTER")
 	end
 	box:SetAutoFocus(false)
@@ -290,15 +291,15 @@ function W.Slider(parent, o)
 		-- Let the Edit Mode keyboard catcher yield while typing here, so digits/
 		-- Enter/Esc reach this box instead of nudging/closing the session.
 		if ns.EditMode then ns.EditMode._fieldFocused = true end
-		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, L.strong) end
-		else self:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b) end
+		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, Accent.color) end
+		else self:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end
 		self:HighlightText()
 	end)
 	box:SetScript("OnEditFocusLost", function(self)
 		typing = false
 		if ns.EditMode then ns.EditMode._fieldFocused = false end
-		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, L.soft) end
-		else self:SetTextColor(C.sliderValue.r, C.sliderValue.g, C.sliderValue.b) end
+		if boxEdges then for _, e in ipairs(boxEdges) do UI.SetColor(e, Border.default) end
+		else self:SetTextColor(Text.Value.r, Text.Value.g, Text.Value.b) end
 		self:SetText(cur .. unit) -- reset to the canonical state
 	end)
 	-- Live clamp to max already while typing: 5555 jumps immediately to the max value,
@@ -379,7 +380,7 @@ function W.Slider(parent, o)
 		thumb:EnableMouse(on)
 		box:EnableMouse(on)
 		if not on then box:ClearFocus() end
-		local barC = on and C.gold500 or P.textDisabled
+		local barC = on and Accent.color or Text.Disabled
 		UI.SetColor(fillbar, barC)
 		UI.SetColor(tt, barC)
 		-- Enabled colours must MATCH the creation-time compact styling (muted label
@@ -387,12 +388,12 @@ function W.Slider(parent, o)
 		-- via refreshName/HP) would get re-brightened to white and diverge from the
 		-- untoggled sliders (Size & arrangement) that never run this path (Florian
 		-- 2026-07-22). Classic (non-compact) keeps its bright caption/value.
-		local capC = on and (compact and C.textMuted or C.gold300) or C.textFaint
+		local capC = on and (compact and Text.Description or Text.Primary) or Text.Description
 		cap:SetTextColor(capC.r, capC.g, capC.b)
-		local valC = on and (compact and C.sliderValue or C.textStrong) or C.textFaint
+		local valC = on and (compact and Text.Value or Text.Primary) or Text.Description
 		box:SetTextColor(valC.r, valC.g, valC.b)
 		if minL then
-			local endC = on and C.textMuted or P.textDisabled
+			local endC = on and Text.Description or Text.Disabled
 			minL:SetTextColor(endC.r, endC.g, endC.b)
 			maxL:SetTextColor(endC.r, endC.g, endC.b)
 		end
@@ -433,8 +434,8 @@ function W.Select(parent, o)
 	btn:SetHeight(CONTROL_H)
 	btn:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
-	UI.RoundFill(btn, C.ink700, nil, nil, R_CTRL)
-	local edges = UI.RoundBorder(btn, L.soft, "OVERLAY", nil, R_CTRL)
+	UI.RoundFill(btn, Surface.Input, nil, nil, R_CTRL)
+	local edges = UI.RoundBorder(btn, Border.default, "OVERLAY", nil, R_CTRL)
 	f._control = btn -- anchor for "checkbox right next to the control" (vertically aligned)
 
 	-- Dropdown chevron: Lucide chevron-down glyph (stage-3 glyph swap), tinted
@@ -444,9 +445,9 @@ function W.Select(parent, o)
 	chev:SetPoint("RIGHT", btn, "RIGHT", -12, 0)
 	chev:SetTexture(TEX .. "icon-chevron-down")
 	chev:SetSnapToPixelGrid(false); chev:SetTexelSnappingBias(0)
-	chev:SetVertexColor(C.textMuted.r, C.textMuted.g, C.textMuted.b)
+	chev:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
 
-	local lbl = UI.FS(btn, "selectText", C.textStrong)
+	local lbl = UI.FS(btn, "selectText", Text.Primary)
 	lbl:SetPoint("LEFT", btn, "LEFT", 12, 0)
 	lbl:SetPoint("RIGHT", chev, "LEFT", -8, 0)
 	lbl:SetJustifyH("LEFT"); lbl:SetWordWrap(false)
@@ -458,8 +459,8 @@ function W.Select(parent, o)
 	end
 	local function refreshLabel()
 		local t = labelFor(cur)
-		if t then lbl:SetText(t); lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
-		else lbl:SetText(o.placeholder or T("Select")); lbl:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b) end
+		if t then lbl:SetText(t); lbl:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
+		else lbl:SetText(o.placeholder or T("Select")); lbl:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b) end
 	end
 	refreshLabel()
 
@@ -480,8 +481,8 @@ function W.Select(parent, o)
 	menu:SetFrameStrata("FULLSCREEN_DIALOG")
 	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
 	menu:Hide()
-	UI.RoundFill(menu, C.ink550) -- floating surface: subtly elevated inset (#161618); selection uses a check, hover an elementHover pill
-	UI.RoundBorder(menu, L.soft, "OVERLAY") -- borderless-ish (Florian 2026-07-22: L.mid read too boxy)
+	UI.RoundFill(menu, Surface.Input) -- floating surface: subtly elevated inset (#161618); selection uses a check, hover an elementHover pill
+	UI.RoundBorder(menu, Border.default, "OVERLAY") -- borderless-ish (Florian 2026-07-22: Border.hover read too boxy)
 
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
 
@@ -492,7 +493,7 @@ function W.Select(parent, o)
 	local function closeMenu()
 		menu:Hide(); closer:Hide()
 		if search then search:ClearFocus() end
-		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
+		for _, e in ipairs(edges) do UI.SetColor(e, Border.default) end
 	end
 	closer:SetScript("OnClick", closeMenu)
 
@@ -507,11 +508,11 @@ function W.Select(parent, o)
 		local active = (item._val == cur)
 		item._check:SetShown(active) -- selection = a right-aligned check (mockup ItemIndicator)
 		if hovered then
-			UI.SetColor(item._pill, P.elementHover); item._pill:Show()
-			item._txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+			UI.SetColor(item._pill, Surface.Hover); item._pill:Show()
+			item._txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 		else
 			item._pill:Hide()
-			local tc = active and C.textStrong or C.textMuted -- selected stays bright, the rest quiet
+			local tc = active and Text.Primary or Text.Description -- selected stays bright, the rest quiet
 			item._txt:SetTextColor(tc.r, tc.g, tc.b)
 		end
 	end
@@ -534,12 +535,12 @@ function W.Select(parent, o)
 		search:SetHeight(M.spSearchH)
 		search:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad)
 		search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -pad)
-		UI.RoundFill(search, C.ink700, nil, nil, R_CTRL)
-		UI.RoundBorder(search, L.soft, "OVERLAY", nil, R_CTRL)
-		UI:SetFont(search, "value", C.textStrong) -- role, not an ad-hoc size
+		UI.RoundFill(search, Surface.Input, nil, nil, R_CTRL)
+		UI.RoundBorder(search, Border.default, "OVERLAY", nil, R_CTRL)
+		UI:SetFont(search, "value", Text.Primary) -- role, not an ad-hoc size
 		search:SetTextInsets(10, 10, 0, 0)
 		search:SetAutoFocus(false)
-		searchPH = UI.FS(search, "label", C.textMuted)
+		searchPH = UI.FS(search, "label", Text.Description)
 		searchPH:SetText(T("Search texture …"))
 		searchPH:SetPoint("LEFT", search, "LEFT", 10, 0)
 	end
@@ -561,7 +562,7 @@ function W.Select(parent, o)
 		item:SetPoint("LEFT", child, "LEFT", 0, 0)
 		item:SetPoint("RIGHT", child, "RIGHT", 0, 0)
 		-- Rounded inset hover pill (nav-item language), hidden when idle.
-		local pill = UI.RoundFill(item, P.element, "BACKGROUND", nil, RAD.md)
+		local pill = UI.RoundFill(item, Surface.Input, "BACKGROUND", nil, RAD.md)
 		pill:ClearAllPoints()
 		pill:SetPoint("TOPLEFT", item, "TOPLEFT", M.menuItemPadX, -M.menuItemPadY)
 		pill:SetPoint("BOTTOMRIGHT", item, "BOTTOMRIGHT", -M.menuItemPadX, M.menuItemPadY)
@@ -572,9 +573,9 @@ function W.Select(parent, o)
 		check:SetPoint("RIGHT", item, "RIGHT", -(M.menuItemPadX + 10), 0)
 		check:SetTexture(TEX .. "icon-check")
 		check:SetSnapToPixelGrid(false); check:SetTexelSnappingBias(0)
-		check:SetVertexColor(C.gold500.r, C.gold500.g, C.gold500.b)
+		check:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b)
 		check:Hide()
-		local itxt = UI.FS(item, "selectText", C.textMuted)
+		local itxt = UI.FS(item, "selectText", Text.Description)
 		itxt:SetPoint("LEFT", item, "LEFT", M.menuItemPadX + 10, 0)
 		itxt:SetText(op.label)
 		item._pill, item._txt, item._val, item._check = pill, itxt, op.value, check
@@ -593,7 +594,7 @@ function W.Select(parent, o)
 	menu._paintItem, menu._items = paintItem, items
 
 	-- "no matches" hint (only relevant with an active search).
-	local emptyFS = UI.FS(menu, "label", C.textMuted)
+	local emptyFS = UI.FS(menu, "label", Text.Description)
 	emptyFS:SetText(T("(no matches)"))
 	if search then emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
 	else emptyFS:SetPoint("TOP", menu, "TOP", 0, -(pad + 16)) end
@@ -637,11 +638,11 @@ function W.Select(parent, o)
 		sbTrack:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -(pad + headerH))
 		sbTrack:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -pad, pad)
 		local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
-		trackTex:SetAllPoints(sbTrack); UI.SetColor(trackTex, C.ink700)
+		trackTex:SetAllPoints(sbTrack); UI.SetColor(trackTex, Surface.Input)
 		local sth = CreateFrame("Frame", nil, sbTrack)
 		sth:SetWidth(M.spScrollW); sth:EnableMouse(true)
 		local sthTex = sth:CreateTexture(nil, "OVERLAY"); sthTex:SetAllPoints(sth)
-		local function paintThumb(a) sthTex:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, a) end
+		local function paintThumb(a) sthTex:SetColorTexture(Accent.color.r, Accent.color.g, Accent.color.b, a) end
 		paintThumb(0.55)
 		local function updateBar()
 			local range = sf:GetVerticalScrollRange() or 0
@@ -693,10 +694,10 @@ function W.Select(parent, o)
 		if search then search:SetText(""); searchPH:Show(); relayout() end
 		closer:Show(); menu:Show()
 		if menu._updateBar then menu._updateBar() end
-		-- Open = no border-status change (Florian 2026-07-22): the bright L.strong
+		-- Open = no border-status change (Florian 2026-07-22): the bright Accent.color
 		-- edge read too heavy/"fett" against the open list. The list itself is the
 		-- open indicator; keep the trigger's quiet idle border.
-		for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end
+		for _, e in ipairs(edges) do UI.SetColor(e, Border.default) end
 		if search then search:SetFocus() end
 	end
 
@@ -704,11 +705,11 @@ function W.Select(parent, o)
 		if menu:IsShown() then closeMenu() else openMenu() end
 	end)
 	btn:SetScript("OnEnter", function()
-		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
+		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, Border.hover) end end
 		if o.tooltip then W.ShowTextTip(btn, o.label or o.tooltipTitle, o.tooltip) end
 	end)
 	btn:SetScript("OnLeave", function()
-		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, L.soft) end end
+		if not menu:IsShown() then for _, e in ipairs(edges) do UI.SetColor(e, Border.default) end end
 		if o.tooltip then W.HideTip() end
 	end)
 	btn:HookScript("OnHide", closeMenu)
@@ -804,15 +805,15 @@ function W.SpellPicker(parent, o)
 		local tile = W.SquareIcon(btn, LO.clickcast.icon)
 		tile:SetPoint("LEFT", btn, "LEFT", 0, 0)
 		tile:SetIcon(o.icon)
-		bTxt = UI.FS(btn, "selectText", o.icon and C.gold300 or C.textMuted)
+		bTxt = UI.FS(btn, "selectText", o.icon and Text.Primary or Text.Description)
 		bTxt:SetPoint("LEFT", tile, "RIGHT", 10, 0)
 		bTxt:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
 		bTxt:SetJustifyH("LEFT"); bTxt:SetWordWrap(false)
 		bTxt:SetText(o.text or T("+ Add"))
 	else
 		-- v2: trigger styled like a SECONDARY button (transparent, gold outline).
-		bEdges = UI.RoundBorder(btn, UI.goldA(0.55), "OVERLAY", nil, R_CTRL)
-		bTxt = UI.FS(btn, "btn", C.gold500)
+		bEdges = UI.RoundBorder(btn, UI.accentA(0.55), "OVERLAY", nil, R_CTRL)
+		bTxt = UI.FS(btn, "btn", Accent.color)
 		bTxt:SetText(o.text or T("+ Add"))
 		if o.icon then
 			local bIcon = btn:CreateTexture(nil, "ARTWORK")
@@ -842,8 +843,8 @@ function W.SpellPicker(parent, o)
 	menu:SetWidth(M.spW)
 	-- (v2: popover surfaces get a NEUTRAL subtle border, not gold — Florian feedback)
 	menu:Hide()
-	UI.RoundFill(menu, C.ink550)
-	UI.RoundBorder(menu, L.mid, "OVERLAY")
+	UI.RoundFill(menu, Surface.Input)
+	UI.RoundBorder(menu, Border.hover, "OVERLAY")
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
 
 	local listH = M.spVisibleRows * M.spRowH
@@ -854,12 +855,12 @@ function W.SpellPicker(parent, o)
 	search:SetHeight(M.spSearchH)
 	search:SetPoint("TOPLEFT", menu, "TOPLEFT", M.spPad, -M.spPad)
 	search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -M.spPad, -M.spPad)
-	UI.RoundFill(search, C.ink700, nil, nil, R_CTRL)
-	UI.RoundBorder(search, L.soft, "OVERLAY", nil, R_CTRL)
-	UI:SetFont(search, "value", C.textStrong) -- role, not an ad-hoc size
+	UI.RoundFill(search, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundBorder(search, Border.default, "OVERLAY", nil, R_CTRL)
+	UI:SetFont(search, "value", Text.Primary) -- role, not an ad-hoc size
 	search:SetTextInsets(10, 10, 0, 0)
 	search:SetAutoFocus(false)
-	local ph = UI.FS(search, "label", C.textMuted)
+	local ph = UI.FS(search, "label", Text.Description)
 	ph:SetText(o.searchPlaceholder or T("Search spell …"))
 	ph:SetPoint("LEFT", search, "LEFT", 10, 0)
 
@@ -873,7 +874,7 @@ function W.SpellPicker(parent, o)
 	sf:SetScrollChild(child)
 	sf:SetScript("OnSizeChanged", function(self2, w) child:SetWidth(w or self2:GetWidth() or 1) end)
 
-	local emptyFS = UI.FS(menu, "label", C.textMuted)
+	local emptyFS = UI.FS(menu, "label", Text.Description)
 	emptyFS:SetText(T("(no matches)"))
 	emptyFS:SetPoint("TOP", search, "BOTTOM", 0, -16)
 	emptyFS:Hide()
@@ -884,11 +885,11 @@ function W.SpellPicker(parent, o)
 	sbTrack:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -M.spPad, -(M.spPad + M.spSearchH + 8))
 	sbTrack:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -M.spPad, M.spPad)
 	local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
-	trackTex:SetAllPoints(sbTrack); UI.SetColor(trackTex, C.ink700)
+	trackTex:SetAllPoints(sbTrack); UI.SetColor(trackTex, Surface.Input)
 	local thumb = CreateFrame("Frame", nil, sbTrack)
 	thumb:SetWidth(M.spScrollW); thumb:EnableMouse(true)
 	local thumbTex = thumb:CreateTexture(nil, "OVERLAY"); thumbTex:SetAllPoints(thumb)
-	local function paintThumb(a) thumbTex:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, a) end
+	local function paintThumb(a) thumbTex:SetColorTexture(Accent.color.r, Accent.color.g, Accent.color.b, a) end
 	paintThumb(0.55)
 	local function updateBar()
 		local range = sf:GetVerticalScrollRange() or 0
@@ -942,28 +943,28 @@ function W.SpellPicker(parent, o)
 		r._base = { 0, 0, 0, 0 } -- zebra base colour (set per VISIBLE row in populate)
 		local sep = r:CreateTexture(nil, "ARTWORK"); sep:SetHeight(1)
 		sep:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 8, 0); sep:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -8, 0)
-		UI.SetColor(sep, L.faint)
+		UI.SetColor(sep, Border.faint)
 		-- (No gold left bar here: in the unified dropdown language the bar is
 		-- the SELECTION marker — a picker list has none. Florian 2026-07-05.)
 		local icon = r:CreateTexture(nil, "ARTWORK")
 		icon:SetSize(M.spellIcon, M.spellIcon)
 		icon:SetPoint("LEFT", r, "LEFT", 8, 0)
 		icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		local name = UI.FS(r, "selectText", C.textStrong)
+		local name = UI.FS(r, "selectText", Text.Primary)
 		name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
 		name:SetPoint("RIGHT", r, "RIGHT", -8, 0)
 		name:SetJustifyH("LEFT"); name:SetWordWrap(false)
 		r._wash, r._icon, r._name = wash, icon, name
 		r:SetScript("OnEnter", function(self2)
-			-- v2: hover = elementHover (rows now sit on P.element, so inkTint would be invisible)
-			self2._wash:SetColorTexture(P.elementHover.r, P.elementHover.g, P.elementHover.b, 1)
-			self2._name:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
+			-- v2: hover = elementHover (rows now sit on Surface.Input, so inkTint would be invisible)
+			self2._wash:SetColorTexture(Surface.Hover.r, Surface.Hover.g, Surface.Hover.b, 1)
+			self2._name:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 			W.ShowSpellTip(self2, self2._id) -- own Lumen tooltip
 		end)
 		r:SetScript("OnLeave", function(self2)
 			local b = self2._base
 			self2._wash:SetColorTexture(b[1], b[2], b[3], b[4])
-			self2._name:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+			self2._name:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 			W.HideTip()
 		end)
 		r:SetScript("OnClick", function(self2)
@@ -989,9 +990,9 @@ function W.SpellPicker(parent, o)
 				-- v2: UNIFORM row cells (element on the dark inset menu) — the old zebra
 				-- alternation was far too strong on the new palette (Florian feedback);
 				-- the faint separators carry the structure instead.
-				r._base = { P.element.r, P.element.g, P.element.b, 1 }
+				r._base = { Surface.Input.r, Surface.Input.g, Surface.Input.b, 1 }
 				r._wash:SetColorTexture(r._base[1], r._base[2], r._base[3], r._base[4])
-				r._name:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+				r._name:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 				r:Show()
 			end
 		end
@@ -1014,24 +1015,24 @@ function W.SpellPicker(parent, o)
 		ph:Show()
 		populate()
 		closer:Show(); menu:Show()
-		for _, e in ipairs(bEdges) do UI.SetColor(e, L.soft) end -- quiet open border (see W.Select openMenu)
+		for _, e in ipairs(bEdges) do UI.SetColor(e, Border.default) end -- quiet open border (see W.Select openMenu)
 		search:SetFocus()
 	end
 	closeMenu = function()
 		menu:Hide(); closer:Hide()
 		search:ClearFocus()
-		for _, e in ipairs(bEdges) do UI.SetColor(e, UI.goldA(0.55)) end
+		for _, e in ipairs(bEdges) do UI.SetColor(e, UI.accentA(0.55)) end
 	end
 	closer:SetScript("OnClick", closeMenu)
 
 	btn:SetScript("OnClick", function() if menu:IsShown() then closeMenu() else openMenu() end end)
 	btn:SetScript("OnEnter", function()
-		if not menu:IsShown() then for _, e in ipairs(bEdges) do UI.SetColor(e, L.strong) end end
-		bTxt:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b)
+		if not menu:IsShown() then for _, e in ipairs(bEdges) do UI.SetColor(e, Accent.color) end end
+		bTxt:SetTextColor(Accent.hover.r, Accent.hover.g, Accent.hover.b)
 	end)
 	btn:SetScript("OnLeave", function()
-		if not menu:IsShown() then for _, e in ipairs(bEdges) do UI.SetColor(e, UI.goldA(0.55)) end end
-		bTxt:SetTextColor(C.gold500.r, C.gold500.g, C.gold500.b)
+		if not menu:IsShown() then for _, e in ipairs(bEdges) do UI.SetColor(e, UI.accentA(0.55)) end end
+		bTxt:SetTextColor(Accent.color.r, Accent.color.g, Accent.color.b)
 	end)
 	btn:HookScript("OnHide", closeMenu)
 
@@ -1063,21 +1064,21 @@ local function buildConfirm()
 	card:SetSize(M.confirmW, M.confirmH)
 	card:SetPoint("CENTER", overlay, "CENTER", 0, 0)
 	card:EnableMouse(true) -- don't treat clicks on the card as "outside"
-	UI.RoundFill(card, C.ink550, nil, nil, RAD.xl) -- modal dialog = XL
-	UI.RoundBorder(card, L.mid, "OVERLAY", nil, RAD.xl) -- v2: neutral popover border
+	UI.RoundFill(card, Surface.Input, nil, nil, RAD.xl) -- modal dialog = XL
+	UI.RoundBorder(card, Border.hover, "OVERLAY", nil, RAD.xl) -- v2: neutral popover border
 	local accent = card:CreateTexture(nil, "OVERLAY") -- gold accent on top (signature)
 	accent:SetHeight(3)
 	-- Inset by the corner radius: the straight bar stops where the curve starts.
 	accent:SetPoint("TOPLEFT", card, "TOPLEFT", RAD.xl, 0)
 	accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", -RAD.xl, 0)
-	UI.SetColor(accent, P.goldBrand) -- v2: signature accent = brand gold (C1)
+	UI.SetColor(accent, Text.Primary) -- v2: signature accent = brand gold (C1)
 
-	local title = UI.FS(card, "sectionHead", C.gold300)
+	local title = UI.FS(card, "sectionHead", Text.Primary)
 	title:SetPoint("TOPLEFT", card, "TOPLEFT", M.confirmPad, -M.confirmPad)
 	title:SetPoint("TOPRIGHT", card, "TOPRIGHT", -M.confirmPad, -M.confirmPad)
 	title:SetJustifyH("LEFT")
 
-	local body = UI.FS(card, "hint", C.textBody)
+	local body = UI.FS(card, "hint", Text.Secondary)
 	body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -14)
 	body:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -14)
 	body:SetJustifyH("LEFT"); body:SetWordWrap(true)
@@ -1161,17 +1162,17 @@ function W.ImportDialog(o)
 	card:SetWidth(M.importDlgW)
 	card:SetPoint("CENTER", overlay, "CENTER", 0, 0)
 	card:EnableMouse(true) -- don't treat clicks on the card as "outside"
-	UI.RoundFill(card, C.ink550, nil, nil, RAD.xl) -- modal dialog = XL
-	UI.RoundBorder(card, L.mid, "OVERLAY", nil, RAD.xl) -- v2: neutral popover border
+	UI.RoundFill(card, Surface.Input, nil, nil, RAD.xl) -- modal dialog = XL
+	UI.RoundBorder(card, Border.hover, "OVERLAY", nil, RAD.xl) -- v2: neutral popover border
 	local accent = card:CreateTexture(nil, "OVERLAY")
 	accent:SetHeight(3)
 	accent:SetPoint("TOPLEFT", card, "TOPLEFT", RAD.xl, 0)
 	accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", -RAD.xl, 0)
-	UI.SetColor(accent, P.goldBrand) -- v2: signature accent = brand gold (C1)
+	UI.SetColor(accent, Text.Primary) -- v2: signature accent = brand gold (C1)
 
 	local y = -pad - 6
 
-	local title = UI.FS(card, "sectionHead", C.gold300)
+	local title = UI.FS(card, "sectionHead", Text.Primary)
 	title:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
 	title:SetText(T("Import profile"))
 	y = y - 36
@@ -1183,7 +1184,7 @@ function W.ImportDialog(o)
 	nameIn:SetPoint("TOPRIGHT", card, "TOPRIGHT", -pad, y)
 	y = y - (M.controlH + M.fieldGap) - 18
 
-	local lbl = UI.FS(card, "fieldLabel", C.textStrong)
+	local lbl = UI.FS(card, "fieldLabel", Text.Primary)
 	lbl:SetPoint("TOPLEFT", card, "TOPLEFT", pad, y)
 	lbl:SetText(T("What to import:"))
 	y = y - 28
@@ -1247,18 +1248,18 @@ local function buildTip()
 	tip:SetWidth(M.tipW)
 	tip:SetClampedToScreen(true) -- stays fully readable near a screen edge (e.g. TOP-anchored)
 	tip:Hide()
-	UI.RoundFill(tip, C.ink850) -- darker than the popover -> clearer tooltip contrast
-	UI.RoundBorder(tip, L.mid, "OVERLAY") -- v2: neutral popover border (no gold top accent — Florian 2026-07-05)
+	UI.RoundFill(tip, Surface.Window) -- darker than the popover -> clearer tooltip contrast
+	UI.RoundBorder(tip, Border.hover, "OVERLAY") -- v2: neutral popover border (no gold top accent — Florian 2026-07-05)
 
 	local icon = tip:CreateTexture(nil, "ARTWORK")
 	icon:SetSize(M.tipIcon, M.tipIcon)
 	icon:SetPoint("TOPLEFT", tip, "TOPLEFT", M.tipPad, -M.tipPad)
 	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-	local title = UI.FS(tip, "tipTitle", C.gold250)
+	local title = UI.FS(tip, "tipTitle", Text.Primary)
 	title:SetJustifyH("LEFT"); title:SetJustifyV("MIDDLE")
 
-	local body = UI.FS(tip, "tipBody", C.textBody)
+	local body = UI.FS(tip, "tipBody", Text.Secondary)
 	body:SetJustifyH("LEFT"); body:SetWordWrap(true)
 
 	tipObj = { tip = tip, icon = icon, title = title, body = body }
@@ -1343,19 +1344,19 @@ function W.Checkbox(parent, o)
 	box:SetSize(BOX, BOX)
 	box:SetPoint("LEFT", b, "LEFT", 0, 0)
 	local boxbg = UI.RoundFill(box, CLEAR, "BACKGROUND", nil, RAD.xs)
-	local edges = UI.RoundBorder(box, L.mid, "OVERLAY", nil, RAD.xs)
+	local edges = UI.RoundBorder(box, Border.hover, "OVERLAY", nil, RAD.xs)
 
 	-- Checkmark: our own Lucide check glyph (shared with the dropdown selection
 	-- indicator — Florian 2026-07-22, replacing Blizzard's UI-CheckBox-Check).
-	-- Tinted dark (C.onGold) so it reads on the light-accent box when checked.
+	-- Tinted dark (Text.OnAccent) so it reads on the light-accent box when checked.
 	local check = box:CreateTexture(nil, "OVERLAY")
 	check:SetTexture(TEX .. "icon-check")
 	check:SetSnapToPixelGrid(false); check:SetTexelSnappingBias(0)
-	check:SetVertexColor(C.onGold.r, C.onGold.g, C.onGold.b, 1)
+	check:SetVertexColor(Text.OnAccent.r, Text.OnAccent.g, Text.OnAccent.b, 1)
 	check:SetSize(BOX - 4, BOX - 4)
 	check:SetPoint("CENTER", box, "CENTER", 0, 0)
 
-	local lbl = UI.FS(b, "checkLabel", C.textBody)
+	local lbl = UI.FS(b, "checkLabel", Text.Secondary)
 	lbl:SetText(o.label or "")
 	lbl:SetPoint("LEFT", box, "RIGHT", M.checkLabelGap, 0)
 	if (o.label or "") == "" then
@@ -1367,26 +1368,26 @@ function W.Checkbox(parent, o)
 	local val = (o.get and o.get()) or o.value or false
 	local function apply(on)
 		if on then
-			UI.SetColor(boxbg, C.gold500)
-			for _, e in ipairs(edges) do UI.SetColor(e, C.gold500) end
+			UI.SetColor(boxbg, Accent.color)
+			for _, e in ipairs(edges) do UI.SetColor(e, Accent.color) end
 			check:Show()
 		else
 			UI.SetColor(boxbg, CLEAR)
-			for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
+			for _, e in ipairs(edges) do UI.SetColor(e, Border.hover) end
 			check:Hide()
 		end
 	end
 	apply(val)
 
 	b:SetScript("OnEnter", function()
-		if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end end
-		lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		if not val then for _, e in ipairs(edges) do UI.SetColor(e, Accent.color) end end
+		lbl:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 		-- Labelless boxes (stacked option rows) pass the row label as tooltipTitle.
 		if o.tooltip then W.ShowTextTip(b, o.tooltipTitle or o.label, o.tooltip) end
 	end)
 	b:SetScript("OnLeave", function()
-		if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
-		lbl:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		if not val then for _, e in ipairs(edges) do UI.SetColor(e, Border.hover) end end
+		lbl:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
 		if o.tooltip then W.HideTip() end
 	end)
 	b:SetScript("OnClick", function()
@@ -1414,7 +1415,7 @@ function W.Switch(parent, o)
 	-- collapsible-header master toggles).
 	local swH = o.small and M.switchSmallH or M.switchH
 	b:SetSize(o.small and M.switchSmallW or M.switchW, swH)
-	local track = UI.PillFill(b, C.ink700, "BACKGROUND", swH)
+	local track = UI.PillFill(b, Surface.Input, "BACKGROUND", swH)
 	-- The pill-fill traces the FULL radius (~h/2) to the bounding box, but the
 	-- pill-edge ring sits on a 1px-inset path (radius-1). So the bright ON fill
 	-- overhangs the ring by ~1px at the caps and reads squarer/larger than the
@@ -1424,31 +1425,31 @@ function W.Switch(parent, o)
 	track:ClearAllPoints()
 	track:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1)
 	track:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
-	local edges = UI.PillBorder(b, L.mid, "OVERLAY", swH)
+	local edges = UI.PillBorder(b, Border.hover, "OVERLAY", swH)
 	local pad = M.switchKnobPad
 	local kS = swH - pad * 2
-	local knob = UI.Circle(b, C.textBody, "OVERLAY", kS)
+	local knob = UI.Circle(b, Text.Secondary, "OVERLAY", kS)
 
 	local val = (o.get and o.get()) or false
 	local function apply(on)
 		knob:ClearAllPoints()
 		if on then
-			UI.SetColor(track, C.switchOn) -- softened light (anti-bloom, matches OFF's size/feel)
-			for _, e in ipairs(edges) do UI.SetColor(e, C.switchOn) end
+			UI.SetColor(track, Accent.switchOn) -- softened light (anti-bloom, matches OFF's size/feel)
+			for _, e in ipairs(edges) do UI.SetColor(e, Accent.switchOn) end
 			knob:SetPoint("RIGHT", b, "RIGHT", -pad, 0)
-			UI.SetColor(knob, C.ink850) -- dark knob on the light track
+			UI.SetColor(knob, Surface.Window) -- dark knob on the light track
 		else
-			UI.SetColor(track, C.ink700)
-			for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
+			UI.SetColor(track, Surface.Input)
+			for _, e in ipairs(edges) do UI.SetColor(e, Border.hover) end
 			knob:SetPoint("LEFT", b, "LEFT", pad, 0)
-			UI.SetColor(knob, C.textBody) -- light knob on the dark track
+			UI.SetColor(knob, Text.Secondary) -- light knob on the dark track
 		end
 	end
 	apply(val)
 
-	b:SetScript("OnEnter", function() if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end end
+	b:SetScript("OnEnter", function() if not val then for _, e in ipairs(edges) do UI.SetColor(e, Accent.color) end end
 		if o.tooltip then W.ShowTextTip(b, o.tooltip) end end)
-	b:SetScript("OnLeave", function() if not val then for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end end
+	b:SetScript("OnLeave", function() if not val then for _, e in ipairs(edges) do UI.SetColor(e, Border.hover) end end
 		if o.tooltip then W.HideTip() end end)
 	b:SetScript("OnClick", function() val = not val; apply(val); if o.set then o.set(val) end end)
 	b.SetValueExternal = function(_, v) val = v; apply(v) end
@@ -1492,8 +1493,8 @@ function W.Segment(parent, o)
 	bar:SetHeight(cellH)
 	bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	if not hug then bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY) end -- hug sets its own width
-	UI.PillFill(bar, C.ink700, "BACKGROUND", cellH) -- fully-round capsule strip (1:1 with the tab bar)
-	UI.PillBorder(bar, L.soft, "OVERLAY", cellH)
+	UI.PillFill(bar, Surface.Input, "BACKGROUND", cellH) -- fully-round capsule strip (1:1 with the tab bar)
+	UI.PillBorder(bar, Border.default, "OVERLAY", cellH)
 	f._control = bar
 
 	-- Sliding pill = the tab pill: white/10 capsule inset by tabStripPad so its
@@ -1524,7 +1525,7 @@ function W.Segment(parent, o)
 	end
 	local function paint(animate)
 		for _, c in ipairs(cells) do
-			local col = (c._val == cur) and C.textStrong or C.textMuted
+			local col = (c._val == cur) and Text.Primary or Text.Description
 			c._txt:SetTextColor(col.r, col.g, col.b)
 		end
 		positionSlider(animate)
@@ -1533,17 +1534,17 @@ function W.Segment(parent, o)
 	for i, op in ipairs(opts) do
 		local cell = CreateFrame("Button", nil, bar)
 		cell:SetFrameLevel(bar:GetFrameLevel() + 2) -- text draws above the sliding pill
-		local txt = UI.FS(cell, "selectText", C.textMuted)
+		local txt = UI.FS(cell, "selectText", Text.Description)
 		txt:SetPoint("CENTER", cell, "CENTER", 0, 0)
 		txt:SetText(op.label); txt:SetWordWrap(false)
 		cell._txt, cell._val = txt, op.value
 		cell:SetScript("OnEnter", function()
-			if cell._val ~= cur then txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b) end
+			if cell._val ~= cur then txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end
 			-- Tip anchors to the bar (not the cell) so it stays put across cells.
 			if o.tooltip then W.ShowTextTip(bar, o.label, o.tooltip) end
 		end)
 		cell:SetScript("OnLeave", function()
-			if cell._val ~= cur then txt:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b) end
+			if cell._val ~= cur then txt:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b) end
 			if o.tooltip then W.HideTip() end
 		end)
 		cell:SetScript("OnClick", function()
@@ -1637,7 +1638,7 @@ function W.StopActiveKeybind() if activeCapture then activeCapture() end end
 -- dashed-line primitive). Rebuilds on size change (anchored frames have 0 size at
 -- build time). Returns { Show, Hide, SetColor }. Used for the unbound keybind field.
 local function makeDashedEdges(frame, dashLen, gapLen)
-	local tex, color, shown = {}, L.mid, false
+	local tex, color, shown = {}, Border.hover, false
 	local thick = M.kbDashThick
 	local function rebuild()
 		for _, t in ipairs(tex) do t:Hide(); t:SetParent(nil) end
@@ -1690,9 +1691,9 @@ end
 function W.EmptyState(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	local dash = makeDashedEdges(f, M.kbDashLen, M.kbDashGap)
-	dash.SetColor(L.mid)
+	dash.SetColor(Border.hover)
 	dash.Show()
-	local fs = UI.FS(f, "hint", C.textMuted)
+	local fs = UI.FS(f, "hint", Text.Description)
 	fs:SetPoint("LEFT", f, "LEFT", 12, 0)
 	fs:SetPoint("RIGHT", f, "RIGHT", -12, 0)
 	fs:SetJustifyH("CENTER")
@@ -1718,15 +1719,15 @@ function W.KeybindButton(parent, o)
 	btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
 	btn:RegisterForClicks("AnyUp")
 	btn:EnableKeyboard(false) -- idle state: NO keyboard capture (else the button eats movement/action bar)
-	UI.RoundFill(btn, C.ink700, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundFill(btn, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
 	-- Border per state (Option c: dashed dropped for rounding consistency):
 	-- solid gold rounded ring when a key is set (or while capturing), a thin
 	-- faint rounded ring when unbound.
-	local solid = UI.RoundBorder(btn, C.gold500, "OVERLAY", nil, UI.ROUND_R_CTRL)
-	local faint = UI.RoundBorder(btn, L.soft, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local solid = UI.RoundBorder(btn, Accent.color, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local faint = UI.RoundBorder(btn, Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL)
 	f._control = btn
 
-	local lbl = UI.FS(btn, "selectText", C.gold300)
+	local lbl = UI.FS(btn, "selectText", Text.Primary)
 	lbl:SetPoint("LEFT", btn, "LEFT", 10, 0)
 	lbl:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
 	lbl:SetJustifyH("CENTER"); lbl:SetWordWrap(false)
@@ -1740,24 +1741,24 @@ function W.KeybindButton(parent, o)
 	end
 	local function setBorder()
 		if listening then -- capturing a key: bright ring as live feedback (transient)
-			for _, e in ipairs(solid) do UI.SetColor(e, C.gold500); e:Show() end
+			for _, e in ipairs(solid) do UI.SetColor(e, Accent.color); e:Show() end
 			for _, e in ipairs(faint) do e:Hide() end
 		elseif cur ~= "" then -- bound: subtle ring (Florian 2026-07-22: the bright white
 			-- ring read too heavy on the input fields); the bright label already signals "set".
-			for _, e in ipairs(solid) do UI.SetColor(e, L.mid); e:Show() end
+			for _, e in ipairs(solid) do UI.SetColor(e, Border.hover); e:Show() end
 			for _, e in ipairs(faint) do e:Hide() end
 		else
 			for _, e in ipairs(solid) do e:Hide() end
-			for _, e in ipairs(faint) do UI.SetColor(e, L.soft); e:Show() end
+			for _, e in ipairs(faint) do UI.SetColor(e, Border.default); e:Show() end
 		end
 	end
 	local function refresh()
 		if listening then
 			lbl:SetText(T("Press a key …"))
-			lbl:SetTextColor(C.gold200.r, C.gold200.g, C.gold200.b)
+			lbl:SetTextColor(Accent.hover.r, Accent.hover.g, Accent.hover.b)
 		else
 			lbl:SetText(fmt(cur))
-			local col = (cur ~= "") and C.gold300 or C.textMuted
+			local col = (cur ~= "") and Text.Primary or Text.Description
 			lbl:SetTextColor(col.r, col.g, col.b)
 		end
 		setBorder()
@@ -1818,19 +1819,19 @@ function W.KeybindButton(parent, o)
 		if not listening then return end
 		commit(kbWithMods(delta > 0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN"))
 	end)
-	-- Hover keeps the border SUBTLE (Florian 2026-07-22): the old bright gold500/
-	-- L.strong hover left a bound field stuck with a thick white ring until /reload
-	-- (OnLeave reset it to bright, overriding setBorder's L.mid). Bound stays L.mid;
-	-- unbound gets a faint L.soft->L.mid hover step and back.
+	-- Hover keeps the border SUBTLE (Florian 2026-07-22): a bright accent hover
+	-- left a bound field stuck with a thick white ring until /reload
+	-- (OnLeave reset it to bright, overriding setBorder's Border.hover). Bound stays Border.hover;
+	-- unbound gets a faint Border.default->Border.hover hover step and back.
 	btn:SetScript("OnEnter", function()
 		if listening then return end
-		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, L.mid) end
-		else for _, e in ipairs(faint) do UI.SetColor(e, L.mid) end end
+		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, Border.hover) end
+		else for _, e in ipairs(faint) do UI.SetColor(e, Border.hover) end end
 	end)
 	btn:SetScript("OnLeave", function()
 		if listening then return end
-		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, L.mid) end
-		else for _, e in ipairs(faint) do UI.SetColor(e, L.soft) end end
+		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, Border.hover) end
+		else for _, e in ipairs(faint) do UI.SetColor(e, Border.default) end end
 	end)
 	btn:HookScript("OnHide", stopListen)
 
@@ -1861,16 +1862,15 @@ function W.GearPopover(parent, o)
 	icon:SetTexture(TEX .. "icon-settings")
 	icon:SetSnapToPixelGrid(false)
 	icon:SetTexelSnappingBias(0)
-	-- Two-gold rule: clickable = C2, hover = C3 (gold100 became neutral white
-	-- in the v2 remap — hovering used to flash white here).
+	-- Accent hover kept subtle (mono: hovering used to flash white here).
 	local hbg = btn:CreateTexture(nil, "BACKGROUND")
 	hbg:SetPoint("TOPLEFT", btn, "TOPLEFT", -M.iconBtnHoverPad, M.iconBtnHoverPad)
 	hbg:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", M.iconBtnHoverPad, -M.iconBtnHoverPad)
-	hbg:SetColorTexture(P.elementHover.r, P.elementHover.g, P.elementHover.b, 1)
+	hbg:SetColorTexture(Surface.Hover.r, Surface.Hover.g, Surface.Hover.b, 1)
 	hbg:Hide()
-	icon:SetVertexColor(C.gold500.r, C.gold500.g, C.gold500.b, 1)
-	btn:SetScript("OnEnter", function() hbg:Show(); icon:SetVertexColor(C.gold400.r, C.gold400.g, C.gold400.b, 1) end)
-	btn:SetScript("OnLeave", function() hbg:Hide(); icon:SetVertexColor(C.gold500.r, C.gold500.g, C.gold500.b, 1) end)
+	icon:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, 1)
+	btn:SetScript("OnEnter", function() hbg:Show(); icon:SetVertexColor(Accent.hover.r, Accent.hover.g, Accent.hover.b, 1) end)
+	btn:SetScript("OnLeave", function() hbg:Hide(); icon:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, 1) end)
 
 	local host = W._menuHost or parent
 	local closer = CreateFrame("Button", nil, host)
@@ -1882,8 +1882,8 @@ function W.GearPopover(parent, o)
 	pop:SetFrameStrata("FULLSCREEN_DIALOG")
 	pop:SetFrameLevel(closer:GetFrameLevel() + 10)
 	pop:Hide()
-	UI.RoundFill(pop, C.ink550)
-	UI.RoundBorder(pop, L.mid, "OVERLAY")
+	UI.RoundFill(pop, Surface.Input)
+	UI.RoundBorder(pop, Border.hover, "OVERLAY")
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = pop end
 
 	local function closePop() pop:Hide(); closer:Hide() end
@@ -1903,17 +1903,17 @@ function W.GearPopover(parent, o)
 			PixelUtil.SetHeight(sep, 1)
 			sep:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y + gap * 0.5)
 			sep:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y + gap * 0.5)
-			UI.SetColor(sep, L.faint)
+			UI.SetColor(sep, Border.faint)
 		end
 		local rm = CreateFrame("Button", nil, pop)
 		rm:SetHeight(rowH)
 		placeTop(rm)
 		rm:SetPoint("RIGHT", pop, "RIGHT", -pad, 0)
-		local rtxt = UI.FS(rm, "checkLabel", C.danger500)
+		local rtxt = UI.FS(rm, "checkLabel", Status.danger)
 		rtxt:SetPoint("LEFT", rm, "LEFT", 0, 0)
 		rtxt:SetText(o.removeText or T("Remove"))
-		rm:SetScript("OnEnter", function() rtxt:SetTextColor(C.danger300.r, C.danger300.g, C.danger300.b) end)
-		rm:SetScript("OnLeave", function() rtxt:SetTextColor(C.danger500.r, C.danger500.g, C.danger500.b) end)
+		rm:SetScript("OnEnter", function() rtxt:SetTextColor(Status.dangerHover.r, Status.dangerHover.g, Status.dangerHover.b) end)
+		rm:SetScript("OnLeave", function() rtxt:SetTextColor(Status.danger.r, Status.danger.g, Status.danger.b) end)
 		rm:SetScript("OnClick", function() closePop(); o.onRemove() end)
 		local w = math.ceil(rtxt:GetStringWidth()) + 20; if w > maxw then maxw = w end
 	end
@@ -1970,8 +1970,8 @@ local function buildColorPicker()
 	local cp = CreateFrame("Frame", nil, host)
 	cp:SetFrameStrata("FULLSCREEN_DIALOG")
 	cp:EnableMouse(true) -- swallows clicks (not through to the closer)
-	UI.RoundFill(cp, C.ink850, nil, nil, RAD.xl) -- modal-style picker = XL
-	UI.RoundBorder(cp, L.strong, "OVERLAY", nil, RAD.xl)
+	UI.RoundFill(cp, Surface.Window, nil, nil, RAD.xl) -- modal-style picker = XL
+	UI.RoundBorder(cp, Accent.color, "OVERLAY", nil, RAD.xl)
 
 	-- Full-screen closer behind it (click outside = apply/close).
 	local closer = CreateFrame("Button", nil, host)
@@ -1996,7 +1996,7 @@ local function buildColorPicker()
 	local svBlack = sv:CreateTexture(nil, "ARTWORK", nil, 1) -- bottom black -> top clear (value)
 	svBlack:SetAllPoints(sv); svBlack:SetColorTexture(0, 0, 0, 1)
 	svBlack:SetGradient("VERTICAL", CreateColor(0, 0, 0, 1), CreateColor(0, 0, 0, 0))
-	UI.Border(sv, L.mid, 1, "OVERLAY")
+	UI.Border(sv, Border.hover, 1, "OVERLAY")
 	local svMark = CreateFrame("Frame", nil, sv)
 	svMark:SetSize(M.cpMarker, M.cpMarker)
 	UI.Border(svMark, { r = 1, g = 1, b = 1, a = 1 }, 2, "OVERLAY")
@@ -2018,7 +2018,7 @@ local function buildColorPicker()
 		-- top = a (segment start), bottom = c2 -> min(bottom)=c2, max(top)=a
 		seg:SetGradient("VERTICAL", CreateColor(c2[1], c2[2], c2[3], 1), CreateColor(a[1], a[2], a[3], 1))
 	end
-	UI.Border(hue, L.mid, 1, "OVERLAY")
+	UI.Border(hue, Border.hover, 1, "OVERLAY")
 	local hueMark = hue:CreateTexture(nil, "OVERLAY")
 	hueMark:SetColorTexture(1, 1, 1, 1)
 	hueMark:SetPoint("LEFT", hue, "LEFT", -2, 0)
@@ -2030,17 +2030,17 @@ local function buildColorPicker()
 	preview:SetSize(M.cpPrevH + 14, M.cpPrevH)
 	preview:SetPoint("TOPLEFT", sv, "BOTTOMLEFT", 0, -14)
 	local prevTex = preview:CreateTexture(nil, "ARTWORK"); prevTex:SetAllPoints(preview)
-	UI.Border(preview, L.mid, 1, "OVERLAY")
+	UI.Border(preview, Border.hover, 1, "OVERLAY")
 
 	local hexBox = CreateFrame("EditBox", nil, cp)
 	hexBox:SetSize(110, M.cpPrevH)
 	hexBox:SetPoint("LEFT", preview, "RIGHT", 26, 0)
-	UI.RoundFill(hexBox, C.ink700, nil, nil, R_CTRL)
-	UI.RoundBorder(hexBox, L.soft, "OVERLAY", nil, R_CTRL)
-	UI:SetFont(hexBox, "value", C.textStrong)
+	UI.RoundFill(hexBox, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundBorder(hexBox, Border.default, "OVERLAY", nil, R_CTRL)
+	UI:SetFont(hexBox, "value", Text.Primary)
 	hexBox:SetJustifyH("CENTER"); hexBox:SetAutoFocus(false); hexBox:SetMaxLetters(6)
 	hexBox:SetTextInsets(6, 6, 0, 0)
-	local hexHash = UI.FS(cp, "value", C.textMuted)
+	local hexHash = UI.FS(cp, "value", Text.Description)
 	hexHash:SetText("#"); hexHash:SetPoint("RIGHT", hexBox, "LEFT", -3, 0)
 
 	-- ---- Buttons ----
@@ -2171,14 +2171,14 @@ function W.ColorSwatch(parent, o)
 	sw:ClearAllPoints()
 	sw:SetPoint("TOPLEFT", box, "TOPLEFT", 1, -1)
 	sw:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -1, 1)
-	local edges = UI.RoundBorder(box, L.mid, "OVERLAY", nil, RAD.sm)
+	local edges = UI.RoundBorder(box, Border.hover, "OVERLAY", nil, RAD.sm)
 
 	-- Chip + optional label on the right (compact row); labelless chips are the
 	-- stacked-option-row standard (the old label-on-top "field" mode is retired —
 	-- design bible §8: swatches are 28px chips in option rows everywhere).
 	b:SetHeight(BOX)
 	box:SetPoint("LEFT", b, "LEFT", 0, 0)
-	local lbl = UI.FS(b, "checkLabel", C.textBody)
+	local lbl = UI.FS(b, "checkLabel", Text.Secondary)
 	lbl:SetText(o.label or "")
 	lbl:SetPoint("LEFT", box, "RIGHT", M.checkLabelGap, 0)
 	if (o.label or "") == "" then
@@ -2203,12 +2203,12 @@ function W.ColorSwatch(parent, o)
 		})
 	end)
 	b:SetScript("OnEnter", function()
-		for _, e in ipairs(edges) do UI.SetColor(e, L.strong) end
-		lbl:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		for _, e in ipairs(edges) do UI.SetColor(e, Accent.color) end
+		lbl:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 	end)
 	b:SetScript("OnLeave", function()
-		for _, e in ipairs(edges) do UI.SetColor(e, L.mid) end
-		lbl:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		for _, e in ipairs(edges) do UI.SetColor(e, Border.hover) end
+		lbl:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
 	end)
 	b.SetValueExternal = function() paint() end
 	b.SetWidgetEnabled = function(_, on) b:SetAlpha(on and 1 or 0.35); b:EnableMouse(on) end
@@ -2222,7 +2222,7 @@ end
 function W.Hint(parent, text, height)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(height or M.hintH)
-	local fs = UI.FS(f, "hint", C.textFaint)
+	local fs = UI.FS(f, "hint", Text.Description)
 	fs:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 	fs:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
 	fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
@@ -2254,18 +2254,18 @@ function W.TextInput(parent, o)
 	box:SetHeight(CONTROL_H)
 	box:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
-	UI.RoundFill(box, C.ink700, nil, nil, R_CTRL)
-	UI.RoundBorder(box, L.soft, "OVERLAY", nil, R_CTRL) -- subtle edge, matches the dropdown (Florian 2026-07-22: L.mid read too strong)
+	UI.RoundFill(box, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundBorder(box, Border.default, "OVERLAY", nil, R_CTRL) -- subtle edge, matches the dropdown (Florian 2026-07-22: Border.hover read too strong)
 	-- Same text role as the dropdown headers (selectText): inputs and selects
 	-- sit side by side in rows (Profile tab) and must read as one control family.
-	UI:SetFont(box, "selectText", C.textStrong)
+	UI:SetFont(box, "selectText", Text.Primary)
 	box:SetTextInsets(10, 10, 0, 0)
 	box:SetAutoFocus(false)
 	if o.get then box:SetText(o.get() or "") end
 
 	local ph
 	if o.placeholder then
-		ph = UI.FS(box, "selectText", C.textMuted)
+		ph = UI.FS(box, "selectText", Text.Description)
 		ph:SetText(o.placeholder)
 		ph:SetPoint("LEFT", box, "LEFT", 10, 0)
 		ph:SetPoint("RIGHT", box, "RIGHT", -10, 0)
@@ -2299,8 +2299,8 @@ function W.Textarea(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(o.height or 120)
 	if o.width then f:SetWidth(o.width) end
-	UI.RoundFill(f, C.ink700, nil, nil, R_CTRL)
-	UI.RoundBorder(f, L.mid, "OVERLAY", nil, R_CTRL)
+	UI.RoundFill(f, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundBorder(f, Border.hover, "OVERLAY", nil, R_CTRL)
 
 	local sf = CreateFrame("ScrollFrame", nil, f)
 	sf:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -8)
@@ -2310,7 +2310,7 @@ function W.Textarea(parent, o)
 	local edit = CreateFrame("EditBox", nil, sf)
 	edit:SetMultiLine(true)
 	edit:SetAutoFocus(false)
-	UI:SetFont(edit, "value", C.textStrong) -- role, not an ad-hoc size
+	UI:SetFont(edit, "value", Text.Primary) -- role, not an ad-hoc size
 	edit:SetWidth(1)
 	edit:SetScript("OnEscapePressed", function(self2) self2:ClearFocus() end)
 	sf:SetScrollChild(edit)
@@ -2336,7 +2336,7 @@ function W.Textarea(parent, o)
 
 	local ph
 	if o.placeholder then
-		ph = UI.FS(edit, "label", C.textMuted)
+		ph = UI.FS(edit, "label", Text.Description)
 		ph:SetText(o.placeholder)
 		ph:SetPoint("TOPLEFT", edit, "TOPLEFT", 2, -2)
 		local function upd() ph:SetShown((edit:GetText() or "") == "") end
@@ -2370,24 +2370,24 @@ local BTN_VARIANTS = {
 		-- Softened light (switchOn), not pure accent: a pure-white fill blooms
 		-- (irradiation) and read TALLER/fatter than the outlined dropdown of the
 		-- same height (Florian 2026-07-22). Hover steps up to the full accent.
-		bg = P.switchOn, bgHover = P.goldInt,
-		txt = C.onGold, txtHover = C.onGold,
-		line = P.switchOn, lineHover = P.goldInt, pad = 26, font = UI.FONT.hankenBold,
+		bg = Accent.switchOn, bgHover = Accent.color,
+		txt = Text.OnAccent, txtHover = Text.OnAccent,
+		line = Accent.switchOn, lineHover = Accent.color, pad = 26, font = UI.FONT.bold,
 	},
 	secondary = {
-		bg = nil, bgHover = UI.goldA(0.08),
-		txt = P.goldInt, txtHover = P.goldIntHover,
-		line = UI.goldA(0.55), lineHover = P.goldIntHover, pad = 22, font = UI.FONT.hankenSemi,
+		bg = nil, bgHover = UI.accentA(0.08),
+		txt = Accent.color, txtHover = Accent.hover,
+		line = UI.accentA(0.55), lineHover = Accent.hover, pad = 22, font = UI.FONT.semibold,
 	},
 	neutral = {
-		bg = P.element, bgHover = P.elementHover,
-		txt = C.textStrong, txtHover = C.textStrong,
-		line = L.mid, lineHover = L.mid, pad = 22, font = UI.FONT.hankenMed,
+		bg = Surface.Input, bgHover = Surface.Hover,
+		txt = Text.Primary, txtHover = Text.Primary,
+		line = Border.hover, lineHover = Border.hover, pad = 22, font = UI.FONT.medium,
 	},
 	danger = {
 		bg = nil, bgHover = UI.dangerA(0.10),
-		txt = P.danger, txtHover = P.dangerHover,
-		line = UI.dangerA(0.55), lineHover = P.dangerHover, pad = 22, font = UI.FONT.hankenSemi,
+		txt = Status.danger, txtHover = Status.dangerHover,
+		line = UI.dangerA(0.55), lineHover = Status.dangerHover, pad = 22, font = UI.FONT.semibold,
 	},
 }
 BTN_VARIANTS.ghost = BTN_VARIANTS.neutral
@@ -2418,7 +2418,7 @@ function W.Button(parent, o)
 	txt:SetText(o.text or "")
 	-- Self-healing: if the variant font doesn't load (SetFont=false) or doesn't render
 	-- the text (0 width despite content — e.g. missing glyphs like "ü" in a weight),
-	-- fall back to the role font (btn = hankenSemi, renders umlauts reliably).
+	-- fall back to the role font (btn = semibold, renders umlauts reliably).
 	-- This keeps the intended variant weight where it works.
 	if (o.text or "") ~= "" and (okFont == false or txt:GetStringWidth() <= 0) then
 		UI:SetFont(txt, "btn", v.txt)
@@ -2504,7 +2504,7 @@ function W.MenuButton(parent, o)
 		local tile = W.SquareIcon(btn, LO.clickcast.icon)
 		tile:SetPoint("LEFT", btn, "LEFT", 0, 0)
 		tile:SetIcon(o.icon)
-		local txt = UI.FS(btn, "selectText", o.icon and C.textBody or C.textMuted)
+		local txt = UI.FS(btn, "selectText", o.icon and Text.Secondary or Text.Description)
 		txt:SetPoint("LEFT", tile, "RIGHT", 10, 0)
 		txt:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
 		txt:SetJustifyH("LEFT"); txt:SetWordWrap(false)
@@ -2522,8 +2522,8 @@ function W.MenuButton(parent, o)
 	menu:SetFrameStrata("FULLSCREEN_DIALOG")
 	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
 	menu:Hide()
-	UI.RoundFill(menu, C.ink550)
-	UI.RoundBorder(menu, L.mid, "OVERLAY")
+	UI.RoundFill(menu, Surface.Input)
+	UI.RoundBorder(menu, Border.hover, "OVERLAY")
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
 
 	local function closeMenu() menu:Hide(); closer:Hide() end
@@ -2539,16 +2539,16 @@ function W.MenuButton(parent, o)
 		item:SetPoint("RIGHT", menu, "RIGHT", -pad, 0)
 		local wash = item:CreateTexture(nil, "BACKGROUND")
 		wash:SetAllPoints(item); wash:SetColorTexture(0, 0, 0, 0)
-		local itxt = UI.FS(item, "selectText", C.textStrong)
+		local itxt = UI.FS(item, "selectText", Text.Primary)
 		itxt:SetPoint("LEFT", item, "LEFT", 10, 0)
 		itxt:SetText(op.label)
 		item:SetScript("OnEnter", function()
-			wash:SetColorTexture(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1)
-			itxt:SetTextColor(C.gold100.r, C.gold100.g, C.gold100.b)
+			wash:SetColorTexture(Surface.Input.r, Surface.Input.g, Surface.Input.b, 1)
+			itxt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 		end)
 		item:SetScript("OnLeave", function()
 			wash:SetColorTexture(0, 0, 0, 0)
-			itxt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+			itxt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 		end)
 		item:SetScript("OnClick", function() closeMenu(); if o.onPick then o.onPick(op.value) end end)
 		local w = math.ceil(itxt:GetStringWidth()) + 32
@@ -2579,10 +2579,10 @@ function W.IconTile(parent, o)
 	bg:SetAllPoints(f)
 	bg:SetColorTexture(1, 1, 1, 1)
 	bg:SetGradient("VERTICAL",
-		CreateColor(C.ink650.r, C.ink650.g, C.ink650.b, 1),
-		CreateColor(C.inkTint.r, C.inkTint.g, C.inkTint.b, 1))
-	UI.Border(f, L.soft, 1)
-	local lt = UI.FS(f, "groupTitle", C.gold300)
+		CreateColor(Surface.Scrim.r, Surface.Scrim.g, Surface.Scrim.b, 1),
+		CreateColor(Surface.Input.r, Surface.Input.g, Surface.Input.b, 1))
+	UI.Border(f, Border.default, 1)
+	local lt = UI.FS(f, "groupTitle", Text.Primary)
 	lt:SetPoint("CENTER", f, "CENTER", 0, 0)
 	lt:SetText(o.letter or "?")
 	f._letter = lt
@@ -2595,8 +2595,8 @@ end
 -- ---------------------------------------------------------------------------
 function W.Card(parent)
 	local c = CreateFrame("Frame", nil, parent)
-	UI.RoundFill(c, C.ink600) -- group box = LG (card default)
-	UI.RoundBorder(c, L.soft)
+	UI.RoundFill(c, Surface.Card) -- group box = LG (card default)
+	UI.RoundBorder(c, Border.default)
 	return c
 end
 
@@ -2622,10 +2622,10 @@ function W.Collapsible(parent, o)
 	-- below when open -> only the top corners round (the body card uses
 	-- round = "bottom"), so header + body read as one rounded object.
 	local shape = (o.open and o.attached) and "top" or nil
-	UI.RoundFill(f, C.ink600, nil, shape)
-	UI.RoundBorder(f, L.soft, "OVERLAY", shape)
+	UI.RoundFill(f, Surface.Card, nil, shape)
+	UI.RoundBorder(f, Border.default, "OVERLAY", shape)
 
-	local title = UI.FS(f, "sectionHead", C.gold300)
+	local title = UI.FS(f, "sectionHead", Text.Primary)
 	title:SetPoint("LEFT", f, "LEFT", M.sectionPad, 0)
 	title:SetText(o.title or "")
 
@@ -2635,7 +2635,7 @@ function W.Collapsible(parent, o)
 	chev:SetPoint("RIGHT", f, "RIGHT", -M.sectionTitleX, 0)
 	chev:SetTexture(TEX .. (o.open and "icon-chevron-down" or "icon-chevron-right"))
 	chev:SetSnapToPixelGrid(false); chev:SetTexelSnappingBias(0)
-	chev:SetVertexColor(C.gold300.r, C.gold300.g, C.gold300.b)
+	chev:SetVertexColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 
 	-- Master toggle in the header (right of the summary, left of the chevron).
 	local rightAnchor = chev
@@ -2650,7 +2650,7 @@ function W.Collapsible(parent, o)
 	-- chevron cluster (v3 mockup).
 	local sumLeft = rightAnchor
 	if o.summary then
-		local sum = UI.FS(f, "value", C.textMuted)
+		local sum = UI.FS(f, "value", Text.Description)
 		sum:SetPoint("RIGHT", rightAnchor, "LEFT", -M.collapsibleSummaryGap, 0)
 		sum:SetJustifyH("RIGHT")
 		sum:SetWordWrap(false)
@@ -2662,7 +2662,7 @@ function W.Collapsible(parent, o)
 	-- Subtitle: muted description right of the title, truncates against the
 	-- right cluster.
 	if o.subtitle then
-		local sub = UI.FS(f, "caption", C.textMuted)
+		local sub = UI.FS(f, "caption", Text.Description)
 		sub:SetPoint("LEFT", title, "RIGHT", M.collapsibleSummaryGap, 0)
 		sub:SetPoint("RIGHT", sumLeft, "LEFT", -M.collapsibleSummaryGap, 0)
 		sub:SetJustifyH("LEFT")
@@ -2689,7 +2689,7 @@ function W.Collapsible(parent, o)
 		local function paintEye()
 			local on = o.eye.get()
 			g:SetTexture(TEX .. (on and "icon-eye" or "icon-eye-off"))
-			local col = hovered and P.goldIntHover or (on and P.goldInt or C.textMuted)
+			local col = hovered and Accent.hover or (on and Accent.color or Text.Description)
 			g:SetVertexColor(col.r, col.g, col.b)
 		end
 		paintEye()
@@ -2709,7 +2709,7 @@ function W.Collapsible(parent, o)
 
 	-- Hover wash (subtle, like the tracking rows) — rounded like the card, so
 	-- the wash doesn't poke out of the corners.
-	local hov = UI.RoundFill(f, C.inkTint, "BORDER", shape); hov:SetAlpha(0)
+	local hov = UI.RoundFill(f, Surface.Input, "BORDER", shape); hov:SetAlpha(0)
 	f:SetScript("OnEnter", function() hov:SetAlpha(0.5) end)
 	f:SetScript("OnLeave", function() hov:SetAlpha(0) end)
 	f:SetScript("OnClick", function() if o.onToggle then o.onToggle(not o.open) end end)
@@ -2735,7 +2735,7 @@ function W.Disclosure(parent, o)
 	PixelUtil.SetHeight(sep, 1)
 	sep:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 	sep:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-	UI.SetColor(sep, L.faint)
+	UI.SetColor(sep, Border.faint)
 	f._topLine = sep
 
 	-- Chevron: Lucide chevron-up when open, chevron-right when closed (muted;
@@ -2746,16 +2746,16 @@ function W.Disclosure(parent, o)
 	chev:SetTexture(TEX .. (o.open and "icon-chevron-up" or "icon-chevron-right"))
 	chev:SetSnapToPixelGrid(false); chev:SetTexelSnappingBias(0)
 	local function paint(col) chev:SetVertexColor(col.r, col.g, col.b) end
-	paint(C.textMuted)
+	paint(Text.Description)
 
-	local lbl = UI.FS(f, "value", C.textMuted)
+	local lbl = UI.FS(f, "value", Text.Description)
 	lbl:SetPoint("LEFT", chev, "RIGHT", M.disclosureChevGap, -1)
 	lbl:SetText(o.label or "")
 
 	-- Contents preview while closed ("Typ-Farben, Text-Position …") — nothing
 	-- becomes unfindable behind the fold.
 	if o.hint and not o.open then
-		local hint = UI.FS(f, "caption", C.textMuted)
+		local hint = UI.FS(f, "caption", Text.Description)
 		hint:SetPoint("LEFT", lbl, "RIGHT", M.disclosureHintGap, 0)
 		hint:SetPoint("RIGHT", f, "RIGHT", 0, 0)
 		hint:SetJustifyH("LEFT")
@@ -2764,12 +2764,12 @@ function W.Disclosure(parent, o)
 	end
 
 	f:SetScript("OnEnter", function()
-		lbl:SetTextColor(P.goldIntHover.r, P.goldIntHover.g, P.goldIntHover.b)
-		paint(P.goldIntHover)
+		lbl:SetTextColor(Accent.hover.r, Accent.hover.g, Accent.hover.b)
+		paint(Accent.hover)
 	end)
 	f:SetScript("OnLeave", function()
-		lbl:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b)
-		paint(C.textMuted)
+		lbl:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b)
+		paint(Text.Description)
 	end)
 	f:SetScript("OnClick", function() if o.onToggle then o.onToggle(not o.open) end end)
 	return f
@@ -2784,10 +2784,10 @@ function W.GroupPanel(parent, o)
 	local g = CreateFrame("Frame", nil, parent)
 	local bg = g:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints(g)
-	bg:SetColorTexture(C.ink600.r, C.ink600.g, C.ink600.b, 0.45)
-	UI.Border(g, L.soft, 1)
+	bg:SetColorTexture(Surface.Card.r, Surface.Card.g, Surface.Card.b, 0.45)
+	UI.Border(g, Border.default, 1)
 
-	local title = UI.FS(g, "groupTitle", C.textHeading)
+	local title = UI.FS(g, "groupTitle", Text.Primary)
 	title:SetText(o.title or "")
 	title:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, M.groupTitleY)
 
@@ -2896,7 +2896,7 @@ function W.OptionRow(parent, label)
 	row._bottomLine = true -- owns the group separator on its bottom edge; the card
 	-- stacker reads this to de-dup a following subHeadRow/Disclosure top line.
 	local line = row:CreateTexture(nil, "ARTWORK")
-	UI.SetColor(line, L.faint)
+	UI.SetColor(line, Border.faint)
 	line:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
 	line:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
 	-- Thickness pixel-snapped, position plain (the UI.Border rule): a naive
@@ -2907,7 +2907,7 @@ function W.OptionRow(parent, label)
 	C_Timer.After(0, snap)
 	row:HookScript("OnSizeChanged", snap)
 	row:HookScript("OnShow", snap)
-	local lbl = UI.FS(row, "checkLabel", C.textBody)
+	local lbl = UI.FS(row, "checkLabel", Text.Secondary)
 	lbl:SetText(label)
 	lbl:SetPoint("LEFT", row, "LEFT", 0, 0)
 	lbl:SetJustifyH("LEFT")
@@ -2917,7 +2917,7 @@ function W.OptionRow(parent, label)
 		return row
 	end
 	row.SetWidgetEnabled = function(_, on)
-		local col = on and C.textBody or C.textFaint
+		local col = on and Text.Secondary or Text.Description
 		lbl:SetTextColor(col.r, col.g, col.b)
 		if row._control and row._control.SetWidgetEnabled then row._control:SetWidgetEnabled(on) end
 	end
@@ -2948,7 +2948,7 @@ function W.PreviewBand(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetAllPoints(parent)
 	local stageFill -- forward-declared: the eye popover's "Background" row toggles it via RepaintEyes (created below with the stage)
-	-- The stage fill AND the dock's own fill are BOTH P.panel, so hiding just the
+	-- The stage fill AND the dock's own fill are BOTH Surface.Window, so hiding just the
 	-- stage reveals an identical colour = no visible change. The "Background" eye
 	-- hides both, so the shell's dotted content shows through (frames "float").
 	local dockFrame = parent:GetParent() -- the Shell dock (carries ._fill)
@@ -2963,12 +2963,12 @@ function W.PreviewBand(parent, o)
 	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", -M.pvDockPad, -M.pvDockPad)
 	head:SetHeight(M.sectionHeaderH)
 	-- The head is a REAL card matching the settings cards EXACTLY: same fill
-	-- (ink600) and border (L.soft). With the page-colored stage below (no black
+	-- (Surface.Card) and border (Border.default). With the page-colored stage below (no black
 	-- box) this reads as page + card — like the settings page itself, not a
 	-- nested "double frame" (Florian 2026-07-05).
-	UI.RoundFill(head, C.ink600, nil, nil, RAD.lg)
-	UI.RoundBorder(head, L.soft, "OVERLAY", nil, RAD.lg)
-	local lbl = UI.FS(head, "sectionHead", C.gold300)
+	UI.RoundFill(head, Surface.Card, nil, nil, RAD.lg)
+	UI.RoundBorder(head, Border.default, "OVERLAY", nil, RAD.lg)
+	local lbl = UI.FS(head, "sectionHead", Text.Primary)
 	lbl:SetText(T("PREVIEW"))
 	lbl:SetPoint("LEFT", head, "LEFT", M.sectionTitleX, 0)
 
@@ -2983,13 +2983,13 @@ function W.PreviewBand(parent, o)
 	local cbtn = CreateFrame("Button", nil, head)
 	cbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
 	cbtn:SetPoint("RIGHT", head, "RIGHT", -M.pvDockPad, 0)
-	UI.RoundFill(cbtn, C.ink700, nil, nil, R_CTRL) -- lighter than the ink600 card, like a dropdown on a settings card
-	UI.RoundBorder(cbtn, L.mid, "OVERLAY", nil, R_CTRL)
+	UI.RoundFill(cbtn, Surface.Input, nil, nil, R_CTRL) -- lighter than the card, like a dropdown on a settings card
+	UI.RoundBorder(cbtn, Border.hover, "OVERLAY", nil, R_CTRL)
 	local cGlyph = cbtn:CreateTexture(nil, "OVERLAY")
 	cGlyph:SetSize(M.pvGlyph, M.pvGlyph)
 	cGlyph:SetPoint("CENTER", cbtn, "CENTER", 0, 0)
 	cGlyph:SetSnapToPixelGrid(false); cGlyph:SetTexelSnappingBias(0)
-	cGlyph:SetVertexColor(C.textMuted.r, C.textMuted.g, C.textMuted.b)
+	cGlyph:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
 	local CHEV_TEX = { up = "icon-chevron-up", down = "icon-chevron-down", left = "icon-chevron-left" }
 	local function chevDir(dir)
 		cGlyph:SetTexture(TEX .. (CHEV_TEX[dir] or "icon-chevron-down"))
@@ -3009,14 +3009,14 @@ function W.PreviewBand(parent, o)
 		local rbtn = CreateFrame("Button", nil, head)
 		rbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
 		rbtn:SetPoint("RIGHT", cbtn, "LEFT", -S.s4, 0)
-		UI.RoundFill(rbtn, C.ink700, nil, nil, R_CTRL)
-		UI.RoundBorder(rbtn, L.mid, "OVERLAY", nil, R_CTRL)
+		UI.RoundFill(rbtn, Surface.Input, nil, nil, R_CTRL)
+		UI.RoundBorder(rbtn, Border.hover, "OVERLAY", nil, R_CTRL)
 		local rGlyph = rbtn:CreateTexture(nil, "OVERLAY")
 		rGlyph:SetSize(M.pvGlyph, M.pvGlyph)
 		rGlyph:SetPoint("CENTER", rbtn, "CENTER", 0, 0)
 		rGlyph:SetTexture(TEX .. "icon-reset")
 		rGlyph:SetSnapToPixelGrid(false); rGlyph:SetTexelSnappingBias(0)
-		rGlyph:SetVertexColor(C.textMuted.r, C.textMuted.g, C.textMuted.b)
+		rGlyph:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
 		rbtn:SetScript("OnClick", function() o.onResetPos() end) -- no hover (matches the collapse icon)
 		resetAnchor = rbtn
 	end
@@ -3044,18 +3044,18 @@ function W.PreviewBand(parent, o)
 		end
 		scan(o.eyeDefs)
 		eGlyph:SetTexture(TEX .. (filtered and "icon-eye-off" or "icon-eye"))
-		local col = filtered and C.gold250 or C.textMuted
+		local col = filtered and Text.Primary or Text.Description
 		eGlyph:SetVertexColor(col.r, col.g, col.b)
 		-- Filtered = the glyph goes accent; keep the border subtle (Florian 2026-07-22:
-		-- the L.strong ring read as a hard white outline).
-		for _, e in ipairs(eEdges) do UI.SetColor(e, L.mid) end
+		-- the Accent.color ring read as a hard white outline).
+		for _, e in ipairs(eEdges) do UI.SetColor(e, Border.hover) end
 	end
 	if o.eyeDefs then
 		ebtn = CreateFrame("Button", nil, head)
 		ebtn:SetSize(M.pvIconBtn, M.pvIconBtn)
 		ebtn:SetPoint("RIGHT", resetAnchor, "LEFT", -S.s4, 0)
-		UI.RoundFill(ebtn, C.ink700, nil, nil, R_CTRL)
-		eEdges = UI.RoundBorder(ebtn, L.mid, "OVERLAY", nil, R_CTRL)
+		UI.RoundFill(ebtn, Surface.Input, nil, nil, R_CTRL)
+		eEdges = UI.RoundBorder(ebtn, Border.hover, "OVERLAY", nil, R_CTRL)
 		eGlyph = ebtn:CreateTexture(nil, "ARTWORK")
 		eGlyph:SetSize(M.pvGlyph, M.pvGlyph)
 		eGlyph:SetPoint("CENTER", ebtn, "CENTER", 0, 0)
@@ -3064,8 +3064,8 @@ function W.PreviewBand(parent, o)
 		eyePop = CreateFrame("Frame", nil, f)
 		eyePop:SetFrameLevel(f:GetFrameLevel() + 40)
 		eyePop:SetClampedToScreen(true)
-		UI.RoundFill(eyePop, C.ink550, nil, nil, RAD.lg)
-		UI.RoundBorder(eyePop, L.soft, "OVERLAY", nil, RAD.lg) -- subtle, matches the new dropdown (Florian 2026-07-22: L.strong read as a hard white outline)
+		UI.RoundFill(eyePop, Surface.Input, nil, nil, RAD.lg)
+		UI.RoundBorder(eyePop, Border.default, "OVERLAY", nil, RAD.lg) -- subtle, matches the new dropdown (Florian 2026-07-22: Accent.color read as a hard white outline)
 		eyePop:Hide()
 		local rowIdx, popW = 0, M.pvFilterW
 		local function popRow(label, indent, isOn, onClick)
@@ -3078,12 +3078,12 @@ function W.PreviewBand(parent, o)
 			local box = CreateFrame("Frame", nil, row)
 			box:SetSize(M.pvFilterCheck, M.pvFilterCheck)
 			box:SetPoint("LEFT", row, "LEFT", 0, 0)
-			UI.RoundBorder(box, L.mid, "OVERLAY", nil, RAD.xs)
+			UI.RoundBorder(box, Border.hover, "OVERLAY", nil, RAD.xs)
 			local mark = box:CreateTexture(nil, "ARTWORK")
 			mark:SetPoint("TOPLEFT", box, "TOPLEFT", 3, -3)
 			mark:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -3, 3)
-			UI.SetColor(mark, C.gold500)
-			local rl = UI.FS(row, "value", C.textBody)
+			UI.SetColor(mark, Accent.color)
+			local rl = UI.FS(row, "value", Text.Secondary)
 			rl:SetPoint("LEFT", box, "RIGHT", S.s4, 0)
 			rl:SetText(label)
 			-- Popover width follows the longest (localized) label.
@@ -3163,9 +3163,9 @@ function W.PreviewBand(parent, o)
 			local item = items[i]
 			local chip = CreateFrame("Button", nil, head)
 			chip:SetHeight(M.pvEyeH)
-			UI.RoundFill(chip, C.ink900, nil, nil, RAD.sm)
-			local edges = UI.RoundBorder(chip, L.mid, "OVERLAY", nil, RAD.sm)
-			local txt = UI.FS(chip, "value", C.textMuted)
+			UI.RoundFill(chip, Surface.Scrim, nil, nil, RAD.sm)
+			local edges = UI.RoundBorder(chip, Border.hover, "OVERLAY", nil, RAD.sm)
+			local txt = UI.FS(chip, "value", Text.Description)
 			txt:SetPoint("CENTER", chip, "CENTER", 0, 0)
 			txt:SetText(item.label)
 			chip:SetWidth(math.max(M.pvEyeH, math.ceil(txt:GetStringWidth()) + M.pvEyePadX * 2))
@@ -3173,8 +3173,8 @@ function W.PreviewBand(parent, o)
 			chipsW = chipsW + chip:GetWidth() + chainGap
 			chainAnchor, chainGap = chip, M.pvEyeGap
 			chips[#chips + 1] = { v = item.v, paint = function(on)
-				for _, e in ipairs(edges) do UI.SetColor(e, on and L.strong or L.mid) end
-				local tc = on and C.gold250 or C.textFaint
+				for _, e in ipairs(edges) do UI.SetColor(e, on and Accent.color or Border.hover) end
+				local tc = on and Text.Primary or Text.Description
 				txt:SetTextColor(tc.r, tc.g, tc.b)
 			end }
 			local v = item.v
@@ -3220,7 +3220,7 @@ function W.PreviewBand(parent, o)
 	stage:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, 0)
 	stage:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
 	stage:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
-	stageFill = UI.RoundFill(stage, P.panel, nil, nil, R_CTRL) -- assigns the forward-declared upvalue
+	stageFill = UI.RoundFill(stage, Surface.Window, nil, nil, R_CTRL) -- assigns the forward-declared upvalue
 	local stageEdges = {} -- no stage border (merges with the page-colored dock body)
 	-- Unscaled positioning pivot: anchor offsets are interpreted in the ANCHORED
 	-- frame's own (scaled) units — the pivot stays at scale 1, so the module's
@@ -3232,7 +3232,7 @@ function W.PreviewBand(parent, o)
 	holder:SetPoint("CENTER", pos, "CENTER", 0, 0)
 	holder:SetSize(1, 1)
 
-	local caption = UI.FS(stage, "caption", C.textMuted)
+	local caption = UI.FS(stage, "caption", Text.Description)
 	caption:SetPoint("BOTTOM", stage, "BOTTOM", 0, S.s2 + 2)
 
 	f.holder = holder
