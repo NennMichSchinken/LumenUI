@@ -1823,14 +1823,18 @@ function W.KeybindButton(parent, o)
 		if not listening then return end
 		commit(kbWithMods(delta > 0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN"))
 	end)
+	-- Hover keeps the border SUBTLE (Florian 2026-07-22): the old bright gold500/
+	-- L.strong hover left a bound field stuck with a thick white ring until /reload
+	-- (OnLeave reset it to bright, overriding setBorder's L.mid). Bound stays L.mid;
+	-- unbound gets a faint L.soft->L.mid hover step and back.
 	btn:SetScript("OnEnter", function()
 		if listening then return end
-		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, C.gold400) end
-		else for _, e in ipairs(faint) do UI.SetColor(e, L.strong) end end
+		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, L.mid) end
+		else for _, e in ipairs(faint) do UI.SetColor(e, L.mid) end end
 	end)
 	btn:SetScript("OnLeave", function()
 		if listening then return end
-		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, C.gold500) end
+		if cur ~= "" then for _, e in ipairs(solid) do UI.SetColor(e, L.mid) end
 		else for _, e in ipairs(faint) do UI.SetColor(e, L.soft) end end
 	end)
 	btn:HookScript("OnHide", stopListen)
