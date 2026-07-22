@@ -12,12 +12,13 @@ local ADDON, ns = ...
 
 local GROUP_PAD = 20 -- group spacing above/below the AddOns+Lumen group (like Blizzard's sections)
 
--- Custom look for the Lumen button: Cinzel gold (like the wordmark) instead of Blizzard's
--- default red face -> stands out clearly from the red button + background. The color is a
--- |cff..|-code in the text (survives Blizzard's hover/enable states); the font face is set
--- on the FontString. ns.UI is safely present here (GameMenu.lua loads last, after Shell/Tokens).
-local LUMEN_GOLD = "E9BB69" -- = UI.P.goldBrand (palette C1, brand gold)
-local LUMEN_TEXT = "|cff" .. LUMEN_GOLD .. "LumenUI|r"
+-- Custom look for the Lumen button: the brand text colour (off-white in the mono
+-- chrome, = the wordmark) instead of Blizzard's default red face -> stands out
+-- clearly from the red buttons. Derived from the token (no hardcoded hex); the
+-- colour is a |cff..|-code in the text (survives Blizzard's hover/enable states),
+-- the font face is set on the FontString. ns.UI is safely present here
+-- (GameMenu.lua loads last, after Shell/Tokens).
+local LUMEN_TEXT = ns.UI.ColorCode(ns.UI.Text.Primary) .. "LumenUI|r"
 
 local DEFAULT_FONT -- {path,size,flags} of an unmarked Blizzard button (learned once)
 
@@ -46,7 +47,7 @@ local function styleButton(menu, btn)
 	local fs = btn:GetFontString()
 	if fs and ns.UI and ns.UI.FONT then
 		local size = (DEFAULT_FONT and DEFAULT_FONT[2]) or 14
-		if fs:SetFont(ns.UI.FONT.cinzelSemi, size, "") then btn._lumenStyled = true end
+		if fs:SetFont(ns.UI.FONT.semibold, size, "") then btn._lumenStyled = true end
 	end
 end
 

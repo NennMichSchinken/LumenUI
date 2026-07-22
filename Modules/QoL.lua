@@ -285,22 +285,22 @@ local BTN_W, BTN_H = 100, 26
 
 local function makeToolButton(parent, labelText, onClick)
 	local UI = ns.UI
-	local C = UI.C
+	local Surface, Text = UI.Surface, UI.Text
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(BTN_W, BTN_H)
 	local fill = b:CreateTexture(nil, "BACKGROUND")
 	fill:SetAllPoints(b)
-	UI.SetColor(fill, C.ink600)
-	local txt = UI.FS(b, "checkLabel", C.textBody)
+	UI.SetColor(fill, Surface.Card)
+	local txt = UI.FS(b, "checkLabel", Text.Secondary)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 	txt:SetText(labelText)
 	b:SetScript("OnEnter", function()
-		UI.SetColor(fill, C.ink520) -- lighter face only, border stays quiet
-		txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		UI.SetColor(fill, Surface.Card) -- lighter face only, border stays quiet
+		txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 	end)
 	b:SetScript("OnLeave", function()
-		UI.SetColor(fill, C.ink600)
-		txt:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		UI.SetColor(fill, Surface.Card)
+		txt:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
 	end)
 	b:SetScript("OnClick", onClick)
 	return b
@@ -330,8 +330,8 @@ local function createButtons()
 	sep:SetPoint("TOPLEFT", btnFrame, "TOPLEFT", 0, -BTN_H)
 	sep:SetPoint("TOPRIGHT", btnFrame, "TOPRIGHT", 0, -BTN_H)
 	sep:SetHeight(1)
-	UI.SetColor(sep, UI.line.mid)
-	UI.Border(btnFrame, UI.line.mid, 1, "OVERLAY")
+	UI.SetColor(sep, UI.Border.hover)
+	UI.Border(btnFrame, UI.Border.hover, 1, "OVERLAY")
 
 	if ns.EditMode then
 		ns.EditMode:Register(btnFrame, ns.T("Ready & Pull"), function(pt, x, y)
