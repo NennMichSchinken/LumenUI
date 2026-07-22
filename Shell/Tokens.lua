@@ -191,16 +191,16 @@ UI.Status = {
 function UI.dangerA(a) return withA(P.danger, a) end
 
 -- ---------------------------------------------------------------------------
---  Fonts — bundled under <addon>/Fonts/ (Cinzel + Hanken Grotesk, SIL OFL)
+--  Fonts — bundled under <addon>/Fonts/ (Inter, SIL OFL)
 -- ---------------------------------------------------------------------------
 -- Built from the real addon-folder name (ADDON) so the path survives a folder
 -- rename (e.g. Lumen -> LumenUI). ADDON is the first vararg = the folder name.
 local FP = "Interface\\AddOns\\" .. ADDON .. "\\Fonts\\"
--- v3 (2026-07-21): ONE clean UI sans everywhere — Inter (SIL OFL). The mockup
--- dropped Cinzel's serif display face + Hanken for a single uniform sans (the
--- SF-Pro-like look; SF Pro itself is Apple-proprietary and can't be bundled).
--- Inter switches heading case to sentence case automatically (Cinzel was caps-
--- only). The old Cinzel/Hanken TTFs stay in Fonts/ for now (easy revert).
+-- v3: ONE clean UI sans everywhere — Inter (SIL OFL). The mockup dropped Cinzel's
+-- serif display face + Hanken for a single uniform sans (the SF-Pro-like look; SF
+-- Pro itself is Apple-proprietary and can't be bundled). Inter switches heading
+-- case to sentence case automatically (Cinzel was caps-only). The old Cinzel/
+-- Hanken TTFs were removed in the v3 cleanup.
 UI.FONT = {
 	interReg  = FP .. "Inter-Regular.ttf",
 	interMed  = FP .. "Inter-Medium.ttf",
@@ -811,21 +811,6 @@ end
 function UI.Circle(parent, col, layer, size)
 	local t = markRound(parent:CreateTexture(nil, layer or "ARTWORK"))
 	t:SetTexture(ROUND_TEX .. "circle-" .. size)
-	t:SetSize(size, size)
-	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
-	return t
-end
-
--- Rounded-square knob (switch): the round-fill 9-slice asset at an explicit
--- size, positioned by the caller (like UI.Circle, but squared with radius r).
--- Lets the switch match the radius scale + the rounded-square checkboxes
--- instead of a pill/circle (Florian 2026-07-05).
-function UI.RoundKnob(parent, col, layer, size, r)
-	r = r or UI.RADIUS.xs
-	local m = ROUND_MARGIN[r]
-	local t = markRound(parent:CreateTexture(nil, layer or "ARTWORK"))
-	t:SetTexture(ROUND_TEX .. "round-fill-r" .. r)
-	t:SetTextureSliceMargins(m, m, m, m)
 	t:SetSize(size, size)
 	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
 	return t
