@@ -14,7 +14,8 @@ local ADDON, ns = ...
 
 local UI = ns.UI
 local W  = ns.W
-local M, C, L = UI.WIDGET, UI.C, UI.LAYOUT
+local M, L = UI.WIDGET, UI.LAYOUT
+local Surface, Text, Status = UI.Surface, UI.Text, UI.Status
 local T = ns.T   -- localization: T("english") -> display in the active language
 local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
 
@@ -346,7 +347,7 @@ end
 local function subHeadRow(d, label)
 	local head = CreateFrame("Frame", nil, d)
 	local hline = head:CreateTexture(nil, "ARTWORK")
-	UI.SetColor(hline, UI.line.faint)
+	UI.SetColor(hline, UI.Border.faint)
 	hline:SetPoint("TOPLEFT", head, "TOPLEFT", 0, 0)
 	hline:SetPoint("TOPRIGHT", head, "TOPRIGHT", 0, 0)
 	head._topLine = hline -- card stacker hides this when the boundary is already lined (no double divider)
@@ -355,7 +356,7 @@ local function subHeadRow(d, label)
 	C_Timer.After(0, snapH)
 	head:HookScript("OnSizeChanged", snapH)
 	head:HookScript("OnShow", snapH)
-	local fs = UI.FS(head, "checkLabel", C.textMuted)
+	local fs = UI.FS(head, "checkLabel", Text.Description)
 	fs:SetPoint("LEFT", head, "LEFT", 0, 0)
 	fs:SetText(label)
 	return head
@@ -639,14 +640,14 @@ local function arrowButton(parent, dir, onClick)
 	-- Two-gold rule: the arrows are clickable -> interactive gold (C2/C3), not
 	-- brand gold; a dimmed arrow (already at the edge) is TRUE disabled -> D3.
 	b._on = true
-	setCol(UI.P.goldInt)
-	b:SetScript("OnEnter", function() if b._on then setCol(UI.P.goldIntHover) end end)
-	b:SetScript("OnLeave", function() if b._on then setCol(UI.P.goldInt) end end)
+	setCol(UI.Accent.color)
+	b:SetScript("OnEnter", function() if b._on then setCol(UI.Accent.hover) end end)
+	b:SetScript("OnLeave", function() if b._on then setCol(UI.Accent.color) end end)
 	b:SetScript("OnClick", function() if b._on then onClick() end end)
 	b.setDim = function(on)
 		b._on = not on
-		if on then setCol(UI.P.textDisabled); b:EnableMouse(false)
-		else setCol(UI.P.goldInt); b:EnableMouse(true) end
+		if on then setCol(UI.Text.Disabled); b:EnableMouse(false)
+		else setCol(UI.Accent.color); b:EnableMouse(true) end
 	end
 	return b
 end
@@ -678,7 +679,7 @@ local function buildBase(d, stack)
 	local function checkDesc(cell, opts, desc)
 		local cb = W.Checkbox(cell, opts)
 		cb:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
-		local fs = UI.FS(cell, "caption", C.textMuted)
+		local fs = UI.FS(cell, "caption", Text.Description)
 		fs:SetPoint("TOPLEFT", cell, "TOPLEFT", M.checkBox + M.checkLabelGap, -(M.checkBox + 2))
 		fs:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
 		fs:SetJustifyH("LEFT")
@@ -852,7 +853,7 @@ local function buildBase(d, stack)
 				if prevRow then row:SetPoint("TOP", prevRow, "BOTTOM", 0, 0)
 				else row:SetPoint("TOP", card, "TOP", 0, -pad) end
 				local bg = row:CreateTexture(nil, "BACKGROUND")
-				bg:SetAllPoints(row); UI.SetColor(bg, C.ink600)
+				bg:SetAllPoints(row); UI.SetColor(bg, Surface.Card)
 				local wash = row:CreateTexture(nil, "BACKGROUND", nil, 1)
 				wash:SetAllPoints(row); wash:SetColorTexture(acc.r, acc.g, acc.b, 0.10)
 				local barL = row:CreateTexture(nil, "ARTWORK")
@@ -866,7 +867,7 @@ local function buildBase(d, stack)
 				down:SetPoint("LEFT", up, "RIGHT", 2, 0)
 				if i == 1 then up.setDim(true) end
 				if i == #order then down.setDim(true) end
-				local lbl = UI.FS(row, "listLabel", C.textStrong)
+				local lbl = UI.FS(row, "listLabel", Text.Primary)
 				lbl:SetPoint("LEFT", down, "RIGHT", 16, 0)
 				lbl:SetText(ROLE_LABEL[role] or "?")
 				prevRow = row
@@ -1171,11 +1172,10 @@ local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) 
 -- One tracked-spell row (v2 refinement no. 3): icon + name + quiet trash button
 -- on the right (red only on hover); row hover = lighter surface + gold left edge.
 local function makeTrackRow(parent, e, onRemove)
-	local P = UI.P
 	local row = CreateFrame("Frame", nil, parent)
 	row:SetHeight(L.raidframes.tracking.rowH)
-	UI.RoundFill(row, P.element, nil, nil, UI.ROUND_R_CTRL)
-	UI.RoundBorder(row, UI.line.soft, "OVERLAY", nil, UI.ROUND_R_CTRL) -- L here is UI.LAYOUT; line colors live in UI.line
+	UI.RoundFill(row, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(row, UI.Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL) -- note: L here is UI.LAYOUT (not the border table UI.Border)
 	local icon = row:CreateTexture(nil, "ARTWORK")
 	icon:SetSize(M.spellIcon, M.spellIcon)
 	icon:SetPoint("LEFT", row, "LEFT", 10, 0)
@@ -1185,21 +1185,21 @@ local function makeTrackRow(parent, e, onRemove)
 	-- lighter red on hover, NO tooltip (it fought the row's spell tooltip = jumpy),
 	-- same size as the Click-Cast catalog trash.
 	local rm = W.IconButton(row, { icon = "icon-delete", size = M.iconAction,
-		color = C.danger500, hoverColor = C.danger300, onClick = onRemove })
+		color = Status.danger, hoverColor = Status.dangerHover, onClick = onRemove })
 	rm:SetPoint("RIGHT", row, "RIGHT", -12, 0)
-	local name = UI.FS(row, "selectText", C.textStrong)
+	local name = UI.FS(row, "selectText", Text.Primary)
 	name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
 	name:SetPoint("RIGHT", rm, "LEFT", -10, 0)
 	name:SetJustifyH("LEFT"); name:SetWordWrap(false)
 	name:SetText(e.name or (T("Spell") .. " " .. tostring(e.id)))
 	-- Hover: elementHover surface + gold left edge + own Lumen spell tooltip.
-	local hov = UI.RoundFill(row, P.elementHover, "BORDER", nil, UI.ROUND_R_CTRL); hov:SetAlpha(0)
+	local hov = UI.RoundFill(row, Surface.Hover, "BORDER", nil, UI.ROUND_R_CTRL); hov:SetAlpha(0)
 	local bar = row:CreateTexture(nil, "OVERLAY")
 	bar:SetWidth(3)
 	-- Straight edge bar stops before the rounded corners.
 	bar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -UI.ROUND_R_CTRL)
 	bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, UI.ROUND_R_CTRL)
-	UI.SetColor(bar, P.goldBrand); bar:Hide()
+	UI.SetColor(bar, Text.Primary); bar:Hide()
 	row:EnableMouse(true)
 	row:SetScript("OnEnter", function(self2)
 		hov:SetAlpha(1); bar:Show(); W.ShowSpellTip(self2, e.id)
@@ -1361,11 +1361,11 @@ local function ccCatalogRow(d, s, b, spec)
 	local H, PAD, GAPX = L.clickcast.rowH, L.clickcast.rowPad, L.clickcast.rowGapX
 	local row = CreateFrame("Frame", nil, d)
 	row:SetHeight(H)
-	UI.RoundFill(row, C.ink600, nil, nil, UI.ROUND_R_CTRL)
-	UI.RoundBorder(row, UI.line.soft, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	UI.RoundFill(row, Surface.Card, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(row, UI.Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL)
 
 	-- right cluster (from the RIGHT): trash (delete, FAR right) <- switch <- gear <- keybind
-	local trash = W.IconButton(row, { icon = "icon-delete", color = C.danger500, hoverColor = C.danger300,
+	local trash = W.IconButton(row, { icon = "icon-delete", color = Status.danger, hoverColor = Status.dangerHover,
 		size = M.iconAction,
 		onClick = function()
 			local idx
@@ -1452,7 +1452,7 @@ local function ccCatalogRow(d, s, b, spec)
 	cover:SetPoint("RIGHT", sw, "LEFT", -GAPX, 0)          -- horizontally up to the switch
 	cover:SetFrameLevel(row:GetFrameLevel() + 60)
 	cover:EnableMouse(true)
-	UI.RoundFill(cover, { r = C.ink850.r, g = C.ink850.g, b = C.ink850.b, a = 0.55 },
+	UI.RoundFill(cover, { r = Surface.Window.r, g = Surface.Window.g, b = Surface.Window.b, a = 0.55 },
 		"OVERLAY", "left", UI.ROUND_R_CTRL)
 	row._setEnabled = function(on) cover:SetShown(not on) end
 	row._setEnabled(b.enabled ~= false)
