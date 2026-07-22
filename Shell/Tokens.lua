@@ -84,7 +84,7 @@ UI.C = {
 	ink550   = P.inset,        -- popover / open dropdown list (A1 per v2 spec)
 	ink520   = P.card,         -- sub-box (grouping is carried by borders now, not a lighter fill)
 	inkTint  = P.element,      -- (was: icon-tile gradient top; flat now)
-	sliderTrack = P.element,   -- unfilled slider track
+	sliderTrack = P.elementHover, -- unfilled slider track (Florian 2026-07-22: was P.element, nearly invisible against P.card -- needs to read as a visible channel showing the full range, like the mockup)
 
 	-- gold
 	gold500  = P.goldInt,      -- interactive accent: control borders, icons, active
@@ -163,7 +163,7 @@ UI.FONT.hankenBold = UI.FONT.interBold
 
 -- Roles -> { path, size, flags }. Sizes from typography.css.
 UI.ROLE = {
-	wordmark = { UI.FONT.cinzelSemi, 26, "" }, -- LUMENUI (sized to fit the 260px sidebar)
+	wordmark = { UI.FONT.cinzelBold, 23, "" }, -- LUMENUI (mockup ratio: 18px@680w -> ~23px design-px, Bold = nearest cut to 680)
 	display  = { UI.FONT.cinzelSemi, 22, "" },
 	section  = { UI.FONT.cinzelSemi, 20, "" }, -- section heading (Cinzel)
 	nav      = { UI.FONT.hankenMed,  18, "" },
@@ -172,7 +172,8 @@ UI.ROLE = {
 	tab      = { UI.FONT.hankenMed,  18, "" },
 	caption  = { UI.FONT.hankenReg,  12, "" },
 	hint     = { UI.FONT.hankenReg,  16, "" }, -- description/hint text under controls
-	tagline  = { UI.FONT.hankenReg,  12, "" },
+	tagline  = { UI.FONT.hankenMed,  12, "" }, -- mockup ratio: 10px@500w -> Medium
+	navGroupLabel = { UI.FONT.hankenSemi, 12, "" }, -- "MODULES" nav-group caption (mockup: 10px@600w -> SemiBold; distinct from the shared "caption" role so it doesn't collapse onto the tagline's weight)
 
 	-- Widget toolkit (phase 2) — small, control-near roles. Sizes on the
 	-- 4px grid (12/16/20). Change here centrally -> propagates everywhere.
@@ -180,7 +181,7 @@ UI.ROLE = {
 	sectionHead= { UI.FONT.cinzelSemi, 20, "" }, -- card/section titles + tab heading
 	groupTitle = { UI.FONT.cinzelSemi, 16, "" }, -- GroupPanel title / IconTile letter
 	sliderCap  = { UI.FONT.cinzelSemi, 16, "" }, -- slider caption
-	value      = { UI.FONT.hankenMed,  14, "" }, -- value box
+	value      = { UI.FONT.hankenSemi, 14, "" }, -- value box (mockup ratio: 12px@580w -> nearest cut SemiBold)
 	ends       = { UI.FONT.hankenMed,  14, "" }, -- slider min/max numbers
 	selectText = { UI.FONT.hankenMed,  16, "" }, -- dropdown header + rows
 	checkLabel = { UI.FONT.hankenMed,  16, "" }, -- checkbox label
@@ -270,8 +271,8 @@ UI.S = {
 	navGroupGap = 18, -- "MODULES" caption -> first nav item (mockup ratio: 14px @ 1x -> ~18 design-px)
 	navItemGap  = 4,  -- v3: uniform gap between nav rows (group divider lines removed per the mockup)
 	closeGlyph  = 18, -- close-button "x" glyph (Lucide) inside the 34px button
-	scrollBarW  = 4,  -- width of the content scrollbar
-	scrollBarGap = 14, -- gap ScrollFrame -> scrollbar (in the gutter)
+	scrollBarW  = 2,  -- width of the content scrollbar (Florian 2026-07-22: halved from 4 for a quieter, unobtrusive line; the thumb's hit-rect is padded in Shell.lua so grabbing it stays easy despite the thinner visual)
+	scrollBarGap = 20, -- gap ScrollFrame -> scrollbar (Florian 2026-07-22: raised from 14 to match the unified 20px card rhythm, so the right-side gutter reads as generous as the left)
 	tabBadgeH   = 26, -- tab-strip info badge height (v2 refinement no. 4, e.g. active spec)
 	tabBadgePad = 12, -- inner L/R padding of the tab-strip badge
 	contentTopGap = 26, -- tab strip -> content area (carried by the banner zone height)
@@ -304,12 +305,12 @@ UI.WIDGET = {
 
 	-- Stacked option row (W.OptionRow — stacked-row standard, design bible §8):
 	-- hairline on top, label left, compact control (switchSmallH tall) right.
-	optionRowH  = 48, -- row height (28-high control + even air)
+	optionRowH  = 62, -- row height (28-high control + even air; Florian 2026-07-22: raised from 48 to match the mockup's more generous row padding, better readability)
 
 	-- Slider
 	sliderH     = 86, -- total height (label + track row + value box)
 	sliderTrackH= 18, -- height of the clickable track row
-	sliderBarH  = 4,  -- thickness of the bar
+	sliderBarH  = 5,  -- thickness of the bar (Florian 2026-07-22: was 4, a raw copy of the mockup's 4 CSS-px without the x1.25 physical-scale conversion used elsewhere -> rendered thinner than intended at our 0.80 panel scale)
 	sliderThumb = 20, -- thumb disc diameter (spec 16 screen px; needs circle-<n> + circle-<n+4> assets -> circle-20 + circle-24)
 	sliderCapGap= 30, -- yOffset label -> track row
 	sliderEndW  = 28, -- width of the min/max number fields
@@ -327,12 +328,12 @@ UI.WIDGET = {
 	sliderCompactCapGap = 39, -- label line -> track row (26 + (45 - 18) / 2, rounded down)
 	sliderCompactValW   = 64, -- width of the inline value EditBox (right-aligned)
 	sliderCompactValH   = 18, -- height of the inline value EditBox (one text line)
-	-- Boxed compact slider (v3 mockup): each slider in its own inset box (A1,
-	-- one step darker than the card), so a slider group reads as one unit.
-	sliderBoxPadY = 12, -- inner top padding of the box
-	sliderBoxPadX = 20, -- inner left/right padding (slider needs air to the box edge; 4pt raster)
-	sliderBoxH   = 72, -- box height (row height for boxed slider rows)
-	sliderBoxCapGap = 24, -- tighter label -> track gap inside a box
+	-- Bare compact slider (Florian 2026-07-22, Option A -> matches the mockup):
+	-- no sunken box, no fill/border/extra L-R padding -- just the label above a
+	-- thin track, full cell width. sliderBoxH is still the standard row height
+	-- every FieldRow-based slider is placed at (name kept for the moment; the
+	-- "box" itself is gone).
+	sliderBoxH = 72, -- row height for slider rows (matches sliderCompactH=71)
 
 	-- GroupPanel
 	groupTitleY = -16, -- yOffset of the title from the top edge
@@ -342,18 +343,18 @@ UI.WIDGET = {
 
 	-- Section panel (concept A: each section = own card with header). Centrally
 	-- tunable; stack:section() in Shell.lua only reads from it.
-	sectionPad         = 20, -- inner L/R + bottom padding of the card (spec 16 screen px)
+	sectionPad         = 30, -- inner L/R + bottom padding of the card (Florian 2026-07-22: raised from 20 to match the mockup's card padding, less cramped)
 	sectionHeaderH     = 46, -- collapsed-card header row (W.Collapsible)
-	sectionAfterHeader = 18, -- header bottom edge -> first content row
+	sectionAfterHeader = 26, -- DIVIDER -> first content row (Florian 2026-07-22: split from the title-to-divider gap, which now lives in cardHeadH/cardHeadSubH below, so this only covers the mockup's post-divider margin — no more double-counting now that the divider is real)
 	-- In-card head (v3, Florian's mockup): title + optional muted description
 	-- INSIDE the card body — no header bar, no divider, no accent bar.
-	cardHeadTop  = 18, -- top padding above the title
-	cardHeadH    = 48, -- head block height without a description line
-	cardHeadSubH = 68, -- head block height WITH a description line
-	cardSubY     = 42, -- yOffset of the description line from the card top
+	cardHeadTop  = 28, -- top padding above the title (Florian 2026-07-22: raised from 18 to match the mockup's card padding)
+	cardHeadH    = 66, -- head block height without a description line -- DIVIDER sits at -cardHeadH, so this must clear cardHeadTop + the title's own rendered height + a little breathing room (Florian 2026-07-22: was 48, too short once cardHeadTop grew -> the divider cut through the title; re-check live, may need a nudge)
+	cardHeadSubH = 84, -- head block height WITH a description line -- same fix, sized to clear cardHeadTop + title + subtitle line (was 68)
+	cardSubY     = 52, -- yOffset of the description line from the card top (shifted +10 with cardHeadTop, same internal gap)
 	cardEyeBtn   = 28, -- header eye toggle button edge length (preview/edit-mode layer visibility)
 	cardEyeGlyph = 20, -- Lucide eye glyph inside cardEyeBtn
-	sectionGap         = 26, -- gap between two section cards
+	sectionGap         = 20, -- gap between two section cards (Florian 2026-07-22: unified with G.cardGap so the horizontal and vertical card rhythm read as ONE consistent grid, per the mockup)
 	headerStackGap     = 8,  -- gap between stacked COLLAPSED headers (ctx tabs; Florian: tighter than sectionGap)
 	sectionTitleX      = 18, -- X indent of the header title
 	sectionCountGap    = 10, -- gap title -> count chip (v2 refinement no. 1)
@@ -570,7 +571,7 @@ UI.PANEL = {
 -- ---------------------------------------------------------------------------
 UI.GRID = {
 	cols    = 12, -- page tracks (cards span even counts: 4/6/8/12)
-	cardGap = 16, -- gutter between two cards in a band AND between field cells (8pt)
+	cardGap = 20, -- gutter between two cards in a band AND between field cells (Florian 2026-07-22: raised from 16, unified with M.sectionGap so horizontal + vertical card rhythm match)
 	cellGap = 8,  -- gutter between tight utility cells (tracked-spell grid etc., 8pt)
 	pairGap = 32, -- gutter between WIDE controls sharing a row (8pt)
 	-- Control layout inside a card (stacked-row standard, design bible §8):

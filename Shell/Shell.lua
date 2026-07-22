@@ -59,6 +59,28 @@ end
 --  persistent OnUpdate). ind._ref = the frame the (ox,oy) offsets are relative to.
 -- ---------------------------------------------------------------------------
 local SLIDE_DUR = 0.28
+
+-- ---------------------------------------------------------------------------
+--  Dot-field background (v3) — a fine tiled dot pattern, CONTENT area only
+--  (excludes the nav column, which stays plain/flat), behind an inverse
+--  vignette (opaque panel-colour centre -> transparent rim) that "erases" the
+--  dots back to the background except near the edges: rim-strong, calm centre,
+--  frames content without competing with it (mockup 6ab5930f, canvas #dots).
+--  Two STATIC baked textures (no OnUpdate/pulse/cursor-repulsion — that part of
+--  the reference is explicitly dropped, see design memory NATIVE FEASIBILITY):
+--  dot-tile.tga (24px pitch, 3x3 seamless cell with per-dot opacity tiering so
+--  the field reads as varied, not flat/plain — matches the mockup's 3-tier
+--  diagonal opacity pattern) + dot-vignette.tga (radial erase mask, tinted to
+--  the panel colour). Both are clipped to the panel's rounded corners via a
+--  MaskTexture (round-fill-r22, straight edges stay opaque -> dots run flush to
+--  the true edge, only the 4 corner arcs cut alpha — NOT a flat pixel inset,
+--  which read as "walled in"). DOT_ALPHA is the live-tune knob for rim
+--  intensity; DOT_COLOR matches the mockup's dot colour (a light neutral grey,
+--  not pure white -> subtler than the accent).
+-- ---------------------------------------------------------------------------
+local DOT_TILE_PX = 72 -- 3x3 cells at 24px pitch (the diagonal opacity tiering needs the full 3x3 unit to stay seamless)
+local DOT_ALPHA = 0.35
+local DOT_COLOR = { r = 168 / 255, g = 168 / 255, b = 176 / 255 }
 local function slideTo(ind, ox, oy, w, h, animate)
 	w = math.max(1, w); h = math.max(1, h)
 	local function apply(x, y, ww, hh)
@@ -345,6 +367,36 @@ function Shell:Build()
 	UI.RoundFill(f, P.panel, "BACKGROUND", nil, UI.ROUND_R_CHROME)
 	UI.RoundBorder(f, L.mid, nil, nil, UI.ROUND_R_CHROME)
 
+	-- Dot-field background — CONTENT area only (excludes the nav column entirely;
+	-- the sidebar stays plain/flat, Florian 2026-07-22). Clipped to the panel's
+	-- own rounded corners via a MaskTexture sharing the SAME 9-slice asset as the
+	-- panel fill (round-fill-r22): a 9-slice mask's STRAIGHT edges stay fully
+	-- opaque, only the 4 corner arcs cut alpha, so the dots run flush to the true
+	-- edge everywhere except right at the curve — a flat pixel inset looked
+	-- "walled in" instead of flush against the border (Florian 2026-07-22).
+	do
+		local mask = f:CreateMaskTexture(nil, "BACKGROUND")
+		mask:SetTexture(TEX .. "round-fill-r22", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+		mask:SetTextureSliceMargins(23, 23, 23, 23) -- matches Tokens.lua ROUND_MARGIN[22]
+		mask:SetAllPoints(f)
+
+		local dotBg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+		dotBg:SetTexture(TEX .. "dot-tile", true, true)
+		dotBg:SetSnapToPixelGrid(false); dotBg:SetTexelSnappingBias(0)
+		dotBg:SetPoint("TOPLEFT", f, "TOPLEFT", S.navWidth, 0)
+		dotBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+		dotBg:SetTexCoord(0, (PANEL.w - S.navWidth) / DOT_TILE_PX, 0, PANEL.h / DOT_TILE_PX)
+		dotBg:SetVertexColor(DOT_COLOR.r, DOT_COLOR.g, DOT_COLOR.b, DOT_ALPHA)
+		dotBg:AddMaskTexture(mask)
+
+		local dotVign = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+		dotVign:SetTexture(TEX .. "dot-vignette")
+		dotVign:SetSnapToPixelGrid(false); dotVign:SetTexelSnappingBias(0)
+		dotVign:SetAllPoints(dotBg)
+		dotVign:SetVertexColor(P.panel.r, P.panel.g, P.panel.b, 1)
+		dotVign:AddMaskTexture(mask)
+	end
+
 	-- Close X in the top-right corner.
 	local closeBtn = makeCloseButton(f, function() Shell:Hide() end)
 	closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -14)
@@ -409,7 +461,7 @@ function Shell:Build()
 	-- uppercase label, same left gutter as the nav items (tag is already inset by
 	-- navGutter, so x=0 here). Anchored off the TAGLINE's real bottom, not the
 	-- brand frame's edge, so it doesn't inherit dead space from navBrandH.
-	local navLabel = FS(nav, "caption", C.textMuted)
+	local navLabel = FS(nav, "navGroupLabel", C.textMuted)
 	navLabel:SetText(UI.Track("MODULES", " "))
 	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -42) -- mockup ratio (34px @ 1x -> ~42 design-px)
 
@@ -576,6 +628,11 @@ function Shell:Build()
 	local thumb = CreateFrame("Frame", nil, sbTrack)
 	thumb:SetWidth(S.scrollBarW)
 	thumb:EnableMouse(true)
+	-- Wider grab zone than the thin visual line (Florian 2026-07-22: scrollBarW
+	-- halved to 2 for a quieter look; without this the thumb would be fiddly to
+	-- catch with the mouse before the hover-widen even triggers). Mirrors the
+	-- slider-thumb hit-rect pattern in Widgets.lua.
+	thumb:SetHitRectInsets(-4, -4, 0, 0)
 	thumb._w = S.scrollBarW
 	local thumbTex = thumb:CreateTexture(nil, "OVERLAY")
 	thumbTex:SetAllPoints(thumb)
@@ -1105,6 +1162,20 @@ local function newStack(holder)
 					scr._eyePaints = scr._eyePaints or {}
 					scr._eyePaints[#scr._eyePaints + 1] = paint
 				end
+			end
+
+			-- Header divider (Florian 2026-07-22, back per the mockup): a fine
+			-- hairline under the title/subtitle block, at the header's own bottom
+			-- edge, so the header→content gap reads as two deliberate steps
+			-- (title-to-line, line-to-content) instead of one big undifferentiated
+			-- void. Only the heavy card-title header gets it, not the light
+			-- subgroup label style.
+			if o.title and o.titleStyle ~= "light" then
+				local divider = panel:CreateTexture(nil, "ARTWORK")
+				UI.SetColor(divider, L.faint)
+				divider:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -headerH)
+				divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -pad, -headerH)
+				PixelUtil.SetHeight(divider, 1)
 			end
 		end
 

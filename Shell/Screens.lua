@@ -379,15 +379,18 @@ end
 -- Boxed compact slider (v3 mockup): inset box per slider so slider groups read
 -- as one unit (design rule: a slider on a card ALWAYS sits in a box). Shared
 -- by the Base and Raid/Group builders.
+-- Bare slider (Florian 2026-07-22, Option A): the mockup has NO sunken box
+-- around a slider -- just the label line directly above a thin track, full
+-- width of its cell, no fill/border/extra L-R padding. Dropped the box (fill+
+-- border+PadX/PadY) that used to eat 20px off each side; the tighter
+-- "box" capGap was only there to compensate for that box's own top padding,
+-- so it goes too -- the slider's normal compact spacing already matches the
+-- mockup once nothing is squeezing it.
 local function sliderBox(cell, o2)
-	local box = CreateFrame("Frame", nil, cell)
-	box:SetAllPoints(cell)
-	UI.RoundFill(box, UI.P.inset, nil, nil, UI.ROUND_R_CTRL) -- A1: one step darker than the card (sunken, not raised)
-	UI.RoundBorder(box, UI.line.faint, "OVERLAY", nil, UI.ROUND_R_CTRL)
-	o2.compact, o2.capGap = true, M.sliderBoxCapGap
-	local s = W.Slider(box, o2)
-	s:SetPoint("TOPLEFT", box, "TOPLEFT", M.sliderBoxPadX, -M.sliderBoxPadY)
-	s:SetPoint("TOPRIGHT", box, "TOPRIGHT", -M.sliderBoxPadX, -M.sliderBoxPadY)
+	o2.compact = true
+	local s = W.Slider(cell, o2)
+	s:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
+	s:SetPoint("TOPRIGHT", cell, "TOPRIGHT", 0, 0)
 	return s
 end
 

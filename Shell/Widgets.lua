@@ -153,8 +153,15 @@ function W.Slider(parent, o)
 	track:SetHeight(M.sliderTrackH)
 	local minL, maxL
 	if compact then
-		track:SetPoint("LEFT", row, "LEFT", 0, 0)
-		track:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+		-- Inset by the thumb's own radius (Florian 2026-07-22): the thumb's
+		-- CENTER travels end-to-end across the track below, so at 0%/100% half
+		-- its disc used to overhang past the cell edge -- eating into the gap
+		-- to the next card at 100%, feeling like zero space. Insetting the
+		-- track keeps the thumb's OUTER edge flush with the cell at both
+		-- extremes instead, never spilling out, while the value still reads 0/100.
+		local thumbR = M.sliderThumb / 2
+		track:SetPoint("LEFT", row, "LEFT", thumbR, 0)
+		track:SetPoint("RIGHT", row, "RIGHT", -thumbR, 0)
 	else
 		minL = UI.FS(row, "ends", C.textMuted)
 		minL:SetText(tostring(minV)); minL:SetWidth(M.sliderEndW); minL:SetJustifyH("RIGHT")
@@ -169,14 +176,32 @@ function W.Slider(parent, o)
 
 	-- Track + fill as tiny pills (rounded ends, XS scale). The gold fill's right
 	-- cap hides under the thumb disc; min width 6 keeps the 3px cap slices valid.
-	local bg = UI.PillFill(track, C.sliderTrack, "ARTWORK", M.sliderBarH)
+	-- The "-h4" baked pill texture is reused at the ACTUAL frame height
+	-- M.sliderBarH=5 (Florian 2026-07-22: was 4, a raw mockup-px copy missing
+	-- the x1.25 physical-scale conversion). PillFill's own rule is "h must
+	-- match the frame height exactly" (a new pill-fill-h5.tga would be the
+	-- textbook fix), but a 4->5px vertical stretch of a flat, detail-less pill
+	-- is visually imperceptible -- not worth a new baked asset for 1px. Revisit
+	-- if sliderBarH moves further away from 4.
+	-- Re-enable pixel-grid snapping on the two bars (Florian 2026-07-22): PillFill
+	-- goes through markRound, which SetSnapToPixelGrid(false) so ROUNDED CORNERS
+	-- stay smooth. But a thin horizontal bar with snapping OFF renders a
+	-- DIFFERENT apparent thickness depending on its sub-pixel Y position -- so the
+	-- SAME slider looked thicker in a card high on the screen than in one lower
+	-- down (both cards at different Y -> different half-pixel alignment). Snapping
+	-- the bar's top/bottom edges to whole physical pixels makes the thickness
+	-- IDENTICAL everywhere; the 3px pill caps lose a hair of curve smoothness,
+	-- imperceptible at this size and worth it for uniform bars.
+	local bg = UI.PillFill(track, C.sliderTrack, "ARTWORK", 4)
 	bg:ClearAllPoints()
+	bg:SetSnapToPixelGrid(true)
 	bg:SetHeight(M.sliderBarH)
 	bg:SetPoint("LEFT", track, "LEFT", 0, 0)
 	bg:SetPoint("RIGHT", track, "RIGHT", 0, 0)
 
-	local fillbar = UI.PillFill(track, C.gold500, "OVERLAY", M.sliderBarH)
+	local fillbar = UI.PillFill(track, C.gold500, "OVERLAY", 4)
 	fillbar:ClearAllPoints()
+	fillbar:SetSnapToPixelGrid(true)
 	fillbar:SetHeight(M.sliderBarH)
 	fillbar:SetPoint("LEFT", track, "LEFT", 0, 0)
 
@@ -200,11 +225,12 @@ function W.Slider(parent, o)
 		box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
 		UI:SetFont(box, "value", C.gold500)
 		box:SetJustifyH("RIGHT")
-		-- Subtle field affordance so the inline value reads as a TYPEABLE input
-		-- (Florian 2026-07-14: the drag can't reliably hit exact px -> click the
-		-- value to type an exact number). Border brightens on focus (boxEdges).
-		UI.RoundFill(box, P.inset, "BACKGROUND", nil, RAD.xs)
-		boxEdges = UI.RoundBorder(box, L.soft, "OVERLAY", nil, RAD.xs)
+		-- Bare value text (Florian 2026-07-22, Option A follow-up): the mockup
+		-- shows the value flush with the track's right edge, no box/fill/border
+		-- at all -- just brighter text than the label. The "this is typeable"
+		-- affordance from 2026-07-14 now lives purely in the text brightening on
+		-- focus (boxEdges stays nil -> OnEditFocusGained/Lost below already fall
+		-- back to SetTextColor when there's no border to color).
 	else
 		box:SetSize(M.valueBoxW, M.valueBoxH)
 		box:SetPoint("TOP", row, "BOTTOM", 0, -M.valueBoxGap)
