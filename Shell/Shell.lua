@@ -83,6 +83,16 @@ end
 local DOT_TILE_PX = 72 -- 3x3 cells at 24px pitch (the diagonal opacity tiering needs the full 3x3 unit to stay seamless)
 local DOT_ALPHA = 0.35
 local DOT_COLOR = { r = 168 / 255, g = 168 / 255, b = 176 / 255 }
+-- Aurora ambient (accent map, 2026-07-23, build-order step 1): a soft accent-
+-- tinted glow band hugging the TOP of the content area + a faint bottom-left
+-- counter-glow (the quiet diagonal). Baked white (aurora.tga, the mockup-
+-- approved alphas .43/.32/.21 relative to the shape) and tinted at runtime via
+-- SetVertexColor(Accent.color) — so it's near-white in the mono default and
+-- takes the user's hue once a colour accent is picked (build-order step 6).
+-- AURORA_INTENSITY is the live-tune knob (pure Lua, no re-bake). NOTE the
+-- mockup alphas were tuned on a mid-tone accent (Rose); pure white in mono reads
+-- a touch stronger, so this may want to sit below 1.0 for the mono default.
+local AURORA_INTENSITY = 1.0
 local slideTo = UI.slideTo -- hoisted to UI (Tokens); shared with W.Segment
 
 -- Geometry of `item` in `ref`'s LOCAL coordinate units (what SetPoint offsets on
@@ -364,6 +374,18 @@ function Shell:Build()
 		dotVign:SetAllPoints(dotBg)
 		dotVign:SetVertexColor(Surface.Window.r, Surface.Window.g, Surface.Window.b, 1)
 		dotVign:AddMaskTexture(mask)
+
+		-- Aurora glow OVER the dots (the accent map is specific: aurora on top,
+		-- dots peek through — sublevel 3 > the dot layers, still BACKGROUND so
+		-- cards/nav on higher-level child frames draw above it). Tinted by the
+		-- live accent; near-white in mono, the user's hue once a colour is set.
+		local aurora = f:CreateTexture(nil, "BACKGROUND", nil, 3)
+		aurora:SetTexture(TEX_SHELL .. "aurora")
+		aurora:SetSnapToPixelGrid(false); aurora:SetTexelSnappingBias(0)
+		aurora:SetAllPoints(dotBg)
+		aurora:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, AURORA_INTENSITY)
+		aurora:AddMaskTexture(mask)
+		f._auroraTex = aurora -- so a future UI.SetAccent can re-tint it (step 6)
 	end
 
 	-- Close X in the top-right corner.
