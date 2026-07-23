@@ -2162,11 +2162,24 @@ function W.AccentPresets(parent, o)
 	local gap = UI.S.s3
 	local f = CreateFrame("Frame", nil, parent)
 	local tiles = {}
+	local cFill, cRing, cPlus -- custom tile (built after the presets, forward-declared)
 	local function refresh()
 		local cur = (o.get() or ""):upper()
+		local anyMatch = false
 		for _, t in ipairs(tiles) do
 			local on = t._hex == cur
+			if on then anyMatch = true end
 			for _, e in ipairs(t._ring) do UI.SetColor(e, on and Text.Primary or Border.hover) end
+		end
+		-- Custom tile: neutral "+" when a preset is active; when a custom hue is
+		-- live (no preset matches) it fills with that colour and takes the ring.
+		if anyMatch then
+			UI.SetColor(cFill, Surface.Input); cPlus:Show()
+			for _, e in ipairs(cRing) do UI.SetColor(e, Border.hover) end
+		else
+			local c = UI.hex(cur ~= "" and cur or "F4F4F6")
+			cFill:SetVertexColor(c.r, c.g, c.b, 1); cPlus:Hide()
+			for _, e in ipairs(cRing) do UI.SetColor(e, Text.Primary) end
 		end
 	end
 	local x = 0
@@ -2185,6 +2198,27 @@ function W.AccentPresets(parent, o)
 		tiles[i] = t
 		x = x + size + gap
 	end
+	-- Custom tile: opens the HSV picker. onChange is a LIVE preview (o.set stores +
+	-- Shell:RefreshAccent every drag frame); Cancel reverts to the colour on open.
+	local custom = CreateFrame("Button", nil, f)
+	custom:SetSize(size, size)
+	custom:SetPoint("LEFT", f, "LEFT", x, 0)
+	cFill = UI.RoundFill(custom, Surface.Input, "ARTWORK", nil, RAD.sm)
+	cRing = UI.RoundBorder(custom, Border.hover, "OVERLAY", nil, RAD.sm)
+	cPlus = UI.FS(custom, "value", Text.Description)
+	cPlus:SetText("+"); cPlus:SetPoint("CENTER", custom, "CENTER", 0, 0)
+	custom:SetScript("OnClick", function()
+		local origHex = (o.get() or "F4F4F6"):upper()
+		local oc = UI.hex(origHex)
+		W.OpenColorPicker({
+			r = oc.r, g = oc.g, b = oc.b, anchor = custom,
+			onChange = function(r, g, b) o.set(toHex(r, g, b), { r = r, g = g, b = b, a = 1 }); refresh() end,
+			onCancel = function() o.set(origHex, oc); refresh() end,
+		})
+	end)
+	custom:SetScript("OnEnter", function() W.ShowTextTip(custom, T("Custom color")) end)
+	custom:SetScript("OnLeave", function() W.HideTip() end)
+	x = x + size + gap
 	f:SetWidth(x - gap); f:SetHeight(size)
 	f.Refresh = refresh
 	refresh()
