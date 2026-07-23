@@ -1438,6 +1438,9 @@ function Shell:RefreshAccent(col, chromeOnly)
 	if chromeOnly then return end
 	self:InvalidateScreenCache()
 	if f and f:IsShown() then self:RenderContent(true) end
+	-- Edit Mode's cached chrome (toolbar / selection panel) rebuilds with the new
+	-- accent on its next open; its functional in-world signals stay neutral.
+	if ns.EditMode and ns.EditMode.OnAccentChanged then ns.EditMode:OnAccentChanged() end
 end
 
 -- ---------------------------------------------------------------------------

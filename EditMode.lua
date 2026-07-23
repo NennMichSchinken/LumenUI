@@ -1483,6 +1483,20 @@ end
 
 function EditMode:IsActive() return self.session end
 
+-- Accent changed (from the Shell picker): the toolbar + selection panel are
+-- lazy, cached singletons whose accent-coloured chrome (the primary "Done"
+-- button, the panel's sliders/buttons) baked the accent at build time. Drop the
+-- cache so they rebuild with the NEW accent on the next open. Skipped while a
+-- session is live (can't safely tear down visible frames) — it refreshes the
+-- next time Edit Mode opens. The FUNCTIONAL in-world signals (guides, selection
+-- highlight, soft walls = the GOLD/GOLDINT/MUTED literals) and the white
+-- world-dim overlay stay NEUTRAL on purpose, so they are deliberately untouched.
+function EditMode:OnAccentChanged()
+	if self.session then return end
+	if toolbar then toolbar:Hide(); toolbar:SetParent(nil); toolbar = nil end
+	if panel then panel:Hide(); panel:SetParent(nil); panel = nil end
+end
+
 -- Combat starts -> end the session immediately and cleanly (toolbar closed,
 -- overlays hidden, NO Shell reopen in combat).
 evt:RegisterEvent("PLAYER_LOGIN")

@@ -2505,6 +2505,9 @@ local BTN_VARIANTS = {
 		txt = Text.OnAccent, txtHover = Text.OnAccent,
 		line = Accent.switchOn, lineHover = Accent.color, pad = 26, font = UI.FONT.bold,
 	},
+	-- NOTE: these accent references FREEZE to the mono default at file load and are
+	-- NOT refreshed by W.RefreshButtonVariants -> secondary stays neutral white in
+	-- every theme (only PRIMARY follows the accent, Florian 2026-07-23).
 	secondary = {
 		bg = nil, bgHover = UI.accentA(0.08),
 		txt = Accent.color, txtHover = Accent.hover,
@@ -2522,6 +2525,20 @@ local BTN_VARIANTS = {
 	},
 }
 BTN_VARIANTS.ghost = BTN_VARIANTS.neutral
+
+-- The accent-derived button colours are copied BY VALUE at file load; SetAccent
+-- REPLACES UI.Accent.*, so those copies go stale (a rebuilt button would keep the
+-- old accent, while sliders/switches update because they read Accent.* directly
+-- at build). Re-point ONLY the PRIMARY variant at the live accent on every accent
+-- change (SetAccent calls this), before any button rebuilds. The SECONDARY (and
+-- danger) variants deliberately keep their load-time (mono = white) colours so
+-- they stay neutral in every theme — only the primary action carries the accent
+-- (Florian 2026-07-23: an accent-only-on-primary hierarchy; a coloured secondary
+-- read as accent-everywhere).
+function W.RefreshButtonVariants()
+	local p = BTN_VARIANTS.primary
+	p.bg, p.bgHover, p.line, p.lineHover = Accent.switchOn, Accent.color, Accent.switchOn, Accent.color
+end
 
 function W.Button(parent, o)
 	local variant = o.variant or "primary"

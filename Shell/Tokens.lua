@@ -151,6 +151,9 @@ function UI.SetAccent(col)
 		and math.abs(col.g - P.goldInt.g) < 0.02
 		and math.abs(col.b - P.goldInt.b) < 0.02
 	UI.Accent.switchOn = mono and P.switchOn or col
+	-- These captured the accent BY VALUE at load, so re-point them at the new one:
+	UI.Border.active = col -- the "active/open" border token
+	if ns.W and ns.W.RefreshButtonVariants then ns.W.RefreshButtonVariants() end -- button variants
 end
 
 -- Curated accent presets (Florian-approved 2026-07-23). The user picks one in
