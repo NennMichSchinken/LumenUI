@@ -2153,6 +2153,45 @@ function W.OpenColorPicker(o)
 end
 
 -- ---------------------------------------------------------------------------
+--  AccentPresets — a row of curated accent colour chips (Global tab). Clicking
+--  one calls o.set(hex, col) (store + Shell:RefreshAccent) and rings the active
+--  chip. A custom hue (step 6b) matches no preset, so no chip is ringed.
+-- ---------------------------------------------------------------------------
+function W.AccentPresets(parent, o)
+	local size = M.switchSmallH
+	local gap = UI.S.s3
+	local f = CreateFrame("Frame", nil, parent)
+	local tiles = {}
+	local function refresh()
+		local cur = (o.get() or ""):upper()
+		for _, t in ipairs(tiles) do
+			local on = t._hex == cur
+			for _, e in ipairs(t._ring) do UI.SetColor(e, on and Text.Primary or Border.hover) end
+		end
+	end
+	local x = 0
+	for i, p in ipairs(UI.ACCENT_PRESETS) do
+		local t = CreateFrame("Button", nil, f)
+		t:SetSize(size, size)
+		t:SetPoint("LEFT", f, "LEFT", x, 0)
+		UI.RoundFill(t, p.col, "ARTWORK", nil, RAD.sm)
+		t._ring = UI.RoundBorder(t, Border.hover, "OVERLAY", nil, RAD.sm)
+		t._hex = p.hex:upper()
+		t:SetScript("OnClick", function() o.set(p.hex, p.col); refresh() end)
+		if p.name then
+			t:SetScript("OnEnter", function() W.ShowTextTip(t, p.name) end)
+			t:SetScript("OnLeave", function() W.HideTip() end)
+		end
+		tiles[i] = t
+		x = x + size + gap
+	end
+	f:SetWidth(x - gap); f:SetHeight(size)
+	f.Refresh = refresh
+	refresh()
+	return f
+end
+
+-- ---------------------------------------------------------------------------
 --  ColorSwatch — gold-framed color field + label, opens the Lumen color picker.
 --  o = {label, chip?, get -> r,g,b, set(r,g,b)}. Layout like the checkbox (box
 --  left, label right) so it sits interchangeably in rows/cells. Dimensions from

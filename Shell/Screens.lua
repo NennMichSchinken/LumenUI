@@ -1639,6 +1639,24 @@ local function buildGlobalBase(d, stack)
 	sMove:close()
 	b1.close()
 
+	-- ===== Band: Accent color (6) ==========================================
+	-- Suite-wide accent. Curated presets recolour the whole shell instantly via
+	-- Shell:RefreshAccent (event-driven, no rebuild flicker). Account-wide
+	-- (db.global), so it doesn't jump when switching raid profiles.
+	local bAcc = stack:band({
+		{ span = 6, title = T("Accent color"), subtitle = T("Suite-wide highlight — applies instantly.") },
+	})
+	local sAcc = bAcc.cards[1]
+	sAcc:place(W.AccentPresets(d, {
+		get = function() return ns.Lumen.db.global.accent end,
+		set = function(hex, col)
+			ns.Lumen.db.global.accent = hex
+			if ns.Shell and ns.Shell.RefreshAccent then ns.Shell:RefreshAccent(col) end
+		end,
+	}), M.optionRowH, R.row)
+	sAcc:close()
+	bAcc.close()
+
 	-- ===== Band 2: UI scale (6, ONE card) ===================================
 	-- Game UI scale + settings-window scale merged into one card, separated by
 	-- a sub-heading (Florian 2026-07-11). The air on the right is the growth

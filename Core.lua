@@ -268,6 +268,7 @@ local defaults = {
 		auraSigs = {},
 		language = "auto",   -- UI language: "auto" (system language) | "enUS" | "deDE"
 		shellScale = 0.7,    -- user multiplier on the responsive Suite-Shell scale (0.7 = Florian's sweet spot, 2026-07-16)
+		accent = "F4F4F6",   -- suite-wide accent hex (default = Pure Light / mono); UI.SetAccent applies it
 	},
 }
 
@@ -400,6 +401,9 @@ function Lumen:OnInitialize()
 	-- 'global' is an AceDB top-level namespace (db.global), NOT db.profile.global.
 	if ns.ApplyLocale then ns.ApplyLocale(self.db.global.language) end
 	if ns.RunLocaleReady then ns.RunLocaleReady() end   -- build localized module constants now (after language choice)
+	-- Apply the saved accent BEFORE the shell builds, so every widget reads the
+	-- right accent at build time (no live re-tint needed for the first open).
+	if ns.UI and ns.UI.SetAccent then ns.UI.SetAccent(ns.UI.hex(self.db.global.accent)) end
 	migrateLayout(self.db.profile.raidframes)
 	if ns.ClickCast then ns.ClickCast:MigrateCatalog() end
 

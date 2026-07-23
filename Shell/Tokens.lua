@@ -153,6 +153,20 @@ function UI.SetAccent(col)
 	UI.Accent.switchOn = mono and P.switchOn or col
 end
 
+-- Curated accent presets (Florian-approved 2026-07-23). The user picks one in
+-- the Global tab; "light" is the mono shipping default. A custom hue (step 6b)
+-- stores its own hex and matches no preset (none highlighted). hex = the value
+-- stored in db.global.accent (UI.hex parses it); col = the ready colour table.
+UI.ACCENT_PRESETS = {
+	{ key = "light",  name = "Pure Light", hex = "F4F4F6", col = P.goldInt },
+	{ key = "gold",   name = "Gold",       hex = "E7C68C", col = hex("E7C68C") },
+	{ key = "amber",  name = "Amber",      hex = "EFA96E", col = hex("EFA96E") },
+	{ key = "sage",   name = "Sage",       hex = "93CFA6", col = hex("93CFA6") },
+	{ key = "azure",  name = "Azure",      hex = "89B7EA", col = hex("89B7EA") },
+	{ key = "violet", name = "Violet",     hex = "B49BE8", col = hex("B49BE8") },
+	{ key = "rose",   name = "Rose",       hex = "E58FB3", col = hex("E58FB3") },
+}
+
 -- ---------------------------------------------------------------------------
 --  SEMANTIC TOKENS (v3 Design-System doc) — the forward-looking API. Components
 --  should name a role (Surface.Card, Text.Body, Border.Default, Accent.color),

@@ -588,9 +588,10 @@ function Shell:Build()
 	tglow:SetPoint("BOTTOMRIGHT", tabSlider, "BOTTOMRIGHT", S.tabGlowX, -S.tabGlowBot)
 	local gl = Accent.glow
 	tglow:SetVertexColor(gl.r, gl.g, gl.b, gl.a) -- accent glow (mono = white; tints automatically if a colour accent is set); softness baked into the alpha
-	UI.PillFill(tabSlider, Accent.wash, "ARTWORK", S.tabH - S.tabStripPad * 2) -- accent-wash capsule (fully round)
+	local tfill = UI.PillFill(tabSlider, Accent.wash, "ARTWORK", S.tabH - S.tabStripPad * 2) -- accent-wash capsule (fully round)
 	tabSlider:Hide()
 	self._tabSlider = tabSlider
+	self._tabGlow, self._tabFill = tglow, tfill -- re-tinted live by Shell:RefreshAccent
 
 	-- Info badge on the right of the tab strip (v2 refinement no. 4, e.g. the
 	-- active spec on the Tracking tab). Screens fill it via Shell:SetTabBadge;
@@ -1403,6 +1404,29 @@ function Shell:InvalidateScreenCache()
 		-- orphaned/rebuilt by the normal RenderContent path on the next render.
 		cache[k] = nil
 	end
+end
+
+-- Recolour the whole shell to a new accent (the Global-tab picker). EVENT-DRIVEN:
+-- fires only on a swatch click — NO loop, NO OnUpdate (perf §9). Re-tints the
+-- persistent chrome directly through stored refs (instant, no rebuild); the
+-- content of OTHER tabs rebuilds fresh on its next visit via InvalidateScreenCache
+-- (the accent-bearing widgets read UI.Accent.* at build time), so there is no
+-- full-shell flicker. The Global tab itself has no accent-coloured content
+-- widgets (the preset row repaints its own active ring), so the current view is
+-- correct immediately.
+function Shell:RefreshAccent(col)
+	UI.SetAccent(col)
+	local c = Accent.color
+	local f = self._frame
+	if f then
+		if f._auroraTex then f._auroraTex:SetVertexColor(c.r, c.g, c.b, AURORA_INTENSITY) end
+		if f._auroraLit then f._auroraLit:SetVertexColor(c.r, c.g, c.b, DOT_LIT_ALPHA) end
+		if f._navEdge  then f._navEdge:SetVertexColor(c.r, c.g, c.b, NAV_EDGE_INTENSITY) end
+	end
+	if self._applyWordmarkAccent then self._applyWordmarkAccent() end
+	if self._tabGlow then local g = Accent.glow; self._tabGlow:SetVertexColor(g.r, g.g, g.b, g.a) end
+	if self._tabFill then local w = Accent.wash; self._tabFill:SetVertexColor(w.r, w.g, w.b, w.a) end
+	self:InvalidateScreenCache()
 end
 
 -- ---------------------------------------------------------------------------
