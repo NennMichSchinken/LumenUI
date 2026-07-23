@@ -9,4 +9,5 @@ ignore:
   - .luacheckrc
   - tools
   - .github
+  - docs
   - "*.md"
