@@ -1649,9 +1649,9 @@ local function buildGlobalBase(d, stack)
 	local sAcc = bAcc.cards[1]
 	sAcc:place(W.AccentPresets(d, {
 		get = function() return ns.Lumen.db.global.accent end,
-		set = function(hex, col)
+		set = function(hex, col, live)
 			ns.Lumen.db.global.accent = hex
-			if ns.Shell and ns.Shell.RefreshAccent then ns.Shell:RefreshAccent(col) end
+			if ns.Shell and ns.Shell.RefreshAccent then ns.Shell:RefreshAccent(col, live) end
 		end,
 	}), M.optionRowH, R.row)
 	sAcc:close()

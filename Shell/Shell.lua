@@ -683,6 +683,7 @@ function Shell:Build()
 	thumbTex:SetAllPoints(thumb)
 	local function paintThumb(a) thumbTex:SetColorTexture(Accent.color.r, Accent.color.g, Accent.color.b, a) end
 	paintThumb(0.55)
+	self._paintThumb = paintThumb -- re-tinted to the idle alpha by Shell:RefreshAccent
 
 	local function updateBar()
 		-- Derive the range from the scroll child height (always current) instead of
@@ -1414,7 +1415,7 @@ end
 -- full-shell flicker. The Global tab itself has no accent-coloured content
 -- widgets (the preset row repaints its own active ring), so the current view is
 -- correct immediately.
-function Shell:RefreshAccent(col)
+function Shell:RefreshAccent(col, chromeOnly)
 	UI.SetAccent(col)
 	local c = Accent.color
 	local f = self._frame
@@ -1426,7 +1427,17 @@ function Shell:RefreshAccent(col)
 	if self._applyWordmarkAccent then self._applyWordmarkAccent() end
 	if self._tabGlow then local g = Accent.glow; self._tabGlow:SetVertexColor(g.r, g.g, g.b, g.a) end
 	if self._tabFill then local w = Accent.wash; self._tabFill:SetVertexColor(w.r, w.g, w.b, w.a) end
+	if self._paintThumb then self._paintThumb(0.55) end -- scrollbar thumb (idle alpha)
+	-- chromeOnly = a LIVE picker drag: only the chrome re-tints, so the picker's
+	-- anchor (a widget IN the current content) survives — rebuilding the current
+	-- card mid-drag would orphan it. The committed path (preset click, picker
+	-- apply/cancel) rebuilds the CURRENT tab too, so its own accent-coloured
+	-- widgets (sliders read Accent.color at build) update immediately instead of
+	-- only on the next tab visit. Chrome stays put (no full-shell flicker); the
+	-- content repaint is the same as a tab switch.
+	if chromeOnly then return end
 	self:InvalidateScreenCache()
+	if f and f:IsShown() then self:RenderContent(true) end
 end
 
 -- ---------------------------------------------------------------------------

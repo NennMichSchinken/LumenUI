@@ -2120,12 +2120,17 @@ local function buildColorPicker()
 
 	local function close() cp:Hide(); closer:Hide() end
 	cp._close = close
-	okBtn:SetScript("OnClick", close) -- onChange was live -> just close
+	-- Apply / click-outside = COMMIT: onChange was a live preview; fire onApply so
+	-- the caller can do a full refresh (e.g. rebuild the current tab so its own
+	-- accent widgets settle), then close.
+	cp._fireApply = function() if cp._onApply then local r, g, b = curRGB(); cp._onApply(r, g, b) end end
+	local function commit() cp._fireApply(); close() end
+	okBtn:SetScript("OnClick", commit)
 	cancelBtn:SetScript("OnClick", function()
 		if cp._onCancel then cp._onCancel() end
 		close()
 	end)
-	closer:SetScript("OnClick", close)
+	closer:SetScript("OnClick", commit)
 
 	cp._applyVisual = applyVisual
 	return cp
@@ -2136,7 +2141,7 @@ function W.OpenColorPicker(o)
 	colorPicker = colorPicker or buildColorPicker()
 	local cp = colorPicker
 	-- The host may have changed since build (it shouldn't) — ensure the parent.
-	cp._onChange, cp._onCancel = o.onChange, o.onCancel
+	cp._onChange, cp._onCancel, cp._onApply = o.onChange, o.onCancel, o.onApply
 	cp._orig = { o.r or 1, o.g or 1, o.b or 1 }
 	cp._h, cp._s, cp._v = rgb2hsv(o.r or 1, o.g or 1, o.b or 1)
 	cp._applyVisual()
@@ -2212,8 +2217,11 @@ function W.AccentPresets(parent, o)
 		local oc = UI.hex(origHex)
 		W.OpenColorPicker({
 			r = oc.r, g = oc.g, b = oc.b, anchor = custom,
-			onChange = function(r, g, b) o.set(toHex(r, g, b), { r = r, g = g, b = b, a = 1 }); refresh() end,
-			onCancel = function() o.set(origHex, oc); refresh() end,
+			-- Live drag = chrome-only preview (true); commit/cancel = full refresh so
+			-- the current tab rebuilds and its own accent widgets settle.
+			onChange = function(r, g, b) o.set(toHex(r, g, b), { r = r, g = g, b = b, a = 1 }, true); refresh() end,
+			onApply  = function(r, g, b) o.set(toHex(r, g, b), { r = r, g = g, b = b, a = 1 }) end,
+			onCancel = function() o.set(origHex, oc) end,
 		})
 	end)
 	custom:SetScript("OnEnter", function() W.ShowTextTip(custom, T("Custom color")) end)
