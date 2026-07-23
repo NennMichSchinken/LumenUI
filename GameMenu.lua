@@ -12,13 +12,18 @@ local ADDON, ns = ...
 
 local GROUP_PAD = 20 -- group spacing above/below the AddOns+Lumen group (like Blizzard's sections)
 
--- Custom look for the Lumen button: the brand text colour (off-white in the mono
--- chrome, = the wordmark) instead of Blizzard's default red face -> stands out
--- clearly from the red buttons. Derived from the token (no hardcoded hex); the
--- colour is a |cff..|-code in the text (survives Blizzard's hover/enable states),
--- the font face is set on the FontString. ns.UI is safely present here
--- (GameMenu.lua loads last, after Shell/Tokens).
-local LUMEN_TEXT = ns.UI.ColorCode(ns.UI.Text.Primary) .. "LumenUI|r"
+-- Custom look for the Lumen button: mirrors the shell wordmark — "Lumen" in the
+-- brand text colour, "UI" in the live ACCENT — instead of Blizzard's default red
+-- face, so it stands out from the red buttons AND carries the user's chosen
+-- accent (build fresh on every ESC open, so a new accent shows next time; the
+-- menu is never open while the accent changes). Derived from tokens (no hardcoded
+-- hex); the colours are |cff..|-codes in the text (survive Blizzard's hover/
+-- enable states), the font face is set on the FontString. ns.UI is safely present
+-- here (GameMenu.lua loads last, after Shell/Tokens).
+local function lumenText()
+	return ns.UI.ColorCode(ns.UI.Text.Primary) .. "Lumen"
+		.. ns.UI.ColorCode(ns.UI.Accent.color) .. "UI|r"
+end
 
 local DEFAULT_FONT -- {path,size,flags} of an unmarked Blizzard button (learned once)
 
@@ -97,7 +102,7 @@ f:SetScript("OnEvent", function()
 	-- InitButtons runs on every open (reset + rebuild) -> re-add and re-sort the button each time.
 	hooksecurefunc(GameMenuFrame, "InitButtons", function(self)
 		if not self.AddButton then return end
-		local btn = self:AddButton(LUMEN_TEXT, openLumen)
+		local btn = self:AddButton(lumenText(), openLumen)
 		styleButton(self, btn)
 		placeUnderAddons(self, btn)
 	end)
