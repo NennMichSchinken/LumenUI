@@ -99,6 +99,11 @@ local AURORA_INTENSITY = 1.0
 -- grey. DOT_LIT_ALPHA = the lit-dot strength (design target base@.50), tuned
 -- independently of the glow. Near-white/subtle in mono, the payoff in colour.
 local DOT_LIT_ALPHA = 0.50
+-- Nav-edge glow (accent map step 3): a crisp 2px accent line over the nav/
+-- content divider, alpha baked into nav-edge.tga (top .62 -> gap 42-74% ->
+-- bottom .21, mirroring the aurora's left-side profile). NAV_EDGE_INTENSITY
+-- scales it; sits over the faint structural divider, tinted by the accent.
+local NAV_EDGE_INTENSITY = 1.0
 local slideTo = UI.slideTo -- hoisted to UI (Tokens); shared with W.Segment
 
 -- Geometry of `item` in `ref`'s LOCAL coordinate units (what SetPoint offsets on
@@ -525,6 +530,20 @@ function Shell:Build()
 	local nsep = main:CreateTexture(nil, "OVERLAY")
 	nsep:SetWidth(1); nsep:SetPoint("TOPLEFT", main, "TOPLEFT", 0, 0)
 	nsep:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0); setColor(nsep, Border.divider)
+
+	-- Nav-edge glow: a crisp 2px accent line over the divider, its vertical alpha
+	-- profile baked into nav-edge.tga (strong at top, gap in the middle, faint at
+	-- the bottom — the aurora's left-side presence). Snap the WIDTH only (whole px
+	-- at scale 0.80); position plain per the border pixel-snap rule. Sits over the
+	-- structural divider so the accent shows only where the aurora is.
+	local navEdge = main:CreateTexture(nil, "OVERLAY", nil, 1)
+	navEdge:SetTexture(TEX_SHELL .. "nav-edge")
+	navEdge:SetPoint("TOPLEFT", main, "TOPLEFT", 0, 0)
+	navEdge:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0)
+	navEdge:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, NAV_EDGE_INTENSITY)
+	local function snapNavEdge() PixelUtil.SetWidth(navEdge, 2) end
+	snapNavEdge(); C_Timer.After(0, snapNavEdge)
+	f._navEdge = navEdge -- re-tinted by a future UI.SetAccent (step 6)
 
 	-- Tab-Strip (main starts at the panel top). Air ABOVE the strip = the same
 	-- contentTopGap as BELOW it (Florian 2026-07-05: unequal gaps read like
