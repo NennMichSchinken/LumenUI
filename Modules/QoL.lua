@@ -16,6 +16,9 @@ local ADDON, ns = ...
 --  Quick gossip: dungeon NPC dialogs without the mouse — single options are
 --  selected automatically (Shift keeps the window), several options get 1-9
 --  number keys. Event-driven (GOSSIP_SHOW), nothing runs outside a dialog.
+--  Movable windows: Shift+drag any registered Blizzard panel (map, character
+--  frame etc.); the position is saved per window in the profile and re-applied
+--  whenever the window opens.
 -- ===========================================================================
 
 local QoL = {}
@@ -52,6 +55,10 @@ local IsShiftKeyDown = IsShiftKeyDown
 local C_GossipInfo = C_GossipInfo
 local strfind, tsort, tonumber = string.find, table.sort, tonumber
 local wipe, min = wipe, math.min
+local hooksecurefunc = hooksecurefunc
+local GetScreenWidth = GetScreenWidth
+local GetScreenHeight = GetScreenHeight
+local C_AddOns = C_AddOns
 
 -- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
 local TEXDIR = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
@@ -792,6 +799,318 @@ function QoL:ApplyTrackers()
 end
 
 -- ---------------------------------------------------------------------------
+--  Movable windows — Shift+drag Blizzard panels; the position is saved per
+--  window (profile-bound, travels with export) and re-applied on every open.
+--
+--  TAINT RULE (hard-earned, 12.0): PROTECTED panels (e.g. PVEFrame) must never
+--  be touched with insecure SetMovable/StartMoving/SetPoint — that taints the
+--  frame's whole tree, and the LFG applicant list then throws "attempt to
+--  compare a secret number". Protected frames are therefore dragged via a
+--  cursor-delta OnUpdate and positioned ONLY through a SecureHandler snippet
+--  (executes securely, cannot taint by construction). Non-protected frames use
+--  the cheap native StartMoving path. Hooks are permanent once installed
+--  (hooksecurefunc can't be removed); every hook body gates on the option.
+-- ---------------------------------------------------------------------------
+-- Curated panel registry: the frames people actually want to move. Frames of
+-- load-on-demand Blizzard addons are hooked when their addon loads.
+local WIN_PRELOADED = {
+	"CharacterFrame", "FriendsFrame", "PVEFrame", "DressUpFrame", "BankFrame",
+	"MailFrame", "GossipFrame", "QuestFrame", "MerchantFrame", "AddonList",
+	"ChatConfigFrame", "ItemTextFrame", "LFGDungeonReadyDialog",
+	"GuildInviteFrame", "TabardFrame", "GuildRegistrarFrame",
+}
+
+local WIN_ADDON_FRAMES = {
+	["Blizzard_AchievementUI"]                     = { "AchievementFrame" },
+	["Blizzard_AlliedRacesUI"]                     = { "AlliedRacesFrame" },
+	["Blizzard_ArchaeologyUI"]                     = { "ArchaeologyFrame" },
+	["Blizzard_ArtifactUI"]                        = { "ArtifactFrame" },
+	["Blizzard_AuctionHouseUI"]                    = { "AuctionHouseFrame" },
+	["Blizzard_BlackMarketUI"]                     = { "BlackMarketFrame" },
+	["Blizzard_Calendar"]                          = { "CalendarFrame", "CalendarViewEventFrame" },
+	["Blizzard_ChallengesUI"]                      = { "ChallengesKeystoneFrame" },
+	["Blizzard_ChromieTimeUI"]                     = { "ChromieTimeFrame" },
+	["Blizzard_ClassTalentUI"]                     = { "ClassTalentFrame" },
+	["Blizzard_Collections"]                       = { "CollectionsJournal", "WardrobeFrame" },
+	["Blizzard_Communities"]                       = { "CommunitiesFrame" },
+	["Blizzard_CooldownViewer"]                    = { "CooldownViewerSettings" },
+	["Blizzard_EncounterJournal"]                  = { "EncounterJournal" },
+	["Blizzard_ExpansionLandingPage"]              = { "ExpansionLandingPage" },
+	["Blizzard_FlightMap"]                         = { "FlightMapFrame" },
+	["Blizzard_GenericTraitUI"]                    = { "GenericTraitFrame" },
+	["Blizzard_GuildBankUI"]                       = { "GuildBankFrame" },
+	["Blizzard_GuildControlUI"]                    = { "GuildControlUI" },
+	["Blizzard_InspectUI"]                         = { "InspectFrame" },
+	["Blizzard_ItemInteractionUI"]                 = { "ItemInteractionFrame" },
+	["Blizzard_ItemSocketingUI"]                   = { "ItemSocketingFrame" },
+	["Blizzard_ItemUpgradeUI"]                     = { "ItemUpgradeFrame" },
+	["Blizzard_MacroUI"]                           = { "MacroFrame" },
+	["Blizzard_MajorFactions"]                     = { "MajorFactionRenownFrame" },
+	["Blizzard_PlayerSpells"]                      = { "PlayerSpellsFrame" },
+	["Blizzard_Professions"]                       = { "ProfessionsFrame" },
+	["Blizzard_ProfessionsBook"]                   = { "ProfessionsBookFrame" },
+	["Blizzard_ProfessionsCustomerOrders"]         = { "ProfessionsCustomerOrdersFrame" },
+	["Blizzard_ScrappingMachineUI"]                = { "ScrappingMachineFrame" },
+	["Blizzard_StableUI"]                          = { "StableFrame" },
+	["Blizzard_TokenUI"]                           = { "CurrencyTransferMenu" },
+	["Blizzard_TrainerUI"]                         = { "ClassTrainerFrame" },
+	["Blizzard_TradeSkillUI"]                      = { "TradeSkillFrame" },
+	["Blizzard_Transmog"]                          = { "TransmogFrame" },
+	["Blizzard_WeeklyRewards"]                     = { "WeeklyRewardsFrame" },
+	["Blizzard_WorldMap"]                          = { "WorldMapFrame" },
+	["Blizzard_HousingDashboard"]                  = { "HousingDashboardFrame" },
+	["Blizzard_HousingCornerstone"]                = { "HousingCornerstonePurchaseFrame" },
+	["Blizzard_HousingHouseFinder"]                = { "HouseFinderFrame" },
+	["Blizzard_HousingHouseSettings"]              = { "HousingHouseSettingsFrame" },
+	["Blizzard_HousingBulletinBoard"]              = { "HousingBulletinBoardFrame" },
+	["Blizzard_HousingModelPreview"]               = { "HousingModelPreviewFrame" },
+	["Blizzard_DelvesCompanionConfigurationFrame"] = { "DelvesCompanionConfigurationFrame", "DelvesCompanionAbilityListFrame" },
+	["Blizzard_DelvesDifficultyPicker"]            = { "DelvesDifficultyPickerFrame" },
+}
+
+-- Frames whose body swallows the drag (map clicks, model rotate): the drag
+-- target is a child header element instead of the frame itself.
+local WIN_DRAG_HEADERS = {
+	["WorldMapFrame"] = "WorldMapTitleButton",
+}
+-- Extra drag handles ON TOP of the body, where a mouse-enabled child covers it.
+local WIN_EXTRA_DRAG = {
+	["AchievementFrame"] = function(frame) return frame.Header or _G["AchievementFrameHeader"] end,
+}
+
+local function wdb() return ns.Lumen.db.profile.qol.windows end
+
+local winFrames = {}       -- hooked: { frame = f, name = "..." } (apply-on-enable loop)
+local winHooked = {}       -- [frame] = true (hooks are one-shot)
+local winIgnoreSP = {}     -- [frame] = true while WE position it (recursion guard)
+local winDeferred = {}     -- frames that appeared in combat -> SetMovable deferred
+local winPendingAddons = {} -- LoD addon -> frame names, hooked on ADDON_LOADED
+local winInited = false
+local winEvents            -- ADDON_LOADED / PLAYER_REGEN_ENABLED driver (lazy)
+local securePositioner     -- SecureHandler for protected frames (lazy)
+
+local function winSecureSetPoint(frame, point, relPoint, x, y)
+	if InCombatLockdown() then return end
+	if not securePositioner then
+		-- Parented to UIParent so self:GetParent() inside the snippet IS UIParent.
+		securePositioner = CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
+	end
+	securePositioner:SetFrameRef("f", frame)
+	securePositioner:SetAttribute("p", point)
+	securePositioner:SetAttribute("rp", relPoint)
+	securePositioner:SetAttribute("x", x)
+	securePositioner:SetAttribute("y", y)
+	securePositioner:Execute([[
+		local f = self:GetFrameRef("f")
+		if not f then return end
+		f:ClearAllPoints()
+		f:SetPoint(self:GetAttribute("p"), self:GetParent(), self:GetAttribute("rp"), self:GetAttribute("x"), self:GetAttribute("y"))
+	]])
+end
+
+local function winSavePos(name, point, relPoint, x, y)
+	wdb().positions[name] = { point = point, relPoint = relPoint, x = x, y = y }
+end
+
+local function winApplyPosition(frame, name)
+	if not wdb().enabled then return end
+	if InCombatLockdown() and frame:IsProtected() then return end
+	local pos = wdb().positions[name]
+	if not pos or not pos.point then return end
+	winIgnoreSP[frame] = true
+	if frame:IsProtected() then
+		winSecureSetPoint(frame, pos.point, pos.relPoint, pos.x, pos.y)
+	else
+		frame:ClearAllPoints()
+		frame:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
+	end
+	winIgnoreSP[frame] = nil
+end
+
+-- Cursor-delta drag for PROTECTED frames: we can't StartMoving them without
+-- tainting, so the cursor is tracked and the frame repositioned live through
+-- the secure snippet. Position is stored center-relative to UIParent
+-- (scale-clean). Only one protected frame drags at a time.
+local winDrag = {}
+local winDragUpdater = CreateFrame("Frame")
+winDragUpdater:Hide()
+
+local function winStopSecureDrag()
+	winDragUpdater:Hide()
+	local frame = winDrag.frame
+	if not frame then return end
+	if winDrag.curX then
+		winSavePos(winDrag.name, "CENTER", "CENTER", winDrag.curX, winDrag.curY)
+	end
+	winDrag.frame = nil
+end
+
+winDragUpdater:SetScript("OnUpdate", function()
+	local frame = winDrag.frame
+	if not frame then winDragUpdater:Hide(); return end
+	if InCombatLockdown() then winStopSecureDrag(); return end
+	local cx, cy = GetCursorPosition()
+	local es = frame:GetEffectiveScale()
+	local ues = UIParent:GetEffectiveScale()
+	local ucx, ucy = UIParent:GetCenter()
+	local newX = winDrag.startX + (cx - winDrag.cursorX)
+	local newY = winDrag.startY + (cy - winDrag.cursorY)
+	-- Keep the center on screen (protected frames skip SetClampedToScreen).
+	local sw, sh = GetScreenWidth() * ues, GetScreenHeight() * ues
+	if newX < 0 then newX = 0 elseif newX > sw then newX = sw end
+	if newY < 0 then newY = 0 elseif newY > sh then newY = sh end
+	local x = (newX - ucx * ues) / es
+	local y = (newY - ucy * ues) / es
+	winDrag.curX, winDrag.curY = x, y
+	winIgnoreSP[frame] = true
+	winSecureSetPoint(frame, "CENTER", "CENTER", x, y)
+	winIgnoreSP[frame] = nil
+end)
+
+local function winStartSecureDrag(frame, name)
+	local fcx, fcy = frame:GetCenter()
+	if not fcx then return end
+	local es = frame:GetEffectiveScale()
+	winDrag.frame = frame
+	winDrag.name = name
+	winDrag.cursorX, winDrag.cursorY = GetCursorPosition()
+	winDrag.startX, winDrag.startY = fcx * es, fcy * es
+	winDrag.curX, winDrag.curY = nil, nil
+	winDragUpdater:Show()
+end
+
+local function winHookFrame(frame, name)
+	if winHooked[frame] then return end
+	winHooked[frame] = true
+	winFrames[#winFrames + 1] = { frame = frame, name = name }
+
+	-- SetMovable is only needed for StartMoving; protected frames skip it
+	-- entirely (insecure write = the taint incident above).
+	if not frame:IsProtected() then
+		if InCombatLockdown() then
+			winDeferred[#winDeferred + 1] = frame
+			winEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+		else
+			frame:SetMovable(true)
+			frame:SetClampedToScreen(true)
+		end
+	end
+
+	local dragging -- non-protected only
+
+	local function attachDrag(target)
+		if not target or not target.HookScript then return end
+		target:HookScript("OnMouseDown", function(_, button)
+			if not wdb().enabled then return end
+			if button ~= "LeftButton" or not IsShiftKeyDown() then return end
+			if frame:IsProtected() then
+				if InCombatLockdown() then return end
+				winStartSecureDrag(frame, name)
+			else
+				dragging = true
+				frame:StartMoving()
+			end
+		end)
+		target:HookScript("OnMouseUp", function(_, button)
+			if button ~= "LeftButton" then return end
+			if frame:IsProtected() then
+				if winDrag.frame == frame then winStopSecureDrag() end
+				return
+			end
+			if not dragging then return end
+			dragging = nil
+			frame:StopMovingOrSizing()
+			-- Never let Blizzard's layout cache own the spot -- OUR saved
+			-- position is the single source of truth (import-safe).
+			frame:SetUserPlaced(false)
+			local p, _, rp, x, y = frame:GetPoint(1)
+			if p then winSavePos(name, p, rp, x, y) end
+		end)
+	end
+
+	local headerName = WIN_DRAG_HEADERS[name]
+	attachDrag((headerName and _G[headerName]) or frame)
+	local extra = WIN_EXTRA_DRAG[name]
+	if extra then
+		attachDrag(type(extra) == "function" and extra(frame) or _G[extra])
+	end
+
+	frame:HookScript("OnShow", function()
+		winApplyPosition(frame, name)
+	end)
+	frame:HookScript("OnHide", function()
+		if winDrag.frame == frame then winStopSecureDrag() end
+	end)
+
+	-- Blizzard's panel manager re-seats UI panels on open/layout passes with
+	-- its own SetPoint -> re-assert the user's pin (guarded against our own
+	-- writes and against fighting an active drag).
+	hooksecurefunc(frame, "SetPoint", function()
+		if not wdb().enabled then return end
+		if winIgnoreSP[frame] then return end
+		if winDrag.frame == frame then return end
+		if InCombatLockdown() and frame:IsProtected() then return end
+		if wdb().positions[name] then winApplyPosition(frame, name) end
+	end)
+
+	if frame:IsVisible() then winApplyPosition(frame, name) end
+end
+
+local function winTryHook(name)
+	local frame = _G[name]
+	if frame and frame.HookScript then winHookFrame(frame, name) end
+end
+
+local function winInit()
+	if winInited then return end
+	winInited = true
+	winEvents = CreateFrame("Frame")
+	winEvents:SetScript("OnEvent", function(self, event, arg1)
+		if event == "ADDON_LOADED" then
+			local frames = winPendingAddons[arg1]
+			if frames then
+				winPendingAddons[arg1] = nil
+				for i = 1, #frames do winTryHook(frames[i]) end
+				if not next(winPendingAddons) then self:UnregisterEvent("ADDON_LOADED") end
+			end
+		else -- PLAYER_REGEN_ENABLED: frames that appeared in combat
+			self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+			for i = 1, #winDeferred do
+				winDeferred[i]:SetMovable(true)
+				winDeferred[i]:SetClampedToScreen(true)
+			end
+			wipe(winDeferred)
+		end
+	end)
+	for i = 1, #WIN_PRELOADED do winTryHook(WIN_PRELOADED[i]) end
+	for addon, frames in pairs(WIN_ADDON_FRAMES) do
+		if C_AddOns.IsAddOnLoaded(addon) then
+			for i = 1, #frames do winTryHook(frames[i]) end
+		else
+			winPendingAddons[addon] = frames
+		end
+	end
+	if next(winPendingAddons) then winEvents:RegisterEvent("ADDON_LOADED") end
+end
+
+-- Shell setter, profile switches, login. Toggle-off keeps the hooks installed
+-- (they can't be removed) but every body bails on the option; open windows
+-- return to Blizzard's spot the next time the panel manager seats them.
+function QoL:ApplyWindows()
+	if not wdb().enabled then return end
+	winInit()
+	for i = 1, #winFrames do
+		local e = winFrames[i]
+		if e.frame:IsVisible() then winApplyPosition(e.frame, e.name) end
+	end
+end
+
+-- Shell reset button: windows fall back to Blizzard defaults on their next open.
+function QoL:ResetWindowPositions()
+	wipe(wdb().positions)
+end
+
+-- ---------------------------------------------------------------------------
 --  Event driver — combat gate + login + merchant + keystone + trackers (plain
 --  frame, one place for all QoL features to hook their events).
 -- ---------------------------------------------------------------------------
@@ -865,4 +1184,5 @@ function QoL:Setup()
 	self:ApplyPull()
 	self:ApplyOutfitSuppress()
 	self:ApplyTrackers()
+	self:ApplyWindows()
 end

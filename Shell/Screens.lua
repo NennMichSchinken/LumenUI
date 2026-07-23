@@ -145,10 +145,35 @@ local function previewEyes()
 	if not t.previewEyes then t.previewEyes = { auras = true, shields = true, text = true } end
 	return t.previewEyes
 end
+local pvBands = {}   -- created PreviewBands (Base/Raid/Group) for eye-sync repaints
 local function previewRefresh()
 	-- RefreshShellPreview also refreshes the world Edit-Mode previews during a
 	-- session (single funnel), so a card-eye toggle updates the lit frame too.
 	if ns.Raidframes then ns.Raidframes:RefreshShellPreview() end
+	-- Central eye popover sync (single funnel, both directions): repaint the
+	-- card eyes of the current screen AND the dock's eye button/popover rows.
+	if ns.Shell and ns.Shell.RepaintEyes then ns.Shell:RepaintEyes() end
+	for band in pairs(pvBands) do
+		if band.RepaintEyes then band:RepaintEyes() end
+	end
+end
+-- Row list for the dock's central eye popover — mirrors the card eyes 1:1
+-- (labels = the card titles the eyes live on). Lives HERE next to the
+-- eyeToggle call sites so both can't drift apart.
+local function previewEyeDefs()
+	return {
+		{ key = "auras", label = T("Aura indicators"), children = {
+			{ key = "hotsOwn",    label = T("HoTs") },
+			{ key = "defensives", label = T("Defensives & External") },
+			{ key = "major",      label = T("Major CDs") },
+			{ key = "debuffs",    label = T("Debuffs") },
+		} },
+		{ key = "shields", label = T("Shields & heal absorb") },
+		{ key = "text",    label = T("Text") },
+		{ key = "icons",   label = T("Role & leader icons") },
+		{ key = "dispel",  label = T("Dispel display") },
+		{ key = "aggro",   label = T("Aggro warning") },
+	}
 end
 -- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/major/debuffs/
 -- shields/text/icons/dispel/aggro) lives in previewEyes as a bool (true = shown,
@@ -173,6 +198,7 @@ local function previewDock(spec)
 	return function(holder)
 		local band = W.PreviewBand(holder, {
 			eyes = previewEyes,
+			eyeDefs = previewEyeDefs(),
 			onEye = previewRefresh,
 			onLayout = function(side, w, h) ns.Shell:SetDockLayout(side, w, h) end,
 			onChrome = function(v) ns.Shell:SetDockChrome(v) end,
@@ -201,6 +227,7 @@ local function previewDock(spec)
 			} or nil,
 		})
 		if ns.Raidframes then ns.Raidframes:AttachShellPreview(band, spec) end
+		pvBands[band] = true   -- eye-sync repaint target (previewRefresh)
 		holder._onShow = previewRefresh
 	end
 end
@@ -215,8 +242,29 @@ ns.ScreenPreviews["Raidframes/Group"] = previewDock({ kind = "ctx", ctx = "party
 local auraOpenState, iconOpenState = {}, {}
 local function auraOpen(ctx) return auraOpenState[ctx] or false end
 local function setAuraOpen(ctx, v) auraOpenState[ctx] = v end
+
+-- Register a jumpable card's panel frame with the Shell (no-op outside a build).
+local function regJump(key, cardBox)
+	if ns.Shell and ns.Shell.RegisterJumpCard and cardBox and cardBox._panel then
+		ns.Shell:RegisterJumpCard(key, cardBox._panel)
+	end
+end
 local function iconOpen(ctx) return iconOpenState[ctx] or false end
 local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
+
+-- Click-to-configure (preview dock): called by Shell:JumpTo BEFORE the target
+-- screen renders — open the context's collapsed aura/icon section so the target
+-- cards exist to scroll to. Other card keys need no preparation (their bands
+-- are always built).
+ns.ShellJumpPrep = function(section, tab, cardKey)
+	if section ~= "Raidframes" or not cardKey then return end
+	local ctx = (tab == "Raid") and "raid" or "party"
+	if cardKey:find("^aura%-") then
+		setAuraOpen(ctx, true)
+	elseif cardKey:find("^icon%-") then
+		setIconOpen(ctx, true)
+	end
+end
 -- "More options" disclosure per aura category card ([ctx][cat] = true) —
 -- same session-only rule as the collapsibles above.
 local auraAdvState = {}
@@ -380,16 +428,21 @@ local function buildRaid(d, stack, ctx)
 	-- Last non-off mode; restored when the HP header toggle switches back on.
 	local hpMode = (rf()[ctx] or {}).healthTextType
 	if hpMode == nil or hpMode == "Keine" then hpMode = "Aktuell" end
+	-- Both text cards carry the shared "text" preview eye (one text layer; the
+	-- eye also lives on the Base tab's Text card and in the dock popover — all
+	-- stay in sync via _eyePaints). The master toggle sits right of the eye.
+	local textEyeTip = T("Show in preview")
 	local tb = stack:band({
-		{ span = 6, title = T("Text — name"), toggle = {
+		{ span = 6, title = T("Text — name"), eye = eyeToggle("text", textEyeTip), toggle = {
 			get = vget(ctx, "showName"),
 			set = function(v) vset(ctx, "showName")(v); refreshName() end } },
-		{ span = 6, title = T("Text — HP display"), toggle = {
+		{ span = 6, title = T("Text — HP display"), eye = eyeToggle("text", textEyeTip), toggle = {
 			get = function() return (rf()[ctx] or {}).healthTextType ~= "Keine" end,
 			set = function(v) vset(ctx, "healthTextType")(v and hpMode or "Keine"); refreshHP() end } },
 	})
 
 	local sName = tb.cards[1]
+	regJump("text-name", sName)
 	local nr1, nc1 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 	local namePos = W.Select(nc1[1], { label = T("Name position"), options = POINT_OPTS, get = vget(ctx, "namePoint"), set = vset(ctx, "namePoint") })
 	namePos:SetAllPoints(nc1[1])
@@ -402,6 +455,7 @@ local function buildRaid(d, stack, ctx)
 	sName:close()
 
 	local sHP = tb.cards[2]
+	regJump("text-hp", sHP)
 	local hr1, hc1 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 	local hpPos = W.Select(hc1[1], { label = T("HP text position"), options = POINT_OPTS, get = vget(ctx, "healthTextPoint"), set = vset(ctx, "healthTextPoint") })
 	hpPos:SetAllPoints(hc1[1])
@@ -458,6 +512,8 @@ local function buildRaid(d, stack, ctx)
 		})
 
 		local sRole = ib.cards[1]
+		regJump("icon-role", ib.cards[1])
+		regJump("icon-lead", ib.cards[2])
 		local ir1, ic1 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 		local rolePos = W.Select(ic1[1], { label = T("Role icon position"), options = POINT_OPTS,
 			get = vget(ctx, "rolePoint"), set = vset(ctx, "rolePoint") })
@@ -542,6 +598,8 @@ local function buildRaid(d, stack, ctx)
 		})
 		auraCat(d, ab1.cards[1], "hotsOwn",    false, ctx, sfx, auraRefresh)
 		auraCat(d, ab1.cards[2], "defensives", false, ctx, sfx, auraRefresh)
+		regJump("aura-hotsOwn",    ab1.cards[1])
+		regJump("aura-defensives", ab1.cards[2])
 		ab1.close()
 		local ab2 = stack:band({
 			{ span = 6, title = T("Major CDs"), toggle = catToggle("major"),   eye = eyeToggle("major", eyeTip) },
@@ -549,6 +607,8 @@ local function buildRaid(d, stack, ctx)
 		})
 		auraCat(d, ab2.cards[1], "major",   false, ctx, sfx, auraRefresh)
 		auraCat(d, ab2.cards[2], "debuffs", true,  ctx, sfx, auraRefresh)
+		regJump("aura-major",   ab2.cards[1])
+		regJump("aura-debuffs", ab2.cards[2])
 		ab2.close()
 	end
 
@@ -648,8 +708,11 @@ local function buildBase(d, stack)
 	-- the Raid/Group builder.)
 	local b1 = stack:band({
 		{ span = 8, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
-		{ span = 4, title = T("Text"), subtitle = T("Name and text color settings"),
-			eye = eyeToggle("text", T("Show in preview")) },
+		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
+		-- preview layer — the "text" preview eye lives on the per-context Text —
+		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
+		-- doesn't read as "the text on/off card".
+		{ span = 4, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
 	})
 	local sBar = b1.cards[1]
 
@@ -1992,6 +2055,37 @@ local function buildQoLBase(d, stack)
 
 	tc:close()
 	bb.close()
+
+	-- ===== Windows band (6, ONE card) =======================================
+	-- Movable Blizzard windows: one switch + a reset button. The positions
+	-- themselves live implicitly in the profile (saved per window on drag).
+	local wb = stack:band({
+		{ span = 6, title = T("Windows"), subtitle = T("Move Blizzard windows freely") },
+	})
+	local wc = wb.cards[1]
+	local function qw() return ns.Lumen.db.profile.qol.windows end
+
+	local rowWin = switchRow(d, T("Movable windows"), {
+		get = function() return qw().enabled end,
+		set = function(v) qw().enabled = v; if ns.QoL then ns.QoL:ApplyWindows() end end,
+		tooltip = T("Hold Shift and drag a Blizzard window (map, character panel, spellbook ...) to move it. Each window reopens where you left it.") })
+	wc:place(rowWin, rowH, R.row)
+
+	local winBtnRow = CreateFrame("Frame", nil, d)
+	local winResetBtn = W.Button(winBtnRow, { text = T("Reset window positions"), variant = "ghost",
+		onClick = function()
+			W.Confirm({
+				title = T("Reset window positions?"),
+				body = T("All Blizzard windows return to their default positions the next time they are opened."),
+				confirmText = T("Reset"), cancelText = T("Cancel"),
+				onConfirm = function() if ns.QoL then ns.QoL:ResetWindowPositions() end end,
+			})
+		end })
+	winResetBtn:SetPoint("LEFT", winBtnRow, "LEFT", 0, 0)
+	wc:place(winBtnRow, M.buttonH, R.tight)
+
+	wc:close()
+	wb.close()
 
 	refreshCursor()
 	refreshVendor()

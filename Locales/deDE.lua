@@ -68,7 +68,8 @@ ns.RegisterLocale("deDE", {
 
 	-- ── Card subtitles / global switch descriptions (v3 card mockup) ────
 	["Health bar and texture settings"] = "Einstellungen für Lebensbalken und Texturen",
-	["Name and text color settings"] = "Einstellungen für Namen und Textfarben",
+	["Text style"] = "Textstil",
+	["Color & outline — shared by Raid & Group"] = "Farbe & Umrandung — für Raid & Gruppe",
 	["Shields & heal absorb"] = "Schilde & Heilabsorb",
 	["Absorb overlay display"] = "Anzeige der Absorb-Overlays",
 	["Dispel highlight settings"] = "Einstellungen für Dispel-Highlights",
@@ -177,6 +178,7 @@ ns.RegisterLocale("deDE", {
 	["Major CDs"] = "Major CDs",
 	["Debuffs"] = "Debuffs",
 	["Show in preview"] = "In Vorschau zeigen",
+	["Click to edit"] = "Zum Bearbeiten klicken",
 	["Amount & behavior"] = "Menge & Verhalten",
 	["Max. icons"] = "Max. Icons",
 	["Auto-fit (size from frame height)"] = "Auto-Fit (Größe aus Frame-Höhe)",
@@ -436,4 +438,11 @@ ns.RegisterLocale("deDE", {
 	["Repaired all items for %s."] = "Ausrüstung repariert für %s.",
 	["Repaired all items for %s (guild bank)."] = "Ausrüstung repariert für %s (Gildenbank).",
 	["Not enough gold to repair."] = "Nicht genug Gold zum Reparieren.",
+	["Windows"] = "Fenster",
+	["Move Blizzard windows freely"] = "Blizzard-Fenster frei verschieben",
+	["Movable windows"] = "Fenster verschiebbar",
+	["Hold Shift and drag a Blizzard window (map, character panel, spellbook ...) to move it. Each window reopens where you left it."] = "Halte Shift und ziehe ein Blizzard-Fenster (Karte, Charakterfenster, Zauberbuch ...), um es zu verschieben. Jedes Fenster öffnet sich wieder dort, wo du es abgelegt hast.",
+	["Reset window positions"] = "Fensterpositionen zurücksetzen",
+	["Reset window positions?"] = "Fensterpositionen zurücksetzen?",
+	["All Blizzard windows return to their default positions the next time they are opened."] = "Alle Blizzard-Fenster erscheinen beim nächsten Öffnen wieder an ihren Standardpositionen.",
 })

@@ -154,27 +154,47 @@ end
 
 -- Sample roster (test mode)
 local FAKE_MAX = 600000
+-- `auras` = curated per-category preview icon counts (see RenderAurasFake):
+-- varied like a real raid snapshot; {} = clean frame, NO field = full load.
 local FAKE = {
-	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3, role = "HEALER", lead = true },
-	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25, role = "DAMAGER" },
-	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse", role = "DAMAGER" },
-	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison", role = "TANK" },
-	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1, role = "DAMAGER" },
+	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3, role = "HEALER", lead = true,
+		auras = { hotsOwn = 2, defensives = 1 } },
+	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25, role = "DAMAGER",
+		auras = {} },
+	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse", role = "DAMAGER",
+		auras = { debuffs = 1 } },
+	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison", role = "TANK",
+		auras = { defensives = 1, debuffs = 1 } },
+	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1, role = "DAMAGER",
+		auras = { hotsOwn = 1 } },
 	{ name = "Kaelura",    class = "PRIEST",  hp = 0.77, healAbsorb = 0.20, role = "HEALER" },
-	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic", role = "DAMAGER" },
-	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25, role = "HEALER" },
-	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, healAbsorb = 0.35, role = "TANK" },
-	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, dispel = "Disease", role = "HEALER" },
-	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, absorb = 0.10, role = "DAMAGER" },
-	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, predict = 0.20, role = "TANK" },
-	{ name = "Brightwing", class = "PALADIN", hp = 0.50, predict = 0.30, role = "HEALER" },
-	{ name = "Embertide",  class = "MAGE",    hp = 0.50, dispel = "Curse", role = "DAMAGER" },
-	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, healAbsorb = 0.30, role = "DAMAGER" },
+	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic", role = "DAMAGER",
+		auras = { hotsOwn = 1, debuffs = 2 } },
+	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25, role = "HEALER",
+		auras = { hotsOwn = 3 } },
+	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, healAbsorb = 0.35, role = "TANK",
+		auras = { defensives = 2 } },
+	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, dispel = "Disease", role = "HEALER",
+		auras = { debuffs = 1, major = 1 } },
+	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, absorb = 0.10, role = "DAMAGER",
+		auras = {} },
+	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, predict = 0.20, role = "TANK",
+		auras = { defensives = 1 } },
+	{ name = "Brightwing", class = "PALADIN", hp = 0.50, predict = 0.30, role = "HEALER",
+		auras = { hotsOwn = 2, major = 1 } },
+	{ name = "Embertide",  class = "MAGE",    hp = 0.50, dispel = "Curse", role = "DAMAGER",
+		auras = { hotsOwn = 1, debuffs = 1 } },
+	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, healAbsorb = 0.30, role = "DAMAGER",
+		auras = { major = 1 } },
 	{ name = "Solveig",    class = "PRIEST",  hp = 0.40, healAbsorb = 0.25, role = "DAMAGER" },
-	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, dispel = "Poison", role = "DAMAGER" },
-	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, absorb = 0.30, role = "DAMAGER" },
-	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, predict = 0.15, role = "DAMAGER" },
-	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15, role = "DAMAGER" },
+	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, dispel = "Poison", role = "DAMAGER",
+		auras = { debuffs = 1 } },
+	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, absorb = 0.30, role = "DAMAGER",
+		auras = { hotsOwn = 1 } },
+	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, predict = 0.15, role = "DAMAGER",
+		auras = { hotsOwn = 2, defensives = 1 } },
+	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15, role = "DAMAGER",
+		auras = { major = 2 } },
 }
 
 local GROUP_SIZE = 5   -- fixed group size: raid groups & dungeon group are always 5 (never mixed)
@@ -903,6 +923,14 @@ local function makeAuraIcon(holder)
 	ic.cd:SetAllPoints(ic.tex)
 	ic.cd:SetDrawEdge(false)
 	ic.cd:SetHideCountdownNumbers(true)
+	-- Click-to-configure: ONLY the non-secure dock-preview pool gets mouse
+	-- scripts — live secure frames must never have their clicks intercepted.
+	if holder._host and holder._host._c2c then
+		ic:EnableMouse(true)
+		ic:SetScript("OnEnter", function() Raidframes:_C2CIconEnter(holder) end)
+		ic:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
+		ic:SetScript("OnMouseDown", function() Raidframes:_C2CIconClick(holder) end)
+	end
 	ic:Hide()
 	return ic
 end
@@ -921,6 +949,7 @@ local function layoutAuraCat(f, key, cat, size)
 		holder = CreateFrame("Frame", nil, f.overlay)
 		holder:SetAllPoints(f)
 		holder.icons = {}
+		holder._host, holder._cat = f, key   -- click-to-configure needs owner + category
 		f.auraHolders[key] = holder
 	end
 	holder:Show()
@@ -1087,16 +1116,15 @@ local function Decorate(f)
 	end
 	f.eT, f.eB, f.eL, f.eR = edge(), edge(), edge(), edge()
 
-	-- Aggro warning: a complete own layer with a clearly higher frame level ABOVE the
-	-- aura holders (which are children of f.overlay) so that overlay fill, border AND
-	-- "Aggro" text sit above the aura icons. White textures -> color via SetVertexColor.
-	f.aggroLayer = CreateFrame("Frame", nil, f)
-	f.aggroLayer:SetAllPoints(f)
-	f.aggroLayer:SetFrameLevel(base + 10)
-	f.aggroFill = f.aggroLayer:CreateTexture(nil, "ARTWORK")
+	-- Aggro warning: same construction as the dispel overlay — textures directly on
+	-- f.overlay, BELOW the aura band (holders are child frames of f.overlay and thus
+	-- render above any of its textures). Unified rule: dispel/aggro are area/border
+	-- signals that stay visible around the icons; the icons + duration text carry
+	-- detail info and must never be occluded. White textures -> color via SetVertexColor.
+	f.aggroFill = f.overlay:CreateTexture(nil, "ARTWORK", nil, 2)
 	f.aggroFill:SetColorTexture(1, 1, 1, 1); f.aggroFill:SetAllPoints(f.health); f.aggroFill:Hide()
 	local function aedge()
-		local t = f.aggroLayer:CreateTexture(nil, "OVERLAY")
+		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
 		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t
 	end
 	f.aT, f.aB, f.aL, f.aR = aedge(), aedge(), aedge(), aedge()
@@ -1104,12 +1132,12 @@ local function Decorate(f)
 	f.aB:SetPoint("BOTTOMLEFT"); f.aB:SetPoint("BOTTOMRIGHT"); f.aB:SetHeight(2)
 	f.aL:SetPoint("TOPLEFT"); f.aL:SetPoint("BOTTOMLEFT"); f.aL:SetWidth(2)
 	f.aR:SetPoint("TOPRIGHT"); f.aR:SetPoint("BOTTOMRIGHT"); f.aR:SetWidth(2)
-	f.aggroText = f.aggroLayer:CreateFontString(nil, "OVERLAY")
+	f.aggroText = f.overlay:CreateFontString(nil, "OVERLAY")
 	f.aggroText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 
 	-- Indicator icons: role (Blizzard LFG atlases) + leader/assistant crown.
-	-- Own layer ABOVE the aggro layer — the icons stay readable even while
+	-- Own layer ABOVE the aura band — the icons stay readable even while
 	-- the aggro overlay/border is up. Anchored/sized per context in
 	-- ApplyConfig, filled in the render pass.
 	f.iconLayer = CreateFrame("Frame", nil, f)
@@ -1717,7 +1745,16 @@ function Raidframes:RenderAurasFake(f)
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
 		if cat and cat["enabled" .. sfx] and holder then
-			local n = min(cat["maxIcons" .. sfx] or 5, 3)
+			-- Varied preview (Florian 2026-07-17): each fake entry carries curated
+			-- per-category icon counts (`auras`), so the roster reads like a real
+			-- group snapshot instead of max icons everywhere. DETERMINISTIC on
+			-- purpose — the preview re-renders on every slider tick, random counts
+			-- would reshuffle mid-drag. Entries WITHOUT an `auras` table are the
+			-- deliberate full-load frames (maxIcons of every enabled category —
+			-- for judging max icons / auto-fit).
+			local maxN = cat["maxIcons" .. sfx] or 5
+			local plan = f.fake.auras
+			local n = plan and min(plan[c.key] or 0, maxN) or maxN
 			local showSwipe = cat["showSwipe" .. sfx]
 			local fakeTex = previewIconsFor(c)
 			for k = 1, n do
@@ -1753,24 +1790,133 @@ end
 -- ===========================================================================
 
 -- Curated preview roster: full bar, shield, incoming heal, dispellable debuff,
--- heal absorb, aggro — every render feature visible at a glance (each one can
--- be filtered out via the band's filter popover).
+-- heal absorb, aggro (BOTH stages: yellow warn + red has-aggro) — every render
+-- feature visible at a glance (each one can be filtered out via the eyes).
+-- `auras` = curated per-category preview icon counts (see RenderAurasFake):
+-- varied per frame like a real group; {} = deliberately clean (HP readable);
+-- NO field = full-load frame (maxIcons everywhere, judges max/auto-fit).
 local PREVIEW_FAKE = {
-	{ name = "Owlday",      class = "DRUID",  hp = 1.00, role = "HEALER", lead = true },
-	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, absorb = 0.14, role = "DAMAGER" },
+	{ name = "Owlday",      class = "DRUID",  hp = 1.00, role = "HEALER", lead = true,
+		auras = { hotsOwn = 2, defensives = 1 } },
+	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, absorb = 0.14, role = "DAMAGER",
+		auras = {} },
 	{ name = "Kaelura",     class = "PRIEST", hp = 0.66, predict = 0.20, role = "HEALER" },
-	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, dispel = "Magic", role = "DAMAGER" },
-	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, healAbsorb = 0.18, aggro = 3, role = "TANK" },
+	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, dispel = "Magic", aggro = 2, role = "DAMAGER",
+		auras = { hotsOwn = 1, debuffs = 1 } },
+	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, healAbsorb = 0.18, aggro = 3, role = "TANK",
+		auras = { defensives = 1, debuffs = 2 } },
 }
 local shellBands = {}   -- band -> spec: { kind = "base" } | { kind = "ctx", ctx = "raid"|"party" }
 local pvFrames = {}     -- shared preview pool (one band visible at a time)
+
+-- ---------------------------------------------------------------------------
+--  Click-to-configure (dock preview only): hovering a preview element shows a
+--  gold ring + "click to edit" tooltip; clicking jumps to its settings card
+--  (Shell:JumpTo). The mouse layer exists SOLELY on the non-secure dock pool
+--  (f._c2c) — live secure frames and the world test pool stay untouched.
+-- ---------------------------------------------------------------------------
+local C2C_LABELS = {
+	hotsOwn    = "HoTs",
+	defensives = "Defensives & External",
+	major      = "Major CDs",
+	debuffs    = "Debuffs",
+}
+local c2cRing
+local function c2cGetRing()
+	if c2cRing then return c2cRing end
+	local r = CreateFrame("Frame", nil, UIParent)
+	r:Hide()
+	r:EnableMouse(false)
+	local function redge()
+		local t = r:CreateTexture(nil, "OVERLAY")
+		-- brand gold (C1), same tone as the frame mouseover border (combat-path file, kept literal)
+		t:SetColorTexture(0.91, 0.73, 0.41, 1)
+		return t
+	end
+	local e1, e2, e3, e4 = redge(), redge(), redge(), redge()
+	e1:SetPoint("TOPLEFT"); e1:SetPoint("TOPRIGHT"); e1:SetHeight(2)
+	e2:SetPoint("BOTTOMLEFT"); e2:SetPoint("BOTTOMRIGHT"); e2:SetHeight(2)
+	e3:SetPoint("TOPLEFT"); e3:SetPoint("BOTTOMLEFT"); e3:SetWidth(2)
+	e4:SetPoint("TOPRIGHT"); e4:SetPoint("BOTTOMRIGHT"); e4:SetWidth(2)
+	c2cRing = r
+	return r
+end
+local function c2cJump(host, cardKey)
+	if not (ns.Shell and ns.Shell.JumpTo) then return end
+	Raidframes:_C2CLeave()
+	ns.Shell:JumpTo("Raidframes", (host._pvCtx == "raid") and "Raid" or "Group", cardKey)
+end
+function Raidframes:_C2CLeave()
+	if c2cRing then c2cRing:Hide() end
+	if ns.W and ns.W.HideTip then ns.W.HideTip() end
+end
+-- Ring around all VISIBLE icons of the hovered category. Bounds arithmetic is
+-- valid because holder and icons share one effective scale.
+local C2C_PAD = 3
+function Raidframes:_C2CIconEnter(holder)
+	local minL, maxR, minB, maxT
+	for i = 1, #holder.icons do
+		local ic = holder.icons[i]
+		if ic:IsShown() then
+			local l, rt, b, t = ic:GetLeft(), ic:GetRight(), ic:GetBottom(), ic:GetTop()
+			if l then
+				if not minL or l < minL then minL = l end
+				if not maxR or rt > maxR then maxR = rt end
+				if not minB or b < minB then minB = b end
+				if not maxT or t > maxT then maxT = t end
+			end
+		end
+	end
+	if not minL then return end
+	local r = c2cGetRing()
+	r:SetParent(holder)
+	r:SetFrameLevel(holder:GetFrameLevel() + 10)
+	r:ClearAllPoints()
+	local hl, hb = holder:GetLeft() or 0, holder:GetBottom() or 0
+	r:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", minL - hl - C2C_PAD, minB - hb - C2C_PAD)
+	r:SetSize((maxR - minL) + C2C_PAD * 2, (maxT - minB) + C2C_PAD * 2)
+	r:Show()
+	if ns.W and ns.W.ShowTextTip then
+		ns.W.ShowTextTip(r, ns.T(C2C_LABELS[holder._cat] or ""), ns.T("Click to edit"))
+	end
+end
+function Raidframes:_C2CIconClick(holder)
+	c2cJump(holder._host, "aura-" .. (holder._cat or ""))
+end
 
 local function pvFrame(i, holder)
 	local f = pvFrames[i]
 	if not f then
 		f = CreateFrame("Frame", nil, holder)
+		f._c2c = true   -- BEFORE any icon creation: makeAuraIcon keys off this
 		Decorate(f)
 		f:EnableMouse(false)
+		-- Click-to-configure hotspots: ring + tooltip on hover, jump on click.
+		-- Anchored to the element's region; pvFillOne gates each on visibility.
+		local function hotspot(region, label, cardKey)
+			local b = CreateFrame("Button", nil, f.overlay)
+			b:SetFrameLevel(f.overlay:GetFrameLevel() + 12)
+			b:SetPoint("TOPLEFT", region, "TOPLEFT", -3, 3)
+			b:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", 3, -3)
+			b:SetScript("OnEnter", function()
+				local r = c2cGetRing()
+				r:SetParent(b)
+				r:SetFrameLevel(b:GetFrameLevel() + 1)
+				r:ClearAllPoints()
+				r:SetAllPoints(b)
+				r:Show()
+				if ns.W and ns.W.ShowTextTip then
+					ns.W.ShowTextTip(r, ns.T(label), ns.T("Click to edit"))
+				end
+			end)
+			b:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
+			b:SetScript("OnClick", function() c2cJump(f, cardKey) end)
+			return b
+		end
+		f._c2cName = hotspot(f.name,     "Text — name",       "text-name")
+		f._c2cHP   = hotspot(f.htext,    "Text — HP display", "text-hp")
+		f._c2cRole = hotspot(f.roleIcon, "Role icon",         "icon-role")
+		f._c2cLead = hotspot(f.leadIcon, "Leader icon",       "icon-lead")
 		pvFrames[i] = f
 	end
 	f:SetParent(holder)
@@ -1818,12 +1964,20 @@ end
 
 local function pvFillOne(f, fake, ctx, eyes)
 	previewCtx = ctx
+	f._pvCtx = ctx   -- click-to-configure: which tab a click on this frame targets
 	f.fake = pvEffectiveFake(fake, eyes)
 	f.unit = nil
 	pvResetLayers(f)
 	Raidframes:ApplyConfig(f)
 	Raidframes:UpdateUnit(f)
 	pvEyePass(f, eyes)
+	-- Hotspots only while their element is actually visible (config + eyes).
+	if f._c2cName then
+		f._c2cName:SetShown(f.name:IsShown())
+		f._c2cHP:SetShown(f.htext:IsShown())
+		f._c2cRole:SetShown(f.roleIcon:IsShown())
+		f._c2cLead:SetShown(f.leadIcon:IsShown())
+	end
 	previewCtx = nil
 	f:Show()
 end

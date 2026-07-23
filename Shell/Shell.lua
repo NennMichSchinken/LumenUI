@@ -678,6 +678,86 @@ function Shell:OpenTo(sectionName, tabName)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+--  Click-to-configure: jump from a preview element straight to its settings
+--  card. Screen builders register their jumpable cards (RegisterJumpCard);
+--  JumpTo opens section/tab, lets the screen pre-open the target disclosure
+--  (ns.ShellJumpPrep, set in Screens.lua), then scrolls to the card and
+--  flashes its border gold as confirmation.
+-- ---------------------------------------------------------------------------
+function Shell:RegisterJumpCard(key, frame)
+	local scr = self._screen
+	if not (scr and key and frame) then return end
+	scr._jumpCards = scr._jumpCards or {}
+	scr._jumpCards[key] = frame
+end
+
+-- Short gold border pulse on the target card (build lazily, reuse per card).
+local function flashCard(card)
+	local fl = card._jumpFlash
+	if not fl then
+		fl = CreateFrame("Frame", nil, card)
+		fl:SetAllPoints(card)
+		fl:SetFrameLevel(card:GetFrameLevel() + 9)
+		UI.RoundBorder(fl, UI.C.gold500, "OVERLAY", nil, UI.RADIUS.lg)
+		local ag = fl:CreateAnimationGroup()
+		local a = ag:CreateAnimation("Alpha")
+		a:SetFromAlpha(1); a:SetToAlpha(0)
+		a:SetStartDelay(0.5); a:SetDuration(0.9)
+		ag:SetScript("OnFinished", function() fl:Hide() end)
+		fl._ag = ag
+		card._jumpFlash = fl
+	end
+	fl:SetAlpha(1); fl:Show()
+	fl._ag:Stop(); fl._ag:Play()
+end
+
+function Shell:JumpTo(sectionName, tabName, cardKey)
+	if ns.ShellJumpPrep then ns.ShellJumpPrep(sectionName, tabName, cardKey) end
+	-- The prep may have opened a disclosure a cached screen doesn't show yet —
+	-- drop the cache so the target screen rebuilds in the prepared state.
+	self:InvalidateScreenCache()
+	self:OpenTo(sectionName, tabName)
+	self:_ResolveJump(cardKey)
+end
+
+-- Scroll + flash once the target card has a resolved rect. The cold-open path
+-- re-renders one frame later (OpenTo safety net), so retry across a few ticks
+-- and always look the card up on the CURRENT screen.
+function Shell:_ResolveJump(cardKey)
+	if not cardKey then return end
+	local tries = 0
+	local function attempt()
+		if not (self._frame and self._frame:IsShown()) then return end
+		local scr = self._screen
+		local card = scr and scr._jumpCards and scr._jumpCards[cardKey]
+		local childTop = self._scrollChild and self._scrollChild:GetTop()
+		if not (card and card:GetTop() and childTop) then
+			tries = tries + 1
+			if tries < 8 then C_Timer.After(0, attempt) end
+			return
+		end
+		if self._scroll then
+			local viewH = self._scroll:GetHeight() or 0
+			local maxScroll = math.max(0, (self._scrollChild:GetHeight() or 0) - viewH)
+			local off = childTop - card:GetTop()
+			self._scroll:SetVerticalScroll(math.min(maxScroll, math.max(0, off - 20)))
+			if self._updateBar then self._updateBar() end
+		end
+		flashCard(card)
+	end
+	C_Timer.After(0, attempt)
+end
+
+-- Repaint the current screen's card-eye glyphs from their get() state — called
+-- by the preview's central eye popover (and previewRefresh) after an external
+-- toggle, so card eyes and popover never diverge.
+function Shell:RepaintEyes()
+	local scr = self._screen
+	if not (scr and scr._eyePaints) then return end
+	for _, p in ipairs(scr._eyePaints) do p() end
+end
+
 -- Apply a composed badge text to the tab-strip badge (internal; used by
 -- SetTabBadge and by the screen cache when re-showing a cached screen).
 function Shell:_ApplyBadge(text)
@@ -877,6 +957,14 @@ local function newStack(holder)
 				eb:SetScript("OnLeave", function() hovered = false; paint(); ns.W.HideTip() end)
 				eb:SetScript("OnClick", function() o.eye.set(not o.eye.get()); paint() end)
 				panel._eye = eb
+				-- Central eye-popover sync: register the paint on the screen so
+				-- external toggles (dock popover / same key on another tab)
+				-- repaint this glyph (Shell:RepaintEyes + cache re-show).
+				local scr = Shell._screen
+				if scr then
+					scr._eyePaints = scr._eyePaints or {}
+					scr._eyePaints[#scr._eyePaints + 1] = paint
+				end
 			end
 		end
 
@@ -1251,6 +1339,12 @@ function Shell:RenderContent(changed)
 		-- screen's list again, not in the last-built screen's.
 		if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(hit.popovers) end
 		hit.frame:Show()
+		-- Eye state may have changed from ANOTHER access point since this screen
+		-- was built (dock popover, or the same key's eye on another tab —
+		-- aura keys exist on Raid AND Group): repaint from get() on re-show.
+		if hit.frame._eyePaints then
+			for _, p in ipairs(hit.frame._eyePaints) do p() end
+		end
 		holderParent:SetHeight(hit.height)
 		if hit.badge then self:_ApplyBadge(hit.badge) end
 		if self._scroll then
