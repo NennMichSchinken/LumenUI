@@ -471,7 +471,16 @@ function Shell:Build()
 	brand:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
 
 	local word = FS(brand, "wordmark", Text.Primary) -- v3: off-white (mono), non-clickable
-	word:SetText(UI.Track("LUMENUI", " ")) -- tracking emulation (single space: fits the column)
+	-- Only the "UI" suffix takes the accent (brand anchor in the nav); "LUMEN"
+	-- stays Text.Primary. Colour-escape the tracked tail so it recolours with a
+	-- future UI.SetAccent. In mono the accent == off-white, so no visible change.
+	local wmHead = UI.Track("LUMEN", " ") -- "L U M E N" (Text.Primary base colour)
+	local wmTail = UI.Track("UI", " ")     -- "U I" (accent-escaped)
+	local function applyWordmark()
+		word:SetText(wmHead .. " " .. UI.ColorCode(Accent.color) .. wmTail .. "|r")
+	end
+	applyWordmark()
+	self._applyWordmarkAccent = applyWordmark -- re-run by a future UI.SetAccent (step 6)
 	word:SetPoint("TOPLEFT", brand, "TOPLEFT", S.navGutter, -40) -- v3: pushed down to sit on the tab-row height (more top air), navGutter left inset
 	local tag = FS(brand, "tagline", Text.Description)
 	tag:SetText(UI.Track("A FOCUSED UI SUITE", " ")) -- v3: uppercase tracked, matches the mockup

@@ -144,6 +144,13 @@ function UI.SetAccent(col)
 	local a = UI.BuildAccent(col)
 	for k, v in pairs(a) do UI.Accent[k] = v end
 	UI.ACCENT_BASE = col
+	-- Switch/primary-button ON fill: a COLOUR fills the track directly (it won't
+	-- bloom). Only the pure-light mono default keeps the softened anti-bloom light
+	-- (P.switchOn) — a near-white fill blooms/reads larger against the dark OFF.
+	local mono = math.abs(col.r - P.goldInt.r) < 0.02
+		and math.abs(col.g - P.goldInt.g) < 0.02
+		and math.abs(col.b - P.goldInt.b) < 0.02
+	UI.Accent.switchOn = mono and P.switchOn or col
 end
 
 -- ---------------------------------------------------------------------------
