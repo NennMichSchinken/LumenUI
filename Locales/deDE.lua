@@ -258,6 +258,7 @@ ns.RegisterLocale("deDE", {
 	["Accent color"] = "Akzentfarbe",
 	["Suite-wide highlight — applies instantly."] = "Suite-weiter Akzent — wird sofort angewendet.",
 	["Custom color"] = "Eigene Farbe",
+	["Random color"] = "Zufällige Farbe",
 	["Interface language"] = "Oberflächensprache",
 	["Automatic (system language)"] = "Automatisch (Systemsprache)",
 	["Language of Lumen's interface. \"Automatic\" follows your WoW client language. A reload is required to apply."] = "Sprache der Lumen-Oberfläche. „Automatisch\" folgt der WoW-Client-Sprache. Ein Neuladen ist zum Anwenden nötig.",

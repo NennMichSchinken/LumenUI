@@ -1971,7 +1971,7 @@ local function buildColorPicker()
 	cp:SetFrameStrata("FULLSCREEN_DIALOG")
 	cp:EnableMouse(true) -- swallows clicks (not through to the closer)
 	UI.RoundFill(cp, Surface.Window, nil, nil, RAD.xl) -- modal-style picker = XL
-	UI.RoundBorder(cp, Accent.color, "OVERLAY", nil, RAD.xl)
+	UI.RoundBorder(cp, Border.default, "OVERLAY", nil, RAD.xl) -- soft neutral (the accent border read too strong)
 
 	-- Full-screen closer behind it (click outside = apply/close).
 	local closer = CreateFrame("Button", nil, host)
@@ -1981,12 +1981,33 @@ local function buildColorPicker()
 	cp._closer = closer
 
 	local pad = M.cpPad
-	cp:SetSize(pad * 2 + M.cpSVW + M.cpGap + M.cpHueW, pad * 3 + M.cpSVH + M.cpPrevH + M.buttonH + 14)
+	local chip = math.floor((M.cpSVW - 8 * M.cpPresetGap) / 9) -- 9 quick-pick chips span the SV width
+	local hueW = M.cpSVW - M.cpShuffle - M.cpGap
+	cp:SetSize(pad * 2 + M.cpSVW,
+		pad * 2 + chip + M.cpSVH + M.cpShuffle + M.cpPrevH + M.buttonH + 4 * M.cpGap)
+
+	-- ---- Quick-pick strip (HeroUI-style presets across the top) ----
+	local PICKER_PRESETS = { "EF4444", "F97316", "EAB308", "22C55E", "06B6D4", "3B82F6", "8B5CF6", "EC4899", "F43F5E" }
+	local strip = CreateFrame("Frame", nil, cp)
+	strip:SetPoint("TOPLEFT", cp, "TOPLEFT", pad, -pad)
+	strip:SetSize(M.cpSVW, chip)
+	for i, h in ipairs(PICKER_PRESETS) do
+		local pc = UI.hex(h)
+		local sc = CreateFrame("Button", nil, strip)
+		sc:SetSize(chip, chip)
+		sc:SetPoint("LEFT", strip, "LEFT", (i - 1) * (chip + M.cpPresetGap), 0)
+		UI.RoundFill(sc, pc, "ARTWORK", nil, RAD.sm)
+		UI.RoundBorder(sc, Border.hover, "OVERLAY", nil, RAD.sm)
+		sc:SetScript("OnClick", function()
+			cp._h, cp._s, cp._v = rgb2hsv(pc.r, pc.g, pc.b)
+			cp._applyVisual(); cp._fireChange()
+		end)
+	end
 
 	-- ---- SV field (saturation x, value y) ----
 	local sv = CreateFrame("Frame", nil, cp)
 	sv:SetSize(M.cpSVW, M.cpSVH)
-	sv:SetPoint("TOPLEFT", cp, "TOPLEFT", pad, -pad)
+	sv:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", 0, -M.cpGap)
 	sv:EnableMouse(true)
 	local svBase = sv:CreateTexture(nil, "BACKGROUND")     -- pure hue color
 	svBase:SetAllPoints(sv)
@@ -2001,53 +2022,83 @@ local function buildColorPicker()
 	svMark:SetSize(M.cpMarker, M.cpMarker)
 	UI.Stroke(svMark, { r = 1, g = 1, b = 1, a = 1 }, 2, "OVERLAY")
 
-	-- ---- Hue bar (6 segments, each a vertical gradient) ----
-	local hue = CreateFrame("Frame", nil, cp)
-	hue:SetSize(M.cpHueW, M.cpSVH)
-	hue:SetPoint("TOPLEFT", sv, "TOPRIGHT", M.cpGap, 0)
+	-- ---- Hue slider (horizontal, 6 segments) + shuffle ----
+	local hueRow = CreateFrame("Frame", nil, cp)
+	hueRow:SetPoint("TOPLEFT", sv, "BOTTOMLEFT", 0, -M.cpGap)
+	hueRow:SetSize(M.cpSVW, M.cpShuffle)
+	local hue = CreateFrame("Frame", nil, hueRow)
+	hue:SetSize(hueW, M.cpHueH)
+	hue:SetPoint("LEFT", hueRow, "LEFT", 0, 0)
 	hue:EnableMouse(true)
 	local HUES = { {1,0,0}, {1,1,0}, {0,1,0}, {0,1,1}, {0,0,1}, {1,0,1}, {1,0,0} }
-	local segH = M.cpSVH / 6
+	local segW = hueW / 6
 	for i = 1, 6 do
 		local seg = hue:CreateTexture(nil, "ARTWORK")
 		seg:SetColorTexture(1, 1, 1, 1)
-		seg:SetPoint("TOPLEFT", hue, "TOPLEFT", 0, -(i - 1) * segH)
-		seg:SetPoint("TOPRIGHT", hue, "TOPRIGHT", 0, -(i - 1) * segH)
-		seg:SetHeight(segH)
+		seg:SetPoint("TOPLEFT", hue, "TOPLEFT", (i - 1) * segW, 0)
+		seg:SetPoint("BOTTOMLEFT", hue, "BOTTOMLEFT", (i - 1) * segW, 0)
+		seg:SetWidth(segW)
 		local a, c2 = HUES[i], HUES[i + 1]
-		-- top = a (segment start), bottom = c2 -> min(bottom)=c2, max(top)=a
-		seg:SetGradient("VERTICAL", CreateColor(c2[1], c2[2], c2[3], 1), CreateColor(a[1], a[2], a[3], 1))
+		-- left = a (segment start), right = c2 -> min(left)=a, max(right)=c2
+		seg:SetGradient("HORIZONTAL", CreateColor(a[1], a[2], a[3], 1), CreateColor(c2[1], c2[2], c2[3], 1))
 	end
 	UI.Stroke(hue, Border.hover, 1, "OVERLAY")
 	local hueMark = hue:CreateTexture(nil, "OVERLAY")
 	hueMark:SetColorTexture(1, 1, 1, 1)
-	hueMark:SetPoint("LEFT", hue, "LEFT", -2, 0)
-	hueMark:SetPoint("RIGHT", hue, "RIGHT", 2, 0)
-	hueMark:SetHeight(3)
+	hueMark:SetWidth(3)
 
-	-- ---- Preview + hex ----
+	-- Randomize button (icon-reset = reroll) beside the hue slider.
+	local shuffle = CreateFrame("Button", nil, hueRow)
+	shuffle:SetSize(M.cpShuffle, M.cpShuffle)
+	shuffle:SetPoint("RIGHT", hueRow, "RIGHT", 0, 0)
+	UI.RoundFill(shuffle, Surface.Input, "BACKGROUND", nil, RAD.sm)
+	local shEdges = UI.RoundBorder(shuffle, Border.hover, "OVERLAY", nil, RAD.sm)
+	local shIcon = shuffle:CreateTexture(nil, "ARTWORK")
+	shIcon:SetTexture(TEX .. "icon-reset")
+	shIcon:SetSize(M.cpShuffle - 12, M.cpShuffle - 12)
+	shIcon:SetPoint("CENTER", shuffle, "CENTER", 0, 0)
+	shIcon:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
+	shuffle:SetScript("OnEnter", function()
+		shIcon:SetVertexColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
+		for _, e in ipairs(shEdges) do UI.SetColor(e, Accent.color) end
+		W.ShowTextTip(shuffle, T("Random color"))
+	end)
+	shuffle:SetScript("OnLeave", function()
+		shIcon:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
+		for _, e in ipairs(shEdges) do UI.SetColor(e, Border.hover) end
+		W.HideTip()
+	end)
+	shuffle:SetScript("OnClick", function()
+		cp._h = math.random()
+		cp._s = 0.5 + math.random() * 0.5 -- 50-100% saturation
+		cp._v = 0.4 + math.random() * 0.5 -- 40-90% value
+		cp._applyVisual(); cp._fireChange()
+	end)
+
+	-- ---- Swatch + hex ----
 	local preview = CreateFrame("Frame", nil, cp)
-	preview:SetSize(M.cpPrevH + 14, M.cpPrevH)
-	preview:SetPoint("TOPLEFT", sv, "BOTTOMLEFT", 0, -14)
-	local prevTex = preview:CreateTexture(nil, "ARTWORK"); prevTex:SetAllPoints(preview)
-	UI.Stroke(preview, Border.hover, 1, "OVERLAY")
+	preview:SetSize(M.cpPrevH, M.cpPrevH)
+	preview:SetPoint("TOPLEFT", hueRow, "BOTTOMLEFT", 0, -M.cpGap)
+	local prevTex = UI.RoundFill(preview, { r = 1, g = 1, b = 1, a = 1 }, "ARTWORK", nil, RAD.sm)
+	UI.RoundBorder(preview, Border.hover, "OVERLAY", nil, RAD.sm)
 
 	local hexBox = CreateFrame("EditBox", nil, cp)
 	hexBox:SetSize(110, M.cpPrevH)
-	hexBox:SetPoint("LEFT", preview, "RIGHT", 26, 0)
+	hexBox:SetPoint("LEFT", preview, "RIGHT", M.cpGap, 0)
 	UI.RoundFill(hexBox, Surface.Input, nil, nil, R_CTRL)
 	UI.RoundBorder(hexBox, Border.default, "OVERLAY", nil, R_CTRL)
 	UI:SetFont(hexBox, "value", Text.Primary)
 	hexBox:SetJustifyH("CENTER"); hexBox:SetAutoFocus(false); hexBox:SetMaxLetters(6)
-	hexBox:SetTextInsets(6, 6, 0, 0)
-	local hexHash = UI.FS(cp, "value", Text.Description)
-	hexHash:SetText("#"); hexHash:SetPoint("RIGHT", hexBox, "LEFT", -3, 0)
+	hexBox:SetTextInsets(16, 6, 0, 0)
+	local hexHash = UI.FS(hexBox, "value", Text.Description)
+	hexHash:SetText("#"); hexHash:SetPoint("LEFT", hexBox, "LEFT", 7, 0)
 
 	-- ---- Buttons ----
 	-- Apply + cancel grouped at the bottom left, small fixed gap (cpBtnGap).
-	local okBtn = W.Button(cp, { text = T("Apply"), variant = "primary" })
+	local btnW = (M.cpSVW - M.cpBtnGap) / 2 -- two equal buttons fill the picker width (German labels overflowed auto-size)
+	local okBtn = W.Button(cp, { text = T("Apply"), variant = "primary", width = btnW })
 	okBtn:SetPoint("BOTTOMLEFT", cp, "BOTTOMLEFT", pad, pad)
-	local cancelBtn = W.Button(cp, { text = T("Cancel"), variant = "ghost" })
+	local cancelBtn = W.Button(cp, { text = T("Cancel"), variant = "ghost", width = btnW })
 	cancelBtn:SetPoint("LEFT", okBtn, "RIGHT", M.cpBtnGap, 0)
 
 	-- ---- State + logic ----
@@ -2060,15 +2111,14 @@ local function buildColorPicker()
 		svMark:ClearAllPoints()
 		svMark:SetPoint("CENTER", sv, "TOPLEFT", cp._s * M.cpSVW, -(1 - cp._v) * M.cpSVH)
 		hueMark:ClearAllPoints()
-		hueMark:SetPoint("LEFT", hue, "LEFT", -2, 0)
-		hueMark:SetPoint("RIGHT", hue, "RIGHT", 2, 0)
-		hueMark:SetPoint("TOP", hue, "TOP", 0, -cp._h * M.cpSVH + 1.5)
+		hueMark:SetPoint("TOP", hue, "TOPLEFT", cp._h * hueW, 2)
+		hueMark:SetPoint("BOTTOM", hue, "BOTTOMLEFT", cp._h * hueW, -2)
 	end
 	local function applyVisual(fromHex)
 		local hr, hg, hb = hsv2rgb(cp._h, 1, 1)
 		svBase:SetColorTexture(hr, hg, hb, 1)
 		local r, g, b = curRGB()
-		prevTex:SetColorTexture(r, g, b, 1)
+		prevTex:SetVertexColor(r, g, b, 1) -- rounded swatch (white asset, tinted)
 		if not fromHex then hexBox:SetText(toHex(r, g, b)) end
 		placeMarks()
 	end
@@ -2093,11 +2143,11 @@ local function buildColorPicker()
 
 	-- Hue-Drag
 	local function hueFromCursor()
-		local _, cy = GetCursorPosition()
+		local cx = GetCursorPosition()
 		local sc = hue:GetEffectiveScale(); if not sc or sc == 0 then return end
-		cy = cy / sc
-		local top = hue:GetTop(); if not top then return end
-		cp._h = clamp((top - cy) / M.cpSVH, 0, 0.999999)
+		cx = cx / sc
+		local left = hue:GetLeft(); if not left then return end
+		cp._h = clamp((cx - left) / hueW, 0, 0.999999)
 		applyVisual(); cp._fireChange()
 	end
 	hue:SetScript("OnMouseDown", function(self) self:SetScript("OnUpdate", hueFromCursor); hueFromCursor() end)

@@ -474,6 +474,9 @@ UI.WIDGET = {
 	cpMarker = 10,  -- edge length of the markers
 	cpPrevH  = 30,  -- height of the preview/hex row
 	cpBtnGap = 8,   -- gap between Apply/Cancel in the color picker
+	cpPresetGap = 5, -- gap between the 9 quick-pick chips in the picker's top strip
+	cpHueH   = 16,  -- height of the horizontal hue slider
+	cpShuffle = 28, -- square randomize button beside the hue slider
 
 	rowGap      = 30, -- column gap in W.Row (row3/row2)
 
