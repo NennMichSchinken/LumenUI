@@ -93,6 +93,12 @@ local DOT_COLOR = { r = 168 / 255, g = 168 / 255, b = 176 / 255 }
 -- mockup alphas were tuned on a mid-tone accent (Rose); pure white in mono reads
 -- a touch stronger, so this may want to sit below 1.0 for the mono default.
 local AURORA_INTENSITY = 1.0
+-- Aurora-lit dots (accent map step 2): a second dot layer tinted by the accent,
+-- masked to the aurora FOOTPRINT (aurora-mask.tga, the normalized-to-1.0 shape)
+-- so only the dots UNDER the aurora take colour; everything else stays neutral
+-- grey. DOT_LIT_ALPHA = the lit-dot strength (design target base@.50), tuned
+-- independently of the glow. Near-white/subtle in mono, the payoff in colour.
+local DOT_LIT_ALPHA = 0.50
 local slideTo = UI.slideTo -- hoisted to UI (Tokens); shared with W.Segment
 
 -- Geometry of `item` in `ref`'s LOCAL coordinate units (what SetPoint offsets on
@@ -375,11 +381,29 @@ function Shell:Build()
 		dotVign:SetVertexColor(Surface.Window.r, Surface.Window.g, Surface.Window.b, 1)
 		dotVign:AddMaskTexture(mask)
 
+		-- Aurora-lit dots: the same dot tile, tinted by the accent, but masked to
+		-- the aurora FOOTPRINT so coloured dots appear ONLY where the aurora is
+		-- (dots elsewhere stay the neutral grey dotBg). Two masks multiply: the
+		-- corner mask (rounded panel) AND the aurora-shape mask.
+		local auroraMask = f:CreateMaskTexture(nil, "BACKGROUND")
+		auroraMask:SetTexture(TEX_SHELL .. "aurora-mask")
+		auroraMask:SetAllPoints(dotBg)
+
+		local dotLit = f:CreateTexture(nil, "BACKGROUND", nil, 3)
+		dotLit:SetTexture(TEX_SHELL .. "dot-tile", true, true)
+		dotLit:SetSnapToPixelGrid(false); dotLit:SetTexelSnappingBias(0)
+		dotLit:SetAllPoints(dotBg)
+		dotLit:SetTexCoord(0, (PANEL.w - S.navWidth) / DOT_TILE_PX, 0, PANEL.h / DOT_TILE_PX)
+		dotLit:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, DOT_LIT_ALPHA)
+		dotLit:AddMaskTexture(mask)
+		dotLit:AddMaskTexture(auroraMask)
+		f._auroraLit = dotLit -- re-tinted by a future UI.SetAccent (step 6)
+
 		-- Aurora glow OVER the dots (the accent map is specific: aurora on top,
-		-- dots peek through — sublevel 3 > the dot layers, still BACKGROUND so
+		-- dots peek through — sublevel 4 > the dot/lit layers, still BACKGROUND so
 		-- cards/nav on higher-level child frames draw above it). Tinted by the
 		-- live accent; near-white in mono, the user's hue once a colour is set.
-		local aurora = f:CreateTexture(nil, "BACKGROUND", nil, 3)
+		local aurora = f:CreateTexture(nil, "BACKGROUND", nil, 4)
 		aurora:SetTexture(TEX_SHELL .. "aurora")
 		aurora:SetSnapToPixelGrid(false); aurora:SetTexelSnappingBias(0)
 		aurora:SetAllPoints(dotBg)
