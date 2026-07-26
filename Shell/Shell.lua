@@ -488,41 +488,54 @@ function Shell:Build()
 
 	-- Settings search — sits between the brand block and the module list ON
 	-- PURPOSE: it searches ACROSS modules, and a field inside the content area
-	-- would read as "searches this tab". Styled like the texture-dropdown search
-	-- (same control family), one radius step, placeholder in Description.
-	local searchH = UI.WIDGET.spSearchH
-	local sbox = CreateFrame("EditBox", nil, nav)
-	sbox:SetHeight(searchH)
-	sbox:SetPoint("TOP", tag, "BOTTOM", 0, -S.s9)
-	sbox:SetPoint("LEFT", nav, "LEFT", S.navPillPadX, 0)
-	sbox:SetPoint("RIGHT", nav, "RIGHT", -S.navPillPadX, 0)
-	UI.RoundFill(sbox, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	-- would read as "searches this tab".
+	-- STRUCTURE: a normal Frame carries the face (fill, border, icons) and the
+	-- EditBox is only the text line inside it. Textures parented straight to an
+	-- EditBox rendered as blank boxes in-game (Florian 2026-07-26, survived a
+	-- client restart, files verified byte-identical to working icons) — every
+	-- working glyph in the Shell sits on a plain frame, so this one does too.
+	-- Height + edges match the nav PILLS, so the field reads as one of the list.
+	local fieldH = S.navItemH - S.navPillPadY * 2
+	local sfield = CreateFrame("Frame", nil, nav)
+	sfield:SetHeight(fieldH)
+	sfield:SetPoint("TOP", tag, "BOTTOM", 0, -S.s9)
+	sfield:SetPoint("LEFT", nav, "LEFT", S.navPillPadX, 0)
+	sfield:SetPoint("RIGHT", nav, "RIGHT", -S.navPillPadX, 0)
+	UI.RoundFill(sfield, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
 	-- RoundBorder returns a TABLE of edge textures (a shape can need several),
 	-- so recolouring goes through all of them.
-	local sboxBorder = UI.RoundBorder(sbox, Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local sboxBorder = UI.RoundBorder(sfield, Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL)
 	local function tintBorder(col)
 		for _, tex in ipairs(sboxBorder) do setColor(tex, col) end
 	end
-	UI:SetFont(sbox, "selectText", Text.Primary)
+
 	-- Magnifier (Lucide "search"): names the field without a caption.
-	local sicon = sbox:CreateTexture(nil, "OVERLAY")
-	sicon:SetSize(S.navIconSize - 4, S.navIconSize - 4)
-	sicon:SetPoint("LEFT", sbox, "LEFT", S.s4, 0)
+	local sicon = sfield:CreateTexture(nil, "ARTWORK")
+	sicon:SetSize(S.navIconSize, S.navIconSize)
+	sicon:SetPoint("LEFT", sfield, "LEFT", S.s5, 0)
 	sicon:SetTexture(TEX .. "icon-search")
 	sicon:SetSnapToPixelGrid(false)
 	sicon:SetTexelSnappingBias(0)
 	setColor(sicon, Text.Description)
-	local textLeft = S.s4 + (S.navIconSize - 4) + S.s3
-	sbox:SetTextInsets(textLeft, 28, 0, 0)
+
+	local textLeft = S.s5 + S.navIconSize + S.s3
+	local sbox = CreateFrame("EditBox", nil, sfield)
+	sbox:SetPoint("LEFT", sfield, "LEFT", textLeft, 0)
+	sbox:SetPoint("RIGHT", sfield, "RIGHT", -(S.s5 + S.closeGlyph + S.s3), 0)
+	sbox:SetHeight(fieldH)
+	UI:SetFont(sbox, "selectText", Text.Primary)
 	sbox:SetAutoFocus(false)
 	sbox:SetMaxLetters(40)
-	local sph = FS(sbox, "selectText", Text.Description)
-	sph:SetText(T("Search settings") .. " …")
-	sph:SetPoint("LEFT", sbox, "LEFT", textLeft, 0)
+	-- The EditBox only spans the text column, so the whole face takes the click.
+	sfield:EnableMouse(true)
+	sfield:SetScript("OnMouseDown", function() sbox:SetFocus() end)
+	local sph = FS(sfield, "selectText", Text.Description)
+	sph:SetText(T("Search"))
+	sph:SetPoint("LEFT", sfield, "LEFT", textLeft, 0)
 	-- Clear glyph, only while there is something to clear.
-	local sclear = CreateFrame("Button", nil, sbox)
-	sclear:SetSize(searchH - 10, searchH - 10)
-	sclear:SetPoint("RIGHT", sbox, "RIGHT", -7, 0)
+	local sclear = CreateFrame("Button", nil, sfield)
+	sclear:SetSize(fieldH - S.s3 * 2, fieldH - S.s3 * 2)
+	sclear:SetPoint("RIGHT", sfield, "RIGHT", -S.s3, 0)
 	local sclearTex = sclear:CreateTexture(nil, "OVERLAY")
 	sclearTex:SetSize(S.closeGlyph - 4, S.closeGlyph - 4)
 	sclearTex:SetPoint("CENTER", sclear, "CENTER", 0, 0)
@@ -582,7 +595,7 @@ function Shell:Build()
 	-- that used to sit under the tagline).
 	local navLabel = FS(nav, "navGroupLabel", Text.Description)
 	navLabel:SetText(UI.Track("MODULES", " "))
-	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -(S.s9 + UI.WIDGET.spSearchH + S.s9))
+	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -(S.s9 + fieldH + S.s9))
 
 	-- Version chip (stage 3): muted "v<x.y.z>" pinned to the very bottom-right of
 	-- the sidebar so it never floats when the preview button is hidden (Florian
