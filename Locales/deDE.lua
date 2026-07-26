@@ -450,4 +450,15 @@ ns.RegisterLocale("deDE", {
 	["Reset window positions"] = "Fensterpositionen zurücksetzen",
 	["Reset window positions?"] = "Fensterpositionen zurücksetzen?",
 	["All Blizzard windows return to their default positions the next time they are opened."] = "Alle Blizzard-Fenster erscheinen beim nächsten Öffnen wieder an ihren Standardpositionen.",
+
+	-- Shell: global settings search
+	["Search settings"] = "Einstellungen suchen",
+	["Results for"] = "Ergebnisse für",
+	["Nothing found for"] = "Nichts gefunden für",
+	["Try part of the name — for example \"aggro\" or \"size\"."] = "Suche nach einem Teil des Namens — zum Beispiel „aggro“ oder „Größe“.",
+	["match"] = "Treffer",
+	["matches"] = "Treffer",
+	["Switch"] = "Schalter",
+	["Slider"] = "Regler",
+	["Choice"] = "Auswahl",
 })

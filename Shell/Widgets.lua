@@ -132,6 +132,11 @@ function W.Slider(parent, o)
 	local compact = o.compact
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(compact and M.sliderCompactH or M.sliderH)
+	-- Settings search: field controls carry their own label (they sit in a
+	-- FieldRow cell, not in a W.OptionRow), so they register themselves.
+	if o.label and ns.Shell and ns.Shell.IndexOption then
+		ns.Shell:IndexOption(o.label, f, "slider", o.tooltip)
+	end
 	if o.width then f:SetWidth(o.width) end
 
 	-- Compact = a field cell: label in the same small style as Select/Swatch
@@ -427,6 +432,9 @@ function W.Select(parent, o)
 		f:SetHeight(CONTROL_H - topY)
 	else
 		f:SetHeight(CONTROL_H)
+	end
+	if o.label and ns.Shell and ns.Shell.IndexOption then
+		ns.Shell:IndexOption(o.label, f, "select", o.tooltip)
 	end
 
 	-- Header-Button
@@ -1338,6 +1346,7 @@ end
 function W.Checkbox(parent, o)
 	local BOX = M.checkBox
 	local b = CreateFrame("Button", nil, parent)
+	b._searchTip = o.tooltip -- settings search indexes tooltip text too (W.OptionRow reads this)
 	b:SetHeight(BOX)
 
 	local box = CreateFrame("Frame", nil, b)
@@ -1411,6 +1420,7 @@ end
 -- ---------------------------------------------------------------------------
 function W.Switch(parent, o)
 	local b = CreateFrame("Button", nil, parent)
+	b._searchTip = o.tooltip -- settings search indexes tooltip text too (W.OptionRow reads this)
 	-- o.small: field/header variant (card grid system — label-on-top cells and
 	-- collapsible-header master toggles).
 	local swH = o.small and M.switchSmallH or M.switchH
@@ -3062,6 +3072,12 @@ function W.OptionRow(parent, label)
 	function row:Attach(ctrl)
 		ctrl:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 		row._control = ctrl
+		-- Settings search: the row reports itself once its control is known (the
+		-- control carries the tooltip, which the search indexes as well). No-op
+		-- outside a screen build — see Shell:IndexOption.
+		if ns.Shell and ns.Shell.IndexOption then
+			ns.Shell:IndexOption(label, row, "option", ctrl and ctrl._searchTip)
+		end
 		return row
 	end
 	row.SetWidgetEnabled = function(_, on)

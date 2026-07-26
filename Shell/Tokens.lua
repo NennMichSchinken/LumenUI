@@ -576,6 +576,18 @@ UI.LAYOUT = {
 		afterCheck = 30, -- after checkbox/short control -> tall control (dropdown/slider)
 		group      = 32, -- deliberate break between two sub-groups in a card
 	},
+	-- SEARCH — the global settings-search result screen (own screen, so its
+	-- measures live here rather than in UI.WIDGET; design bible §5.4).
+	search = {
+		headH     = 34, -- result heading line ("Results for …" + match count)
+		rowH      = 56, -- result row: label + breadcrumb stacked, so taller than an option row
+		rowGap    = 2,  -- rows read as ONE list, not as separate cards
+		headGap   = 18, -- result heading -> first row
+		badgePadX = 9,  -- inner padding of the kind badge (Switch / Slider / …)
+		badgeH    = 22,
+		crumbGap  = 3,  -- label baseline -> breadcrumb line
+		emptyTop  = 90, -- air above the "nothing found" message
+	},
 	-- GENERAL — cross-screen constants used by several tabs.
 	general = {
 		tabTop      = 0, -- tab strip -> first element (0: air above/below the strip is EQUAL — Florian 2026-07-05)

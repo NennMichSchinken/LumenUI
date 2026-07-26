@@ -486,13 +486,88 @@ function Shell:Build()
 	tag:SetText(UI.Track("A FOCUSED UI SUITE", " ")) -- v3: uppercase tracked, matches the mockup
 	tag:SetPoint("TOPLEFT", word, "BOTTOMLEFT", 0, -9) -- mockup ratio (7px @ 1x -> ~9 design-px)
 
+	-- Settings search — sits between the brand block and the module list ON
+	-- PURPOSE: it searches ACROSS modules, and a field inside the content area
+	-- would read as "searches this tab". Styled like the texture-dropdown search
+	-- (same control family), one radius step, placeholder in Description.
+	local searchH = UI.WIDGET.spSearchH
+	local sbox = CreateFrame("EditBox", nil, nav)
+	sbox:SetHeight(searchH)
+	sbox:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -26)
+	sbox:SetPoint("RIGHT", nav, "RIGHT", -S.panelGutter, 0)
+	UI.RoundFill(sbox, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	-- RoundBorder returns a TABLE of edge textures (a shape can need several),
+	-- so recolouring goes through all of them.
+	local sboxBorder = UI.RoundBorder(sbox, Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local function tintBorder(col)
+		for _, tex in ipairs(sboxBorder) do setColor(tex, col) end
+	end
+	UI:SetFont(sbox, "selectText", Text.Primary)
+	sbox:SetTextInsets(12, 28, 0, 0)
+	sbox:SetAutoFocus(false)
+	sbox:SetMaxLetters(40)
+	local sph = FS(sbox, "selectText", Text.Description)
+	sph:SetText(T("Search settings") .. " …")
+	sph:SetPoint("LEFT", sbox, "LEFT", 12, 0)
+	-- Clear glyph, only while there is something to clear.
+	local sclear = CreateFrame("Button", nil, sbox)
+	sclear:SetSize(searchH - 10, searchH - 10)
+	sclear:SetPoint("RIGHT", sbox, "RIGHT", -7, 0)
+	local sclearTex = sclear:CreateTexture(nil, "OVERLAY")
+	sclearTex:SetAllPoints(sclear)
+	sclearTex:SetTexture(TEX .. "icon-x")
+	setColor(sclearTex, Text.Description)
+	sclear:SetScript("OnEnter", function() setColor(sclearTex, Text.Primary) end)
+	sclear:SetScript("OnLeave", function() setColor(sclearTex, Text.Description) end)
+	sclear:Hide()
+	local function paintSearch()
+		local txt = sbox:GetText() or ""
+		sph:SetShown(txt == "" and not sbox:HasFocus())
+		sclear:SetShown(txt ~= "")
+		tintBorder((txt ~= "" or sbox:HasFocus()) and Accent.color or Border.default)
+	end
+	sbox:SetScript("OnTextChanged", function(_, user)
+		paintSearch()
+		if user then Shell:SetSearchQuery(sbox:GetText()) end
+	end)
+	-- Coming back to the field with a term still in it brings the result list
+	-- back (the jump only left the list, it never cleared the query) — that's
+	-- what makes working through several hits one after another work.
+	sbox:SetScript("OnEditFocusGained", function(self2)
+		paintSearch()
+		local txt = self2:GetText() or ""
+		if txt ~= "" and not Shell:IsSearching() then Shell:SetSearchQuery(txt) end
+	end)
+	sbox:SetScript("OnEditFocusLost", paintSearch)
+	-- ESC clears first and only closes the panel on a second press (a half-typed
+	-- query is the more likely thing you want gone).
+	sbox:SetScript("OnEscapePressed", function(self2)
+		if (self2:GetText() or "") ~= "" then
+			self2:SetText(""); Shell:SetSearchQuery("")
+		end
+		self2:ClearFocus()
+	end)
+	sbox:SetScript("OnEnterPressed", function() Shell:ActivateSearchSelection() end)
+	-- Arrow keys walk the results without leaving the field (the pattern Blizzard's
+	-- own group-finder search box uses).
+	sbox:SetScript("OnArrowPressed", function(_, key)
+		if key == "UP" then Shell:MoveSearchSelection(-1)
+		elseif key == "DOWN" then Shell:MoveSearchSelection(1) end
+	end)
+	sclear:SetScript("OnClick", function()
+		sbox:SetText(""); Shell:SetSearchQuery(""); sbox:ClearFocus()
+	end)
+	self._search = sbox
+	self._searchPaint = paintSearch
+	paintSearch()
+
 	-- "MODULES" caption above the nav list (v3 mockup, stage 3): a small tracked
 	-- uppercase label, same left gutter as the nav items (tag is already inset by
-	-- navGutter, so x=0 here). Anchored off the TAGLINE's real bottom, not the
-	-- brand frame's edge, so it doesn't inherit dead space from navBrandH.
+	-- navGutter, so x=0 here). Anchored off the SEARCH field now (it took the gap
+	-- that used to sit under the tagline).
 	local navLabel = FS(nav, "navGroupLabel", Text.Description)
 	navLabel:SetText(UI.Track("MODULES", " "))
-	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -42) -- mockup ratio (34px @ 1x -> ~42 design-px)
+	navLabel:SetPoint("TOPLEFT", sbox, "BOTTOMLEFT", 0, -22)
 
 	-- Version chip (stage 3): muted "v<x.y.z>" pinned to the very bottom-right of
 	-- the sidebar so it never floats when the preview button is hidden (Florian
@@ -955,6 +1030,29 @@ local function flashCard(card)
 	fl._ag:Stop(); fl._ag:Play()
 end
 
+-- Same pulse for a single settings ROW (search jump): tighter radius, and it
+-- also washes the row so a thin line is actually noticeable in a full card.
+local function flashRow(row)
+	local fl = row._searchFlash
+	if not fl then
+		fl = CreateFrame("Frame", nil, row)
+		fl:SetPoint("TOPLEFT", row, "TOPLEFT", -S.s3, S.s2)
+		fl:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", S.s3, -S.s2)
+		fl:SetFrameLevel(row:GetFrameLevel() + 9)
+		UI.RoundFill(fl, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
+		UI.RoundBorder(fl, Accent.color, "OVERLAY", nil, UI.RADIUS.sm)
+		local ag = fl:CreateAnimationGroup()
+		local a = ag:CreateAnimation("Alpha")
+		a:SetFromAlpha(1); a:SetToAlpha(0)
+		a:SetStartDelay(0.7); a:SetDuration(1.1)
+		ag:SetScript("OnFinished", function() fl:Hide() end)
+		fl._ag = ag
+		row._searchFlash = fl
+	end
+	fl:SetAlpha(1); fl:Show()
+	fl._ag:Stop(); fl._ag:Play()
+end
+
 function Shell:JumpTo(sectionName, tabName, cardKey)
 	if ns.ShellJumpPrep then ns.ShellJumpPrep(sectionName, tabName, cardKey) end
 	-- The prep may have opened a disclosure a cached screen doesn't show yet —
@@ -1017,6 +1115,7 @@ end
 -- every build, so a screen without a badge never inherits a stale one. The
 -- composed text is recorded in _lastBadge so the screen cache can restore it.
 function Shell:SetTabBadge(label, value)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	if not self._tabBadge then return end
 	if not label or label == "" then
 		self._lastBadge = nil
@@ -1463,12 +1562,14 @@ end
 -- also routes here and simply closes the window.
 function Shell:IsPreviewOpen() return self._previewOpen == true end
 function Shell:SetPreviewOpen(v)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	self._previewOpen = v and true or false
 	self:_UpdateDock(self._previewKey)
 end
 function Shell:TogglePreview() self:SetPreviewOpen(not self._previewOpen) end
 
 function Shell:_UpdateDock(key)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock = self._dock
 	if not dock then return end
 	self._previewKey = key
@@ -1526,6 +1627,7 @@ end
 -- content-sized on both axes; only the docked bottom variant keeps the
 -- panel's width (w = nil there).
 function Shell:SetDockLayout(side, w, h)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock, panel = self._dock, self._frame
 	if not (dock and panel) then return end
 	dock._side = side
@@ -1543,6 +1645,7 @@ end
 -- Dock window chrome (fill, border) — stripped by the preview's "Backdrop"
 -- filter so only the frames + header strip remain visible.
 function Shell:SetDockChrome(on)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock = self._dock
 	if not dock then return end
 	dock._fill:SetShown(on)
@@ -1586,6 +1689,297 @@ end
 -- height, restore the scroll position, update the scrollbar.
 -- `changed` = a profile value changed: keep the scroll position AND force a
 -- rebuild (drops the screen cache). Falsy = pure navigation (cache reuse).
+-- ---------------------------------------------------------------------------
+--  Settings search — the INDEX.
+--  Anti-bloat means few options, but "few" is still ~200 across nine screens,
+--  so the honest answer to "where is this setting?" is a search that reaches
+--  INTO the screens instead of just filtering module names.
+--  The index MUST NOT be a hand-kept list — that drifts at the second new
+--  option. Instead the widget builders (W.OptionRow / W.Slider / W.Select)
+--  report their label while a screen builds, so every option added later is
+--  searchable for free. indexCtx is only set around a builder call, which is
+--  what keeps dialogs, the preview dock and the Edit Mode flyout out of it.
+--  Two halves, deliberately separate:
+--    searchIndex — pure DATA, survives rebuilds (label/tooltip/section/tab).
+--    screen._searchRows — the live frames, refilled on every build. Frames die
+--    with their screen, so a jump always resolves against the CURRENT screen
+--    (same reasoning as _jumpCards).
+-- ---------------------------------------------------------------------------
+local searchIndex = {}   -- ordered: { label, tip, kind, section, tab, key, hay }
+local indexSeen = {}     -- key -> true (an option is listed once, not once per rebuild)
+local builtScreens = {}  -- "Section/Tab" -> true (built at least once, warm-up skips it)
+local indexCtx           -- { section, tab } — set ONLY while a builder runs
+
+function Shell:IndexOption(label, frame, kind, tip)
+	if not (indexCtx and label and label ~= "") then return end
+	local key = indexCtx.section .. "/" .. indexCtx.tab .. "/" .. label
+	local scr = self._screen
+	if scr then
+		scr._searchRows = scr._searchRows or {}
+		scr._searchRows[key] = frame
+	end
+	if indexSeen[key] then return end
+	indexSeen[key] = true
+	searchIndex[#searchIndex + 1] = {
+		label = label, tip = tip, kind = kind,
+		section = indexCtx.section, tab = indexCtx.tab, key = key,
+		-- Tooltips are indexed too: searching "instanz" should find the aggro and
+		-- invite options even though neither label contains the word.
+		hay = (label .. " " .. (tip or "")):lower(),
+	}
+end
+
+function Shell:SearchEntries() return searchIndex end
+
+-- Warm-up: screens are built lazily, so on a cold Shell the index only knows
+-- the tabs you happened to open. Before the first search we build the missing
+-- ones once into a hidden holder purely to collect labels, then throw the
+-- frames away. _warming makes the side-effecting Shell hooks (dock, badge)
+-- no-ops for that pass, the builder runs in pcall, and a failure only costs
+-- that screen's entries — the search still works with what it has.
+function Shell:WarmSearchIndex()
+	if self._searchWarmed then return end
+	self._searchWarmed = true
+	local holder = self._searchWarmHolder
+	if not holder then
+		holder = CreateFrame("Frame", nil, self._frame)
+		holder:SetPoint("TOPLEFT", self._scrollChild, "TOPLEFT", 0, 0)
+		holder:SetPoint("TOPRIGHT", self._scrollChild, "TOPRIGHT", 0, 0)
+		holder:SetHeight(1)
+		holder:Hide()
+		self._searchWarmHolder = holder
+	end
+	local savedScreen, savedPopovers, savedBadge = self._screen, self._popovers, self._lastBadge
+	self._warming = true
+	for _, sec in ipairs(SECTIONS) do
+		if not sec.soon then
+			for _, tabName in ipairs(sec[2]) do
+				local key = sec[1] .. "/" .. tabName
+				local builder = ns.Screens and ns.Screens[key]
+				if builder and not builtScreens[key] then
+					builtScreens[key] = true
+					local d = CreateFrame("Frame", nil, holder)
+					d:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+					d:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, 0)
+					self._screen = d
+					local throwaway = {}
+					if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(throwaway) end
+					indexCtx = { section = sec[1], tab = tabName }
+					pcall(builder, d, newStack(d))
+					indexCtx = nil
+					d:Hide(); d:SetParent(nil)
+					for _, fr in ipairs(throwaway) do fr:Hide(); fr:SetParent(nil) end
+				end
+			end
+		end
+	end
+	self._warming = false
+	self._screen, self._popovers, self._lastBadge = savedScreen, savedPopovers, savedBadge
+	if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(self._popovers) end
+end
+
+-- ---------------------------------------------------------------------------
+--  Settings search — matching, state and the result screen (variant A, chosen
+--  by Florian 2026-07-26 over an inline-filtered settings page).
+-- ---------------------------------------------------------------------------
+local SEARCH_KEY = "\1search" -- pseudo screen key; never collides with "Section/Tab"
+
+local function normalize(s) return (s:lower():gsub("[-_%.]", " ")) end
+
+-- Substring match with a stem fallback: plain matching fails the obvious case
+-- "hots" -> "HoT-Symbolgröße" (trailing s). Dropping a trailing en/s/n covers
+-- German and English plurals alike without dragging in a stemmer.
+local function hayHas(hay, term)
+	if hay:find(term, 1, true) then return true end
+	if #term > 3 then
+		local stem = (term:gsub("en$", ""))
+		stem = (stem:gsub("[sn]$", ""))
+		if #stem > 2 and stem ~= term and hay:find(stem, 1, true) then return true end
+	end
+	return false
+end
+
+function Shell:SearchResults()
+	local q = self._searchQuery
+	if not q then return nil end
+	local terms = {}
+	for w in normalize(q):gmatch("%S+") do terms[#terms + 1] = w end
+	if #terms == 0 then return nil end
+	local out = {}
+	for _, e in ipairs(searchIndex) do
+		local hay = normalize(e.hay .. " " .. e.section .. " " .. e.tab)
+		local all = true
+		for _, t in ipairs(terms) do
+			if not hayHas(hay, t) then all = false; break end
+		end
+		if all then out[#out + 1] = e end
+	end
+	return out
+end
+
+-- Hit count per module next to the nav entries — the fastest "where does this
+-- live?" answer, before you even read the list.
+function Shell:_UpdateNavCounts()
+	if not self._navButtons then return end
+	local per = {}
+	local res = self:SearchResults()
+	if res then for _, e in ipairs(res) do per[e.section] = (per[e.section] or 0) + 1 end end
+	for i, nb in ipairs(self._navButtons) do
+		local sec = SECTIONS[i]
+		if not nb._countFS then
+			nb._countFS = FS(nb, "caption", Text.Description)
+			nb._countFS:SetPoint("RIGHT", nb, "RIGHT", -S.navGutter, 0)
+		end
+		local n = per[sec[1]]
+		nb._countFS:SetText(n and tostring(n) or "")
+		nb._countFS:SetShown(n ~= nil)
+	end
+end
+
+function Shell:SetSearchQuery(text)
+	text = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	local q = text ~= "" and text or nil
+	if q == self._searchQuery then return end
+	self._searchQuery = q
+	-- Screens are lazy, so the index only knows visited tabs until now.
+	if q then self:WarmSearchIndex() end
+	self._searchSel = nil
+	self:_UpdateNavCounts()
+	if q then
+		self:RenderContent()
+	else
+		-- Leaving search: SelectSection restores the tab strip the search hid.
+		self:SelectSection(self._section or 1)
+	end
+	if self._searchPaint then self._searchPaint() end
+end
+
+function Shell:IsSearching() return self._searchQuery ~= nil end
+
+-- Enter on the search field: jump to the highlighted result (first one if the
+-- user hasn't arrowed anywhere yet).
+function Shell:ActivateSearchSelection()
+	local res = self:SearchResults()
+	if not (res and #res > 0) then return end
+	local e = res[math.min(self._searchSel or 1, #res)]
+	if e then self:JumpToOption(e) end
+end
+
+-- Arrow keys move the highlight without leaving the field.
+function Shell:MoveSearchSelection(delta)
+	local res = self:SearchResults()
+	if not (res and #res > 0) then return end
+	local i = (self._searchSel or 0) + delta
+	if i < 1 then i = #res elseif i > #res then i = 1 end
+	self._searchSel = i
+	if self._searchRowButtons then
+		for j, b in ipairs(self._searchRowButtons) do b:SetSelected(j == i) end
+	end
+end
+
+-- Jump to an indexed option: open its section/tab, then scroll to the row and
+-- flash it. The frame is resolved on the CURRENT screen (rebuilds invalidate
+-- frames), same pattern as _ResolveJump for cards. The query deliberately stays
+-- in the field (Florian 2026-07-26) so you can work through several hits.
+function Shell:JumpToOption(entry)
+	if not entry then return end
+	self._searchQuery = nil          -- leave the result screen...
+	self:_UpdateNavCounts()          -- ...but keep the text in the box
+	self:OpenTo(entry.section, entry.tab)
+	local tries = 0
+	local function attempt()
+		if not (self._frame and self._frame:IsShown()) then return end
+		local scr = self._screen
+		local row = scr and scr._searchRows and scr._searchRows[entry.key]
+		local childTop = self._scrollChild and self._scrollChild:GetTop()
+		if not (row and row:GetTop() and childTop) then
+			tries = tries + 1
+			if tries < 8 then C_Timer.After(0, attempt) end
+			return
+		end
+		if self._scroll then
+			local viewH = self._scroll:GetHeight() or 0
+			local maxScroll = math.max(0, (self._scrollChild:GetHeight() or 0) - viewH)
+			local off = childTop - row:GetTop()
+			self._scroll:SetVerticalScroll(math.min(maxScroll, math.max(0, off - 60)))
+			if self._updateBar then self._updateBar() end
+		end
+		flashRow(row)
+	end
+	C_Timer.After(0, attempt)
+end
+
+-- The result screen. Built like any other screen (same stacker, same scroll
+-- host) but never cached — it changes with every keystroke.
+function Shell:BuildSearchScreen(d, stack)
+	local L = UI.LAYOUT.search
+	local res = self:SearchResults() or {}
+	local q = self._searchQuery or ""
+	self._searchRowButtons = {}
+
+	stack:gap(UI.LAYOUT.general.tabTop)
+
+	if #res == 0 then
+		stack:gap(L.emptyTop)
+		local box = CreateFrame("Frame", nil, d)
+		local title = FS(box, "section", Text.Secondary)
+		title:SetText(T("Nothing found for") .. " „" .. q .. "“")
+		title:SetPoint("TOP", box, "TOP", 0, 0)
+		local hint = FS(box, "hint", Text.Description)
+		hint:SetText(T("Try part of the name — for example \"aggro\" or \"size\"."))
+		hint:SetPoint("TOP", title, "BOTTOM", 0, -S.s4)
+		stack:place(box, L.headH + UI.WIDGET.hintH, 0)
+		return
+	end
+
+	-- Heading: what was searched + how much came back, so a long list is never
+	-- a surprise.
+	local head = CreateFrame("Frame", nil, d)
+	local htitle = FS(head, "section", Text.Primary)
+	htitle:SetText(T("Results for") .. " „" .. q .. "“")
+	htitle:SetPoint("LEFT", head, "LEFT", 0, 0)
+	local hcount = FS(head, "hint", Text.Description)
+	hcount:SetText(#res .. " " .. (#res == 1 and T("match") or T("matches")))
+	hcount:SetPoint("RIGHT", head, "RIGHT", 0, 0)
+	stack:place(head, L.headH, L.headGap)
+
+	local KINDS = { option = T("Switch"), slider = T("Slider"), select = T("Choice") }
+
+	for i, e in ipairs(res) do
+		local b = CreateFrame("Button", nil, d)
+		local hover = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
+		hover:Hide()
+		local sel = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
+		sel:Hide()
+
+		local lbl = FS(b, "checkLabel", Text.Secondary)
+		lbl:SetText(e.label)
+		lbl:SetPoint("LEFT", b, "LEFT", S.s4, L.crumbGap + 6)
+		-- Breadcrumb carries the whole point of the feature: WHICH "HP display"
+		-- this is. Module bright-ish, tab muted — one glance, two levels.
+		local crumb = FS(b, "caption", Text.Description)
+		crumb:SetText(e.section .. "  ›  " .. e.tab)
+		crumb:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -L.crumbGap)
+
+		local badge = FS(b, "caption", Text.Disabled)
+		badge:SetText(KINDS[e.kind] or "")
+		badge:SetPoint("RIGHT", b, "RIGHT", -S.s5, 0)
+
+		b:SetScript("OnEnter", function(self2) if not self2._sel then hover:Show() end end)
+		b:SetScript("OnLeave", function() hover:Hide() end)
+		b.SetSelected = function(self2, on)
+			self2._sel = on
+			sel:SetShown(on and true or false)
+			if on then hover:Hide() end
+		end
+		b:SetScript("OnClick", function() Shell:JumpToOption(e) end)
+
+		stack:place(b, L.rowH, i < #res and L.rowGap or 0)
+		self._searchRowButtons[i] = b
+		if self._searchSel == i then b:SetSelected(true) end
+	end
+end
+
 function Shell:RenderContent(changed)
 	-- Release any keybind-capture before switching: hiding the screen orphans a
 	-- listening KeybindButton without firing its OnHide, which would leave the
@@ -1601,10 +1995,20 @@ function Shell:RenderContent(changed)
 	local sec = SECTIONS[self._section]
 	local key = sec[1] .. "/" .. ((not sec.soon and sec[2][self._tab]) or "")
 
+	-- Search mode renders a pseudo screen instead of the tab: results span tabs,
+	-- so the tab strip would be lying about where you are -- hide it.
+	local searching = self:IsSearching()
+	if searching then
+		key = SEARCH_KEY
+		for _, t in ipairs(self._tabButtons or {}) do t:Hide() end
+		if self._tabStripBg then self._tabStripBg:Hide() end
+		if self._tabSlider then self._tabSlider:Hide(); self._tabSlider._cx = nil end
+	end
+
 	-- Leaving a whole SECTION (not a tab switch within it): reset that section's
 	-- open disclosures and drop its cached screens so they rebuild collapsed on
 	-- the next visit. Switching tabs inside a section keeps everything open.
-	if self._lastKey and self._lastKey ~= key then
+	if not searching and self._lastKey and self._lastKey ~= key then
 		local oldSec = self._lastKey:match("^[^/]+")
 		if oldSec ~= key:match("^[^/]+") and ns.SectionLeft and ns.SectionLeft(oldSec) then
 			for k, entry in pairs(cache) do
@@ -1617,7 +2021,7 @@ function Shell:RenderContent(changed)
 			end
 		end
 	end
-	self._lastKey = key
+	if not searching then self._lastKey = key end
 
 	if changed then self:InvalidateScreenCache() end
 
@@ -1643,7 +2047,7 @@ function Shell:RenderContent(changed)
 
 	-- Cache hit: re-show as-is — values are guaranteed current because every
 	-- change since the build would have dropped the cache.
-	local hit = cache[key]
+	local hit = not searching and cache[key]
 	if hit then
 		self._screen, self._popovers = hit.frame, hit.popovers
 		-- New (lazily created) popovers of reused widgets must land in THIS
@@ -1681,14 +2085,21 @@ function Shell:RenderContent(changed)
 	self._lastBadge = nil   -- SetTabBadge records what the builder sets (for the cache)
 
 	local stack = newStack(d)
-	if sec.soon then
+	if searching then
+		self:BuildSearchScreen(d, stack)
+	elseif sec.soon then
 		self:ComingSoon(d, stack, sec[1])
 	else
 		local builder = ns.Screens and ns.Screens[key]
 		if builder then
 			-- Wrap the builder defensively: a screen error must NOT empty the whole Shell
 			-- (otherwise just an empty tab without a hint). Print the error to chat.
+			-- The index context is live for exactly this call (see Shell:IndexOption)
+			-- and is cleared OUTSIDE the pcall so an erroring screen can't leak it.
+			builtScreens[key] = true
+			indexCtx = { section = sec[1], tab = sec[2][self._tab] or "" }
 			local ok, err = pcall(builder, d, stack)
+			indexCtx = nil
 			if not ok and ns.Lumen then
 				ns.Lumen:Print("|cffD66A5C" .. T("Shell error in") .. " " .. key .. ":|r " .. tostring(err))
 			end
@@ -1702,7 +2113,8 @@ function Shell:RenderContent(changed)
 	holderParent:SetHeight(h)
 	-- Never CACHE a screen built while hidden (degenerate layout) — it gets
 	-- rebuilt by the deferred OnShow pass; caching it could revive it later.
-	if not d._builtHidden then
+	-- The result screen is never cached: it changes with every keystroke.
+	if not d._builtHidden and not searching then
 		cache[key] = { frame = d, popovers = self._popovers, height = h, badge = self._lastBadge }
 	end
 	if self._scroll then
