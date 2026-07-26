@@ -1764,7 +1764,17 @@ local indexCtx           -- { section, tab } — set ONLY while a builder runs
 
 function Shell:IndexOption(label, frame, kind, tip)
 	if not (indexCtx and label and label ~= "") then return end
+	-- The same label lives on several cards of one tab ("Max. Icons" exists on
+	-- HoTs / Defensives / Major / Debuffs), so label alone is NOT unique: the
+	-- entries collided and a jump landed on whichever card was built last.
+	-- The card name is only known at place() time, so disambiguate by counting
+	-- occurrences — builders run deterministically, so a rebuild yields the
+	-- same keys and the row map stays valid.
+	indexCtx.seen = indexCtx.seen or {}
+	local nth = (indexCtx.seen[label] or 0) + 1
+	indexCtx.seen[label] = nth
 	local key = indexCtx.section .. "/" .. indexCtx.tab .. "/" .. label
+	if nth > 1 then key = key .. "#" .. nth end
 	local scr = self._screen
 	if scr then
 		scr._searchRows = scr._searchRows or {}
@@ -1873,14 +1883,34 @@ function Shell:SearchResults()
 	local terms = {}
 	for w in normalize(q):gmatch("%S+") do terms[#terms + 1] = w end
 	if #terms == 0 then return nil end
-	local out = {}
-	for _, e in ipairs(searchIndex) do
-		local hay = normalize(e.hay .. " " .. e.section .. " " .. e.tab)
-		local all = true
+	local function matchesAll(hay)
 		for _, t in ipairs(terms) do
-			if not hayHas(hay, t) then all = false; break end
+			if not hayHas(hay, t) then return false end
 		end
-		if all then out[#out + 1] = e end
+		return true
+	end
+
+	local out, seenCard = {}, {}
+	for _, e in ipairs(searchIndex) do
+		if matchesAll(normalize(e.hay .. " " .. e.section .. " " .. e.tab)) then
+			-- If the term matches the CARD ITSELF, every option on it matches too
+			-- ("hots" hit Max. Icons / Position / Grow direction per context).
+			-- Listing them all is noise: jumping to the card shows the lot
+			-- anyway, so collapse them into one card-level result (Florian
+			-- 2026-07-26). Options whose own LABEL matched stay individual.
+			if e.card and matchesAll(normalize(e.card)) then
+				local ck = e.section .. "/" .. e.tab .. "/" .. e.card
+				if not seenCard[ck] then
+					seenCard[ck] = true
+					out[#out + 1] = {
+						label = e.card, kind = "card", key = e.key,
+						section = e.section, tab = e.tab,
+					}
+				end
+			else
+				out[#out + 1] = e
+			end
+		end
 	end
 	return out
 end
@@ -2031,7 +2061,7 @@ function Shell:BuildSearchScreen(d, stack)
 	})
 	local card = band.cards[1]
 
-	local KINDS = { option = T("Switch"), slider = T("Slider"), select = T("Choice") }
+	local KINDS = { option = T("Switch"), slider = T("Slider"), select = T("Choice"), card = T("Section") }
 
 	for i, e in ipairs(res) do
 		-- Parent is the SCREEN, not the card: a card is a table wrapper ({_panel})

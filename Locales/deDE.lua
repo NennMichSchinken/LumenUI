@@ -459,4 +459,5 @@ ns.RegisterLocale("deDE", {
 	["Switch"] = "Schalter",
 	["Slider"] = "Regler",
 	["Choice"] = "Auswahl",
+	["Section"] = "Bereich",
 })
