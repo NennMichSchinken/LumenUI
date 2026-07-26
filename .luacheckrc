@@ -59,6 +59,10 @@ read_globals = {
     "GetInstanceInfo", "IsEncounterInProgress", "C_ChallengeMode",
     -- Quick gossip
     "C_GossipInfo", "GossipFrame",
+    -- Auto-accept invites
+    "AcceptGroup", "IsGuildMember", "WillAcceptInviteRemoveQueues",
+    "C_BattleNet", "C_FriendList", "C_LFGList",
+    "StaticPopup_Hide", "StaticPopupSpecial_Hide", "LFGInvitePopup",
     -- Movable windows QoL
     "GetScreenWidth", "GetScreenHeight",
     -- UI scale

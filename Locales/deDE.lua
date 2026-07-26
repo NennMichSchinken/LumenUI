@@ -476,4 +476,14 @@ ns.RegisterLocale("deDE", {
 	["Slider"] = "Regler",
 	["Choice"] = "Auswahl",
 	["Section"] = "Bereich",
+
+	-- QoL: auto-accept invites
+	["Invites"] = "Einladungen",
+	["Accept group invites automatically"] = "Gruppeneinladungen automatisch annehmen",
+	["Friends"] = "Freunde",
+	["Battle.net friends and character friends."] = "Battle.net-Freunde und Charakterfreunde.",
+	["Guild members"] = "Gildenmitglieder",
+	["Everyone in your guild."] = "Alle Mitglieder deiner Gilde.",
+	["Only while you are alone and outside an instance — otherwise the normal dialog appears."] = "Nur wenn du allein und außerhalb einer Instanz bist — sonst erscheint das normale Fenster.",
+	["Invite from %s accepted automatically."] = "Einladung von %s automatisch angenommen.",
 })

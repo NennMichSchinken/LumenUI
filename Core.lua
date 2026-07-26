@@ -263,6 +263,15 @@ local defaults = {
 				enabled   = false,
 				positions = {},
 			},
+			invites = {
+				-- Auto-accept group invites. The sources are options, the safety
+				-- guards are not (see Modules/QoL.lua): never while already
+				-- grouped, inside an instance, during a quest session, or when
+				-- accepting would drop your LFG queues.
+				enabled = false, -- opt-in
+				friends = true,  -- Battle.net + character friends
+				guild   = true,  -- guild members
+			},
 		},
 
 		-- Edit Mode links (Phase 2): explicit coupling of movable elements.

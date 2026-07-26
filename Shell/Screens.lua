@@ -2194,13 +2194,20 @@ local function buildQoLBase(d, stack)
 	tc:close()
 	bb.close()
 
-	-- ===== Windows band (6, ONE card) =======================================
+	-- ===== Windows + Invites band ===========================================
 	-- Movable Blizzard windows: one switch + a reset button. The positions
 	-- themselves live implicitly in the profile (saved per window on drag).
+	-- Invites: master toggle in the header, the two sources as rows below.
+	local refreshInvites
+	local function qi() return ns.Lumen.db.profile.qol.invites end
 	local wb = stack:band({
 		{ span = 6, title = T("Windows"), subtitle = T("Move Blizzard windows freely") },
+		{ span = 6, title = T("Invites"), subtitle = T("Accept group invites automatically"), toggle = {
+			get = function() return qi().enabled end,
+			set = function(v) qi().enabled = v; refreshInvites() end } },
 	})
 	local wc = wb.cards[1]
+	local ic = wb.cards[2]
 	local function qw() return ns.Lumen.db.profile.qol.windows end
 
 	local rowWin = switchRow(d, T("Movable windows"), {
@@ -2223,11 +2230,39 @@ local function buildQoLBase(d, stack)
 	wc:place(winBtnRow, M.buttonH, R.tight)
 
 	wc:close()
+
+	-- ===== Invites card =====================================================
+	local inviteDeps = {}
+	function refreshInvites()
+		local on = qi().enabled and true or false
+		for _, w in ipairs(inviteDeps) do w:SetWidgetEnabled(on) end
+	end
+
+	local rowFriends = switchRow(d, T("Friends"), {
+		get = function() return qi().friends end,
+		set = function(v) qi().friends = v end,
+		tooltip = T("Battle.net friends and character friends.") })
+	ic:place(rowFriends, rowH, 0)
+
+	local rowInvGuild = switchRow(d, T("Guild members"), {
+		get = function() return qi().guild end,
+		set = function(v) qi().guild = v end,
+		tooltip = T("Everyone in your guild.") })
+	ic:place(rowInvGuild, rowH, R.row)
+
+	local invHint = W.Hint(d, T("Only while you are alone and outside an instance — otherwise the normal dialog appears."))
+	ic:place(invHint, M.hintH, R.row)
+
+	inviteDeps[1] = rowFriends
+	inviteDeps[2] = rowInvGuild
+
+	ic:close()
 	wb.close()
 
 	refreshCursor()
 	refreshVendor()
 	refreshPull()
+	refreshInvites()
 end
 
 ns.Screens["Global/Base"]    = buildGlobalBase
