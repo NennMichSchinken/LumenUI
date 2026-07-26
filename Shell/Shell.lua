@@ -867,7 +867,7 @@ function Shell:Build()
 		end
 		nb._index = i
 		if sec.soon then nb:SetComingSoon(true) end
-		nb:SetScript("OnClick", function() Shell:SelectSection(i) end)
+		nb:SetScript("OnClick", function() Shell:ClearSearch(); Shell:SelectSection(i) end)
 		self._navButtons[i] = nb
 		prev = nb
 	end
@@ -1917,6 +1917,20 @@ end
 
 function Shell:IsSearching() return self._searchQuery ~= nil end
 
+-- Picking a module in the nav means "take me there", so the search ends —
+-- otherwise the tab bar comes back while the results stay on screen (Florian
+-- 2026-07-26). The field is emptied too: leaving it filled would re-open the
+-- list on the next focus, which is right after a result jump but wrong here.
+function Shell:ClearSearch()
+	local box = self._search
+	if not self._searchQuery and (not box or (box:GetText() or "") == "") then return end
+	self._searchQuery = nil
+	if box then box:SetText(""); box:ClearFocus() end
+	self._searchSel = nil
+	self:_UpdateNavCounts()
+	if self._searchPaint then self._searchPaint() end
+end
+
 -- Enter on the search field: jump to the highlighted result (first one if the
 -- user hasn't arrowed anywhere yet).
 function Shell:ActivateSearchSelection()
@@ -2029,17 +2043,17 @@ function Shell:BuildSearchScreen(d, stack)
 			b:HookScript("OnSizeChanged", snap)
 		end
 
-		local lbl = FS(b, "checkLabel", Text.Secondary)
+		local lbl = FS(b, "listLabel", Text.Secondary)
 		lbl:SetText(e.label)
-		lbl:SetPoint("LEFT", b, "LEFT", S.s4, L.crumbGap + 6)
+		lbl:SetPoint("LEFT", b, "LEFT", S.s5, L.crumbGap + 7)
 		-- The breadcrumb IS the feature: which "HP display" is this one.
-		local crumb = FS(b, "caption", Text.Description)
+		local crumb = FS(b, "label", Text.Description)
 		crumb:SetText(e.section .. "  ›  " .. e.tab .. (e.card and ("  ›  " .. e.card) or ""))
 		crumb:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -L.crumbGap)
 
-		local badge = FS(b, "caption", Text.Disabled)
+		local badge = FS(b, "label", Text.Disabled)
 		badge:SetText(KINDS[e.kind] or "")
-		badge:SetPoint("RIGHT", b, "RIGHT", -S.s5, 0)
+		badge:SetPoint("RIGHT", b, "RIGHT", -S.s6, 0)
 
 		b:SetScript("OnEnter", function(self2) if not self2._sel then hover:Show() end end)
 		b:SetScript("OnLeave", function() hover:Hide() end)

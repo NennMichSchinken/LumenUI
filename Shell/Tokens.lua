@@ -580,12 +580,12 @@ UI.LAYOUT = {
 	-- measures live here rather than in UI.WIDGET; design bible §5.4).
 	search = {
 		headH     = 34, -- result heading line ("Results for …" + match count)
-		rowH      = 56, -- result row: label + breadcrumb stacked, so taller than an option row
+		rowH      = 72, -- result row: label + breadcrumb stacked, so taller than an option row
 		rowGap    = 2,  -- rows read as ONE list, not as separate cards
 		headGap   = 18, -- result heading -> first row
 		badgePadX = 9,  -- inner padding of the kind badge (Switch / Slider / …)
 		badgeH    = 22,
-		crumbGap  = 3,  -- label baseline -> breadcrumb line
+		crumbGap  = 7,  -- label baseline -> breadcrumb line (they read as one unit, but must not stick together)
 		emptyTop  = 90, -- air above the "nothing found" message
 	},
 	-- GENERAL — cross-screen constants used by several tabs.
