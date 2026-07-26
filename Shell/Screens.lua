@@ -766,30 +766,26 @@ local function buildBase(d, stack)
 	local bstack = ns.Shell.NewStack(body)
 	d, stack = body, bstack
 
-	-- ===== Band 1: Health bar (6) + Resource bar (6) — card grid system ====
-	-- Band order (Florian 2026-07-26): the two BARS of the frame lead the tab;
-	-- Text style moved down beside Absorbs, Sorting down beside Status.
+	-- ===== Band 1: Health bar (6) + Text style (6) — card grid system ======
+	-- Band order (Florian 2026-07-26): pairing is by CARD HEIGHT, not by topic —
+	-- the short Resource bar card next to the tall Health bar left the band half
+	-- empty, so Text style (similar height) sits here and Resource bar pairs with
+	-- the equally short Absorbs card below. Sorting moved down beside Status.
 	-- (Boxed sliders come from the file-level sliderBox helper, shared with
 	-- the Raid/Group builder.)
-	local powerRefresh -- forward: the header toggle greys this card's controls
+	-- Forward: the Resource bar card sits in band 2 below, but its header toggle
+	-- closure is built with the band spec and calls back into the card's refresh.
+	local powerRefresh
 	local b1 = stack:band({
 		-- 6+6 (Florian 2026-07-22): Health bar's widest content is the 2 opacity
 		-- sliders, which fit a 6-card (field cells are constant width regardless of
 		-- span) — so the old 8+4 just wasted width.
 		{ span = 6, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
-		-- Resource bar: SHARED style only (color mode + texture). Height and the
-		-- role filter that decides WHO gets one live per context (Raid/Group) —
-		-- a deliberate exception to "style = Base", so a 5-man can show everything
-		-- while the raid restricts itself to the healers.
-		{ span = 6, title = T("Resource bar"), subtitle = T("Mana and other resources"),
-			eye = eyeToggle("power", T("Show in preview")), toggle = {
-			get = tget("powerEnabled"),
-			set = function(v)
-				rf().powerEnabled = v; relayout(); powerRefresh()
-				-- The Raid/Group tabs gate their resource card on this at build
-				-- time -> drop the cached screens so they rebuild.
-				if ns.Shell and ns.Shell.InvalidateScreenCache then ns.Shell:InvalidateScreenCache() end
-			end } },
+		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
+		-- preview layer — the "text" preview eye lives on the per-context Text —
+		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
+		-- doesn't read as "the text on/off card".
+		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
 	})
 	local sBar = b1.cards[1]
 
@@ -833,60 +829,8 @@ local function buildBase(d, stack)
 	sBar:place(trA, M.sliderBoxH, R.tight)
 	sBar:close()
 
-	-- ===== Resource bar (SHARED style: color mode + texture) ================
-	-- The strip itself sits at the frame BOTTOM (Blizzard standard, not placeable
-	-- — Florian's call: keep the gameplay layer familiar). Showing it takes its
-	-- height from the health bar and hiding it gives the height back.
-	local sPower = b1.cards[2]
-	local powerDeps = {}
-	function powerRefresh()
-		local on = rf().powerEnabled and true or false
-		for _, w in ipairs(powerDeps) do w:SetWidgetEnabled(on) end
-	end
-	local pwR1, pwC1 = W.FieldRow(d, d, 1, { height = fieldH })
-	local pwTex = W.Select(pwC1[1], { label = T("Bar texture"), options = textureOptions(),
-		wheelPreview = true, search = true, get = tget("powerTexture"), set = tset("powerTexture") })
-	pwTex:SetAllPoints(pwC1[1])
-	sPower:place(pwR1, fieldH, R.row)
-	local pwR2, pwC2 = W.FieldRow(d, d, 1, { height = fieldH })
-	local pwCol = W.Segment(pwC2[1], { label = T("Fill color"), options = POWER_COLOR_SEG_OPTS,
-		tooltip = T("Resource = Blizzard's familiar colors (mana blue, rage red, energy yellow)."),
-		get = tget("powerColorMode"), set = tset("powerColorMode") })
-	pwCol:SetAllPoints(pwC2[1])
-	sPower:place(pwR2, fieldH, R.row)
-	-- One LINE (W.Hint reserves M.hintH — a longer text would wrap out of the card).
-	sPower:place(W.Hint(d, T("Height and role filter: see the Raid / Group tabs.")), M.hintH, R.tight)
-	sPower:close()
-	powerDeps[1], powerDeps[2] = pwTex, pwCol
-	powerRefresh()
-	b1.close()
-
-	-- ===== Band 2: Absorbs (6) + Text style (6) =============================
-	-- Absorbs: shield + heal-absorb (SHARED, central — like EllesmereUI). Their
-	-- display lives here (not folded into the Health bar card); the eye toggles
-	-- the absorb overlay in the preview / on the selected Edit-Mode frame.
-	local absBand = stack:band({
-		{ span = 6, title = T("Shields & heal absorb"), subtitle = T("Absorb overlay display"),
-			eye = eyeToggle("shields", T("Show in preview")) },
-		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
-		-- preview layer — the "text" preview eye lives on the per-context Text —
-		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
-		-- doesn't read as "the text on/off card".
-		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
-	})
-	local sAbs = absBand.cards[1]
-	local abR1, abC1 = W.FieldRow(d, d, 2, { height = fieldH })
-	W.Select(abC1[1], { label = T("Shield texture"), options = shieldTexOptions(), wheelPreview = true, search = true, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(abC1[1])
-	W.Select(abC1[2], { label = T("Heal-absorb texture"), options = healAbsorbTexOptions(), wheelPreview = true, search = true, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(abC1[2])
-	sAbs:place(abR1, fieldH, R.row)
-	local abR2, abC2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-	sliderBox(abC2[1], { label = T("Shield opacity"), min = 0, max = 100, unit = " %", get = pctget("shieldAlpha"), set = pctset("shieldAlpha") })
-	sliderBox(abC2[2], { label = T("Heal-absorb opacity"), min = 0, max = 100, unit = " %", get = pctget("healAbsorbAlpha"), set = pctset("healAbsorbAlpha") })
-	sAbs:place(abR2, M.sliderBoxH, R.tight)
-	sAbs:close()
-
 	-- ===== Text style (SHARED: color + outline apply equally to Raid & Group) =
-	local sText = absBand.cards[2]
+	local sText = b1.cards[2]
 	local nameColDeps = {}
 	local function refreshNameCol()
 		local on = not rf().nameClassColor
@@ -914,8 +858,68 @@ local function buildBase(d, stack)
 		hint = T("Name color") .. " · " .. T("HP text color"),
 		onToggle = function(v) baseAdvState.text = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
 	sText:close()
-	absBand.close()
 	refreshNameCol()
+	b1.close()
+
+	-- ===== Band 2: Absorbs (6) + Resource bar (6) ==========================
+	-- Absorbs: shield + heal-absorb (SHARED, central — like EllesmereUI). Their
+	-- display lives here (not folded into the Health bar card); the eye toggles
+	-- the absorb overlay in the preview / on the selected Edit-Mode frame.
+	local absBand = stack:band({
+		{ span = 6, title = T("Shields & heal absorb"), subtitle = T("Absorb overlay display"),
+			eye = eyeToggle("shields", T("Show in preview")) },
+		-- Resource bar: SHARED style only (color mode + texture). Height and the
+		-- role filter that decides WHO gets one live per context (Raid/Group) —
+		-- a deliberate exception to "style = Base", so a 5-man can show everything
+		-- while the raid restricts itself to the healers.
+		{ span = 6, title = T("Resource bar"), subtitle = T("Mana and other resources"),
+			eye = eyeToggle("power", T("Show in preview")), toggle = {
+			get = tget("powerEnabled"),
+			set = function(v)
+				rf().powerEnabled = v; relayout(); powerRefresh()
+				-- The Raid/Group tabs gate their resource card on this at build
+				-- time -> drop the cached screens so they rebuild.
+				if ns.Shell and ns.Shell.InvalidateScreenCache then ns.Shell:InvalidateScreenCache() end
+			end } },
+	})
+	local sAbs = absBand.cards[1]
+	local abR1, abC1 = W.FieldRow(d, d, 2, { height = fieldH })
+	W.Select(abC1[1], { label = T("Shield texture"), options = shieldTexOptions(), wheelPreview = true, search = true, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(abC1[1])
+	W.Select(abC1[2], { label = T("Heal-absorb texture"), options = healAbsorbTexOptions(), wheelPreview = true, search = true, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(abC1[2])
+	sAbs:place(abR1, fieldH, R.row)
+	local abR2, abC2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	sliderBox(abC2[1], { label = T("Shield opacity"), min = 0, max = 100, unit = " %", get = pctget("shieldAlpha"), set = pctset("shieldAlpha") })
+	sliderBox(abC2[2], { label = T("Heal-absorb opacity"), min = 0, max = 100, unit = " %", get = pctget("healAbsorbAlpha"), set = pctset("healAbsorbAlpha") })
+	sAbs:place(abR2, M.sliderBoxH, R.tight)
+	sAbs:close()
+
+	-- ===== Resource bar (SHARED style: color mode + texture) ================
+	-- The strip itself sits at the frame BOTTOM (Blizzard standard, not placeable
+	-- — Florian's call: keep the gameplay layer familiar). Showing it takes its
+	-- height from the health bar and hiding it gives the height back.
+	local sPower = absBand.cards[2]
+	local powerDeps = {}
+	function powerRefresh()
+		local on = rf().powerEnabled and true or false
+		for _, w in ipairs(powerDeps) do w:SetWidgetEnabled(on) end
+	end
+	local pwR1, pwC1 = W.FieldRow(d, d, 1, { height = fieldH })
+	local pwTex = W.Select(pwC1[1], { label = T("Bar texture"), options = textureOptions(),
+		wheelPreview = true, search = true, get = tget("powerTexture"), set = tset("powerTexture") })
+	pwTex:SetAllPoints(pwC1[1])
+	sPower:place(pwR1, fieldH, R.row)
+	local pwR2, pwC2 = W.FieldRow(d, d, 1, { height = fieldH })
+	local pwCol = W.Segment(pwC2[1], { label = T("Fill color"), options = POWER_COLOR_SEG_OPTS,
+		tooltip = T("Resource = Blizzard's familiar colors (mana blue, rage red, energy yellow)."),
+		get = tget("powerColorMode"), set = tset("powerColorMode") })
+	pwCol:SetAllPoints(pwC2[1])
+	sPower:place(pwR2, fieldH, R.row)
+	-- One LINE (W.Hint reserves M.hintH — a longer text would wrap out of the card).
+	sPower:place(W.Hint(d, T("Height and role filter: see the Raid / Group tabs.")), M.hintH, R.tight)
+	sPower:close()
+	powerDeps[1], powerDeps[2] = pwTex, pwCol
+	powerRefresh()
+	absBand.close()
 
 	-- ===== Band 2: Dispel (6) + Aggro (6) — master toggles in the header ====
 	local dispelDeps, dispelAlphaW = {}, nil
