@@ -580,7 +580,8 @@ UI.LAYOUT = {
 	-- measures live here rather than in UI.WIDGET; design bible §5.4).
 	search = {
 		headH     = 34, -- result heading line ("Results for …" + match count)
-		rowH      = 72, -- result row: label + breadcrumb stacked, so taller than an option row
+		rowH      = 50, -- result row: ONE line now (the context moved into group headers)
+		groupH    = 38, -- "Raidframes > Raid" header above each run of results
 		rowGap    = 2,  -- rows read as ONE list, not as separate cards
 		headGap   = 18, -- result heading -> first row
 		badgePadX = 9,  -- inner padding of the kind badge (Switch / Slider / …)

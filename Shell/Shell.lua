@@ -2063,42 +2063,47 @@ function Shell:BuildSearchScreen(d, stack)
 
 	local KINDS = { option = T("Switch"), slider = T("Slider"), select = T("Choice"), card = T("Section") }
 
+	-- Results are GROUPED by module+tab instead of repeating the path on every
+	-- row (Florian 2026-07-26). Pushing more context into each title was a
+	-- losing game — "Raid · HoTs · Wachstumsrichtung" just gets longer. Written
+	-- once as a header, the rows shrink to one line and the list gets shorter
+	-- AND clearer at the same time.
+	local lastGroup
 	for i, e in ipairs(res) do
-		-- Parent is the SCREEN, not the card: a card is a table wrapper ({_panel})
-		-- and card:place() reparents the row anyway (same as every Screens.lua row).
+		local group = e.section .. "  ›  " .. e.tab
+		local newGroup = group ~= lastGroup
+		if newGroup then
+			lastGroup = group
+			local h = CreateFrame("Frame", nil, d)
+			local hfs = FS(h, "label", Text.Description)
+			hfs:SetText(group)
+			hfs:SetPoint("LEFT", h, "LEFT", S.s5, -S.s2)
+			if i > 1 then
+				local hline = h:CreateTexture(nil, "ARTWORK")
+				setColor(hline, Border.faint)
+				hline:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
+				hline:SetPoint("TOPRIGHT", h, "TOPRIGHT", 0, 0)
+				local function hsnap() PixelUtil.SetHeight(hline, 1) end
+				hsnap(); C_Timer.After(0, hsnap)
+			end
+			card:place(h, L.groupH, 0)
+		end
+
 		local b = CreateFrame("Button", nil, d)
 		local hover = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
 		hover:Hide()
 		local sel = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
 		sel:Hide()
-		-- Same separator language as the stacked-row standard: hairline on the
-		-- BOTTOM, so the last row closes the list and the header keeps its own.
-		if i < #res then
-			local line = b:CreateTexture(nil, "ARTWORK")
-			setColor(line, Border.faint)
-			line:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
-			line:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
-			local function snap() PixelUtil.SetHeight(line, 1) end
-			snap(); C_Timer.After(0, snap)
-			b:HookScript("OnSizeChanged", snap)
-		end
 
-		-- The CARD leads the title. With ten "Wachstumsrichtung" rows the only
-		-- thing that tells them apart was the small path underneath — putting
-		-- the card in front makes the difference readable at a glance
-		-- (Florian 2026-07-26). The separator is dimmed so the option name
-		-- still reads as the main thing.
+		-- The card still leads the title — within a group that is the only
+		-- thing telling two identical option names apart.
 		local lbl = FS(b, "listLabel", Text.Secondary)
 		if e.card and e.kind ~= "card" then
 			lbl:SetText(e.card .. UI.ColorCode(Text.Disabled) .. "  ·  |r" .. e.label)
 		else
 			lbl:SetText(e.label)
 		end
-		lbl:SetPoint("LEFT", b, "LEFT", S.s5, L.crumbGap + 7)
-		-- The breadcrumb IS the feature: which "HP display" is this one.
-		local crumb = FS(b, "label", Text.Description)
-		crumb:SetText(e.section .. "  ›  " .. e.tab)
-		crumb:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -L.crumbGap)
+		lbl:SetPoint("LEFT", b, "LEFT", S.s5, 0)
 
 		local badge = FS(b, "label", Text.Disabled)
 		badge:SetText(KINDS[e.kind] or "")
