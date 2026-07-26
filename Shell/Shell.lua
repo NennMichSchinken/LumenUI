@@ -133,14 +133,15 @@ local function makeNavItem(parent, label, iconFile)
 	bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -S.navPillPadX, S.navPillPadY)
 	bg:Hide()
 
-	-- Lucide module icon (stage 3): white glyph tinted to MATCH the label in
-	-- every state (dark on the gold active pill, body grey otherwise). No mipmaps
-	-- for TGA -> disable grid snapping so the 32px source stays crisp at ~18px.
+	-- Lucide module icon: white glyph tinted to MATCH the label in every state.
+	-- No mipmaps for TGA -> disable grid snapping so the 32px source stays crisp
+	-- at ~18px. It sits ON the nav gutter (where a text-only label starts), so
+	-- the label moves right by icon + gap — the mockup's rhythm.
 	local icon
 	if iconFile then
 		icon = b:CreateTexture(nil, "ARTWORK")
 		icon:SetSize(S.navIconSize, S.navIconSize)
-		icon:SetPoint("LEFT", b, "LEFT", S.panelGutter, 0)
+		icon:SetPoint("LEFT", b, "LEFT", S.navGutter, 0)
 		icon:SetTexture(TEX .. iconFile)
 		icon:SetSnapToPixelGrid(false)
 		icon:SetTexelSnappingBias(0)
@@ -156,6 +157,12 @@ local function makeNavItem(parent, label, iconFile)
 	txt:SetText(label)
 
 	b._bg, b._txt, b._icon = bg, txt, icon
+	-- Label + icon always carry the SAME colour (idle / hover / active) — one row,
+	-- one voice.
+	local function paint(self, col)
+		self._txt:SetTextColor(col.r, col.g, col.b)
+		if self._icon then self._icon:SetVertexColor(col.r, col.g, col.b) end
+	end
 	b:SetScript("OnEnter", function(self)
 		if self._soon then
 			if ns.W and ns.W.ShowTextTip then
@@ -163,7 +170,7 @@ local function makeNavItem(parent, label, iconFile)
 			end
 		elseif not self._active then
 			setColor(self._bg, Surface.Input); self._bg:Show()
-			self._txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
+			paint(self, Text.Primary)
 		end
 	end)
 	b:SetScript("OnLeave", function(self)
@@ -171,24 +178,19 @@ local function makeNavItem(parent, label, iconFile)
 			if ns.W and ns.W.HideTip then ns.W.HideTip() end
 		elseif not self._active then
 			self._bg:Hide()
-			self._txt:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b)
+			paint(self, Text.Description)
 		end
 	end)
 	function b:SetActive(on)
 		self._active = on
 		self._bg:Hide() -- the active pill is the shared sliding indicator now; item shows only text
-		local col = on and Text.Primary or (self._soon and Text.Disabled or Text.Description)
-		self._txt:SetTextColor(col.r, col.g, col.b)
-		if self._icon then self._icon:SetVertexColor(col.r, col.g, col.b) end
+		paint(self, on and Text.Primary or (self._soon and Text.Disabled or Text.Description))
 	end
 	-- Coming-soon mode: TRUE disabled text (D3; no chip — greyed out + hover tooltip
 	-- is enough, a permanent chip would be redundant), never highlighted as active.
 	function b:SetComingSoon(on)
 		self._soon = on
-		if on then
-			self._txt:SetTextColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
-			if self._icon then self._icon:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b) end
-		end
+		if on then paint(self, Text.Disabled) end
 	end
 	return b
 end
@@ -623,26 +625,45 @@ function Shell:Build()
 		UI.RoundBorder(chip, Border.default, "OVERLAY", nil, UI.RADIUS.xs)
 	end
 
-	-- Edit Mode button (v2): a suite-global action, so it lives in the global
-	-- chrome — pinned above the version chip, ALWAYS visible on every screen.
-	-- Opens the Lumen edit session (Shell hides, mover overlays + toolbar show).
-	local emY = hasChip and (S.panelGutter + chipH + S.s4) or S.panelGutter
-	local emBtn = ns.W.Button(nav, { text = T("Edit Mode"), variant = "neutral", icon = "icon-move",
-		onClick = function() if ns.EditMode then ns.EditMode:OpenSession() end end })
-	emBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, emY)
-	emBtn:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, emY)
+	-- Sidebar actions (what's-new mockup, 2026-07-26): the two suite-global
+	-- actions are FLAT nav rows now, not filled buttons. Reason beyond looks: a
+	-- filled pill down here competed with the active nav item — two elements
+	-- claiming "most important control". Flat subordinates them to the nav
+	-- rhythm. Same builder as the module rows, so hover pill / icon tinting /
+	-- metrics stay in ONE place; they are simply never "active".
+	local function makeActionRow(label, iconFile, onClick, y)
+		local r = makeNavItem(nav, label, iconFile)
+		r:ClearAllPoints() -- makeNavItem anchors LEFT/RIGHT; re-pin to the sidebar bottom
+		r:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", 0, y)
+		r:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", 0, y)
+		r:SetScript("OnClick", onClick)
+		return r
+	end
 
-	-- Preview toggle (v3 mockup): ONE central point to open/close the preview
-	-- window. Stacks ABOVE the Edit Mode button. Hidden on screens without a
-	-- registered preview; label follows the open state (_UpdateDock keeps it
-	-- current).
-	local pvY = emY + UI.WIDGET.buttonH + S.s4
-	local pvBtn = ns.W.Button(nav, { text = "", variant = "neutral",
-		onClick = function() Shell:TogglePreview() end })
-	pvBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, pvY)
-	pvBtn:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, pvY)
-	pvBtn:Hide()
-	self._previewBtn = pvBtn
+	-- Edit Mode: a suite-global action, so it lives in the global chrome —
+	-- pinned above the version chip, ALWAYS visible on every screen. Opens the
+	-- Lumen edit session (Shell hides, mover overlays + toolbar show).
+	local emY = hasChip and (S.panelGutter + chipH + S.s3) or S.panelGutter
+	local emRow = makeActionRow(T("Edit Mode"), "icon-move",
+		function() if ns.EditMode then ns.EditMode:OpenSession() end end, emY)
+	self._editRow = emRow
+
+	-- Preview toggle: ONE central point to open/close the preview window. Stacks
+	-- ABOVE the Edit Mode row. Hidden on screens without a registered preview;
+	-- the label follows the open state (_UpdateDock keeps it current, the eye
+	-- glyph stays put — the LABEL names the action).
+	local pvRow = makeActionRow("", "icon-eye", function() Shell:TogglePreview() end,
+		emY + S.navItemH + S.navItemGap)
+	pvRow:Hide()
+	self._previewRow = pvRow
+
+	-- Faint separator between the module list and the actions (mockup): flat rows
+	-- would otherwise read as two more modules. Inset to the nav gutter; sits
+	-- above whichever action row is currently the topmost visible one.
+	local navSep = nav:CreateTexture(nil, "ARTWORK")
+	setColor(navSep, Border.faint)
+	self._navSep = navSep
+	self:_UpdateNavSep()
 
 	local main = CreateFrame("Frame", nil, body)
 	main:SetPoint("TOPLEFT", nav, "TOPRIGHT", 0, 0)
@@ -862,7 +883,7 @@ function Shell:Build()
 	self._navButtons = {}
 	local prev
 	for i, sec in ipairs(SECTIONS) do
-		local nb = makeNavItem(nav, sec[1]) -- v3: text-only nav (icons dropped per the mockup; pass sec.icon to restore)
+		local nb = makeNavItem(nav, sec[1], sec.icon) -- Lucide module icon (what's-new mockup, 2026-07-26)
 		if prev then
 			-- v3: uniform spacing, NO group divider lines (mockup) — sec.sep kept in
 			-- SECTIONS for later but no longer draws a line or an extra gap.
@@ -1620,6 +1641,22 @@ function Shell:SetPreviewOpen(v)
 end
 function Shell:TogglePreview() self:SetPreviewOpen(not self._previewOpen) end
 
+-- Sidebar separator above the action rows: re-anchored whenever the preview row
+-- shows/hides, so the line always hugs the topmost VISIBLE action (a line left
+-- floating over a gap reads as a stray rule). Thickness is pixel-snapped, the
+-- position stays plain SetPoint (border pixel-snap rule).
+function Shell:_UpdateNavSep()
+	local sep = self._navSep
+	if not sep then return end
+	local top = (self._previewRow and self._previewRow:IsShown()) and self._previewRow or self._editRow
+	if not top then return end
+	sep:ClearAllPoints()
+	sep:SetPoint("BOTTOMLEFT", top, "TOPLEFT", S.navGutter, S.s5)
+	sep:SetPoint("BOTTOMRIGHT", top, "TOPRIGHT", -S.navGutter, S.s5)
+	local function snap() PixelUtil.SetHeight(sep, 1) end
+	snap(); C_Timer.After(0, snap)
+end
+
 function Shell:_UpdateDock(key)
 	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock = self._dock
@@ -1629,11 +1666,12 @@ function Shell:_UpdateDock(key)
 	if not frames then frames = {}; self._dockFrames = frames end
 	local builder = ns.ScreenPreviews and ns.ScreenPreviews[key]
 	-- Sidebar toggle: only screens with a preview get the button.
-	if self._previewBtn then
-		self._previewBtn:SetShown(builder ~= nil)
+	if self._previewRow then
+		self._previewRow:SetShown(builder ~= nil)
 		if builder then
-			self._previewBtn._txt:SetText(self._previewOpen and T("Close preview") or T("Open preview"))
+			self._previewRow._txt:SetText(self._previewOpen and T("Close preview") or T("Open preview"))
 		end
+		self:_UpdateNavSep() -- the separator hugs the topmost visible action row
 	end
 	for k, fr in pairs(frames) do fr:SetShown(builder ~= nil and k == key) end
 	if not builder or not self._previewOpen then
