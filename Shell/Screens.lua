@@ -245,7 +245,10 @@ ns.ScreenPreviews["Raidframes/Group"] = previewDock({ kind = "ctx", ctx = "party
 -- the page long and buried the ones below on the next visit; pages now always
 -- start short and predictable). ctx = "raid" | "party".
 local auraOpenState, iconOpenState = {}, {}
-local function auraOpen(ctx) return auraOpenState[ctx] or false end
+-- ns.ShellIndexing: while the search index is being built every collapsible
+-- counts as OPEN, otherwise its rows are never created and the options inside
+-- (aura categories, icon settings) would be invisible to the search.
+local function auraOpen(ctx) return ns.ShellIndexing or auraOpenState[ctx] or false end
 local function setAuraOpen(ctx, v) auraOpenState[ctx] = v end
 
 -- Register a jumpable card's panel frame with the Shell (no-op outside a build).
@@ -254,7 +257,7 @@ local function regJump(key, cardBox)
 		ns.Shell:RegisterJumpCard(key, cardBox._panel)
 	end
 end
-local function iconOpen(ctx) return iconOpenState[ctx] or false end
+local function iconOpen(ctx) return ns.ShellIndexing or iconOpenState[ctx] or false end
 local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
 
 -- Click-to-configure (preview dock): called by Shell:JumpTo BEFORE the target
@@ -284,6 +287,15 @@ local baseAdvState = {}
 -- module's tabs (e.g. check Tracking, jump back to Auras) and only reset to the
 -- calm collapsed default once you leave the module entirely (Florian 2026-07-15).
 -- Returns true if any state was cleared (so the Shell rebuilds the screens).
+-- Search jump target may sit inside a collapsed section -> open them, so the
+-- row actually exists on the rebuilt screen (the Shell drops the cache first).
+function ns.ShellOpenAllSections()
+	for _, ctx in ipairs({ "raid", "party" }) do
+		auraOpenState[ctx] = true
+		iconOpenState[ctx] = true
+	end
+end
+
 function ns.SectionLeft(section)
 	if section ~= "Raidframes" then return false end
 	local had = next(baseAdvState) or next(auraAdvState)

@@ -1817,6 +1817,7 @@ function Shell:WarmSearchIndex()
 	end
 	local savedScreen, savedPopovers, savedBadge = self._screen, self._popovers, self._lastBadge
 	self._warming = true
+	ns.ShellIndexing = true -- collapsibles build their contents for the index
 	for _, sec in ipairs(SECTIONS) do
 		if not sec.soon then
 			for _, tabName in ipairs(sec[2]) do
@@ -1840,6 +1841,7 @@ function Shell:WarmSearchIndex()
 		end
 	end
 	self._warming = false
+	ns.ShellIndexing = nil
 	self._screen, self._popovers, self._lastBadge = savedScreen, savedPopovers, savedBadge
 	if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(self._popovers) end
 end
@@ -1964,6 +1966,10 @@ end
 function Shell:JumpToOption(entry)
 	if not entry then return end
 	self:LeaveSearch()               -- leaves the list, keeps the term in the box
+	-- The target row may live in a collapsed section, which does not build its
+	-- contents at all — open them and drop the cache so the row exists.
+	if ns.ShellOpenAllSections then ns.ShellOpenAllSections() end
+	self:InvalidateScreenCache()
 	self:OpenTo(entry.section, entry.tab)
 	local tries = 0
 	local function attempt()
