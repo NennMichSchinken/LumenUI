@@ -1272,11 +1272,14 @@ function Raidframes._powerRoleShown(L, role)
 	return L.powerShowDps and true or false
 end
 
--- Role for the power gate. UnitGroupRolesAssigned returns "NONE" for the player
--- while SOLO, which would fall through to the DPS switch and wrongly hide a solo
--- healer's mana -> fall back to the spec role, but only for the player (no other
--- unit has a readable spec role).
-function Raidframes._powerRole(u)
+-- A unit's role for DISPLAY purposes — shared by the resource-bar gate and the
+-- role indicator icon. `UnitGroupRolesAssigned` returns "NONE" whenever no role
+-- is assigned (solo, or a group that never went through the role check), which
+-- would hide a solo healer's mana and their role icon -> fall back to the spec
+-- role, but only for the PLAYER (no other unit has a readable spec role; in a
+-- real dungeon group Blizzard assigns roles, so "NONE" does not occur there).
+-- Same fallback `unitIsTank` already does for the aggro exemption.
+function Raidframes._unitRole(u)
 	local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(u)
 	if (role == "NONE" or not role) and UnitIsUnit and UnitIsUnit(u, "player") then
 		local spec = GetSpecialization and GetSpecialization()
@@ -1332,7 +1335,7 @@ function Raidframes:RenderPower(f)
 	-- unit genuinely has no resource to show.
 	local pmx = UnitPowerMax and UnitPowerMax(u, pType)
 	local cleanNoPower = (not issecretvalue(pmx)) and (not pmx or pmx == 0)
-	if cleanNoPower or not self._powerRoleShown(L, self._powerRole(u)) then
+	if cleanNoPower or not self._powerRoleShown(L, self._unitRole(u)) then
 		self._setPowerShown(f, false, L)
 		return
 	end
@@ -1739,7 +1742,7 @@ function Raidframes:RefreshIndicators()
 	for i = 1, 40 do
 		local b = header[i]
 		if b and b._lumenSecured and b.unit and UnitExists(b.unit) then
-			setIndicators(b, UnitGroupRolesAssigned and UnitGroupRolesAssigned(b.unit),
+			setIndicators(b, Raidframes._unitRole(b.unit),
 				UnitIsGroupLeader and UnitIsGroupLeader(b.unit),
 				UnitIsGroupAssistant and UnitIsGroupAssistant(b.unit))
 		end
@@ -1768,7 +1771,7 @@ function Raidframes:RenderLive(f)
 	self:RenderHealth(f)        -- segments + HP text + status (color re-uses the fresh cache)
 	self:RenderAggro(f)
 	self:RenderCenterIcon(f)
-	setIndicators(f, UnitGroupRolesAssigned and UnitGroupRolesAssigned(u),
+	setIndicators(f, self._unitRole(u),
 		UnitIsGroupLeader and UnitIsGroupLeader(u),
 		UnitIsGroupAssistant and UnitIsGroupAssistant(u))
 end
