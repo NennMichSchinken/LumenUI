@@ -28,10 +28,6 @@ local UnitGetTotalHealAbsorbs = UnitGetTotalHealAbsorbs
 local UnitGetIncomingHeals = UnitGetIncomingHeals
 local UnitGetDetailedHealPrediction = UnitGetDetailedHealPrediction
 local UnitHealthPercent = UnitHealthPercent
-local UnitPowerType, UnitPowerMax = UnitPowerType, UnitPowerMax
-local UnitPowerPercent = UnitPowerPercent
-local UnitIsUnit = UnitIsUnit
-local PowerBarColor = PowerBarColor
 local UnitIsConnected = UnitIsConnected
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
 local UnitIsGhost = UnitIsGhost
@@ -213,7 +209,8 @@ local FAKE = {
 -- Preview only: which power token a fake unit shows. Healers always run on mana
 -- (Mistweaver/Resto/Holy), everyone else takes their class's default resource —
 -- so the preview shows the colour mix a real group has. Missing = mana.
-local FAKE_POWER_TOKEN = {
+-- On the module table, not a local: see the LOCAL BUDGET note further down.
+Raidframes._POWER_TOKEN = {
 	WARRIOR     = "RAGE",
 	ROGUE       = "ENERGY",
 	MONK        = "ENERGY",
@@ -222,10 +219,6 @@ local FAKE_POWER_TOKEN = {
 	DEATHKNIGHT = "RUNIC_POWER",
 	DEMONHUNTER = "FURY",
 }
-local function fakePowerToken(fk)
-	if fk.role == "HEALER" then return "MANA" end
-	return FAKE_POWER_TOKEN[fk.class] or "MANA"
-end
 
 local GROUP_SIZE = 5   -- fixed group size: raid groups & dungeon group are always 5 (never mixed)
 local DEFAULT_ROLE_ORDER = { "TANK", "HEALER", "DAMAGER" }   -- fallback priority list
@@ -1251,21 +1244,29 @@ end
 -- hands back a clean 0..100 -> the bar runs on a plain percent scale and needs
 -- none of the health bar's clip-frame apparatus.
 
--- Write a bar value, optionally with the native easing (see SB_EASE).
+-- ⚠️ LOCAL BUDGET: a Lua 5.1 chunk allows only 200 locals and this file sits at
+-- that ceiling (adding the power block first blew it: "main function has more
+-- than 200 local variables"). The COLD helpers below therefore live on the
+-- module TABLE — the same pattern as every Raidframes:Method here and as
+-- EllesmereUI's ns.RF_*/ns._Resolve* helpers, which they call inside their own
+-- per-unit update. Reading a table field costs the same class as reading a
+-- global (one hash lookup); what the perf rules forbid is ALLOCATING tables in
+-- hot paths, which none of this does. The health-bar path keeps plain locals.
+
+-- Write a bar value, optionally with the native easing (see SB_EASE). LOCAL on
+-- purpose: the health path calls this 5x per event and unit.
 local function setBarValue(bar, v, ease)
 	if ease then bar:SetValue(v, ease) else bar:SetValue(v) end
 end
 
 -- Avoid SetHeight churn (§9.5): the power pass runs on every power event.
-local function setBarHeight(bar, h)
+function Raidframes._setBarHeight(bar, h)
 	if bar._lumenH ~= h then bar._lumenH = h; bar:SetHeight(h) end
 end
 
-local function powerBarH(L) return max(1, floor(L.powerHeight or 4)) end
-
 -- Whose resource is shown: the three per-context role switches. Units with role
 -- NONE/unknown follow the DPS switch.
-local function powerRoleShown(L, role)
+function Raidframes._powerRoleShown(L, role)
 	if role == "HEALER" then return L.powerShowHealer and true or false end
 	if role == "TANK" then return L.powerShowTank and true or false end
 	return L.powerShowDps and true or false
@@ -1275,7 +1276,7 @@ end
 -- while SOLO, which would fall through to the DPS switch and wrongly hide a solo
 -- healer's mana -> fall back to the spec role, but only for the player (no other
 -- unit has a readable spec role).
-local function powerRole(u)
+function Raidframes._powerRole(u)
 	local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(u)
 	if (role == "NONE" or not role) and UnitIsUnit and UnitIsUnit(u, "player") then
 		local spec = GetSpecialization and GetSpecialization()
@@ -1287,21 +1288,24 @@ end
 
 -- Bar colour: by power type (Blizzard's familiar mana blue / rage red / …) or the
 -- class colour. Power TYPE and its token are NOT secret — safe to branch on.
-local function powerRGB(d, class, pType, token)
+function Raidframes._powerRGB(d, class, pType, token)
 	if d.powerColorMode == "class" then return classColor(class) end
-	local c = PowerBarColor and ((token and PowerBarColor[token]) or (pType and PowerBarColor[pType]))
+	local PBC = PowerBarColor
+	local c = PBC and ((token and PBC[token]) or (pType and PBC[pType]))
 	if c and c.r then return c.r, c.g, c.b end
 	return 0.20, 0.40, 0.85   -- fallback: mana blue
 end
 
 -- Show/hide the strip AND hand its height to/back from the health bar. Sole owner
 -- of the health-bar height; every render pass (live + fake) runs through here.
-local function setPowerShown(f, on, L)
+function Raidframes._setPowerShown(f, on, L)
 	local full = L.height or 60
+	local setH = Raidframes._setBarHeight
 	if on then
-		local ph = min(powerBarH(L), max(1, full - 1))
-		setBarHeight(f.power, ph)
-		setBarHeight(f.health, full - ph)
+		-- Configured strip height, never taller than the frame minus 1px of health.
+		local ph = min(max(1, floor(L.powerHeight or 4)), max(1, full - 1))
+		setH(f.power, ph)
+		setH(f.health, full - ph)
 		if not f.power:IsShown() then
 			-- Fresh hidden->shown: animating in the same frame leaves the fill at 0.
 			f._powerArmed = nil
@@ -1310,7 +1314,7 @@ local function setPowerShown(f, on, L)
 	else
 		if f.power:IsShown() then f.power:Hide() end
 		f._powerArmed = nil
-		setBarHeight(f.health, full)
+		setH(f.health, full)
 	end
 end
 
@@ -1320,7 +1324,7 @@ function Raidframes:RenderPower(f)
 	local u = f.unit
 	if not u or not UnitExists(u) then return end
 	local d, L = db(), layoutCtx()
-	if not d.powerEnabled then setPowerShown(f, false, L); return end
+	if not d.powerEnabled then self._setPowerShown(f, false, L); return end
 
 	local pType, token = UnitPowerType(u)
 	pType = pType or 0
@@ -1328,12 +1332,12 @@ function Raidframes:RenderPower(f)
 	-- unit genuinely has no resource to show.
 	local pmx = UnitPowerMax and UnitPowerMax(u, pType)
 	local cleanNoPower = (not issecretvalue(pmx)) and (not pmx or pmx == 0)
-	if cleanNoPower or not powerRoleShown(L, powerRole(u)) then
-		setPowerShown(f, false, L)
+	if cleanNoPower or not self._powerRoleShown(L, self._powerRole(u)) then
+		self._setPowerShown(f, false, L)
 		return
 	end
 
-	setPowerShown(f, true, L)
+	self._setPowerShown(f, true, L)
 	f.power:SetMinMaxValues(0, 100)
 	local p = 0
 	if UnitPowerPercent then
@@ -1343,22 +1347,25 @@ function Raidframes:RenderPower(f)
 	setBarValue(f.power, p, (f._powerArmed and d.smoothBars and not smoothBroken) and SB_EASE or nil)
 	f._powerArmed = true
 	local _, class = UnitClass(u)
-	f.power:SetStatusBarColor(powerRGB(d, class, pType, token))
+	f.power:SetStatusBarColor(self._powerRGB(d, class, pType, token))
 end
 
 -- TEST/PREVIEW pass (fake roster, no real unit). `noPower` = the preview eye is
 -- off for this layer -> treated at data level so the health bar gets its height
 -- back (a hidden strip leaving a gap would misrepresent the layout).
-local function renderPowerFake(f, fk, d, L)
-	if not d.powerEnabled or fk.noPower or not powerRoleShown(L, fk.role) then
-		setPowerShown(f, false, L)
+function Raidframes._renderPowerFake(f, fk, d, L)
+	local R = Raidframes
+	if not d.powerEnabled or fk.noPower or not R._powerRoleShown(L, fk.role) then
+		R._setPowerShown(f, false, L)
 		return
 	end
-	setPowerShown(f, true, L)
+	R._setPowerShown(f, true, L)
 	f.power:SetMinMaxValues(0, 100)
 	setBarValue(f.power, (fk.power or 0.7) * 100)
 	f._powerArmed = true
-	f.power:SetStatusBarColor(powerRGB(d, fk.class, nil, fakePowerToken(fk)))
+	-- Healers always run on mana; everyone else takes their class's resource.
+	local token = (fk.role == "HEALER") and "MANA" or (R._POWER_TOKEN[fk.class] or "MANA")
+	f.power:SetStatusBarColor(R._powerRGB(d, fk.class, nil, token))
 end
 
 function Raidframes:ApplyConfig(f)
@@ -1370,9 +1377,10 @@ function Raidframes:ApplyConfig(f)
 	-- the render pass; set a sane default here so a frame is never mis-sized
 	-- between layout and the first render.
 	f.power:SetStatusBarTexture(FetchTexture(d.powerTexture))
-	setBarHeight(f.power, powerBarH(L))
-	local healthH = max(1, L.height - ((d.powerEnabled and powerBarH(L)) or 0))
-	setBarHeight(f.health, healthH)
+	local ph = max(1, floor(L.powerHeight or 4))
+	self._setBarHeight(f.power, ph)
+	local healthH = max(1, L.height - ((d.powerEnabled and ph) or 0))
+	self._setBarHeight(f.health, healthH)
 	-- Keep segment bars at health size (anchors provide height/position)
 	f.predictBar:SetSize(L.width, healthH)
 	f.shieldBar:SetSize(L.width, healthH)
@@ -1777,7 +1785,7 @@ function Raidframes:RenderFake(f)
 	f:SetAlpha(1)
 
 	local L = layoutCtx()
-	renderPowerFake(f, fk, d, L)   -- BEFORE the segments: owns the health-bar height
+	self._renderPowerFake(f, fk, d, L)   -- BEFORE the segments: owns the health-bar height
 
 	local hp = fk.hp or 1
 	local incoming   = (d.healPrediction and fk.predict or 0) * FAKE_MAX
