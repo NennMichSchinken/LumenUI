@@ -9,7 +9,8 @@ local ADDON, ns = ...
 -- ===========================================================================
 
 local UI = ns.UI
-local C, L, S, PANEL, P = UI.C, UI.line, UI.S, UI.PANEL, UI.P
+local S, PANEL = UI.S, UI.PANEL
+local Surface, Text, Border, Accent = UI.Surface, UI.Text, UI.Border, UI.Accent
 local T = ns.T   -- localization: T("english") -> display in the active language
 
 local Shell = {}
@@ -20,7 +21,9 @@ ns.Shell = Shell
 --  so Shell chrome AND widget toolkit use the same ones (DRY).
 -- ---------------------------------------------------------------------------
 local setColor, fill, border, FS = UI.SetColor, UI.Fill, UI.Border, UI.FS
-local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEX       = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\icons\\" -- chrome icons (nav, close, eye)
+local TEX_ROUND = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\round\\" -- the dot-field corner mask (round-fill-r22)
+local TEX_SHELL = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\shell\\" -- chrome bg + glow (dot-tile, dot-vignette, tab-glow)
 
 -- ---------------------------------------------------------------------------
 --  Responsive panel scale (ElvUI-style). SetScale is RELATIVE to UIParent, so a
@@ -52,8 +55,68 @@ function Shell:ApplyScale()
 end
 
 -- ---------------------------------------------------------------------------
---  Nav item (left rail) — v2: active = solid interactive-gold fill (C2) with
---  dark on-gold text (two-gold rule); inactive hover = element-hover surface.
+--  Sliding indicator (v3) — ONE pill that TWEENS to the active item, mirroring
+--  the reference mockup's Navigation component. Nav slides in Y (fixed width),
+--  the tab strip slides in X + resizes to the tab width. The motion is a SHORT,
+--  self-terminating ease-out (§9-safe: it stops itself after SLIDE_DUR, NOT a
+--  persistent OnUpdate). ind._ref = the frame the (ox,oy) offsets are relative to.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+--  Dot-field background (v3) — a fine tiled dot pattern, CONTENT area only
+--  (excludes the nav column, which stays plain/flat), behind an inverse
+--  vignette (opaque panel-colour centre -> transparent rim) that "erases" the
+--  dots back to the background except near the edges: rim-strong, calm centre,
+--  frames content without competing with it (mockup 6ab5930f, canvas #dots).
+--  Two STATIC baked textures (no OnUpdate/pulse/cursor-repulsion — that part of
+--  the reference is explicitly dropped, see design memory NATIVE FEASIBILITY):
+--  dot-tile.tga (24px pitch, 3x3 seamless cell with per-dot opacity tiering so
+--  the field reads as varied, not flat/plain — matches the mockup's 3-tier
+--  diagonal opacity pattern) + dot-vignette.tga (radial erase mask, tinted to
+--  the panel colour). Both are clipped to the panel's rounded corners via a
+--  MaskTexture (round-fill-r22, straight edges stay opaque -> dots run flush to
+--  the true edge, only the 4 corner arcs cut alpha — NOT a flat pixel inset,
+--  which read as "walled in"). DOT_ALPHA is the live-tune knob for rim
+--  intensity; DOT_COLOR matches the mockup's dot colour (a light neutral grey,
+--  not pure white -> subtler than the accent).
+-- ---------------------------------------------------------------------------
+local DOT_TILE_PX = 72 -- 3x3 cells at 24px pitch (the diagonal opacity tiering needs the full 3x3 unit to stay seamless)
+local DOT_ALPHA = 0.35
+local DOT_COLOR = { r = 168 / 255, g = 168 / 255, b = 176 / 255 }
+-- Aurora ambient (accent map, 2026-07-23, build-order step 1): a soft accent-
+-- tinted glow band hugging the TOP of the content area + a faint bottom-left
+-- counter-glow (the quiet diagonal). Baked white (aurora.tga, the mockup-
+-- approved alphas .43/.32/.21 relative to the shape) and tinted at runtime via
+-- SetVertexColor(Accent.color) — so it's near-white in the mono default and
+-- takes the user's hue once a colour accent is picked (build-order step 6).
+-- AURORA_INTENSITY is the live-tune knob (pure Lua, no re-bake). NOTE the
+-- mockup alphas were tuned on a mid-tone accent (Rose); pure white in mono reads
+-- a touch stronger, so this may want to sit below 1.0 for the mono default.
+local AURORA_INTENSITY = 1.0
+-- Aurora-lit dots (accent map step 2): a second dot layer tinted by the accent,
+-- masked to the aurora FOOTPRINT (aurora-mask.tga, the normalized-to-1.0 shape)
+-- so only the dots UNDER the aurora take colour; everything else stays neutral
+-- grey. DOT_LIT_ALPHA = the lit-dot strength (design target base@.50), tuned
+-- independently of the glow. Near-white/subtle in mono, the payoff in colour.
+local DOT_LIT_ALPHA = 0.50
+-- Nav-edge glow (accent map step 3): a crisp 2px accent line over the nav/
+-- content divider, alpha baked into nav-edge.tga (top .62 -> gap 42-74% ->
+-- bottom .21, mirroring the aurora's left-side profile). NAV_EDGE_INTENSITY
+-- scales it; sits over the faint structural divider, tinted by the accent.
+local NAV_EDGE_INTENSITY = 1.0
+local slideTo = UI.slideTo -- hoisted to UI (Tokens); shared with W.Segment
+
+-- Geometry of `item` in `ref`'s LOCAL coordinate units (what SetPoint offsets on
+-- a child of `ref` expect). item and ref share the same effective scale (both
+-- inside the 0.80-scaled panel), so their GetLeft/GetTop DELTAS are already in
+-- that shared local space — no scale conversion (an earlier ×ratio over-shot the
+-- pill by one row/tab). GetWidth/GetHeight are likewise local (= SetSize units).
+-- Returns nil while positions are unresolved (panel hidden) -> caller retries.
+local itemRectIn = UI.itemRectIn -- hoisted to UI (Tokens); shared with W.Segment
+
+-- ---------------------------------------------------------------------------
+--  Nav item (left rail) — v3: text-only, the active pill is the shared sliding
+--  indicator; the item only carries the label + a faint hover pill.
 -- ---------------------------------------------------------------------------
 local function makeNavItem(parent, label, iconFile)
 	local b = CreateFrame("Button", nil, parent)
@@ -64,7 +127,7 @@ local function makeNavItem(parent, label, iconFile)
 	-- One state surface, recolored per state (active gold / hover charcoal).
 	-- v3 nav mockup (Florian 2026-07-05): a rounded PILL inset from the sidebar
 	-- edges instead of the full-width fill.
-	local bg = UI.RoundFill(b, P.goldInt, "BACKGROUND", nil, UI.RADIUS.md)
+	local bg = UI.RoundFill(b, Accent.color, "BACKGROUND", nil, UI.RADIUS.md)
 	bg:ClearAllPoints()
 	bg:SetPoint("TOPLEFT", b, "TOPLEFT", S.navPillPadX, -S.navPillPadY)
 	bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -S.navPillPadX, S.navPillPadY)
@@ -81,11 +144,15 @@ local function makeNavItem(parent, label, iconFile)
 		icon:SetTexture(TEX .. iconFile)
 		icon:SetSnapToPixelGrid(false)
 		icon:SetTexelSnappingBias(0)
-		icon:SetVertexColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		icon:SetVertexColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
 	end
 
-	local txt = FS(b, "nav", C.textBody)
-	txt:SetPoint("LEFT", icon or b, icon and "RIGHT" or "LEFT", icon and S.navIconGap or S.panelGutter, 0)
+	-- v3 mono nav (mockup): idle = MUTED text, no pill; hover = a faint pill +
+	-- brighter text; active = a SUBTLE elevated pill (elementHover) + BRIGHT text
+	-- (the sliding-highlight language — bright = active, grey = quiet). No bright
+	-- fill / dark-text here (that treatment belongs to the tabs).
+	local txt = FS(b, "nav", Text.Description)
+	txt:SetPoint("LEFT", icon or b, icon and "RIGHT" or "LEFT", icon and S.navIconGap or S.navGutter, 0)
 	txt:SetText(label)
 
 	b._bg, b._txt, b._icon = bg, txt, icon
@@ -95,7 +162,8 @@ local function makeNavItem(parent, label, iconFile)
 				ns.W.ShowTextTip(self, T("Coming soon"), T("This module is still in progress and will be unlocked in a later version."))
 			end
 		elseif not self._active then
-			setColor(self._bg, P.elementHover); self._bg:Show()
+			setColor(self._bg, Surface.Input); self._bg:Show()
+			self._txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 		end
 	end)
 	b:SetScript("OnLeave", function(self)
@@ -103,13 +171,13 @@ local function makeNavItem(parent, label, iconFile)
 			if ns.W and ns.W.HideTip then ns.W.HideTip() end
 		elseif not self._active then
 			self._bg:Hide()
+			self._txt:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b)
 		end
 	end)
 	function b:SetActive(on)
 		self._active = on
-		if on then setColor(self._bg, P.goldInt) end
-		self._bg:SetShown(on)
-		local col = on and P.textOnGold or (self._soon and P.textDisabled or C.textBody)
+		self._bg:Hide() -- the active pill is the shared sliding indicator now; item shows only text
+		local col = on and Text.Primary or (self._soon and Text.Disabled or Text.Description)
 		self._txt:SetTextColor(col.r, col.g, col.b)
 		if self._icon then self._icon:SetVertexColor(col.r, col.g, col.b) end
 	end
@@ -118,8 +186,8 @@ local function makeNavItem(parent, label, iconFile)
 	function b:SetComingSoon(on)
 		self._soon = on
 		if on then
-			self._txt:SetTextColor(P.textDisabled.r, P.textDisabled.g, P.textDisabled.b)
-			if self._icon then self._icon:SetVertexColor(P.textDisabled.r, P.textDisabled.g, P.textDisabled.b) end
+			self._txt:SetTextColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
+			if self._icon then self._icon:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b) end
 		end
 	end
 	return b
@@ -131,7 +199,8 @@ end
 -- ---------------------------------------------------------------------------
 local function makeTab(parent, label)
 	local b = CreateFrame("Button", nil, parent)
-	local txt = FS(b, "tab", C.textBody)
+	b:SetFrameLevel(parent:GetFrameLevel() + 3) -- above the sliding pill (tabStrip+2) so the label stays on top
+	local txt = FS(b, "tab", Text.Description)
 	txt:SetText(label)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 	b:SetHeight(S.tabH)
@@ -141,36 +210,22 @@ local function makeTab(parent, label)
 	function b:Fit() self:SetWidth(math.floor(txt:GetStringWidth() + 44 + 0.5)) end
 	b:Fit()
 
-	-- State surface: element (inactive) / element-hover / interactive gold (active).
-	-- Rounded at MD per the radius scale ("Tabs" row); recolors stay UI.SetColor.
-	local base = UI.RoundFill(b, P.element, "BACKGROUND", nil, UI.RADIUS.md)
-	local edges = UI.RoundBorder(b, L.soft, "OVERLAY", nil, UI.RADIUS.md)
-	b._txt, b._base, b._edges = txt, base, edges
-
+	-- v3: the active pill is the shared sliding indicator (Shell._tabSlider) with
+	-- its baked underglow — it slides + resizes to the active tab. The tab itself
+	-- only changes TEXT color: active/hover = BRIGHT (#ECEDEF), idle = muted.
+	-- (No weight change active/inactive: SemiBold vs Medium have different glyph
+	-- widths -> the centered text would jump in the fixed-width button.)
+	b._txt = txt
 	b:SetScript("OnEnter", function(self)
-		if not self._active then
-			setColor(self._base, P.elementHover)
-			for _, e in ipairs(self._edges) do setColor(e, L.mid) end
-		end
+		if not self._active then self._txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end
 	end)
 	b:SetScript("OnLeave", function(self)
-		if not self._active then
-			setColor(self._base, P.element)
-			for _, e in ipairs(self._edges) do setColor(e, L.soft) end
-		end
+		if not self._active then self._txt:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b) end
 	end)
 	function b:SetActive(on)
 		self._active = on
-		setColor(self._base, on and P.goldInt or P.element)
-		local ec = on and L.strong or L.soft
-		for _, e in ipairs(self._edges) do setColor(e, ec) end
-		local tc = on and P.textOnGold or C.textBody
+		local tc = on and Text.Primary or Text.Description
 		self._txt:SetTextColor(tc.r, tc.g, tc.b)
-		-- NO weight change active/inactive: SemiBold vs Medium have different glyph
-		-- widths -> the centered text would "jump" in the fixed-width button (the width
-		-- was measured once via Fit() with the tab-role font = hankenMed). The active tab
-		-- stands out via the gold fill; the weight stays constant (hankenMed) so
-		-- nothing jumps.
 	end
 	return b
 end
@@ -185,7 +240,7 @@ local function makeCloseButton(parent, onClick)
 	b:SetSize(34, 34)
 
 	-- Rounded hover surface (matches the radius scale / other icon-button hovers).
-	local hoverFill = UI.RoundFill(b, P.elementHover, "BACKGROUND", nil, UI.RADIUS.sm)
+	local hoverFill = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
 	hoverFill:Hide()
 
 	-- X: Lucide "x" glyph (stage-3 glyph swap), tinted; brightens on hover.
@@ -194,10 +249,10 @@ local function makeCloseButton(parent, onClick)
 	x:SetPoint("CENTER", b, "CENTER", 0, 0)
 	x:SetTexture(TEX .. "icon-x")
 	x:SetSnapToPixelGrid(false); x:SetTexelSnappingBias(0)
-	x:SetVertexColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b)
+	x:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
 
-	b:SetScript("OnEnter", function() hoverFill:Show(); x:SetVertexColor(P.textPrimary.r, P.textPrimary.g, P.textPrimary.b) end)
-	b:SetScript("OnLeave", function() hoverFill:Hide(); x:SetVertexColor(P.textSecondary.r, P.textSecondary.g, P.textSecondary.b) end)
+	b:SetScript("OnEnter", function() hoverFill:Show(); x:SetVertexColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end)
+	b:SetScript("OnLeave", function() hoverFill:Hide(); x:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b) end)
 	b:SetScript("OnClick", onClick)
 	return b
 end
@@ -269,6 +324,15 @@ function Shell:Build()
 		-- Re-measure tabs: on the first show after game start the font width was maybe
 		-- still 0 (tabs tiny). Anchors pull the positions along automatically.
 		if Shell._tabButtons then for _, t in ipairs(Shell._tabButtons) do if t.Fit then t:Fit() end end end
+		-- v3: snap the sliding indicators to the now-resolved item positions (at
+		-- build time the panel was hidden -> item rects were nil). One frame later,
+		-- when the subtree has valid rects (mirrors the screen-rebuild timing below).
+		C_Timer.After(0, function()
+			if Shell._frame and Shell._frame:IsShown() then
+				Shell:UpdateNavIndicator(false)
+				Shell:UpdateTabIndicator(false)
+			end
+		end)
 		-- The screen built in Build() ran while the panel was hidden (sizes
 		-- unresolved) -> rebuild it. ONE FRAME LATER, not inside OnShow: at this
 		-- point the subtree has no valid rects yet after /reload — a build now
@@ -290,8 +354,68 @@ function Shell:Build()
 	-- v2: flat main surface (A3), no glow gradient, no rune ornaments.
 	-- Rounded main chrome (Florian 2026-07-05): outer radius = inner radius +
 	-- padding -> chrome rounds at R_CHROME (16), the cards inside keep 8.
-	UI.RoundFill(f, P.panel, "BACKGROUND", nil, UI.ROUND_R_CHROME)
-	UI.RoundBorder(f, L.mid, nil, nil, UI.ROUND_R_CHROME)
+	UI.RoundFill(f, Surface.Window, "BACKGROUND", nil, UI.ROUND_R_CHROME)
+	UI.RoundBorder(f, Border.hover, nil, nil, UI.ROUND_R_CHROME)
+
+	-- Dot-field background — CONTENT area only (excludes the nav column entirely;
+	-- the sidebar stays plain/flat, Florian 2026-07-22). Clipped to the panel's
+	-- own rounded corners via a MaskTexture sharing the SAME 9-slice asset as the
+	-- panel fill (round-fill-r22): a 9-slice mask's STRAIGHT edges stay fully
+	-- opaque, only the 4 corner arcs cut alpha, so the dots run flush to the true
+	-- edge everywhere except right at the curve — a flat pixel inset looked
+	-- "walled in" instead of flush against the border (Florian 2026-07-22).
+	do
+		local mask = f:CreateMaskTexture(nil, "BACKGROUND")
+		mask:SetTexture(TEX_ROUND .. "round-fill-r22", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+		mask:SetTextureSliceMargins(23, 23, 23, 23) -- matches Tokens.lua ROUND_MARGIN[22]
+		mask:SetAllPoints(f)
+
+		local dotBg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+		dotBg:SetTexture(TEX_SHELL .. "dot-tile", true, true)
+		dotBg:SetSnapToPixelGrid(false); dotBg:SetTexelSnappingBias(0)
+		dotBg:SetPoint("TOPLEFT", f, "TOPLEFT", S.navWidth, 0)
+		dotBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+		dotBg:SetTexCoord(0, (PANEL.w - S.navWidth) / DOT_TILE_PX, 0, PANEL.h / DOT_TILE_PX)
+		dotBg:SetVertexColor(DOT_COLOR.r, DOT_COLOR.g, DOT_COLOR.b, DOT_ALPHA)
+		dotBg:AddMaskTexture(mask)
+
+		local dotVign = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+		dotVign:SetTexture(TEX_SHELL .. "dot-vignette")
+		dotVign:SetSnapToPixelGrid(false); dotVign:SetTexelSnappingBias(0)
+		dotVign:SetAllPoints(dotBg)
+		dotVign:SetVertexColor(Surface.Window.r, Surface.Window.g, Surface.Window.b, 1)
+		dotVign:AddMaskTexture(mask)
+
+		-- Aurora-lit dots: the same dot tile, tinted by the accent, but masked to
+		-- the aurora FOOTPRINT so coloured dots appear ONLY where the aurora is
+		-- (dots elsewhere stay the neutral grey dotBg). Two masks multiply: the
+		-- corner mask (rounded panel) AND the aurora-shape mask.
+		local auroraMask = f:CreateMaskTexture(nil, "BACKGROUND")
+		auroraMask:SetTexture(TEX_SHELL .. "aurora-mask")
+		auroraMask:SetAllPoints(dotBg)
+
+		local dotLit = f:CreateTexture(nil, "BACKGROUND", nil, 3)
+		dotLit:SetTexture(TEX_SHELL .. "dot-tile", true, true)
+		dotLit:SetSnapToPixelGrid(false); dotLit:SetTexelSnappingBias(0)
+		dotLit:SetAllPoints(dotBg)
+		dotLit:SetTexCoord(0, (PANEL.w - S.navWidth) / DOT_TILE_PX, 0, PANEL.h / DOT_TILE_PX)
+		dotLit:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, DOT_LIT_ALPHA)
+		dotLit:AddMaskTexture(mask)
+		dotLit:AddMaskTexture(auroraMask)
+		f._auroraLit = dotLit -- re-tinted by a future UI.SetAccent (step 6)
+
+		-- Aurora glow OVER the dots (the accent map is specific: aurora on top,
+		-- dots peek through — sublevel 4 > the dot/lit layers, still BACKGROUND so
+		-- cards/nav on higher-level child frames draw above it). Tinted by the
+		-- live accent; near-white in mono, the user's hue once a colour is set.
+		local aurora = f:CreateTexture(nil, "BACKGROUND", nil, 4)
+		aurora:SetTexture(TEX_SHELL .. "aurora")
+		aurora:SetSnapToPixelGrid(false); aurora:SetTexelSnappingBias(0)
+		aurora:SetAllPoints(dotBg)
+		aurora:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, AURORA_INTENSITY)
+		aurora:AddMaskTexture(mask)
+		f._auroraTex = aurora -- so a future UI.SetAccent can re-tint it (step 6)
+	end
 
 	-- Close X in the top-right corner.
 	local closeBtn = makeCloseButton(f, function() Shell:Hide() end)
@@ -309,34 +433,179 @@ function Shell:Build()
 	nav:SetWidth(S.navWidth)
 	nav:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
 	nav:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
-	-- v2: the sidebar is DELIBERATELY the lightest base surface (A2) — light nav
-	-- column against the darker work area. Left-rounded: it sits flush in the
-	-- panel's left edge, so its corners must follow the panel's chrome curve.
-	UI.RoundFill(nav, P.sidebar, "BACKGROUND", "left", UI.ROUND_R_CHROME)
+	-- v3: the sidebar is SEAMLESS with the panel (same #0B0B0D), so it gets NO own
+	-- fill — the panel's rounded fill + border then wrap CONSISTENTLY around the
+	-- nav's top/left/bottom (a nav fill, being a child texture, overpainted the
+	-- panel border on those edges -> the navbar looked "bigger" / borderless there).
+	self._nav = nav
+	-- Subtle vertical divider at the nav/content boundary (mockup). Pixel-snap the
+	-- THICKNESS only (whole px at scale 0.80 -> never a 0.x hairline); position
+	-- stays plain SetPoint (per the border pixel-snap rule). Runs the FULL panel
+	-- height (it sits mid-panel at the nav's right edge, clear of the rounded corners).
+	local navDiv = nav:CreateTexture(nil, "ARTWORK")
+	navDiv:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
+	navDiv:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", 0, 0)
+	setColor(navDiv, Border.divider)
+	local function snapNavDiv() PixelUtil.SetWidth(navDiv, 1) end
+	snapNavDiv(); C_Timer.After(0, snapNavDiv)
+
+	-- v3 sliding nav indicator: ONE subtle elevated pill (#232327) that tweens
+	-- vertically to the active module. Created BEFORE the nav items so they (and
+	-- their labels) draw ON TOP of it. Positioned by Shell:UpdateNavIndicator.
+	local navSlider = CreateFrame("Frame", nil, nav)
+	navSlider:SetFrameLevel(nav:GetFrameLevel())
+	navSlider._ref = nav
+	UI.RoundFill(navSlider, Surface.Hover, "ARTWORK", nil, 12)
+	navSlider:Hide()
+	self._navSlider = navSlider
 
 	-- Brand block at the top of the sidebar: wordmark + tagline, left-aligned on
-	-- the same gutter as the nav labels, divider below.
+	-- the same gutter as the nav labels. v3: NO divider under it (mockup) — brand
+	-- is just a positioning container now; the MODULES gap is set explicitly
+	-- below (anchored off the tagline's own bottom, not this frame's edge —
+	-- anchoring off the frame previously left a big dead gap under a short
+	-- tagline, per Florian's mockup-comparison 2026-07-22).
 	local brand = CreateFrame("Frame", nil, nav)
 	brand:SetHeight(S.navBrandH)
 	brand:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, 0)
 	brand:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
-	local bsep = brand:CreateTexture(nil, "ARTWORK")
-	bsep:SetHeight(1); bsep:SetPoint("BOTTOMLEFT", brand, "BOTTOMLEFT", 0, 0)
-	bsep:SetPoint("BOTTOMRIGHT", brand, "BOTTOMRIGHT", 0, 0); setColor(bsep, L.divider)
 
-	local word = FS(brand, "wordmark", P.goldBrand) -- C1 brand gold (non-clickable)
-	word:SetText(UI.Track("LUMENUI", " ")) -- tracking emulation (single space: fits the column)
-	word:SetPoint("TOPLEFT", brand, "TOPLEFT", S.panelGutter, -22)
-	local tag = FS(brand, "tagline", P.textSecondary)
-	tag:SetText(UI.Track("a focused ui suite", " "))
-	tag:SetPoint("TOPLEFT", word, "BOTTOMLEFT", 0, -6)
+	local word = FS(brand, "wordmark", Text.Primary) -- v3: off-white (mono), non-clickable
+	-- Only the "UI" suffix takes the accent (brand anchor in the nav); "LUMEN"
+	-- stays Text.Primary. Colour-escape the tracked tail so it recolours with a
+	-- future UI.SetAccent. In mono the accent == off-white, so no visible change.
+	local wmHead = UI.Track("LUMEN", " ") -- "L U M E N" (Text.Primary base colour)
+	local wmTail = UI.Track("UI", " ")     -- "U I" (accent-escaped)
+	local function applyWordmark()
+		word:SetText(wmHead .. " " .. UI.ColorCode(Accent.color) .. wmTail .. "|r")
+	end
+	applyWordmark()
+	self._applyWordmarkAccent = applyWordmark -- re-run by a future UI.SetAccent (step 6)
+	word:SetPoint("TOPLEFT", brand, "TOPLEFT", S.navGutter, -40) -- v3: pushed down to sit on the tab-row height (more top air), navGutter left inset
+	local tag = FS(brand, "tagline", Text.Description)
+	tag:SetText(UI.Track("A FOCUSED UI SUITE", " ")) -- v3: uppercase tracked, matches the mockup
+	tag:SetPoint("TOPLEFT", word, "BOTTOMLEFT", 0, -9) -- mockup ratio (7px @ 1x -> ~9 design-px)
+
+	-- Settings search — sits between the brand block and the module list ON
+	-- PURPOSE: it searches ACROSS modules, and a field inside the content area
+	-- would read as "searches this tab".
+	-- STRUCTURE: a normal Frame carries the face (fill, border, icons) and the
+	-- EditBox is only the text line inside it. Textures parented straight to an
+	-- EditBox rendered as blank boxes in-game (Florian 2026-07-26, survived a
+	-- client restart, files verified byte-identical to working icons) — every
+	-- working glyph in the Shell sits on a plain frame, so this one does too.
+	-- Height + edges match the nav PILLS, so the field reads as one of the list.
+	local fieldH = S.navItemH - S.navPillPadY * 2
+	local sfield = CreateFrame("Frame", nil, nav)
+	sfield:SetHeight(fieldH)
+	sfield:SetPoint("TOP", tag, "BOTTOM", 0, -S.s9)
+	sfield:SetPoint("LEFT", nav, "LEFT", S.navPillPadX, 0)
+	sfield:SetPoint("RIGHT", nav, "RIGHT", -S.navPillPadX, 0)
+	UI.RoundFill(sfield, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	-- RoundBorder returns a TABLE of edge textures (a shape can need several),
+	-- so recolouring goes through all of them.
+	local sboxBorder = UI.RoundBorder(sfield, Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local function tintBorder(col)
+		for _, tex in ipairs(sboxBorder) do setColor(tex, col) end
+	end
+
+	-- Magnifier (Lucide "search"): names the field without a caption.
+	local sicon = sfield:CreateTexture(nil, "ARTWORK")
+	sicon:SetSize(S.navIconSize, S.navIconSize)
+	sicon:SetPoint("LEFT", sfield, "LEFT", S.s5, 0)
+	sicon:SetTexture(TEX .. "icon-search")
+	sicon:SetSnapToPixelGrid(false)
+	sicon:SetTexelSnappingBias(0)
+	-- Glyph textures are tinted with SetVertexColor, NEVER with UI.SetColor:
+	-- that helper only vertex-tints assets flagged _round and otherwise calls
+	-- SetColorTexture, which REPLACES the image with a flat fill (that is what
+	-- turned both icons into grey boxes, 2026-07-26).
+	local function tintGlyph(tex, col) tex:SetVertexColor(col.r, col.g, col.b, col.a or 1) end
+	tintGlyph(sicon, Text.Description)
+
+	local textLeft = S.s5 + S.navIconSize + S.s3
+	local sbox = CreateFrame("EditBox", nil, sfield)
+	sbox:SetPoint("LEFT", sfield, "LEFT", textLeft, 0)
+	sbox:SetPoint("RIGHT", sfield, "RIGHT", -(S.s5 + S.closeGlyph + S.s3), 0)
+	sbox:SetHeight(fieldH)
+	UI:SetFont(sbox, "selectText", Text.Primary)
+	sbox:SetAutoFocus(false)
+	sbox:SetMaxLetters(40)
+	-- The EditBox only spans the text column, so the whole face takes the click.
+	sfield:EnableMouse(true)
+	sfield:SetScript("OnMouseDown", function() sbox:SetFocus() end)
+	local sph = FS(sfield, "selectText", Text.Description)
+	sph:SetText(T("Search"))
+	sph:SetPoint("LEFT", sfield, "LEFT", textLeft, 0)
+	-- Clear glyph, only while there is something to clear.
+	local sclear = CreateFrame("Button", nil, sfield)
+	sclear:SetSize(fieldH - S.s3 * 2, fieldH - S.s3 * 2)
+	sclear:SetPoint("RIGHT", sfield, "RIGHT", -S.s3, 0)
+	local sclearTex = sclear:CreateTexture(nil, "OVERLAY")
+	sclearTex:SetSize(S.closeGlyph - 4, S.closeGlyph - 4)
+	sclearTex:SetPoint("CENTER", sclear, "CENTER", 0, 0)
+	sclearTex:SetSnapToPixelGrid(false)
+	sclearTex:SetTexelSnappingBias(0)
+	sclearTex:SetTexture(TEX .. "icon-x")
+	tintGlyph(sclearTex, Text.Description)
+	sclear:SetScript("OnEnter", function() tintGlyph(sclearTex, Text.Primary) end)
+	sclear:SetScript("OnLeave", function() tintGlyph(sclearTex, Text.Description) end)
+	sclear:Hide()
+	local function paintSearch()
+		local txt = sbox:GetText() or ""
+		sph:SetShown(txt == "" and not sbox:HasFocus())
+		sclear:SetShown(txt ~= "")
+		local live = txt ~= "" or sbox:HasFocus()
+		tintBorder(live and Border.hover or Border.default)
+		tintGlyph(sicon, live and Text.Secondary or Text.Description)
+	end
+	sbox:SetScript("OnTextChanged", function(_, user)
+		paintSearch()
+		if user then Shell:SetSearchQuery(sbox:GetText()) end
+	end)
+	-- Coming back to the field with a term still in it brings the result list
+	-- back (the jump only left the list, it never cleared the query) — that's
+	-- what makes working through several hits one after another work.
+	sbox:SetScript("OnEditFocusGained", function(self2)
+		paintSearch()
+		local txt = self2:GetText() or ""
+		if txt ~= "" then
+			-- Preselect, so starting to type replaces the old term instead of
+			-- appending to it — the one friction point of keeping it around.
+			self2:HighlightText()
+			if not Shell:IsSearching() then Shell:SetSearchQuery(txt) end
+		end
+	end)
+	sbox:SetScript("OnEditFocusLost", paintSearch)
+	-- ESC clears first and only closes the panel on a second press (a half-typed
+	-- query is the more likely thing you want gone).
+	sbox:SetScript("OnEscapePressed", function(self2)
+		if (self2:GetText() or "") ~= "" then
+			self2:SetText(""); Shell:SetSearchQuery("")
+		end
+		self2:ClearFocus()
+	end)
+	sbox:SetScript("OnEnterPressed", function() Shell:ActivateSearchSelection() end)
+	-- Arrow keys walk the results without leaving the field (the pattern Blizzard's
+	-- own group-finder search box uses).
+	sbox:SetScript("OnArrowPressed", function(_, key)
+		if key == "UP" then Shell:MoveSearchSelection(-1)
+		elseif key == "DOWN" then Shell:MoveSearchSelection(1) end
+	end)
+	sclear:SetScript("OnClick", function()
+		sbox:SetText(""); Shell:SetSearchQuery(""); sbox:ClearFocus()
+	end)
+	self._search = sbox
+	self._searchPaint = paintSearch
+	paintSearch()
 
 	-- "MODULES" caption above the nav list (v3 mockup, stage 3): a small tracked
-	-- uppercase label, same left gutter as the nav items. The first nav item
-	-- anchors below it (see the nav loop).
-	local navLabel = FS(nav, "caption", C.textMuted)
+	-- uppercase label, same left gutter as the nav items (tag is already inset by
+	-- navGutter, so x=0 here). Anchored off the SEARCH field now (it took the gap
+	-- that used to sit under the tagline).
+	local navLabel = FS(nav, "navGroupLabel", Text.Description)
 	navLabel:SetText(UI.Track("MODULES", " "))
-	navLabel:SetPoint("TOPLEFT", brand, "BOTTOMLEFT", S.panelGutter, -S.s6)
+	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -(S.s9 + fieldH + S.s9))
 
 	-- Version chip (stage 3): muted "v<x.y.z>" pinned to the very bottom-right of
 	-- the sidebar so it never floats when the preview button is hidden (Florian
@@ -346,12 +615,12 @@ function Shell:Build()
 	local hasChip = ver ~= ""
 	if hasChip then
 		local chip = CreateFrame("Frame", nil, nav)
-		local cfs = FS(chip, "caption", C.textMuted)
+		local cfs = FS(chip, "caption", Text.Description)
 		cfs:SetText("v" .. ver)
 		cfs:SetPoint("CENTER", chip, "CENTER", 0, 0)
 		chip:SetSize(math.ceil(cfs:GetStringWidth()) + S.s5, chipH)
 		chip:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
-		UI.RoundBorder(chip, L.soft, "OVERLAY", nil, UI.RADIUS.xs)
+		UI.RoundBorder(chip, Border.default, "OVERLAY", nil, UI.RADIUS.xs)
 	end
 
 	-- Edit Mode button (v2): a suite-global action, so it lives in the global
@@ -382,7 +651,21 @@ function Shell:Build()
 	-- Vertical nav divider: on MAIN (draws over nav + its buttons), left edge.
 	local nsep = main:CreateTexture(nil, "OVERLAY")
 	nsep:SetWidth(1); nsep:SetPoint("TOPLEFT", main, "TOPLEFT", 0, 0)
-	nsep:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0); setColor(nsep, L.divider)
+	nsep:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0); setColor(nsep, Border.divider)
+
+	-- Nav-edge glow: a crisp 2px accent line over the divider, its vertical alpha
+	-- profile baked into nav-edge.tga (strong at top, gap in the middle, faint at
+	-- the bottom — the aurora's left-side presence). Snap the WIDTH only (whole px
+	-- at scale 0.80); position plain per the border pixel-snap rule. Sits over the
+	-- structural divider so the accent shows only where the aurora is.
+	local navEdge = main:CreateTexture(nil, "OVERLAY", nil, 1)
+	navEdge:SetTexture(TEX_SHELL .. "nav-edge")
+	navEdge:SetPoint("TOPLEFT", main, "TOPLEFT", 0, 0)
+	navEdge:SetPoint("BOTTOMLEFT", main, "BOTTOMLEFT", 0, 0)
+	navEdge:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, NAV_EDGE_INTENSITY)
+	local function snapNavEdge() PixelUtil.SetWidth(navEdge, 2) end
+	snapNavEdge(); C_Timer.After(0, snapNavEdge)
+	f._navEdge = navEdge -- re-tinted by a future UI.SetAccent (step 6)
 
 	-- Tab-Strip (main starts at the panel top). Air ABOVE the strip = the same
 	-- contentTopGap as BELOW it (Florian 2026-07-05: unequal gaps read like
@@ -391,6 +674,37 @@ function Shell:Build()
 	tabStrip:SetHeight(S.tabH)
 	tabStrip:SetPoint("TOPLEFT", main, "TOPLEFT", S.panelGutter, -S.contentTopGap)
 	tabStrip:SetPoint("TOPRIGHT", main, "TOPRIGHT", -S.panelGutter, -S.contentTopGap)
+
+	-- v3: solid rounded backing behind the tabs, so the tab row reads as a
+	-- distinct strip (esp. later over the dot field). COMPACT — hugs the tabs:
+	-- LEFT + padding frames the first tab, RIGHT follows the last tab (re-anchored
+	-- per section in RebuildTabs). Created BEFORE the tabs so they draw on top.
+	local tabStripBg = CreateFrame("Frame", nil, tabStrip)
+	tabStripBg:SetFrameLevel(tabStrip:GetFrameLevel() + 1) -- above the strip frame, below the slider
+	-- v3: fully-round capsule (rounded-full, like the mockup) via the pill assets
+	-- at the exact strip height (round-fill 9-slice can't do radius > half-height).
+	UI.PillFill(tabStripBg, Surface.Card, "BACKGROUND", S.tabH)
+	UI.PillBorder(tabStripBg, Border.default, "BORDER", S.tabH)
+	tabStripBg:Hide()
+	self._tabStripBg = tabStripBg
+
+	-- v3 sliding tab pill: ONE semi-transparent white pill (~10%) + baked underglow
+	-- that tweens + resizes to the active tab. Created BEFORE the tabs so they draw
+	-- on top. Positioned by Shell:UpdateTabIndicator.
+	local tabSlider = CreateFrame("Frame", nil, tabStrip)
+	tabSlider:SetFrameLevel(tabStrip:GetFrameLevel() + 2) -- above the strip backing, below the tab text
+	tabSlider._ref = tabStrip
+	local tglow = tabSlider:CreateTexture(nil, "BACKGROUND")
+	tglow:SetTexture(TEX_SHELL .. "tab-glow")
+	tglow:SetSnapToPixelGrid(false); tglow:SetTexelSnappingBias(0)
+	tglow:SetPoint("TOPLEFT", tabSlider, "TOPLEFT", -S.tabGlowX, S.tabGlowTop)
+	tglow:SetPoint("BOTTOMRIGHT", tabSlider, "BOTTOMRIGHT", S.tabGlowX, -S.tabGlowBot)
+	local gl = Accent.glow
+	tglow:SetVertexColor(gl.r, gl.g, gl.b, gl.a) -- accent glow (mono = white; tints automatically if a colour accent is set); softness baked into the alpha
+	local tfill = UI.PillFill(tabSlider, Accent.wash, "ARTWORK", S.tabH - S.tabStripPad * 2) -- accent-wash capsule (fully round)
+	tabSlider:Hide()
+	self._tabSlider = tabSlider
+	self._tabGlow, self._tabFill = tglow, tfill -- re-tinted live by Shell:RefreshAccent
 
 	-- Info badge on the right of the tab strip (v2 refinement no. 4, e.g. the
 	-- active spec on the Tracking tab). Screens fill it via Shell:SetTabBadge;
@@ -402,9 +716,9 @@ function Shell:Build()
 	-- the tab strip's right is only panelGutter in — so pull the badge left past
 	-- the X + a comfortable gap. Vertical stays centered on the tab strip (RIGHT anchor).
 	badge:SetPoint("RIGHT", tabStrip, "RIGHT", -(34 + 14 - S.panelGutter + S.s8), 0)
-	UI.RoundFill(badge, P.element, nil, nil, UI.RADIUS.xs)
-	UI.RoundBorder(badge, L.soft, "OVERLAY", nil, UI.RADIUS.xs)
-	local badgeTxt = FS(badge, "caption", C.textMuted)
+	UI.RoundFill(badge, Surface.Input, nil, nil, UI.RADIUS.xs)
+	UI.RoundBorder(badge, Border.default, "OVERLAY", nil, UI.RADIUS.xs)
+	local badgeTxt = FS(badge, "caption", Text.Description)
 	badgeTxt:SetPoint("CENTER", badge, "CENTER", 0, 0)
 	badge._txt = badgeTxt
 	badge:Hide()
@@ -424,8 +738,8 @@ function Shell:Build()
 	dock:SetSize(MW.pvStageMinW, MW.pvMinStageH)
 	-- Fill/border kept as handles: Shell:SetDockChrome strips them for the
 	-- preview's "Backdrop" filter (frames float freely on the screen).
-	dock._fill = UI.RoundFill(dock, P.panel, nil, nil, UI.ROUND_R_CHROME)
-	dock._edges = UI.RoundBorder(dock, L.mid, nil, nil, UI.ROUND_R_CHROME)
+	dock._fill = UI.RoundFill(dock, Surface.Window, nil, nil, UI.ROUND_R_CHROME)
+	dock._edges = UI.RoundBorder(dock, Border.hover, nil, nil, UI.ROUND_R_CHROME)
 	-- (The former gold accent bar on the panel-facing edge was removed with the
 	-- rounded chrome — Florian 2026-07-05.)
 	dock:EnableMouse(true)
@@ -465,18 +779,24 @@ function Shell:Build()
 	sbTrack:SetPoint("TOPLEFT", scroll, "TOPRIGHT", S.scrollBarGap, 0)
 	sbTrack:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", S.scrollBarGap, 0)
 	local trackTex = sbTrack:CreateTexture(nil, "ARTWORK")
-	trackTex:SetAllPoints(sbTrack); setColor(trackTex, C.ink700)
+	trackTex:SetAllPoints(sbTrack); setColor(trackTex, Surface.Input)
 
 	-- Thumb anchored via TOP (= horizontally centered), width separate -> can widen
 	-- on hover (easier to grab). updateBar sets height/position.
 	local thumb = CreateFrame("Frame", nil, sbTrack)
 	thumb:SetWidth(S.scrollBarW)
 	thumb:EnableMouse(true)
+	-- Wider grab zone than the thin visual line (Florian 2026-07-22: scrollBarW
+	-- halved to 2 for a quieter look; without this the thumb would be fiddly to
+	-- catch with the mouse before the hover-widen even triggers). Mirrors the
+	-- slider-thumb hit-rect pattern in Widgets.lua.
+	thumb:SetHitRectInsets(-4, -4, 0, 0)
 	thumb._w = S.scrollBarW
 	local thumbTex = thumb:CreateTexture(nil, "OVERLAY")
 	thumbTex:SetAllPoints(thumb)
-	local function paintThumb(a) thumbTex:SetColorTexture(C.gold500.r, C.gold500.g, C.gold500.b, a) end
+	local function paintThumb(a) thumbTex:SetColorTexture(Accent.color.r, Accent.color.g, Accent.color.b, a) end
 	paintThumb(0.55)
+	self._paintThumb = paintThumb -- re-tinted to the idle alpha by Shell:RefreshAccent
 
 	local function updateBar()
 		-- Derive the range from the scroll child height (always current) instead of
@@ -542,24 +862,17 @@ function Shell:Build()
 	self._navButtons = {}
 	local prev
 	for i, sec in ipairs(SECTIONS) do
-		local nb = makeNavItem(nav, sec[1], sec.icon)
+		local nb = makeNavItem(nav, sec[1]) -- v3: text-only nav (icons dropped per the mockup; pass sec.icon to restore)
 		if prev then
-			if sec.sep then
-				local div = nav:CreateTexture(nil, "ARTWORK")
-				div:SetHeight(1)
-				setColor(div, L.divider)
-				div:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", S.s4, -S.s3)
-				div:SetPoint("TOPRIGHT", prev, "BOTTOMRIGHT", -S.s4, -S.s3)
-				nb:SetPoint("TOP", prev, "BOTTOM", 0, -(S.s3 * 2 + 1))
-			else
-				nb:SetPoint("TOP", prev, "BOTTOM", 0, -2)
-			end
+			-- v3: uniform spacing, NO group divider lines (mockup) — sec.sep kept in
+			-- SECTIONS for later but no longer draws a line or an extra gap.
+			nb:SetPoint("TOP", prev, "BOTTOM", 0, -S.navItemGap)
 		else
 			nb:SetPoint("TOP", navLabel, "BOTTOM", 0, -S.navGroupGap)
 		end
 		nb._index = i
 		if sec.soon then nb:SetComingSoon(true) end
-		nb:SetScript("OnClick", function() Shell:SelectSection(i) end)
+		nb:SetScript("OnClick", function() Shell:LeaveSearch(); Shell:SelectSection(i) end)
 		self._navButtons[i] = nb
 		prev = nb
 	end
@@ -601,7 +914,7 @@ function Shell:RebuildTabs(sectionIndex)
 		if not tb then
 			tb = makeTab(self._tabStrip, label)
 			if i > 1 then tb:SetPoint("LEFT", pool[i - 1], "RIGHT", S.s3, 0)
-			else tb:SetPoint("LEFT", self._tabStrip, "LEFT", 0, 0) end
+			else tb:SetPoint("LEFT", self._tabStrip, "LEFT", S.tabStripPad, 0) end -- v3: inset by the strip padding
 			tb:SetScript("OnClick", function(selfBtn) Shell:SelectTab(selfBtn._index) end)
 			pool[i] = tb
 		end
@@ -613,14 +926,53 @@ function Shell:RebuildTabs(sectionIndex)
 		self._tabButtons[i] = tb
 	end
 	for i = #tabs + 1, #pool do pool[i]:Hide() end
+	-- v3: re-anchor the solid strip backing to hug this section's tabs. The RIGHT
+	-- anchor rides the last tab frame, so it auto-follows the deferred Fit() resize.
+	local last = self._tabButtons[#tabs]
+	if last then
+		local sb = self._tabStripBg
+		sb:ClearAllPoints()
+		sb:SetPoint("TOPLEFT", self._tabStrip, "TOPLEFT", 0, 0)
+		sb:SetPoint("BOTTOMLEFT", self._tabStrip, "BOTTOMLEFT", 0, 0)
+		sb:SetPoint("RIGHT", last, "RIGHT", S.tabStripPad, 0)
+		sb:Show()
+	else
+		self._tabStripBg:Hide()
+	end
 	-- Re-measure one frame later: on the very first build (panel still hidden /
 	-- fonts maybe not ready) GetStringWidth returns 0 -> tiny tabs.
 	C_Timer.After(0, function()
 		for _, t in ipairs(self._tabButtons) do if t.Fit then t:Fit() end end
+		self:UpdateTabIndicator(false) -- snap the pill to the final (post-Fit) tab widths
 	end)
 	-- Return to the tab that was active the last time this section was open
 	-- (session memory; falls back to the first tab).
 	Shell:SelectTab(self._lastTab[sectionIndex] or 1)
+end
+
+-- v3 sliding indicators: reposition the nav / tab pill to the active item.
+-- Geometry read from the item frames (scale-safe via itemRectIn). animate=false
+-- at build/show time (positions just resolved), animate=true on a user click.
+-- Silently no-ops while positions are unresolved (panel hidden) -> OnShow retries.
+function Shell:UpdateNavIndicator(animate)
+	local ind = self._navSlider
+	if not ind then return end
+	local sec = SECTIONS[self._section or 0]
+	local item = self._navButtons[self._section or 0]
+	if (not item) or (sec and sec.soon) then ind:Hide(); ind._cx = nil; return end
+	local ox, oy, w, h = itemRectIn(item, self._nav)
+	if not ox then return end
+	slideTo(ind, ox + S.navPillPadX, oy - S.navPillPadY, w - S.navPillPadX * 2, h - S.navPillPadY * 2, animate)
+end
+
+function Shell:UpdateTabIndicator(animate)
+	local ind = self._tabSlider
+	if not ind then return end
+	local item = self._tabButtons[self._tab or 0]
+	if not item then ind:Hide(); ind._cx = nil; return end
+	local ox, oy, w, h = itemRectIn(item, self._tabStrip)
+	if not ox then return end
+	slideTo(ind, ox, oy - S.tabStripPad, w, h - S.tabStripPad * 2, animate)
 end
 
 function Shell:SelectSection(index)
@@ -628,9 +980,12 @@ function Shell:SelectSection(index)
 	local sec = SECTIONS[index]
 	-- Never highlight coming-soon modules as active (they stay muted + chip).
 	for i, nb in ipairs(self._navButtons) do nb:SetActive(i == index and not sec.soon) end
+	self:UpdateNavIndicator(self._frame and self._frame:IsShown())
 	if sec.soon then
 		-- No tabs, no tab selection — render the placeholder page directly.
 		for _, t in ipairs(self._tabPool) do t:Hide() end
+		if self._tabStripBg then self._tabStripBg:Hide() end
+		if self._tabSlider then self._tabSlider:Hide(); self._tabSlider._cx = nil end
 		wipe(self._tabButtons)
 		self._tab = nil
 		self:RenderContent()
@@ -643,6 +998,7 @@ function Shell:SelectTab(index)
 	self._tab = index
 	if self._section then self._lastTab[self._section] = index end
 	for i, tb in ipairs(self._tabButtons) do tb:SetActive(i == index) end
+	self:UpdateTabIndicator(self._frame and self._frame:IsShown())
 	self:RenderContent()
 end
 
@@ -699,7 +1055,7 @@ local function flashCard(card)
 		fl = CreateFrame("Frame", nil, card)
 		fl:SetAllPoints(card)
 		fl:SetFrameLevel(card:GetFrameLevel() + 9)
-		UI.RoundBorder(fl, UI.C.gold500, "OVERLAY", nil, UI.RADIUS.lg)
+		UI.RoundBorder(fl, UI.Accent.color, "OVERLAY", nil, UI.RADIUS.lg)
 		local ag = fl:CreateAnimationGroup()
 		local a = ag:CreateAnimation("Alpha")
 		a:SetFromAlpha(1); a:SetToAlpha(0)
@@ -707,6 +1063,29 @@ local function flashCard(card)
 		ag:SetScript("OnFinished", function() fl:Hide() end)
 		fl._ag = ag
 		card._jumpFlash = fl
+	end
+	fl:SetAlpha(1); fl:Show()
+	fl._ag:Stop(); fl._ag:Play()
+end
+
+-- Same pulse for a single settings ROW (search jump): tighter radius, and it
+-- also washes the row so a thin line is actually noticeable in a full card.
+local function flashRow(row)
+	local fl = row._searchFlash
+	if not fl then
+		fl = CreateFrame("Frame", nil, row)
+		fl:SetPoint("TOPLEFT", row, "TOPLEFT", -S.s3, S.s2)
+		fl:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", S.s3, -S.s2)
+		fl:SetFrameLevel(row:GetFrameLevel() + 9)
+		UI.RoundFill(fl, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
+		UI.RoundBorder(fl, Accent.color, "OVERLAY", nil, UI.RADIUS.sm)
+		local ag = fl:CreateAnimationGroup()
+		local a = ag:CreateAnimation("Alpha")
+		a:SetFromAlpha(1); a:SetToAlpha(0)
+		a:SetStartDelay(0.7); a:SetDuration(1.1)
+		ag:SetScript("OnFinished", function() fl:Hide() end)
+		fl._ag = ag
+		row._searchFlash = fl
 	end
 	fl:SetAlpha(1); fl:Show()
 	fl._ag:Stop(); fl._ag:Play()
@@ -774,6 +1153,7 @@ end
 -- every build, so a screen without a badge never inherits a stale one. The
 -- composed text is recorded in _lastBadge so the screen cache can restore it.
 function Shell:SetTabBadge(label, value)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	if not self._tabBadge then return end
 	if not label or label == "" then
 		self._lastBadge = nil
@@ -782,7 +1162,7 @@ function Shell:SetTabBadge(label, value)
 	end
 	local text = label
 	if value and value ~= "" then
-		text = label .. " " .. UI.ColorCode(P.textPrimary) .. value .. "|r"
+		text = label .. " " .. UI.ColorCode(Text.Primary) .. value .. "|r"
 	end
 	self._lastBadge = text
 	self:_ApplyBadge(text)
@@ -856,7 +1236,7 @@ local function newStack(holder)
 		local headerH, topInset = 0, pad
 		if o.title and o.titleStyle == "light" then
 			headerH, topInset = M.subgroupTitleH, 0
-			local t = FS(panel, "groupTitle", C.gold300)
+			local t = FS(panel, "groupTitle", Text.Primary)
 			t:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.subgroupPad)
 			t:SetText(o.title)
 			panel._title = t
@@ -865,7 +1245,7 @@ local function newStack(holder)
 			-- title + optional muted description line; no header bar, no divider,
 			-- no accent bar.
 			headerH, topInset = (o.subtitle and M.cardHeadSubH or M.cardHeadH), (o.afterHeader or 0)
-			local titleFS = FS(panel, "sectionHead", C.gold300)
+			local titleFS = FS(panel, "sectionHead", Text.Primary)
 			titleFS:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.cardHeadTop)
 			titleFS:SetText(o.title)
 			panel._title = titleFS
@@ -876,7 +1256,7 @@ local function newStack(holder)
 			if not titleH or titleH <= 0 then titleH = 20 end -- cold font fallback (= sectionHead size)
 			local titleMidY = -M.cardHeadTop - titleH / 2
 			if o.subtitle then
-				local subFS = FS(panel, "caption", C.textMuted)
+				local subFS = FS(panel, "caption", Text.Description)
 				subFS:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.cardSubY)
 				subFS:SetPoint("RIGHT", panel, "RIGHT", -pad, 0)
 				subFS:SetJustifyH("LEFT")
@@ -888,24 +1268,24 @@ local function newStack(holder)
 			if o.count ~= nil then
 				local nonzero = (tonumber(o.count) or 0) > 0
 				local chip = CreateFrame("Frame", nil, panel)
-				local cfs = FS(chip, "caption", nonzero and P.goldBrand or C.textMuted)
+				local cfs = FS(chip, "caption", nonzero and Text.Primary or Text.Description)
 				cfs:SetText(tostring(o.count))
 				cfs:SetPoint("CENTER", chip, "CENTER", 0, 0)
 				chip:SetSize(math.max(M.sectionCountH, math.ceil(cfs:GetStringWidth()) + M.sectionCountPad * 2), M.sectionCountH)
 				chip:SetPoint("LEFT", titleFS, "RIGHT", M.sectionCountGap, 0)
-				UI.RoundBorder(chip, nonzero and UI.goldA(0.40) or L.soft, "OVERLAY", nil, UI.RADIUS.xs)
+				UI.RoundBorder(chip, nonzero and UI.accentA(0.40) or Border.default, "OVERLAY", nil, UI.RADIUS.xs)
 			end
 			-- v2 refinement no. 2: quiet header action (e.g. "Restore defaults") on the
 			-- right — declutters the card footer; muted, golden on hover.
 			if o.action then
 				local act = CreateFrame("Button", nil, panel)
-				local afs = FS(act, "value", C.textMuted)
+				local afs = FS(act, "value", Text.Description)
 				afs:SetText(o.action.text or "")
 				afs:SetPoint("CENTER", act, "CENTER", 0, 0)
 				act:SetSize(math.ceil(afs:GetStringWidth()) + 12, M.cardHeadH)
 				act:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
-				act:SetScript("OnEnter", function() afs:SetTextColor(P.goldIntHover.r, P.goldIntHover.g, P.goldIntHover.b) end)
-				act:SetScript("OnLeave", function() afs:SetTextColor(C.textMuted.r, C.textMuted.g, C.textMuted.b) end)
+				act:SetScript("OnEnter", function() afs:SetTextColor(Accent.hover.r, Accent.hover.g, Accent.hover.b) end)
+				act:SetScript("OnLeave", function() afs:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b) end)
 				if o.action.onClick then act:SetScript("OnClick", o.action.onClick) end
 			end
 			-- Header master toggle (card grid system): small switch on the right
@@ -946,7 +1326,7 @@ local function newStack(holder)
 				local function paint()
 					local on = o.eye.get()
 					g:SetTexture(TEX .. (on and "icon-eye" or "icon-eye-off"))
-					local col = hovered and P.goldIntHover or (on and P.goldInt or C.textMuted)
+					local col = hovered and Accent.hover or (on and Accent.color or Text.Description)
 					g:SetVertexColor(col.r, col.g, col.b)
 				end
 				paint()
@@ -966,10 +1346,30 @@ local function newStack(holder)
 					scr._eyePaints[#scr._eyePaints + 1] = paint
 				end
 			end
+
+			-- Header divider (Florian 2026-07-22, back per the mockup): a fine
+			-- hairline under the title/subtitle block, at the header's own bottom
+			-- edge, so the header→content gap reads as two deliberate steps
+			-- (title-to-line, line-to-content) instead of one big undifferentiated
+			-- void. Only the heavy card-title header gets it, not the light
+			-- subgroup label style.
+			if o.title and o.titleStyle ~= "light" then
+				local divider = panel:CreateTexture(nil, "ARTWORK")
+				UI.SetColor(divider, Border.faint)
+				divider:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -headerH)
+				divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -pad, -headerH)
+				PixelUtil.SetHeight(divider, 1)
+			end
 		end
 
 		local rowPad = outerPad + pad -- row indent of the box WITHIN holder
 		local inner, iy, pending = {}, topY - headerH - topInset, nil
+		-- Divider de-dup (Florian 2026-07-22): track whether the boundary at the
+		-- cursor already carries a hairline (the header divider, or a preceding
+		-- OptionRow's bottom line). A subHeadRow/Disclosure draws its OWN top line;
+		-- when the boundary is already lined, hide it so the two don't read as a
+		-- double divider. A lineless element (FieldRow/segment) leaves it unlined.
+		local boundaryLined = (o.title and o.titleStyle ~= "light") and true or false
 		local function anchor(widget, h, full)
 			if pending then iy = iy - pending end
 			widget:SetParent(host)
@@ -979,8 +1379,26 @@ local function newStack(holder)
 			if h then widget:SetHeight(h) end
 			iy = iy - (h or widget:GetHeight())
 		end
-		function inner.place(_, widget, h, gap) anchor(widget, h, true); pending = gap or 22 end
-		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); pending = gap or 22 end
+		local function placed(widget)
+			if widget._topLine then widget._topLine:SetShown(not boundaryLined) end
+			boundaryLined = widget._bottomLine and true or false
+			-- Settings search: a row only learns WHICH CARD it belongs to here —
+			-- rows are built with the screen as parent and reparented on place.
+			-- The card name is what makes a result unambiguous ("Klassenfarbe"
+			-- means nothing, "Cursor > Klassenfarbe" does).
+			-- Compact rows carry the entry themselves; field controls (slider /
+			-- select) sit nested in a FieldRow cell, so walk a few levels down.
+			if ns.Shell and ns.Shell.IndexSetCard and o.title then
+				local function tagCard(fr, depth)
+					if fr._searchEntry then ns.Shell:IndexSetCard(fr, o.title) end
+					if depth <= 0 or not fr.GetChildren then return end
+					for _, ch in ipairs({ fr:GetChildren() }) do tagCard(ch, depth - 1) end
+				end
+				tagCard(widget, 3)
+			end
+		end
+		function inner.place(_, widget, h, gap) anchor(widget, h, true); placed(widget); pending = gap or 22 end
+		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); placed(widget); pending = gap or 22 end
 		function inner.gap(_, dy) iy = iy - (dy or 8) end
 		function inner.y() return iy end
 		-- Nested lighter sub-box at the current position; same API.
@@ -989,7 +1407,7 @@ local function newStack(holder)
 			if pending then iy = iy - pending; pending = nil end -- apply pending BEFORE the box
 			local sub = makeBox(iy, {
 				holder = host, outerPad = rowPad, pad = M.subgroupPad,
-				fill = C.ink520, border = L.faint,
+				fill = Surface.Card, border = Border.faint,
 				title = o2.title, titleStyle = o2.title and "light" or nil,
 			})
 			local rawClose = sub.close
@@ -1017,7 +1435,7 @@ local function newStack(holder)
 	function stack:section(title, opts)
 		local M = UI.WIDGET
 		local inner = makeBox(y, {
-			outerPad = 0, pad = M.sectionPad, fill = C.ink600, border = L.soft,
+			outerPad = 0, pad = M.sectionPad, fill = Surface.Card, border = Border.default,
 			title = title, afterHeader = M.sectionAfterHeader,
 			count = opts and opts.count, action = opts and opts.action,
 			toggle = opts and opts.toggle, eye = opts and opts.eye,
@@ -1053,14 +1471,22 @@ local function newStack(holder)
 		bandF:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, y)
 		local n = #defs
 		local cols = {}
+		local spanSum = 0
 		for i = 1, n do
 			local colF = CreateFrame("Frame", nil, bandF)
 			colF:SetFrameLevel(bandF:GetFrameLevel())
 			cols[i] = colF
+			spanSum = spanSum + (defs[i].span or G.cols)
 		end
+		-- Underfilled band (spans sum < 12, e.g. a lone trailing span-6 card):
+		-- reserve the gutter for the EMPTY remainder too, so the card gets the same
+		-- width as a paired span-6 card and its edges line up with the 6+6 cards
+		-- above/below. Without this a lone span-6 was cardGap/2 wider (n-1=0 gutters)
+		-- than a Dispel-style paired card and stuck out (Florian 2026-07-22).
+		local phantomGutter = (spanSum < G.cols) and 1 or 0
 		local function layout(w)
 			if not w or w <= 0 then return end
-			local usable = w - G.cardGap * (n - 1)
+			local usable = w - G.cardGap * (n - 1 + phantomGutter)
 			local x = 0
 			for i = 1, n do
 				local cw = usable * (defs[i].span or G.cols) / G.cols
@@ -1077,7 +1503,7 @@ local function newStack(holder)
 		for i, def in ipairs(defs) do
 			local inner = makeBox(0, {
 				holder = cols[i], outerPad = 0, pad = M.sectionPad,
-				fill = C.ink600, border = L.soft,
+				fill = Surface.Card, border = Border.default,
 				title = def.title, afterHeader = M.sectionAfterHeader,
 				count = def.count, action = def.action, toggle = def.toggle,
 				eye = def.eye, subtitle = def.subtitle,
@@ -1132,6 +1558,42 @@ function Shell:InvalidateScreenCache()
 	end
 end
 
+-- Recolour the whole shell to a new accent (the Global-tab picker). EVENT-DRIVEN:
+-- fires only on a swatch click — NO loop, NO OnUpdate (perf §9). Re-tints the
+-- persistent chrome directly through stored refs (instant, no rebuild); the
+-- content of OTHER tabs rebuilds fresh on its next visit via InvalidateScreenCache
+-- (the accent-bearing widgets read UI.Accent.* at build time), so there is no
+-- full-shell flicker. The Global tab itself has no accent-coloured content
+-- widgets (the preset row repaints its own active ring), so the current view is
+-- correct immediately.
+function Shell:RefreshAccent(col, chromeOnly)
+	UI.SetAccent(col)
+	local c = Accent.color
+	local f = self._frame
+	if f then
+		if f._auroraTex then f._auroraTex:SetVertexColor(c.r, c.g, c.b, AURORA_INTENSITY) end
+		if f._auroraLit then f._auroraLit:SetVertexColor(c.r, c.g, c.b, DOT_LIT_ALPHA) end
+		if f._navEdge  then f._navEdge:SetVertexColor(c.r, c.g, c.b, NAV_EDGE_INTENSITY) end
+	end
+	if self._applyWordmarkAccent then self._applyWordmarkAccent() end
+	if self._tabGlow then local g = Accent.glow; self._tabGlow:SetVertexColor(g.r, g.g, g.b, g.a) end
+	if self._tabFill then local w = Accent.wash; self._tabFill:SetVertexColor(w.r, w.g, w.b, w.a) end
+	if self._paintThumb then self._paintThumb(0.55) end -- scrollbar thumb (idle alpha)
+	-- chromeOnly = a LIVE picker drag: only the chrome re-tints, so the picker's
+	-- anchor (a widget IN the current content) survives — rebuilding the current
+	-- card mid-drag would orphan it. The committed path (preset click, picker
+	-- apply/cancel) rebuilds the CURRENT tab too, so its own accent-coloured
+	-- widgets (sliders read Accent.color at build) update immediately instead of
+	-- only on the next tab visit. Chrome stays put (no full-shell flicker); the
+	-- content repaint is the same as a tab switch.
+	if chromeOnly then return end
+	self:InvalidateScreenCache()
+	if f and f:IsShown() then self:RenderContent(true) end
+	-- Edit Mode's cached chrome (toolbar / selection panel) rebuilds with the new
+	-- accent on its next open; its functional in-world signals stay neutral.
+	if ns.EditMode and ns.EditMode.OnAccentChanged then ns.EditMode:OnAccentChanged() end
+end
+
 -- ---------------------------------------------------------------------------
 --  Preview dock: the satellite window next to the panel that hosts a screen's
 --  live preview (Raidframes tabs today). Content builders live in
@@ -1152,12 +1614,14 @@ end
 -- also routes here and simply closes the window.
 function Shell:IsPreviewOpen() return self._previewOpen == true end
 function Shell:SetPreviewOpen(v)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	self._previewOpen = v and true or false
 	self:_UpdateDock(self._previewKey)
 end
 function Shell:TogglePreview() self:SetPreviewOpen(not self._previewOpen) end
 
 function Shell:_UpdateDock(key)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock = self._dock
 	if not dock then return end
 	self._previewKey = key
@@ -1215,6 +1679,7 @@ end
 -- content-sized on both axes; only the docked bottom variant keeps the
 -- panel's width (w = nil there).
 function Shell:SetDockLayout(side, w, h)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock, panel = self._dock, self._frame
 	if not (dock and panel) then return end
 	dock._side = side
@@ -1232,6 +1697,7 @@ end
 -- Dock window chrome (fill, border) — stripped by the preview's "Backdrop"
 -- filter so only the frames + header strip remain visible.
 function Shell:SetDockChrome(on)
+	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock = self._dock
 	if not dock then return end
 	dock._fill:SetShown(on)
@@ -1275,6 +1741,398 @@ end
 -- height, restore the scroll position, update the scrollbar.
 -- `changed` = a profile value changed: keep the scroll position AND force a
 -- rebuild (drops the screen cache). Falsy = pure navigation (cache reuse).
+-- ---------------------------------------------------------------------------
+--  Settings search — the INDEX.
+--  Anti-bloat means few options, but "few" is still ~200 across nine screens,
+--  so the honest answer to "where is this setting?" is a search that reaches
+--  INTO the screens instead of just filtering module names.
+--  The index MUST NOT be a hand-kept list — that drifts at the second new
+--  option. Instead the widget builders (W.OptionRow / W.Slider / W.Select)
+--  report their label while a screen builds, so every option added later is
+--  searchable for free. indexCtx is only set around a builder call, which is
+--  what keeps dialogs, the preview dock and the Edit Mode flyout out of it.
+--  Two halves, deliberately separate:
+--    searchIndex — pure DATA, survives rebuilds (label/tooltip/section/tab).
+--    screen._searchRows — the live frames, refilled on every build. Frames die
+--    with their screen, so a jump always resolves against the CURRENT screen
+--    (same reasoning as _jumpCards).
+-- ---------------------------------------------------------------------------
+local searchIndex = {}   -- ordered: { label, tip, kind, section, tab, card, key, hay }
+local indexByKey = {}    -- key -> entry (an option is listed once, not once per rebuild)
+local builtScreens = {}  -- "Section/Tab" -> true (built at least once, warm-up skips it)
+local indexCtx           -- { section, tab } — set ONLY while a builder runs
+
+function Shell:IndexOption(label, frame, kind, tip)
+	if not (indexCtx and label and label ~= "") then return end
+	-- The same label lives on several cards of one tab ("Max. Icons" exists on
+	-- HoTs / Defensives / Major / Debuffs), so label alone is NOT unique: the
+	-- entries collided and a jump landed on whichever card was built last.
+	-- The card name is only known at place() time, so disambiguate by counting
+	-- occurrences — builders run deterministically, so a rebuild yields the
+	-- same keys and the row map stays valid.
+	indexCtx.seen = indexCtx.seen or {}
+	local nth = (indexCtx.seen[label] or 0) + 1
+	indexCtx.seen[label] = nth
+	local key = indexCtx.section .. "/" .. indexCtx.tab .. "/" .. label
+	if nth > 1 then key = key .. "#" .. nth end
+	local scr = self._screen
+	if scr then
+		scr._searchRows = scr._searchRows or {}
+		scr._searchRows[key] = frame
+	end
+	local entry = indexByKey[key]
+	if not entry then
+		entry = {
+			label = label, tip = tip, kind = kind,
+			section = indexCtx.section, tab = indexCtx.tab, key = key,
+			-- Tooltips are indexed too: searching "instanz" should find the aggro
+			-- and invite options even though neither label contains the word.
+			hay = (label .. " " .. (tip or "")):lower(),
+		}
+		indexByKey[key] = entry
+		searchIndex[#searchIndex + 1] = entry
+	end
+	-- The card name arrives later (see IndexSetCard), so the row keeps a link back.
+	frame._searchEntry = entry
+end
+
+-- Called from a card's place(): records the owning card and makes it searchable,
+-- so "cursor" finds every option on the Cursor card even when no label says so.
+function Shell:IndexSetCard(frame, title)
+	local e = frame and frame._searchEntry
+	if not (e and title and title ~= "") or e.card then return end
+	e.card = title
+	e.hay = e.hay .. " " .. title:lower()
+end
+
+function Shell:SearchEntries() return searchIndex end
+
+-- Warm-up: screens are built lazily, so on a cold Shell the index only knows
+-- the tabs you happened to open. Before the first search we build the missing
+-- ones once into a hidden holder purely to collect labels, then throw the
+-- frames away. _warming makes the side-effecting Shell hooks (dock, badge)
+-- no-ops for that pass, the builder runs in pcall, and a failure only costs
+-- that screen's entries — the search still works with what it has.
+function Shell:WarmSearchIndex()
+	if self._searchWarmed then return end
+	self._searchWarmed = true
+	local holder = self._searchWarmHolder
+	if not holder then
+		holder = CreateFrame("Frame", nil, self._frame)
+		holder:SetPoint("TOPLEFT", self._scrollChild, "TOPLEFT", 0, 0)
+		holder:SetPoint("TOPRIGHT", self._scrollChild, "TOPRIGHT", 0, 0)
+		holder:SetHeight(1)
+		holder:Hide()
+		self._searchWarmHolder = holder
+	end
+	local savedScreen, savedPopovers, savedBadge = self._screen, self._popovers, self._lastBadge
+	self._warming = true
+	ns.ShellIndexing = true -- collapsibles build their contents for the index
+	for _, sec in ipairs(SECTIONS) do
+		if not sec.soon then
+			for _, tabName in ipairs(sec[2]) do
+				local key = sec[1] .. "/" .. tabName
+				local builder = ns.Screens and ns.Screens[key]
+				if builder and not builtScreens[key] then
+					builtScreens[key] = true
+					local d = CreateFrame("Frame", nil, holder)
+					d:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+					d:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, 0)
+					self._screen = d
+					local throwaway = {}
+					if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(throwaway) end
+					indexCtx = { section = sec[1], tab = tabName }
+					pcall(builder, d, newStack(d))
+					indexCtx = nil
+					d:Hide(); d:SetParent(nil)
+					for _, fr in ipairs(throwaway) do fr:Hide(); fr:SetParent(nil) end
+				end
+			end
+		end
+	end
+	self._warming = false
+	ns.ShellIndexing = nil
+	self._screen, self._popovers, self._lastBadge = savedScreen, savedPopovers, savedBadge
+	if ns.W and ns.W.CapturePopovers then ns.W.CapturePopovers(self._popovers) end
+end
+
+-- ---------------------------------------------------------------------------
+--  Settings search — matching, state and the result screen (variant A, chosen
+--  by Florian 2026-07-26 over an inline-filtered settings page).
+-- ---------------------------------------------------------------------------
+local SEARCH_KEY = "\1search" -- pseudo screen key; never collides with "Section/Tab"
+
+local function normalize(s) return (s:lower():gsub("[-_%.]", " ")) end
+
+-- Substring match with a stem fallback: plain matching fails the obvious case
+-- "hots" -> "HoT-Symbolgröße" (trailing s). Dropping a trailing en/s/n covers
+-- German and English plurals alike without dragging in a stemmer.
+local function hayHas(hay, term)
+	if hay:find(term, 1, true) then return true end
+	if #term > 3 then
+		local stem = (term:gsub("en$", ""))
+		stem = (stem:gsub("[sn]$", ""))
+		if #stem > 2 and stem ~= term and hay:find(stem, 1, true) then return true end
+	end
+	return false
+end
+
+function Shell:SearchResults()
+	local q = self._searchQuery
+	if not q then return nil end
+	local terms = {}
+	for w in normalize(q):gmatch("%S+") do terms[#terms + 1] = w end
+	if #terms == 0 then return nil end
+	local function matchesAll(hay)
+		for _, t in ipairs(terms) do
+			if not hayHas(hay, t) then return false end
+		end
+		return true
+	end
+
+	local out, seenCard = {}, {}
+	for _, e in ipairs(searchIndex) do
+		if matchesAll(normalize(e.hay .. " " .. e.section .. " " .. e.tab)) then
+			-- If the term matches the CARD ITSELF, every option on it matches too
+			-- ("hots" hit Max. Icons / Position / Grow direction per context).
+			-- Listing them all is noise: jumping to the card shows the lot
+			-- anyway, so collapse them into one card-level result (Florian
+			-- 2026-07-26). Options whose own LABEL matched stay individual.
+			if e.card and matchesAll(normalize(e.card)) then
+				local ck = e.section .. "/" .. e.tab .. "/" .. e.card
+				if not seenCard[ck] then
+					seenCard[ck] = true
+					out[#out + 1] = {
+						label = e.card, kind = "card", key = e.key,
+						section = e.section, tab = e.tab,
+					}
+				end
+			else
+				out[#out + 1] = e
+			end
+		end
+	end
+	return out
+end
+
+-- Hit count per module next to the nav entries — the fastest "where does this
+-- live?" answer, before you even read the list.
+function Shell:_UpdateNavCounts()
+	if not self._navButtons then return end
+	local per = {}
+	local res = self:SearchResults()
+	if res then for _, e in ipairs(res) do per[e.section] = (per[e.section] or 0) + 1 end end
+	for i, nb in ipairs(self._navButtons) do
+		local sec = SECTIONS[i]
+		if not nb._countFS then
+			nb._countFS = FS(nb, "caption", Text.Description)
+			nb._countFS:SetPoint("RIGHT", nb, "RIGHT", -S.navGutter, 0)
+		end
+		local n = per[sec[1]]
+		nb._countFS:SetText(n and tostring(n) or "")
+		nb._countFS:SetShown(n ~= nil)
+	end
+end
+
+function Shell:SetSearchQuery(text)
+	text = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	local q = text ~= "" and text or nil
+	if q == self._searchQuery then return end
+	self._searchQuery = q
+	-- Screens are lazy, so the index only knows visited tabs until now.
+	if q then self:WarmSearchIndex() end
+	self._searchSel = nil
+	self:_UpdateNavCounts()
+	if q then
+		self:RenderContent()
+	else
+		-- Leaving search: SelectSection restores the tab strip the search hid.
+		self:SelectSection(self._section or 1)
+	end
+	if self._searchPaint then self._searchPaint() end
+end
+
+function Shell:IsSearching() return self._searchQuery ~= nil end
+
+-- Leave the RESULT VIEW but keep the term (Florian 2026-07-26). One rule for
+-- every way out of the search — result jump and nav click behave the same — so
+-- getting back to the list is always a click into the field, and throwing the
+-- term away is always the X. Losing a term costs typing; keeping one costs a
+-- single click, so keeping wins.
+function Shell:LeaveSearch()
+	if not self._searchQuery then return end
+	self._searchQuery = nil
+	self._searchSel = nil
+	if self._search then self._search:ClearFocus() end
+	self:_UpdateNavCounts()
+	if self._searchPaint then self._searchPaint() end
+end
+
+-- Enter on the search field: jump to the highlighted result (first one if the
+-- user hasn't arrowed anywhere yet).
+function Shell:ActivateSearchSelection()
+	local res = self:SearchResults()
+	if not (res and #res > 0) then return end
+	local e = res[math.min(self._searchSel or 1, #res)]
+	if e then self:JumpToOption(e) end
+end
+
+-- Arrow keys move the highlight without leaving the field.
+function Shell:MoveSearchSelection(delta)
+	local res = self:SearchResults()
+	if not (res and #res > 0) then return end
+	local i = (self._searchSel or 0) + delta
+	if i < 1 then i = #res elseif i > #res then i = 1 end
+	self._searchSel = i
+	if self._searchRowButtons then
+		for j, b in ipairs(self._searchRowButtons) do b:SetSelected(j == i) end
+	end
+end
+
+-- Jump to an indexed option: open its section/tab, then scroll to the row and
+-- flash it. The frame is resolved on the CURRENT screen (rebuilds invalidate
+-- frames), same pattern as _ResolveJump for cards. The query deliberately stays
+-- in the field (Florian 2026-07-26) so you can work through several hits.
+function Shell:JumpToOption(entry)
+	if not entry then return end
+	self:LeaveSearch()               -- leaves the list, keeps the term in the box
+	-- The target row may live in a collapsed section, which does not build its
+	-- contents at all — open them and drop the cache so the row exists.
+	if ns.ShellOpenAllSections then ns.ShellOpenAllSections() end
+	self:InvalidateScreenCache()
+	self:OpenTo(entry.section, entry.tab)
+	local tries = 0
+	local function attempt()
+		if not (self._frame and self._frame:IsShown()) then return end
+		local scr = self._screen
+		local row = scr and scr._searchRows and scr._searchRows[entry.key]
+		local childTop = self._scrollChild and self._scrollChild:GetTop()
+		if not (row and row:GetTop() and childTop) then
+			tries = tries + 1
+			if tries < 8 then C_Timer.After(0, attempt) end
+			return
+		end
+		if self._scroll then
+			local viewH = self._scroll:GetHeight() or 0
+			local maxScroll = math.max(0, (self._scrollChild:GetHeight() or 0) - viewH)
+			local off = childTop - row:GetTop()
+			self._scroll:SetVerticalScroll(math.min(maxScroll, math.max(0, off - 60)))
+			if self._updateBar then self._updateBar() end
+		end
+		flashRow(row)
+	end
+	C_Timer.After(0, attempt)
+end
+
+-- The result screen. Built like any other screen (same stacker, same scroll
+-- host) but never cached — it changes with every keystroke.
+function Shell:BuildSearchScreen(d, stack)
+	local L = UI.LAYOUT.search
+	local res = self:SearchResults() or {}
+	local q = self._searchQuery or ""
+	self._searchRowButtons = {}
+
+	stack:gap(UI.LAYOUT.general.tabTop)
+
+	if #res == 0 then
+		stack:gap(L.emptyTop)
+		local box = CreateFrame("Frame", nil, d)
+		local title = FS(box, "section", Text.Secondary)
+		title:SetText(T("Nothing found for") .. " „" .. q .. "“")
+		title:SetPoint("TOP", box, "TOP", 0, 0)
+		local hint = FS(box, "hint", Text.Description)
+		hint:SetText(T("Try part of the name — for example \"aggro\" or \"size\"."))
+		hint:SetPoint("TOP", title, "BOTTOM", 0, -S.s4)
+		stack:place(box, L.headH + UI.WIDGET.hintH, 0)
+		return
+	end
+
+	-- The results sit on ONE full-width card (Florian 2026-07-26: loose rows on
+	-- the bare panel background read as unplaced). The card header carries the
+	-- query and the match count, so no separate heading line is needed.
+	-- DOCUMENTED EXCEPTION to the "stacked rows span max 6 tracks" rule (design
+	-- bible §6.1/4): that rule exists so CONTROLS don't drift far from their
+	-- label. These rows carry no control — only a right-aligned kind caption —
+	-- so the full width costs nothing and the list needs the room.
+	local band = stack:band({
+		{ span = UI.GRID.cols,
+		  title = T("Results for") .. " „" .. q .. "“",
+		  count = #res },
+	})
+	local card = band.cards[1]
+
+	local KINDS = { option = T("Switch"), slider = T("Slider"), select = T("Choice"), card = T("Section") }
+
+	-- Results are GROUPED by module+tab instead of repeating the path on every
+	-- row (Florian 2026-07-26). Pushing more context into each title was a
+	-- losing game — "Raid · HoTs · Wachstumsrichtung" just gets longer. Written
+	-- once as a header, the rows shrink to one line and the list gets shorter
+	-- AND clearer at the same time.
+	local lastGroup
+	for i, e in ipairs(res) do
+		local group = e.section .. "  ›  " .. e.tab
+		local newGroup = group ~= lastGroup
+		if newGroup then
+			lastGroup = group
+			local h = CreateFrame("Frame", nil, d)
+			local hfs = FS(h, "label", Text.Description)
+			hfs:SetText(group)
+			hfs:SetPoint("LEFT", h, "LEFT", S.s5, -S.s2)
+			if i > 1 then
+				local hline = h:CreateTexture(nil, "ARTWORK")
+				setColor(hline, Border.faint)
+				hline:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
+				hline:SetPoint("TOPRIGHT", h, "TOPRIGHT", 0, 0)
+				local function hsnap() PixelUtil.SetHeight(hline, 1) end
+				hsnap(); C_Timer.After(0, hsnap)
+			end
+			card:place(h, L.groupH, L.rowGap)
+		end
+
+		local b = CreateFrame("Button", nil, d)
+		-- Each result gets its own face. It sits on the HOVER layer, not the
+		-- Input layer: Card -> Input is four lightness steps and vanishes on an
+		-- average panel (Florian on OLED could see it and rightly doubted
+		-- everyone else could, 2026-07-26). Interaction then reads as an accent
+		-- wash rather than yet another grey, which stays visible anywhere.
+		UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
+		local hover = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
+		hover:Hide()
+		local sel = UI.RoundFill(b, Accent.selection, "BACKGROUND", nil, UI.RADIUS.sm)
+		sel:Hide()
+
+		-- The card still leads the title — within a group that is the only
+		-- thing telling two identical option names apart.
+		local lbl = FS(b, "listLabel", Text.Secondary)
+		if e.card and e.kind ~= "card" then
+			lbl:SetText(e.card .. UI.ColorCode(Text.Disabled) .. "  ·  |r" .. e.label)
+		else
+			lbl:SetText(e.label)
+		end
+		lbl:SetPoint("LEFT", b, "LEFT", S.s5, 0)
+
+		local badge = FS(b, "label", Text.Disabled)
+		badge:SetText(KINDS[e.kind] or "")
+		badge:SetPoint("RIGHT", b, "RIGHT", -S.s6, 0)
+
+		b:SetScript("OnEnter", function(self2) if not self2._sel then hover:Show() end end)
+		b:SetScript("OnLeave", function() hover:Hide() end)
+		b.SetSelected = function(self2, on)
+			self2._sel = on
+			sel:SetShown(on and true or false)
+			if on then hover:Hide() end
+		end
+		b:SetScript("OnClick", function() Shell:JumpToOption(e) end)
+
+		card:place(b, L.rowH, L.rowGap)
+		self._searchRowButtons[i] = b
+		if self._searchSel == i then b:SetSelected(true) end
+	end
+
+	card:close()
+	band.close()
+end
+
 function Shell:RenderContent(changed)
 	-- Release any keybind-capture before switching: hiding the screen orphans a
 	-- listening KeybindButton without firing its OnHide, which would leave the
@@ -1290,10 +2148,20 @@ function Shell:RenderContent(changed)
 	local sec = SECTIONS[self._section]
 	local key = sec[1] .. "/" .. ((not sec.soon and sec[2][self._tab]) or "")
 
+	-- Search mode renders a pseudo screen instead of the tab: results span tabs,
+	-- so the tab strip would be lying about where you are -- hide it.
+	local searching = self:IsSearching()
+	if searching then
+		key = SEARCH_KEY
+		for _, t in ipairs(self._tabButtons or {}) do t:Hide() end
+		if self._tabStripBg then self._tabStripBg:Hide() end
+		if self._tabSlider then self._tabSlider:Hide(); self._tabSlider._cx = nil end
+	end
+
 	-- Leaving a whole SECTION (not a tab switch within it): reset that section's
 	-- open disclosures and drop its cached screens so they rebuild collapsed on
 	-- the next visit. Switching tabs inside a section keeps everything open.
-	if self._lastKey and self._lastKey ~= key then
+	if not searching and self._lastKey and self._lastKey ~= key then
 		local oldSec = self._lastKey:match("^[^/]+")
 		if oldSec ~= key:match("^[^/]+") and ns.SectionLeft and ns.SectionLeft(oldSec) then
 			for k, entry in pairs(cache) do
@@ -1306,7 +2174,7 @@ function Shell:RenderContent(changed)
 			end
 		end
 	end
-	self._lastKey = key
+	if not searching then self._lastKey = key end
 
 	if changed then self:InvalidateScreenCache() end
 
@@ -1332,7 +2200,7 @@ function Shell:RenderContent(changed)
 
 	-- Cache hit: re-show as-is — values are guaranteed current because every
 	-- change since the build would have dropped the cache.
-	local hit = cache[key]
+	local hit = not searching and cache[key]
 	if hit then
 		self._screen, self._popovers = hit.frame, hit.popovers
 		-- New (lazily created) popovers of reused widgets must land in THIS
@@ -1370,14 +2238,21 @@ function Shell:RenderContent(changed)
 	self._lastBadge = nil   -- SetTabBadge records what the builder sets (for the cache)
 
 	local stack = newStack(d)
-	if sec.soon then
+	if searching then
+		self:BuildSearchScreen(d, stack)
+	elseif sec.soon then
 		self:ComingSoon(d, stack, sec[1])
 	else
 		local builder = ns.Screens and ns.Screens[key]
 		if builder then
 			-- Wrap the builder defensively: a screen error must NOT empty the whole Shell
 			-- (otherwise just an empty tab without a hint). Print the error to chat.
+			-- The index context is live for exactly this call (see Shell:IndexOption)
+			-- and is cleared OUTSIDE the pcall so an erroring screen can't leak it.
+			builtScreens[key] = true
+			indexCtx = { section = sec[1], tab = sec[2][self._tab] or "" }
 			local ok, err = pcall(builder, d, stack)
+			indexCtx = nil
 			if not ok and ns.Lumen then
 				ns.Lumen:Print("|cffD66A5C" .. T("Shell error in") .. " " .. key .. ":|r " .. tostring(err))
 			end
@@ -1391,7 +2266,8 @@ function Shell:RenderContent(changed)
 	holderParent:SetHeight(h)
 	-- Never CACHE a screen built while hidden (degenerate layout) — it gets
 	-- rebuilt by the deferred OnShow pass; caching it could revive it later.
-	if not d._builtHidden then
+	-- The result screen is never cached: it changes with every keystroke.
+	if not d._builtHidden and not searching then
 		cache[key] = { frame = d, popovers = self._popovers, height = h, badge = self._lastBadge }
 	end
 	if self._scroll then
@@ -1417,14 +2293,14 @@ function Shell:ComingSoon(d, stack, name)
 	local card = CreateFrame("Frame", nil, holder)
 	card:SetSize(440, 170)
 	card:SetPoint("CENTER", holder, "CENTER", 0, 0)
-	UI.RoundFill(card, C.ink600)
-	UI.RoundBorder(card, L.soft, "OVERLAY")
+	UI.RoundFill(card, Surface.Card)
+	UI.RoundBorder(card, Border.default, "OVERLAY")
 
-	local head = FS(card, "section", C.gold300)
+	local head = FS(card, "section", Text.Primary)
 	head:SetText(UI.Track("COMING SOON", " "))
 	head:SetPoint("TOP", card, "TOP", 0, -40)
 
-	local body = FS(card, "hint", C.textMuted)
+	local body = FS(card, "hint", Text.Description)
 	body:SetJustifyH("CENTER"); body:SetWordWrap(true)
 	body:SetPoint("TOPLEFT", card, "TOPLEFT", 28, -84)
 	body:SetPoint("TOPRIGHT", card, "TOPRIGHT", -28, -84)
