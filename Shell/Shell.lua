@@ -2090,14 +2090,15 @@ function Shell:BuildSearchScreen(d, stack)
 		end
 
 		local b = CreateFrame("Button", nil, d)
-		-- Each result gets its own face, one lightness step above the card
-		-- (Surface.Card -> Input -> Hover): loose rows on a single large card
-		-- had nothing to sit on (Florian 2026-07-26). Depth comes from the
-		-- step between layers, per the design bible.
-		UI.RoundFill(b, Surface.Input, "BACKGROUND", nil, UI.RADIUS.sm)
-		local hover = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
+		-- Each result gets its own face. It sits on the HOVER layer, not the
+		-- Input layer: Card -> Input is four lightness steps and vanishes on an
+		-- average panel (Florian on OLED could see it and rightly doubted
+		-- everyone else could, 2026-07-26). Interaction then reads as an accent
+		-- wash rather than yet another grey, which stays visible anywhere.
+		UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
+		local hover = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
 		hover:Hide()
-		local sel = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
+		local sel = UI.RoundFill(b, Accent.selection, "BACKGROUND", nil, UI.RADIUS.sm)
 		sel:Hide()
 
 		-- The card still leads the title — within a group that is the only
