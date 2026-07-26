@@ -170,7 +170,10 @@ local function previewEyeDefs()
 			{ key = "debuffs",    label = T("Debuffs") },
 		} },
 		{ key = "shields", label = T("Shields & heal absorb") },
-		{ key = "text",    label = T("Text") },
+		{ key = "text",    label = T("Text"), children = {
+			{ key = "nameText",   label = T("Name") },
+			{ key = "healthText", label = T("HP display") },
+		} },
 		{ key = "icons",   label = T("Role & leader icons"), children = {
 			{ key = "roleIcon",   label = T("Role icon") },
 			{ key = "leaderIcon", label = T("Leader icon") },
@@ -449,15 +452,15 @@ local function buildRaid(d, stack, ctx)
 	-- Last non-off mode; restored when the HP header toggle switches back on.
 	local hpMode = (rf()[ctx] or {}).healthTextType
 	if hpMode == nil or hpMode == "Keine" then hpMode = "Aktuell" end
-	-- Both text cards carry the shared "text" preview eye (one text layer; the
+	-- Each text card carries its OWN preview eye (name / HP are separate layers; the
 	-- eye also lives on the Base tab's Text card and in the dock popover — all
 	-- stay in sync via _eyePaints). The master toggle sits right of the eye.
 	local textEyeTip = T("Show in preview")
 	local tb = stack:band({
-		{ span = 6, title = T("Text — name"), eye = eyeToggle("text", textEyeTip), toggle = {
+		{ span = 6, title = T("Text — name"), eye = eyeToggle("nameText", textEyeTip), toggle = {
 			get = vget(ctx, "showName"),
 			set = function(v) vset(ctx, "showName")(v); refreshName() end } },
-		{ span = 6, title = T("Text — HP display"), eye = eyeToggle("text", textEyeTip), toggle = {
+		{ span = 6, title = T("Text — HP display"), eye = eyeToggle("healthText", textEyeTip), toggle = {
 			get = function() return (rf()[ctx] or {}).healthTextType ~= "Keine" end,
 			set = function(v) vset(ctx, "healthTextType")(v and hpMode or "Keine"); refreshHP() end } },
 	})

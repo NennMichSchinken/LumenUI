@@ -1944,7 +1944,11 @@ local function pvEyePass(f, eyes)
 	if eyes.shields == false then
 		f.shieldStripe:Hide(); f.backfillStripe:Hide(); f.healStripe:Hide()
 	end
-	if eyes.text == false then f.name:Hide(); f.htext:Hide() end
+	-- Name and HP text are SEPARATE preview layers (Florian 2026-07-26: hiding
+	-- one used to hide both). `text` stays understood as the old shared key so
+	-- existing profiles keep working.
+	if eyes.nameText == false or eyes.text == false then f.name:Hide() end
+	if eyes.healthText == false or eyes.text == false then f.htext:Hide() end
 	-- Role and leader are SEPARATE preview layers (Florian 2026-07-22): each card's
 	-- eye toggles only its own icon (grouped under "Role & leader icons").
 	if eyes.roleIcon == false then f.roleIcon:Hide() end
