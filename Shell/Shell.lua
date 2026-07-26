@@ -569,7 +569,12 @@ function Shell:Build()
 	sbox:SetScript("OnEditFocusGained", function(self2)
 		paintSearch()
 		local txt = self2:GetText() or ""
-		if txt ~= "" and not Shell:IsSearching() then Shell:SetSearchQuery(txt) end
+		if txt ~= "" then
+			-- Preselect, so starting to type replaces the old term instead of
+			-- appending to it — the one friction point of keeping it around.
+			self2:HighlightText()
+			if not Shell:IsSearching() then Shell:SetSearchQuery(txt) end
+		end
 	end)
 	sbox:SetScript("OnEditFocusLost", paintSearch)
 	-- ESC clears first and only closes the panel on a second press (a half-typed
@@ -867,7 +872,7 @@ function Shell:Build()
 		end
 		nb._index = i
 		if sec.soon then nb:SetComingSoon(true) end
-		nb:SetScript("OnClick", function() Shell:ClearSearch(); Shell:SelectSection(i) end)
+		nb:SetScript("OnClick", function() Shell:LeaveSearch(); Shell:SelectSection(i) end)
 		self._navButtons[i] = nb
 		prev = nb
 	end
@@ -1917,16 +1922,16 @@ end
 
 function Shell:IsSearching() return self._searchQuery ~= nil end
 
--- Picking a module in the nav means "take me there", so the search ends —
--- otherwise the tab bar comes back while the results stay on screen (Florian
--- 2026-07-26). The field is emptied too: leaving it filled would re-open the
--- list on the next focus, which is right after a result jump but wrong here.
-function Shell:ClearSearch()
-	local box = self._search
-	if not self._searchQuery and (not box or (box:GetText() or "") == "") then return end
+-- Leave the RESULT VIEW but keep the term (Florian 2026-07-26). One rule for
+-- every way out of the search — result jump and nav click behave the same — so
+-- getting back to the list is always a click into the field, and throwing the
+-- term away is always the X. Losing a term costs typing; keeping one costs a
+-- single click, so keeping wins.
+function Shell:LeaveSearch()
+	if not self._searchQuery then return end
 	self._searchQuery = nil
-	if box then box:SetText(""); box:ClearFocus() end
 	self._searchSel = nil
+	if self._search then self._search:ClearFocus() end
 	self:_UpdateNavCounts()
 	if self._searchPaint then self._searchPaint() end
 end
@@ -1958,8 +1963,7 @@ end
 -- in the field (Florian 2026-07-26) so you can work through several hits.
 function Shell:JumpToOption(entry)
 	if not entry then return end
-	self._searchQuery = nil          -- leave the result screen...
-	self:_UpdateNavCounts()          -- ...but keep the text in the box
+	self:LeaveSearch()               -- leaves the list, keeps the term in the box
 	self:OpenTo(entry.section, entry.tab)
 	local tries = 0
 	local function attempt()
