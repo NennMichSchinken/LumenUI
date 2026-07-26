@@ -516,7 +516,12 @@ function Shell:Build()
 	sicon:SetTexture(TEX .. "icon-search")
 	sicon:SetSnapToPixelGrid(false)
 	sicon:SetTexelSnappingBias(0)
-	setColor(sicon, Text.Description)
+	-- Glyph textures are tinted with SetVertexColor, NEVER with UI.SetColor:
+	-- that helper only vertex-tints assets flagged _round and otherwise calls
+	-- SetColorTexture, which REPLACES the image with a flat fill (that is what
+	-- turned both icons into grey boxes, 2026-07-26).
+	local function tintGlyph(tex, col) tex:SetVertexColor(col.r, col.g, col.b, col.a or 1) end
+	tintGlyph(sicon, Text.Description)
 
 	local textLeft = S.s5 + S.navIconSize + S.s3
 	local sbox = CreateFrame("EditBox", nil, sfield)
@@ -542,9 +547,9 @@ function Shell:Build()
 	sclearTex:SetSnapToPixelGrid(false)
 	sclearTex:SetTexelSnappingBias(0)
 	sclearTex:SetTexture(TEX .. "icon-x")
-	setColor(sclearTex, Text.Description)
-	sclear:SetScript("OnEnter", function() setColor(sclearTex, Text.Primary) end)
-	sclear:SetScript("OnLeave", function() setColor(sclearTex, Text.Description) end)
+	tintGlyph(sclearTex, Text.Description)
+	sclear:SetScript("OnEnter", function() tintGlyph(sclearTex, Text.Primary) end)
+	sclear:SetScript("OnLeave", function() tintGlyph(sclearTex, Text.Description) end)
 	sclear:Hide()
 	local function paintSearch()
 		local txt = sbox:GetText() or ""
@@ -552,7 +557,7 @@ function Shell:Build()
 		sclear:SetShown(txt ~= "")
 		local live = txt ~= "" or sbox:HasFocus()
 		tintBorder(live and Border.hover or Border.default)
-		setColor(sicon, live and Text.Secondary or Text.Description)
+		tintGlyph(sicon, live and Text.Secondary or Text.Description)
 	end
 	sbox:SetScript("OnTextChanged", function(_, user)
 		paintSearch()
