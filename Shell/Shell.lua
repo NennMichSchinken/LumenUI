@@ -1377,6 +1377,20 @@ local function newStack(holder)
 		local function placed(widget)
 			if widget._topLine then widget._topLine:SetShown(not boundaryLined) end
 			boundaryLined = widget._bottomLine and true or false
+			-- Settings search: a row only learns WHICH CARD it belongs to here —
+			-- rows are built with the screen as parent and reparented on place.
+			-- The card name is what makes a result unambiguous ("Klassenfarbe"
+			-- means nothing, "Cursor > Klassenfarbe" does).
+			-- Compact rows carry the entry themselves; field controls (slider /
+			-- select) sit nested in a FieldRow cell, so walk a few levels down.
+			if ns.Shell and ns.Shell.IndexSetCard and o.title then
+				local function tagCard(fr, depth)
+					if fr._searchEntry then ns.Shell:IndexSetCard(fr, o.title) end
+					if depth <= 0 or not fr.GetChildren then return end
+					for _, ch in ipairs({ fr:GetChildren() }) do tagCard(ch, depth - 1) end
+				end
+				tagCard(widget, 3)
+			end
 		end
 		function inner.place(_, widget, h, gap) anchor(widget, h, true); placed(widget); pending = gap or 22 end
 		function inner.placeLeft(_, widget, h, gap) anchor(widget, h, false); placed(widget); pending = gap or 22 end
@@ -1738,8 +1752,8 @@ end
 --    with their screen, so a jump always resolves against the CURRENT screen
 --    (same reasoning as _jumpCards).
 -- ---------------------------------------------------------------------------
-local searchIndex = {}   -- ordered: { label, tip, kind, section, tab, key, hay }
-local indexSeen = {}     -- key -> true (an option is listed once, not once per rebuild)
+local searchIndex = {}   -- ordered: { label, tip, kind, section, tab, card, key, hay }
+local indexByKey = {}    -- key -> entry (an option is listed once, not once per rebuild)
 local builtScreens = {}  -- "Section/Tab" -> true (built at least once, warm-up skips it)
 local indexCtx           -- { section, tab } — set ONLY while a builder runs
 
@@ -1751,15 +1765,29 @@ function Shell:IndexOption(label, frame, kind, tip)
 		scr._searchRows = scr._searchRows or {}
 		scr._searchRows[key] = frame
 	end
-	if indexSeen[key] then return end
-	indexSeen[key] = true
-	searchIndex[#searchIndex + 1] = {
-		label = label, tip = tip, kind = kind,
-		section = indexCtx.section, tab = indexCtx.tab, key = key,
-		-- Tooltips are indexed too: searching "instanz" should find the aggro and
-		-- invite options even though neither label contains the word.
-		hay = (label .. " " .. (tip or "")):lower(),
-	}
+	local entry = indexByKey[key]
+	if not entry then
+		entry = {
+			label = label, tip = tip, kind = kind,
+			section = indexCtx.section, tab = indexCtx.tab, key = key,
+			-- Tooltips are indexed too: searching "instanz" should find the aggro
+			-- and invite options even though neither label contains the word.
+			hay = (label .. " " .. (tip or "")):lower(),
+		}
+		indexByKey[key] = entry
+		searchIndex[#searchIndex + 1] = entry
+	end
+	-- The card name arrives later (see IndexSetCard), so the row keeps a link back.
+	frame._searchEntry = entry
+end
+
+-- Called from a card's place(): records the owning card and makes it searchable,
+-- so "cursor" finds every option on the Cursor card even when no label says so.
+function Shell:IndexSetCard(frame, title)
+	local e = frame and frame._searchEntry
+	if not (e and title and title ~= "") or e.card then return end
+	e.card = title
+	e.hay = e.hay .. " " .. title:lower()
 end
 
 function Shell:SearchEntries() return searchIndex end
@@ -2006,7 +2034,7 @@ function Shell:BuildSearchScreen(d, stack)
 		lbl:SetPoint("LEFT", b, "LEFT", S.s4, L.crumbGap + 6)
 		-- The breadcrumb IS the feature: which "HP display" is this one.
 		local crumb = FS(b, "caption", Text.Description)
-		crumb:SetText(e.section .. "  ›  " .. e.tab)
+		crumb:SetText(e.section .. "  ›  " .. e.tab .. (e.card and ("  ›  " .. e.card) or ""))
 		crumb:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -L.crumbGap)
 
 		local badge = FS(b, "caption", Text.Disabled)
