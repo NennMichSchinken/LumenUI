@@ -2083,12 +2083,21 @@ function Shell:BuildSearchScreen(d, stack)
 			b:HookScript("OnSizeChanged", snap)
 		end
 
+		-- The CARD leads the title. With ten "Wachstumsrichtung" rows the only
+		-- thing that tells them apart was the small path underneath — putting
+		-- the card in front makes the difference readable at a glance
+		-- (Florian 2026-07-26). The separator is dimmed so the option name
+		-- still reads as the main thing.
 		local lbl = FS(b, "listLabel", Text.Secondary)
-		lbl:SetText(e.label)
+		if e.card and e.kind ~= "card" then
+			lbl:SetText(e.card .. UI.ColorCode(Text.Disabled) .. "  ·  |r" .. e.label)
+		else
+			lbl:SetText(e.label)
+		end
 		lbl:SetPoint("LEFT", b, "LEFT", S.s5, L.crumbGap + 7)
 		-- The breadcrumb IS the feature: which "HP display" is this one.
 		local crumb = FS(b, "label", Text.Description)
-		crumb:SetText(e.section .. "  ›  " .. e.tab .. (e.card and ("  ›  " .. e.card) or ""))
+		crumb:SetText(e.section .. "  ›  " .. e.tab)
 		crumb:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -L.crumbGap)
 
 		local badge = FS(b, "label", Text.Disabled)
