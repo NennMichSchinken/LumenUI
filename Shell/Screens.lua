@@ -29,7 +29,7 @@ ns.Screens = ns.Screens or {}
 local ALIGN_OPTS, HPTEXT_SEG_OPTS, POINT_OPTS, GROW_OPTS
 local AURA_FILTER_OPTS, SORT_MODE_OPTS
 local ROLE_LABEL, DISPEL_TYPES
-local OUTLINE_SEG_OPTS, DISPEL_SEG_OPTS, AGGRO_SEG_OPTS
+local OUTLINE_SEG_OPTS, DISPEL_SEG_OPTS, AGGRO_SEG_OPTS, POWER_COLOR_SEG_OPTS
 
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	ALIGN_OPTS = {
@@ -94,6 +94,12 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 		{ value = "border",      label = T("Border") },
 		{ value = "overlay",     label = T("+ Overlay") },
 		{ value = "overlaytext", label = T("+ Text") },
+	}
+	-- Resource bar fill: Blizzard's familiar resource colors (mana blue, rage red,
+	-- energy yellow…) or the unit's class color.
+	POWER_COLOR_SEG_OPTS = {
+		{ value = "power", label = T("Resource") },
+		{ value = "class", label = T("Class") },
 	}
 end
 
@@ -170,6 +176,7 @@ local function previewEyeDefs()
 			{ key = "debuffs",    label = T("Debuffs") },
 		} },
 		{ key = "shields", label = T("Shields & heal absorb") },
+		{ key = "power",   label = T("Resource bar") },
 		{ key = "text",    label = T("Text"), children = {
 			{ key = "nameText",   label = T("Name") },
 			{ key = "healthText", label = T("HP display") },
@@ -511,6 +518,37 @@ local function buildRaid(d, stack, ctx)
 	for _, w in ipairs({ hpPos, hpSize, hpX, hpY, hpModeW }) do hpDeps[#hpDeps + 1] = w end
 	refreshName(); refreshHP()
 
+	-- ===== Resource bar (per context: height + WHO gets one) ================
+	-- Deliberate exception to "style = Base, size = context" (Florian 2026-07-26):
+	-- the ROLE FILTER lives here too, because it is the option that decides whether
+	-- the bar adds information or just eats space — in a 20-man you want the three
+	-- other healers' mana, not twelve DPS rage bars, while a 5-man can show all.
+	-- Look (fill color + texture) and the master switch stay shared in Base.
+	local pwBand = stack:band({
+		{ span = 6, title = T("Resource bar"), subtitle = T("Height and who gets one"),
+			eye = eyeToggle("power", T("Show in preview")) },
+	})
+	local sPw = pwBand.cards[1]
+	regJump("power-bar", sPw)
+	sPw:place(switchRow(d, T("Show for healers"), {
+		get = vget(ctx, "powerShowHealer"), set = vset(ctx, "powerShowHealer") }), M.optionRowH, 0)
+	sPw:place(switchRow(d, T("Show for tanks"), {
+		get = vget(ctx, "powerShowTank"), set = vset(ctx, "powerShowTank") }), M.optionRowH, 0)
+	sPw:place(switchRow(d, T("Show for DPS"), {
+		tooltip = T("Units without an assigned role follow this switch."),
+		get = vget(ctx, "powerShowDps"), set = vset(ctx, "powerShowDps") }), M.optionRowH, R.row)
+	local pwr, pwc = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	sliderBox(pwc[1], { label = T("Bar height"), min = 1, max = 20, unit = " px",
+		get = vget(ctx, "powerHeight"), set = vset(ctx, "powerHeight") })
+	sPw:place(pwr, M.sliderBoxH, R.tight)
+	sPw:close()
+	pwBand.close()
+	-- Master switch is shared (Base tab) -> grey the whole card while it is off.
+	-- The Base toggle drops the screen cache, so this state is always current.
+	if not rf().powerEnabled then
+		applyModuleGate(sPw._panel, false)
+	end
+
 	-- ===== Indicator icons (role / leader; per context, collapsible) =====
 	-- Same pattern as the aura section below: collapsed by default, state
 	-- remembered per context, toggling re-renders the screen.
@@ -728,19 +766,30 @@ local function buildBase(d, stack)
 	local bstack = ns.Shell.NewStack(body)
 	d, stack = body, bstack
 
-	-- ===== Band 1: Health bar (8) + Text (4) — card grid system ============
+	-- ===== Band 1: Health bar (6) + Resource bar (6) — card grid system ====
+	-- Band order (Florian 2026-07-26): the two BARS of the frame lead the tab;
+	-- Text style moved down beside Absorbs, Sorting down beside Status.
 	-- (Boxed sliders come from the file-level sliderBox helper, shared with
 	-- the Raid/Group builder.)
+	local powerRefresh -- forward: the header toggle greys this card's controls
 	local b1 = stack:band({
 		-- 6+6 (Florian 2026-07-22): Health bar's widest content is the 2 opacity
 		-- sliders, which fit a 6-card (field cells are constant width regardless of
-		-- span) — so the old 8+4 just wasted width. Now Text style gets a 6-card too.
+		-- span) — so the old 8+4 just wasted width.
 		{ span = 6, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
-		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
-		-- preview layer — the "text" preview eye lives on the per-context Text —
-		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
-		-- doesn't read as "the text on/off card".
-		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
+		-- Resource bar: SHARED style only (color mode + texture). Height and the
+		-- role filter that decides WHO gets one live per context (Raid/Group) —
+		-- a deliberate exception to "style = Base", so a 5-man can show everything
+		-- while the raid restricts itself to the healers.
+		{ span = 6, title = T("Resource bar"), subtitle = T("Mana and other resources"),
+			eye = eyeToggle("power", T("Show in preview")), toggle = {
+			get = tget("powerEnabled"),
+			set = function(v)
+				rf().powerEnabled = v; relayout(); powerRefresh()
+				-- The Raid/Group tabs gate their resource card on this at build
+				-- time -> drop the cached screens so they rebuild.
+				if ns.Shell and ns.Shell.InvalidateScreenCache then ns.Shell:InvalidateScreenCache() end
+			end } },
 	})
 	local sBar = b1.cards[1]
 
@@ -755,6 +804,11 @@ local function buildBase(d, stack)
 	sBar:place(switchRow(d, T("Heal prediction"), {
 		tooltip = T("Incoming healing previewed on the health bar."),
 		get = tget("healPrediction"), set = tset("healPrediction") }), M.optionRowH, 0)
+	-- Native 12.0 StatusBar interpolation — covers the health segments AND the
+	-- resource bar, so it lives on the leading bar card rather than in both.
+	sBar:place(switchRow(d, T("Smooth bars"), {
+		tooltip = T("Bars glide to their new value instead of jumping. Applies to the health and resource bars."),
+		get = tget("smoothBars"), set = tset("smoothBars") }), M.optionRowH, 0)
 	sBar:place(switchRow(d, T("Class color as fill color"), { get = tget("useClassColor"),
 		set = function(v) rf().useClassColor = v; relayout(); refreshFill() end }), M.optionRowH, 0)
 	local rowFill = colorRow(d, T("Fill color"), tcget("fillColor"), tcset("fillColor"))
@@ -779,8 +833,60 @@ local function buildBase(d, stack)
 	sBar:place(trA, M.sliderBoxH, R.tight)
 	sBar:close()
 
-	-- ===== Text (SHARED: color + outline apply equally to Raid & Group) =====
-	local sText = b1.cards[2]
+	-- ===== Resource bar (SHARED style: color mode + texture) ================
+	-- The strip itself sits at the frame BOTTOM (Blizzard standard, not placeable
+	-- — Florian's call: keep the gameplay layer familiar). Showing it takes its
+	-- height from the health bar and hiding it gives the height back.
+	local sPower = b1.cards[2]
+	local powerDeps = {}
+	function powerRefresh()
+		local on = rf().powerEnabled and true or false
+		for _, w in ipairs(powerDeps) do w:SetWidgetEnabled(on) end
+	end
+	local pwR1, pwC1 = W.FieldRow(d, d, 1, { height = fieldH })
+	local pwTex = W.Select(pwC1[1], { label = T("Bar texture"), options = textureOptions(),
+		wheelPreview = true, search = true, get = tget("powerTexture"), set = tset("powerTexture") })
+	pwTex:SetAllPoints(pwC1[1])
+	sPower:place(pwR1, fieldH, R.row)
+	local pwR2, pwC2 = W.FieldRow(d, d, 1, { height = fieldH })
+	local pwCol = W.Segment(pwC2[1], { label = T("Fill color"), options = POWER_COLOR_SEG_OPTS,
+		tooltip = T("Resource = Blizzard's familiar colors (mana blue, rage red, energy yellow)."),
+		get = tget("powerColorMode"), set = tset("powerColorMode") })
+	pwCol:SetAllPoints(pwC2[1])
+	sPower:place(pwR2, fieldH, R.row)
+	-- One LINE (W.Hint reserves M.hintH — a longer text would wrap out of the card).
+	sPower:place(W.Hint(d, T("Height and role filter: see the Raid / Group tabs.")), M.hintH, R.tight)
+	sPower:close()
+	powerDeps[1], powerDeps[2] = pwTex, pwCol
+	powerRefresh()
+	b1.close()
+
+	-- ===== Band 2: Absorbs (6) + Text style (6) =============================
+	-- Absorbs: shield + heal-absorb (SHARED, central — like EllesmereUI). Their
+	-- display lives here (not folded into the Health bar card); the eye toggles
+	-- the absorb overlay in the preview / on the selected Edit-Mode frame.
+	local absBand = stack:band({
+		{ span = 6, title = T("Shields & heal absorb"), subtitle = T("Absorb overlay display"),
+			eye = eyeToggle("shields", T("Show in preview")) },
+		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
+		-- preview layer — the "text" preview eye lives on the per-context Text —
+		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
+		-- doesn't read as "the text on/off card".
+		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
+	})
+	local sAbs = absBand.cards[1]
+	local abR1, abC1 = W.FieldRow(d, d, 2, { height = fieldH })
+	W.Select(abC1[1], { label = T("Shield texture"), options = shieldTexOptions(), wheelPreview = true, search = true, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(abC1[1])
+	W.Select(abC1[2], { label = T("Heal-absorb texture"), options = healAbsorbTexOptions(), wheelPreview = true, search = true, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(abC1[2])
+	sAbs:place(abR1, fieldH, R.row)
+	local abR2, abC2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	sliderBox(abC2[1], { label = T("Shield opacity"), min = 0, max = 100, unit = " %", get = pctget("shieldAlpha"), set = pctset("shieldAlpha") })
+	sliderBox(abC2[2], { label = T("Heal-absorb opacity"), min = 0, max = 100, unit = " %", get = pctget("healAbsorbAlpha"), set = pctset("healAbsorbAlpha") })
+	sAbs:place(abR2, M.sliderBoxH, R.tight)
+	sAbs:close()
+
+	-- ===== Text style (SHARED: color + outline apply equally to Raid & Group) =
+	local sText = absBand.cards[2]
 	local nameColDeps = {}
 	local function refreshNameCol()
 		local on = not rf().nameClassColor
@@ -808,96 +914,8 @@ local function buildBase(d, stack)
 		hint = T("Name color") .. " · " .. T("HP text color"),
 		onToggle = function(v) baseAdvState.text = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
 	sText:close()
-	b1.close()
-	refreshNameCol()
-
-	-- ===== Absorbs: shield + heal-absorb (SHARED, central — like EllesmereUI) ==
-	-- Their display lives here (not folded into the Health bar card); the eye
-	-- toggles the absorb overlay in the preview / on the selected Edit-Mode frame.
-	-- Absorbs (6) + Sorting (6) share a row (Florian 2026-07-16: even split reads
-	-- better than 8/4). Sorting moved up from the old Sorting/Status band; Status
-	-- now sits alone below where the pair used to be.
-	local absBand = stack:band({
-		{ span = 6, title = T("Shields & heal absorb"), subtitle = T("Absorb overlay display"),
-			eye = eyeToggle("shields", T("Show in preview")) },
-		{ span = 6, title = T("Sorting"), subtitle = T("Order and role priority") },
-	})
-	local sAbs = absBand.cards[1]
-	local abR1, abC1 = W.FieldRow(d, d, 2, { height = fieldH })
-	W.Select(abC1[1], { label = T("Shield texture"), options = shieldTexOptions(), wheelPreview = true, search = true, get = tget("shieldTexture"), set = tset("shieldTexture") }):SetAllPoints(abC1[1])
-	W.Select(abC1[2], { label = T("Heal-absorb texture"), options = healAbsorbTexOptions(), wheelPreview = true, search = true, get = tget("healAbsorbTexture"), set = tset("healAbsorbTexture") }):SetAllPoints(abC1[2])
-	sAbs:place(abR1, fieldH, R.row)
-	local abR2, abC2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-	sliderBox(abC2[1], { label = T("Shield opacity"), min = 0, max = 100, unit = " %", get = pctget("shieldAlpha"), set = pctset("shieldAlpha") })
-	sliderBox(abC2[2], { label = T("Heal-absorb opacity"), min = 0, max = 100, unit = " %", get = pctget("healAbsorbAlpha"), set = pctset("healAbsorbAlpha") })
-	sAbs:place(abR2, M.sliderBoxH, R.tight)
-	sAbs:close()
-
-	-- RIGHT card: Sorting (moved up next to Absorbs). NORMAL card; the
-	-- reorderable role-priority list lives behind a "More options" disclosure.
-	local sSort = absBand.cards[2]
-	local smr, smc = W.FieldRow(d, d, 1, { height = fieldH })
-	local sortSel = W.Select(smc[1], { label = T("Sort by"), options = SORT_MODE_OPTS,
-		get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end })
-	sortSel:SetAllPoints(smc[1])
-	sSort:place(smr, fieldH, rf().sortMode == "role" and R.row or 0)
-	if rf().sortMode == "role" then
-		sSort:place(checkRow(d, T("Also sort by role in raid"), {
-			tooltip = T("Off: your arrangement is kept in raids. On: role sorting also applies in raids. (Dungeon/party is always sorted.)"),
-			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, R.row)
-		if baseAdvState.sort then
-			local function swapRole(i, j)
-				local o = rf().sortRoleOrder
-				if not (o and o[i] and o[j]) then return end
-				o[i], o[j] = o[j], o[i]
-				relayout(); ns.Shell:RenderContent(true)
-			end
-			local order = rf().sortRoleOrder or {}
-			local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
-			local cardH = #order * rowH + pad * 2
-			local cr, cc = W.FieldRow(d, d, 1, { height = cardH })
-			local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
-			local prevRow
-			for i = 1, #order do
-				local role = order[i]
-				local acc = ROLE_ACCENT[role] or { r = 0.6, g = 0.6, b = 0.6 }
-				local row = CreateFrame("Frame", nil, card)
-				row:SetHeight(rowH)
-				row:SetPoint("LEFT", card, "LEFT", pad, 0)
-				row:SetPoint("RIGHT", card, "RIGHT", -pad, 0)
-				if prevRow then row:SetPoint("TOP", prevRow, "BOTTOM", 0, 0)
-				else row:SetPoint("TOP", card, "TOP", 0, -pad) end
-				local bg = row:CreateTexture(nil, "BACKGROUND")
-				bg:SetAllPoints(row); UI.SetColor(bg, Surface.Card)
-				local wash = row:CreateTexture(nil, "BACKGROUND", nil, 1)
-				wash:SetAllPoints(row); wash:SetColorTexture(acc.r, acc.g, acc.b, 0.10)
-				local barL = row:CreateTexture(nil, "ARTWORK")
-				barL:SetWidth(L.raidframes.base.sort.accentW)
-				barL:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-				barL:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-				barL:SetColorTexture(acc.r, acc.g, acc.b, 0.95)
-				local up = arrowButton(row, "up", function() swapRole(i, i - 1) end)
-				up:SetPoint("LEFT", row, "LEFT", 14, 0)
-				local down = arrowButton(row, "down", function() swapRole(i, i + 1) end)
-				down:SetPoint("LEFT", up, "RIGHT", 2, 0)
-				if i == 1 then up.setDim(true) end
-				if i == #order then down.setDim(true) end
-				local lbl = UI.FS(row, "listLabel", Text.Primary)
-				lbl:SetPoint("LEFT", down, "RIGHT", 16, 0)
-				lbl:SetText(ROLE_LABEL[role] or "?")
-				prevRow = row
-			end
-			sSort:place(cr, cardH, R.tight)
-		end
-		local hintParts = {}
-		for _, role in ipairs(rf().sortRoleOrder or {}) do hintParts[#hintParts + 1] = ROLE_LABEL[role] or "?" end
-		sSort:place(W.Disclosure(d, { open = baseAdvState.sort,
-			label = baseAdvState.sort and T("Less") or T("More options"),
-			hint = (not baseAdvState.sort) and table.concat(hintParts, " > ") or nil,
-			onToggle = function(v) baseAdvState.sort = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
-	end
-	sSort:close()
 	absBand.close()
+	refreshNameCol()
 
 	-- ===== Band 2: Dispel (6) + Aggro (6) — master toggles in the header ====
 	local dispelDeps, dispelAlphaW = {}, nil
@@ -1043,14 +1061,81 @@ local function buildBase(d, stack)
 	b2.close()
 	refreshAggro()
 
-	-- ===== Status (ready check / summon) — where the Sorting/Status pair sat ==
-	-- Sorting moved up next to Absorbs (above); Status now sits alone on the left
-	-- (span 6, air on the right). The Dead/Ghost/Offline/Rez center TEXT is always
-	-- on (core correctness, option-free); only the two icon feeds are toggleable.
+	-- ===== Band 4: Sorting (6) + Status (6) =================================
+	-- Both are "who sits where / what is going on with them" — the pair that is
+	-- left once the bars, absorbs and highlights have their own bands (Florian
+	-- 2026-07-26). The Dead/Ghost/Offline/Rez center TEXT is always on (core
+	-- correctness, option-free); only the two icon feeds are toggleable.
 	local statBand = stack:band({
+		{ span = 6, title = T("Sorting"), subtitle = T("Order and role priority") },
 		{ span = 6, title = T("Status"), subtitle = T("Ready check and summon on the frames") },
 	})
-	local sStat = statBand.cards[1]
+	-- Sorting: NORMAL card; the reorderable role-priority list lives behind a
+	-- "More options" disclosure.
+	local sSort = statBand.cards[1]
+	local smr, smc = W.FieldRow(d, d, 1, { height = fieldH })
+	local sortSel = W.Select(smc[1], { label = T("Sort by"), options = SORT_MODE_OPTS,
+		get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end })
+	sortSel:SetAllPoints(smc[1])
+	sSort:place(smr, fieldH, rf().sortMode == "role" and R.row or 0)
+	if rf().sortMode == "role" then
+		sSort:place(checkRow(d, T("Also sort by role in raid"), {
+			tooltip = T("Off: your arrangement is kept in raids. On: role sorting also applies in raids. (Dungeon/party is always sorted.)"),
+			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, R.row)
+		if baseAdvState.sort then
+			local function swapRole(i, j)
+				local o = rf().sortRoleOrder
+				if not (o and o[i] and o[j]) then return end
+				o[i], o[j] = o[j], o[i]
+				relayout(); ns.Shell:RenderContent(true)
+			end
+			local order = rf().sortRoleOrder or {}
+			local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
+			local cardH = #order * rowH + pad * 2
+			local cr, cc = W.FieldRow(d, d, 1, { height = cardH })
+			local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
+			local prevRow
+			for i = 1, #order do
+				local role = order[i]
+				local acc = ROLE_ACCENT[role] or { r = 0.6, g = 0.6, b = 0.6 }
+				local row = CreateFrame("Frame", nil, card)
+				row:SetHeight(rowH)
+				row:SetPoint("LEFT", card, "LEFT", pad, 0)
+				row:SetPoint("RIGHT", card, "RIGHT", -pad, 0)
+				if prevRow then row:SetPoint("TOP", prevRow, "BOTTOM", 0, 0)
+				else row:SetPoint("TOP", card, "TOP", 0, -pad) end
+				local bg = row:CreateTexture(nil, "BACKGROUND")
+				bg:SetAllPoints(row); UI.SetColor(bg, Surface.Card)
+				local wash = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+				wash:SetAllPoints(row); wash:SetColorTexture(acc.r, acc.g, acc.b, 0.10)
+				local barL = row:CreateTexture(nil, "ARTWORK")
+				barL:SetWidth(L.raidframes.base.sort.accentW)
+				barL:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+				barL:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+				barL:SetColorTexture(acc.r, acc.g, acc.b, 0.95)
+				local up = arrowButton(row, "up", function() swapRole(i, i - 1) end)
+				up:SetPoint("LEFT", row, "LEFT", 14, 0)
+				local down = arrowButton(row, "down", function() swapRole(i, i + 1) end)
+				down:SetPoint("LEFT", up, "RIGHT", 2, 0)
+				if i == 1 then up.setDim(true) end
+				if i == #order then down.setDim(true) end
+				local lbl = UI.FS(row, "listLabel", Text.Primary)
+				lbl:SetPoint("LEFT", down, "RIGHT", 16, 0)
+				lbl:SetText(ROLE_LABEL[role] or "?")
+				prevRow = row
+			end
+			sSort:place(cr, cardH, R.tight)
+		end
+		local hintParts = {}
+		for _, role in ipairs(rf().sortRoleOrder or {}) do hintParts[#hintParts + 1] = ROLE_LABEL[role] or "?" end
+		sSort:place(W.Disclosure(d, { open = baseAdvState.sort,
+			label = baseAdvState.sort and T("Less") or T("More options"),
+			hint = (not baseAdvState.sort) and table.concat(hintParts, " > ") or nil,
+			onToggle = function(v) baseAdvState.sort = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
+	end
+	sSort:close()
+
+	local sStat = statBand.cards[2]
 	sStat:place(checkRow(d, T("Show ready check"), {
 		tooltip = T("Blizzard's familiar icons in the frame center: hourglass, green check, red X. Results stay visible for a few seconds."),
 		get = tget("showReadyCheck"),

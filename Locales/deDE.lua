@@ -137,6 +137,22 @@ ns.RegisterLocale("deDE", {
 	["Health bar opacity"] = "Lebensbalken-Deckkraft",
 	["Shield opacity"] = "Schild-Deckkraft",
 	["Heal-absorb opacity"] = "Healabsorb-Deckkraft",
+	["Smooth bars"] = "Weiche Balken",
+	["Bars glide to their new value instead of jumping. Applies to the health and resource bars."] = "Balken gleiten auf ihren neuen Wert statt zu springen. Gilt für Lebens- und Ressourcenbalken.",
+
+	-- ── Base + Raid/Group: resource bar ────────────────────────────────
+	["Resource bar"] = "Ressourcenbalken",
+	["Mana and other resources"] = "Mana und andere Ressourcen",
+	["Resource"] = "Ressource",
+	["Class"] = "Klasse",
+	["Resource = Blizzard's familiar colors (mana blue, rage red, energy yellow)."] = "Ressource = Blizzards gewohnte Farben (Mana blau, Wut rot, Energie gelb).",
+	["Height and role filter: see the Raid / Group tabs."] = "Höhe und Rollenfilter: siehe Reiter Raid / Gruppe.",
+	["Height and who gets one"] = "Höhe und wer einen bekommt",
+	["Show for healers"] = "Für Heiler anzeigen",
+	["Show for tanks"] = "Für Tanks anzeigen",
+	["Show for DPS"] = "Für DDs anzeigen",
+	["Units without an assigned role follow this switch."] = "Einheiten ohne zugewiesene Rolle folgen diesem Schalter.",
+	["Bar height"] = "Balken-Höhe",
 
 	-- ── Base: text (shared) ─────────────────────────────────────────────
 	["Name in class color"] = "Name in Klassenfarbe",

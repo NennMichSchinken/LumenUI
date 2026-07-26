@@ -34,6 +34,8 @@ read_globals = {
     "UnitIsConnected", "UnitIsDeadOrGhost", "UnitIsGhost", "UnitHasIncomingResurrection",
     "GetReadyCheckStatus", "C_IncomingSummon",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",
+    -- Resource bar (power); UnitPowerPercent resolves the secret value C-side
+    "UnitPowerType", "UnitPowerMax", "UnitPowerPercent", "PowerBarColor",
     "UnitGetTotalAbsorbs", "UnitGetTotalHealAbsorbs",
     "UnitGetIncomingHeals", "UnitGetDetailedHealPrediction",
     "CreateUnitHealPredictionCalculator", "UnitGUID",
