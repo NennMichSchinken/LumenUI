@@ -19,6 +19,9 @@ local ADDON, ns = ...
 --  Movable windows: Shift+drag any registered Blizzard panel (map, character
 --  frame etc.); the position is saved per window in the profile and re-applied
 --  whenever the window opens.
+--  Auto-accept invites: group invites from friends and guild members are taken
+--  without the popup, guarded so it can never cost you a group, an instance or
+--  a queue.
 -- ===========================================================================
 
 local QoL = {}
@@ -53,6 +56,16 @@ local CancelUnitBuff = CancelUnitBuff
 local IsInInstance = IsInInstance
 local IsShiftKeyDown = IsShiftKeyDown
 local C_GossipInfo = C_GossipInfo
+local C_BattleNet = C_BattleNet
+local C_FriendList = C_FriendList
+local C_LFGList = C_LFGList
+local AcceptGroup = AcceptGroup
+local IsGuildMember = IsGuildMember
+local WillAcceptInviteRemoveQueues = WillAcceptInviteRemoveQueues
+local StaticPopup_Hide = StaticPopup_Hide
+local StaticPopupSpecial_Hide = StaticPopupSpecial_Hide
+local GetSpecialization = GetSpecialization
+local GetSpecializationRole = GetSpecializationRole
 local strfind, tsort, tonumber = string.find, table.sort, tonumber
 local wipe, min = wipe, math.min
 local hooksecurefunc = hooksecurefunc
@@ -61,7 +74,7 @@ local GetScreenHeight = GetScreenHeight
 local C_AddOns = C_AddOns
 
 -- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
-local TEXDIR = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEXDIR = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\cursor\\" -- QoL draws the cursor-ring-* textures
 -- Thickness = pre-baked ring steps (constant outer diameter, ring grows inward;
 -- a single texture can't change stroke width by scaling). 1 = thin .. 5 = thick.
 local RING_STEPS = 5
@@ -285,22 +298,22 @@ local BTN_W, BTN_H = 100, 26
 
 local function makeToolButton(parent, labelText, onClick)
 	local UI = ns.UI
-	local C = UI.C
+	local Surface, Text = UI.Surface, UI.Text
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(BTN_W, BTN_H)
 	local fill = b:CreateTexture(nil, "BACKGROUND")
 	fill:SetAllPoints(b)
-	UI.SetColor(fill, C.ink600)
-	local txt = UI.FS(b, "checkLabel", C.textBody)
+	UI.SetColor(fill, Surface.Card)
+	local txt = UI.FS(b, "checkLabel", Text.Secondary)
 	txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 	txt:SetText(labelText)
 	b:SetScript("OnEnter", function()
-		UI.SetColor(fill, C.ink520) -- lighter face only, border stays quiet
-		txt:SetTextColor(C.textStrong.r, C.textStrong.g, C.textStrong.b)
+		UI.SetColor(fill, Surface.Hover) -- lighter face on hover, border stays quiet
+		txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
 	end)
 	b:SetScript("OnLeave", function()
-		UI.SetColor(fill, C.ink600)
-		txt:SetTextColor(C.textBody.r, C.textBody.g, C.textBody.b)
+		UI.SetColor(fill, Surface.Card)
+		txt:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
 	end)
 	b:SetScript("OnClick", onClick)
 	return b
@@ -330,8 +343,8 @@ local function createButtons()
 	sep:SetPoint("TOPLEFT", btnFrame, "TOPLEFT", 0, -BTN_H)
 	sep:SetPoint("TOPRIGHT", btnFrame, "TOPRIGHT", 0, -BTN_H)
 	sep:SetHeight(1)
-	UI.SetColor(sep, UI.line.mid)
-	UI.Border(btnFrame, UI.line.mid, 1, "OVERLAY")
+	UI.SetColor(sep, UI.Border.hover)
+	UI.Stroke(btnFrame, UI.Border.hover, 1, "OVERLAY")
 
 	if ns.EditMode then
 		ns.EditMode:Register(btnFrame, ns.T("Ready & Pull"), function(pt, x, y)
@@ -1111,6 +1124,82 @@ function QoL:ResetWindowPositions()
 end
 
 -- ---------------------------------------------------------------------------
+--  Auto-accept invites — group invites from people you actually know (Battle.net
+--  and character friends, guild members) go through without the popup; everything
+--  else keeps Blizzard's dialog.
+--  The guards matter more than the feature itself, so they are HARD rules rather
+--  than options: accepting an invite while already grouped DROPS you from your
+--  current group, and joining a group while you are inside an instance removes
+--  you from that instance moments later. Same reasoning for invites that would
+--  drop your LFG queues (Blizzard warns about that in its own dialog) and for
+--  quest-session invites, which are a bigger commitment than a group. Whenever a
+--  guard blocks, nothing is lost: the normal dialog appears as usual.
+--  The relationship checks mirror Blizzard's SocialQueueUtil_GetRelationshipInfo.
+-- ---------------------------------------------------------------------------
+local function idb() return ns.Lumen.db.profile.qol.invites end
+
+local function inviterIsKnown(guid)
+	if not guid then return false end
+	local i = idb()
+	if i.friends then
+		if C_BattleNet and C_BattleNet.GetAccountInfoByGUID and C_BattleNet.GetAccountInfoByGUID(guid) then
+			return true
+		end
+		-- The classic (character) friend list can be switched off account-wide.
+		if C_FriendList and C_FriendList.IsFriend and C_FriendList.IsLegacyFriendSystemEnabled
+			and C_FriendList.IsLegacyFriendSystemEnabled() and C_FriendList.IsFriend(guid) then
+			return true
+		end
+	end
+	if i.guild and IsGuildMember and IsGuildMember(guid) then return true end
+	return false
+end
+
+-- Role-picker invites (LFGInvitePopup instead of the plain dialog): accept with
+-- the role of the current spec -- but only if the inviter offered it AND the
+-- game allows it for this character. No clean match = leave the dialog alone,
+-- because then the role really is the player's decision.
+local function autoRole(isTank, isHealer, isDamage)
+	local spec = GetSpecialization and GetSpecialization()
+	local role = spec and GetSpecializationRole and GetSpecializationRole(spec)
+	if not role then return nil end
+	local canTank, canHeal, canDps
+	if C_LFGList and C_LFGList.GetAvailableRoles then
+		canTank, canHeal, canDps = C_LFGList.GetAvailableRoles()
+	end
+	if role == "TANK"    and isTank   and canTank then return true, false, false end
+	if role == "HEALER"  and isHealer and canHeal then return false, true, false end
+	if role == "DAMAGER" and isDamage and canDps  then return false, false, true end
+	return nil
+end
+
+local function onPartyInvite(name, isTank, isHealer, isDamage, _, _, inviterGUID, questSessionActive)
+	if not idb().enabled then return end
+	if IsInGroup() then return end        -- accepting would drop your current group
+	if IsInInstance() then return end     -- joining would remove you from the instance
+	if questSessionActive then return end
+	if WillAcceptInviteRemoveQueues and WillAcceptInviteRemoveQueues() then return end
+	if not inviterIsKnown(inviterGUID) then return end
+
+	if isTank or isHealer or isDamage then
+		local t, h, d = autoRole(isTank, isHealer, isDamage)
+		if t == nil then return end
+		AcceptGroup(t, h, d)
+	else
+		AcceptGroup()
+	end
+	-- Blizzard's handler runs independently of ours and may raise the dialog
+	-- AFTER we accepted -> clear it on the next frame, not right here.
+	C_Timer.After(0, function()
+		StaticPopup_Hide("PARTY_INVITE")
+		if LFGInvitePopup and LFGInvitePopup:IsShown() then StaticPopupSpecial_Hide(LFGInvitePopup) end
+	end)
+	-- Always announce it: being pulled into a group without a click is
+	-- confusing unless you can see why it happened.
+	ns.Lumen:Print(ns.T("Invite from %s accepted automatically."):format(name or "?"))
+end
+
+-- ---------------------------------------------------------------------------
 --  Event driver — combat gate + login + merchant + keystone + trackers (plain
 --  frame, one place for all QoL features to hook their events).
 -- ---------------------------------------------------------------------------
@@ -1126,6 +1215,7 @@ function QoL:Setup()
 	driver:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN")
 	driver:RegisterEvent("GOSSIP_SHOW")
 	driver:RegisterEvent("GOSSIP_CLOSED")
+	driver:RegisterEvent("PARTY_INVITE_REQUEST")
 	-- Tracker visibility (brez pool / lust icon in group instances)
 	driver:RegisterEvent("ENCOUNTER_START")
 	driver:RegisterEvent("ENCOUNTER_END")
@@ -1134,7 +1224,7 @@ function QoL:Setup()
 	driver:RegisterEvent("CHALLENGE_MODE_RESET")
 	driver:RegisterEvent("WORLD_STATE_TIMER_START")
 	driver:RegisterEvent("WORLD_STATE_TIMER_STOP")
-	driver:SetScript("OnEvent", function(_, event)
+	driver:SetScript("OnEvent", function(_, event, ...)
 		if event == "PLAYER_ENTERING_WORLD" then
 			QoL:ApplyCursor()
 			-- Boss mods (re)register /pull during login -> re-claim shortly after.
@@ -1151,6 +1241,8 @@ function QoL:Setup()
 			onGossipShow()
 		elseif event == "GOSSIP_CLOSED" then
 			hideGossipKeys()
+		elseif event == "PARTY_INVITE_REQUEST" then
+			onPartyInvite(...)
 		elseif event == "ENCOUNTER_START" then
 			local _, itype = GetInstanceInfo()
 			trackerState.encounter = (itype == "raid")

@@ -19,6 +19,19 @@ local defaults = {
 			useClassColor  = true,
 			fillColor      = { r = 0.20, g = 0.60, b = 0.30 },
 			healPrediction = true,
+			-- Bars glide to their new value instead of jumping. Native 12.0
+			-- StatusBar interpolation (C-side easing, no OnUpdate) — applies to
+			-- the health segments AND the resource bar.
+			smoothBars     = true,
+
+			-- Resource bar (shared style — "Base" tab). A thin strip at the frame
+			-- BOTTOM (Blizzard standard, no free placement). Its HEIGHT and the
+			-- role filter deciding WHO gets one live PER CONTEXT (raid/party,
+			-- below) — deliberately not shared: a 5-man can show everything while
+			-- the raid restricts itself to the healers.
+			powerEnabled   = true,
+			powerTexture   = "Lumen Gradient",
+			powerColorMode = "power",   -- "power" (by power type) | "class" (class color)
 
 			-- Status center icon (Base tab). The Dead/Ghost/Offline/Rez center
 			-- text is always on (core correctness, no options).
@@ -112,6 +125,11 @@ local defaults = {
 				showName = true, nameSize = 12, namePoint = "TOPLEFT", nameX = 4, nameY = -3,
 				healthTextType = "Aktuell", healthTextSize = 16, healthTextPoint = "CENTER",
 				healthTextX = 0, healthTextY = 0,
+				-- Resource bar: height + WHO gets one. Raid default = HEALERS ONLY —
+				-- the other healers' mana is what a healer watches; twenty DPS rage
+				-- bars only eat space. Units with role NONE follow the DPS switch.
+				powerHeight = 4,
+				powerShowHealer = true, powerShowTank = false, powerShowDps = false,
 				-- Indicator icons (role / leader) — per context like all size/
 				-- position knobs. Raid defaults OFF (40 icons = noise).
 				roleShow = false, roleHideDps = false, roleSize = 14,
@@ -125,6 +143,10 @@ local defaults = {
 				showName = true, nameSize = 12, namePoint = "TOPLEFT", nameX = 4, nameY = -3,
 				healthTextType = "Aktuell", healthTextSize = 16, healthTextPoint = "CENTER",
 				healthTextX = 0, healthTextY = 0,
+				-- Resource bar: in a 5-man there is room for everyone's resource,
+				-- so the group default shows all three roles.
+				powerHeight = 4,
+				powerShowHealer = true, powerShowTank = true, powerShowDps = true,
 				-- Group defaults ON (5 frames carry the icons well).
 				roleShow = true, roleHideDps = false, roleSize = 14,
 				rolePoint = "TOPRIGHT", roleX = -2, roleY = -2,
@@ -241,6 +263,15 @@ local defaults = {
 				enabled   = false,
 				positions = {},
 			},
+			invites = {
+				-- Auto-accept group invites. The sources are options, the safety
+				-- guards are not (see Modules/QoL.lua): never while already
+				-- grouped, inside an instance, during a quest session, or when
+				-- accepting would drop your LFG queues.
+				enabled = false, -- opt-in
+				friends = true,  -- Battle.net + character friends
+				guild   = true,  -- guild members
+			},
 		},
 
 		-- Edit Mode links (Phase 2): explicit coupling of movable elements.
@@ -268,6 +299,7 @@ local defaults = {
 		auraSigs = {},
 		language = "auto",   -- UI language: "auto" (system language) | "enUS" | "deDE"
 		shellScale = 0.7,    -- user multiplier on the responsive Suite-Shell scale (0.7 = Florian's sweet spot, 2026-07-16)
+		accent = "F4F4F6",   -- suite-wide accent hex (default = Pure Light / mono); UI.SetAccent applies it
 	},
 }
 
@@ -400,6 +432,9 @@ function Lumen:OnInitialize()
 	-- 'global' is an AceDB top-level namespace (db.global), NOT db.profile.global.
 	if ns.ApplyLocale then ns.ApplyLocale(self.db.global.language) end
 	if ns.RunLocaleReady then ns.RunLocaleReady() end   -- build localized module constants now (after language choice)
+	-- Apply the saved accent BEFORE the shell builds, so every widget reads the
+	-- right accent at build time (no live re-tint needed for the first open).
+	if ns.UI and ns.UI.SetAccent then ns.UI.SetAccent(ns.UI.hex(self.db.global.accent)) end
 	migrateLayout(self.db.profile.raidframes)
 	if ns.ClickCast then ns.ClickCast:MigrateCatalog() end
 
