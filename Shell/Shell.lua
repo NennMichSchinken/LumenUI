@@ -493,7 +493,7 @@ function Shell:Build()
 	local searchH = UI.WIDGET.spSearchH
 	local sbox = CreateFrame("EditBox", nil, nav)
 	sbox:SetHeight(searchH)
-	sbox:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -26)
+	sbox:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -S.s9)
 	sbox:SetPoint("RIGHT", nav, "RIGHT", -S.panelGutter, 0)
 	UI.RoundFill(sbox, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
 	-- RoundBorder returns a TABLE of edge textures (a shape can need several),
@@ -503,12 +503,21 @@ function Shell:Build()
 		for _, tex in ipairs(sboxBorder) do setColor(tex, col) end
 	end
 	UI:SetFont(sbox, "selectText", Text.Primary)
-	sbox:SetTextInsets(12, 28, 0, 0)
+	-- Magnifier (Lucide "search"): names the field without a caption.
+	local sicon = sbox:CreateTexture(nil, "OVERLAY")
+	sicon:SetSize(S.navIconSize - 4, S.navIconSize - 4)
+	sicon:SetPoint("LEFT", sbox, "LEFT", S.s4, 0)
+	sicon:SetTexture(TEX .. "icon-search")
+	sicon:SetSnapToPixelGrid(false)
+	sicon:SetTexelSnappingBias(0)
+	setColor(sicon, Text.Description)
+	local textLeft = S.s4 + (S.navIconSize - 4) + S.s3
+	sbox:SetTextInsets(textLeft, 28, 0, 0)
 	sbox:SetAutoFocus(false)
 	sbox:SetMaxLetters(40)
 	local sph = FS(sbox, "selectText", Text.Description)
 	sph:SetText(T("Search settings") .. " …")
-	sph:SetPoint("LEFT", sbox, "LEFT", 12, 0)
+	sph:SetPoint("LEFT", sbox, "LEFT", textLeft, 0)
 	-- Clear glyph, only while there is something to clear.
 	local sclear = CreateFrame("Button", nil, sbox)
 	sclear:SetSize(searchH - 10, searchH - 10)
@@ -524,7 +533,9 @@ function Shell:Build()
 		local txt = sbox:GetText() or ""
 		sph:SetShown(txt == "" and not sbox:HasFocus())
 		sclear:SetShown(txt ~= "")
-		tintBorder((txt ~= "" or sbox:HasFocus()) and Accent.color or Border.default)
+		local live = txt ~= "" or sbox:HasFocus()
+		tintBorder(live and Accent.color or Border.default)
+		setColor(sicon, live and Text.Secondary or Text.Description)
 	end
 	sbox:SetScript("OnTextChanged", function(_, user)
 		paintSearch()
@@ -567,7 +578,7 @@ function Shell:Build()
 	-- that used to sit under the tagline).
 	local navLabel = FS(nav, "navGroupLabel", Text.Description)
 	navLabel:SetText(UI.Track("MODULES", " "))
-	navLabel:SetPoint("TOPLEFT", sbox, "BOTTOMLEFT", 0, -22)
+	navLabel:SetPoint("TOPLEFT", sbox, "BOTTOMLEFT", 0, -S.s9)
 
 	-- Version chip (stage 3): muted "v<x.y.z>" pinned to the very bottom-right of
 	-- the sidebar so it never floats when the preview button is hidden (Florian
@@ -1932,31 +1943,44 @@ function Shell:BuildSearchScreen(d, stack)
 		return
 	end
 
-	-- Heading: what was searched + how much came back, so a long list is never
-	-- a surprise.
-	local head = CreateFrame("Frame", nil, d)
-	local htitle = FS(head, "section", Text.Primary)
-	htitle:SetText(T("Results for") .. " „" .. q .. "“")
-	htitle:SetPoint("LEFT", head, "LEFT", 0, 0)
-	local hcount = FS(head, "hint", Text.Description)
-	hcount:SetText(#res .. " " .. (#res == 1 and T("match") or T("matches")))
-	hcount:SetPoint("RIGHT", head, "RIGHT", 0, 0)
-	stack:place(head, L.headH, L.headGap)
+	-- The results sit on ONE full-width card (Florian 2026-07-26: loose rows on
+	-- the bare panel background read as unplaced). The card header carries the
+	-- query and the match count, so no separate heading line is needed.
+	-- DOCUMENTED EXCEPTION to the "stacked rows span max 6 tracks" rule (design
+	-- bible §6.1/4): that rule exists so CONTROLS don't drift far from their
+	-- label. These rows carry no control — only a right-aligned kind caption —
+	-- so the full width costs nothing and the list needs the room.
+	local band = stack:band({
+		{ span = UI.GRID.cols,
+		  title = T("Results for") .. " „" .. q .. "“",
+		  count = #res },
+	})
+	local card = band.cards[1]
 
 	local KINDS = { option = T("Switch"), slider = T("Slider"), select = T("Choice") }
 
 	for i, e in ipairs(res) do
-		local b = CreateFrame("Button", nil, d)
+		local b = CreateFrame("Button", nil, card)
 		local hover = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
 		hover:Hide()
 		local sel = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
 		sel:Hide()
+		-- Same separator language as the stacked-row standard: hairline on the
+		-- BOTTOM, so the last row closes the list and the header keeps its own.
+		if i < #res then
+			local line = b:CreateTexture(nil, "ARTWORK")
+			setColor(line, Border.faint)
+			line:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
+			line:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
+			local function snap() PixelUtil.SetHeight(line, 1) end
+			snap(); C_Timer.After(0, snap)
+			b:HookScript("OnSizeChanged", snap)
+		end
 
 		local lbl = FS(b, "checkLabel", Text.Secondary)
 		lbl:SetText(e.label)
 		lbl:SetPoint("LEFT", b, "LEFT", S.s4, L.crumbGap + 6)
-		-- Breadcrumb carries the whole point of the feature: WHICH "HP display"
-		-- this is. Module bright-ish, tab muted — one glance, two levels.
+		-- The breadcrumb IS the feature: which "HP display" is this one.
 		local crumb = FS(b, "caption", Text.Description)
 		crumb:SetText(e.section .. "  ›  " .. e.tab)
 		crumb:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -L.crumbGap)
@@ -1974,10 +1998,13 @@ function Shell:BuildSearchScreen(d, stack)
 		end
 		b:SetScript("OnClick", function() Shell:JumpToOption(e) end)
 
-		stack:place(b, L.rowH, i < #res and L.rowGap or 0)
+		card:place(b, L.rowH, 0)
 		self._searchRowButtons[i] = b
 		if self._searchSel == i then b:SetSelected(true) end
 	end
+
+	card:close()
+	band.close()
 end
 
 function Shell:RenderContent(changed)

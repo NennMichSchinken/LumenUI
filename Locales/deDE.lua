@@ -456,8 +456,6 @@ ns.RegisterLocale("deDE", {
 	["Results for"] = "Ergebnisse für",
 	["Nothing found for"] = "Nichts gefunden für",
 	["Try part of the name — for example \"aggro\" or \"size\"."] = "Suche nach einem Teil des Namens — zum Beispiel „aggro“ oder „Größe“.",
-	["match"] = "Treffer",
-	["matches"] = "Treffer",
 	["Switch"] = "Schalter",
 	["Slider"] = "Regler",
 	["Choice"] = "Auswahl",
