@@ -34,6 +34,8 @@ read_globals = {
     "UnitIsConnected", "UnitIsDeadOrGhost", "UnitIsGhost", "UnitHasIncomingResurrection",
     "GetReadyCheckStatus", "C_IncomingSummon",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",
+    -- Resource bar (power); UnitPowerPercent resolves the secret value C-side
+    "UnitPowerType", "UnitPowerMax", "UnitPowerPercent", "PowerBarColor",
     "UnitGetTotalAbsorbs", "UnitGetTotalHealAbsorbs",
     "UnitGetIncomingHeals", "UnitGetDetailedHealPrediction",
     "CreateUnitHealPredictionCalculator", "UnitGUID",
@@ -58,6 +60,10 @@ read_globals = {
     "GetInstanceInfo", "IsEncounterInProgress", "C_ChallengeMode",
     -- Quick gossip
     "C_GossipInfo", "GossipFrame",
+    -- Auto-accept invites
+    "AcceptGroup", "IsGuildMember", "WillAcceptInviteRemoveQueues",
+    "C_BattleNet", "C_FriendList", "C_LFGList",
+    "StaticPopup_Hide", "StaticPopupSpecial_Hide", "LFGInvitePopup",
     -- Movable windows QoL
     "GetScreenWidth", "GetScreenHeight",
     -- UI scale

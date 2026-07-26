@@ -1,9 +1,13 @@
 local ADDON, ns = ...
 
 -- ===========================================================================
---  Lumen — Suite-Shell Design Tokens
---  Source of truth: design line v2 (Florian's flat prototype, 2026-07-02).
---  Central, so the Shell + widget toolkit read consistently from it.
+--  Lumen — Suite-Shell Design Tokens (v3 Design System, 2026-07-22)
+--  THE source of truth. Components read SEMANTIC tokens only — never a raw hex,
+--  never a legacy alias: UI.Surface (window/sidebar/card/input/hover/scrim),
+--  UI.Text (primary/secondary/description/disabled/value/onAccent), UI.Border
+--  (faint/default/hover/divider/active), UI.Accent (color/hover/pressed/
+--  selection/focus/glow/wash/switchOn), UI.Status (danger*). The raw palette
+--  (UI.P) + Accent engine (UI.SetAccent) live here and ONLY here.
 -- ===========================================================================
 
 local UI = {}
@@ -30,152 +34,246 @@ UI.hex = hex
 --  widget/screen code.
 -- ---------------------------------------------------------------------------
 local P = {
-	-- A: surfaces (layering; the sidebar is DELIBERATELY the lightest base surface)
-	-- v3 COOL TINT (2026-07-04, from Florian's card mockup: "bisschen ins
-	-- Blau" instead of neutral grey) — same lightness ladder as v2, hue shifted
-	-- toward blue. Derived values, pending Florian's eye; v2 neutrals in ().
-	inset        = hex("14161A"), -- A1: edit boxes, open dropdown lists, slider value box, scroll troughs (151617)
-	sidebar      = hex("1E2128"), -- A2: nav column (1F2022)
-	panel        = hex("1A1D23"), -- A3: main window surface (1B1D1E)
-	card         = hex("1C1F26"), -- A4: section cards (1D1F20)
-	element      = hex("282C35"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs (292A2B)
-	elementHover = hex("333844"), -- A6: hover step for A5 (333436)
+	-- v3 MONOCHROME-CALM + OBSIDIAN LAYERS (2026-07-22, Florian's Design-System
+	-- doc). Graduated blue-black surfaces: the visible STEP between layers (panel
+	-- -> sidebar -> card -> input) is what reads calm/premium — the earlier v3
+	-- palette had panel and sidebar identical, so nothing lifted. Accent = LIGHT
+	-- ITSELF for now (monochrome, no chrome colour); a real user-chosen
+	-- AccentColor can be swapped in later via the Accent engine below with NO
+	-- component edits. Semantic colour (class/role/dispel) lives only in the
+	-- preview island, never in the chrome.
+	-- NEVER pure #000/#FFF. The A/B/C/D/E slot NAMES are load-bearing (referenced
+	-- directly across Shell/Widgets/Screens/EditMode) — keep every key; the
+	-- forward-looking semantic API is UI.Surface/UI.Text/UI.Border below.
 
-	-- B: lines (cool-tinted with the A ladder)
-	borderSoft   = hex("2F343E"), -- B1: card/row borders, fine separators (2F3134)
-	borderStrong = hex("3A404C"), -- B2: control borders, hover edges, focus (363739)
+	-- A: surface layers — PURE NEUTRAL, anchored at panel #0C0C0C (Florian
+	-- 2026-07-22). The DEPTH comes from the lightness STEP between layers (panel ->
+	-- sidebar -> card -> input), NOT from any hue — so this is fully neutral grey
+	-- (R=G=B), the most flexible canvas for a future user-chosen AccentColor: warm
+	-- (gold/orange/red) and cool (blue/violet) accents both sit cleanly on a
+	-- neutral ground, whereas a tinted base would fight the opposite temperature.
+	-- The lightness steps are preserved 1:1 from the tinted version, so cards stay
+	-- as lifted/premium as before — it never collapses back to the flat "panel ==
+	-- card" black. Panel is a hair darker than the earlier value (reads deeper).
+	page         = hex("070707"), -- dim behind the panel (a step under Window)
+	panel        = hex("0C0C0C"), -- A3: main window surface (doc: Window)
+	sidebar      = hex("111111"), -- A2: nav column (a real step lighter than the panel)
+	card         = hex("151515"), -- A4: section cards (doc: Cards)
+	inset        = hex("191919"), -- A1: edit boxes, open dropdown lists, slider value box, troughs (doc: Inputs)
+	element      = hex("191919"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs (= Inputs layer)
+	elementHover = hex("222222"), -- A6: hover step (doc: Hover)
 
-	-- C: gold — two-gold rule: C1 = brand (non-clickable), C2/C3 = interactive
-	goldBrand    = hex("E9BB69"), -- C1: wordmark, logo, section headers, accent bars, text accents
-	goldInt      = hex("CDA255"), -- C2: active nav/tab fill, primary button fill, secondary outline+text
-	goldIntHover = hex("D4AF6D"), -- C3: hover step for C2
+	-- B: lines — pure white; UI.Border applies the (low) alpha. THE tuning spot.
+	borderSoft   = hex("FFFFFF"), -- B1: card/row borders, fine separators (used at ~.05 alpha)
+	borderStrong = hex("FFFFFF"), -- B2: control borders, hover edges, focus (used at ~.10 alpha)
 
-	-- D: text
-	textPrimary  = hex("D0D0D1"), -- D1: names, labels, button text
-	textSecondary= hex("808283"), -- D2: descriptions, hints, min/max numbers
-	textDisabled = hex("3A404C"), -- D3: greyed-out controls (= B2, deliberate reuse)
-	textOnGold   = hex("1B1D1E"), -- D4: text on gold fills (= A3, deliberate reuse)
+	-- C: interactive accent = pure light (monochrome-now). Brightness IS the
+	-- accent (bright = active/interactive, grey = quiet). Names kept from the
+	-- two-gold era; goldInt is the ACCENT BASE the engine below derives from —
+	-- swap it (or call UI.SetAccent) to introduce a coloured theme later.
+	goldBrand    = hex("F4F4F4"), -- C1 (was brand gold): brand/headers/wordmark -> heading off-white (non-clickable)
+	goldInt      = hex("F4F4F6"), -- C2 = ACCENT BASE: active nav/tab fill, primary button fill, control accents
+	goldIntHover = hex("FFFFFF"), -- C3: accent hover (a touch brighter)
+	-- Softened light for FILLED toggle tracks: the switch ON track. A pure-white
+	-- fill "blooms" (irradiation) next to the dark OFF track + dark knob, reading
+	-- larger/harder than OFF; this calmer light keeps it clearly "on" without the
+	-- blare and matches OFF's soft, round feel (Florian 2026-07-22).
+	switchOn     = hex("D6D6DA"),
+	-- Slider VALUE readout (default/blurred): leads clearly over the muted field
+	-- label but is NOT the blaring pure-white accent — a card of 4 sliders side by
+	-- side put 4 near-white values in a row and read "overloaded" (Florian
+	-- 2026-07-22). Brightens to textPrimary while the value box has focus.
+	sliderValue  = hex("C2C2C8"),
 
-	-- E: status
+	-- D: text — FOUR tiers (doc: Heading / Body / Description / Disabled). The new
+	-- Body tier is what calms the page: row & checkbox labels drop off the bright
+	-- Heading so card titles keep the hierarchy alone.
+	textPrimary  = hex("F4F4F4"), -- D1 Heading: card titles, wordmark, active nav, values
+	textBody     = hex("D7D7D7"), -- D2 Body: row & checkbox labels (the calm mid tier)
+	textSecondary= hex("9A9FA5"), -- D3 Description: descriptions, hints, field labels, idle nav, min/max
+	textDisabled = hex("666A70"), -- D4 Disabled: greyed-out controls
+	textOnGold   = hex("0C0C0C"), -- text/knob ON the light accent (dark = Window, so it reads)
+
+	-- E: status (the one non-mono colour — destructive actions)
 	danger       = hex("C74B4B"), -- E1: destructive text + outline
 	dangerHover  = hex("D65C5C"), -- E2: hover step for E1
-	-- (E3 stays free: the v1 success green was dropped 2026-07-03 — add actions
-	-- are secondary gold now; red remains the only status color.)
+	-- (E3 stays free.)
 }
 UI.P = P
 
--- Legacy token names -> palette roles. Widgets/Screens/Shell still read UI.C.*;
--- redesign phases 2/3 migrate the call sites onto UI.P directly, then the
--- remaining aliases here shrink away.
-UI.C = {
-	-- grounds (old warm ink ramp -> new neutral surfaces)
-	ink900   = P.inset,        -- app background / dim
-	ink850   = P.panel,        -- main panel
-	ink800   = P.panel,        -- (was: glow center; flat now)
-	ink700   = P.element,      -- closed dropdown header / keybind field (A5 per v2 spec)
-	ink650   = P.inset,        -- icon-tile shadow
-	ink600   = P.card,         -- raised card
-	ink550   = P.inset,        -- popover / open dropdown list (A1 per v2 spec)
-	ink520   = P.card,         -- sub-box (grouping is carried by borders now, not a lighter fill)
-	inkTint  = P.element,      -- (was: icon-tile gradient top; flat now)
-	sliderTrack = P.element,   -- unfilled slider track
-
-	-- gold
-	gold500  = P.goldInt,      -- interactive accent: control borders, icons, active
-	gold400  = P.goldIntHover, -- button hover
-	gold300  = P.goldBrand,    -- wordmark / display heading
-	gold250  = P.goldBrand,    -- brand-gold text accents (tooltip title, active list rows)
-	gold200  = P.goldIntHover, -- link hover
-	gold100  = P.textPrimary,  -- (was: lightest gold-white) -> neutral primary text
-
-	-- text
-	textStrong  = P.textPrimary,
-	textHeading = P.textPrimary,
-	textBody    = P.textPrimary,   -- checkbox/row labels
-	textMuted   = P.textSecondary,
-	textFaint   = P.textSecondary, -- muted-but-readable (true disabled uses P.textDisabled)
-	onGold      = P.textOnGold,
-
-	-- status
-	danger500 = P.danger,
-	danger300 = P.dangerHover,
-}
-
--- Gold/danger in standard opacities (washes, active borders) — as {r,g,b,a}.
-local g = UI.C.gold500
-local d = UI.C.danger500
-local function goldA(a) return { r = g.r, g = g.g, b = g.b, a = a } end
-local function dangerA(a) return { r = d.r, g = d.g, b = d.b, a = a } end
 local function withA(c, a) return { r = c.r, g = c.g, b = c.b, a = a } end
-UI.goldA = goldA
-UI.dangerA = dangerA
 
--- v2: structural lines are NEUTRAL (B1/B2) instead of gold-at-opacity; gold
--- only remains on ACTIVE/open states and hover washes (interactive accent).
--- Border guideline (Florian 2026-07-05): borders are a SUBTLE separator, not
--- the primary design element — 2px ring assets carry render stability, the
--- reduced opacity below makes them read fine again. THE tuning spot.
-UI.line = {
-	faint   = withA(P.borderSoft, 0.60),   -- fine separators (content)
-	divider = withA(P.borderSoft, 0.80),   -- structural divider lines header/footer/nav
-	soft    = withA(P.borderSoft, 0.70),   -- soft control borders (cards, rows)
-	mid     = withA(P.borderStrong, 0.85), -- standard control borders
-	strong  = withA(P.goldInt, 1),         -- active / open (stays gold)
-	washSoft = goldA(0.07),
-	wash     = goldA(0.12),
-	dangerLine = dangerA(0.55),
-	dangerWash = dangerA(0.12),
+-- ---------------------------------------------------------------------------
+--  ACCENT ENGINE (v3, 2026-07-22) — the whole app derives its interactive
+--  accent from ONE base colour. Today the accent is LIGHT ITSELF (monochrome
+--  premium look, per Florian: build it clean-mono first, keep the colour option
+--  ready). Later a user could pick any hue via UI.SetAccent and every derived
+--  state recomputes with no component edits. Components read UI.Accent.* (and
+--  UI.Surface/UI.Text/UI.Border/UI.Status), never a raw hex — the legacy UI.C
+--  and UI.line alias tables are gone.
+-- ---------------------------------------------------------------------------
+local function mixTo(c, o, t) -- linear blend c -> o by t (0..1)
+	return { r = c.r + (o.r - c.r) * t, g = c.g + (o.g - c.g) * t, b = c.b + (o.b - c.b) * t, a = 1 }
+end
+local WHITE = { r = 1, g = 1, b = 1 }
+local BLACK = { r = 0, g = 0, b = 0 }
+function UI.BuildAccent(base)
+	return {
+		color     = base,                 -- fills, active nav/tab, primary button, active borders
+		hover     = mixTo(base, WHITE, 0.35), -- brighter on hover
+		pressed   = mixTo(base, BLACK, 0.12), -- slightly darker while pressed
+		selection = withA(base, 0.14),    -- selected-row / range wash
+		focus     = withA(base, 0.55),    -- keyboard-focus ring
+		glow      = withA(base, 0.35),    -- soft glow behind an active pill/indicator
+		wash      = withA(base, 0.10),    -- accent wash (open/hover fills)
+		washSoft  = withA(base, 0.06),    -- faint accent wash
+		-- switchOn (filled toggle track) is a FIXED softened light in mono (anti-
+		-- bloom, see P.switchOn); set after the build so it survives a live
+		-- SetAccent until a coloured theme derives its own softened track.
+	}
+end
+UI.ACCENT_BASE = P.goldInt
+UI.Accent = UI.BuildAccent(UI.ACCENT_BASE)
+UI.Accent.switchOn = P.switchOn -- softened light for the switch ON track (anti-bloom)
+-- Accent colour at an arbitrary alpha (replaces the old UI.goldA). Reads the
+-- live base so a future SetAccent flows through.
+function UI.accentA(a) return withA(UI.ACCENT_BASE, a) end
+-- Swap the interactive accent at runtime (future user theme). Rebuilds the
+-- derived table IN PLACE so existing UI.Accent references stay valid.
+function UI.SetAccent(col)
+	local a = UI.BuildAccent(col)
+	for k, v in pairs(a) do UI.Accent[k] = v end
+	UI.ACCENT_BASE = col
+	-- Switch/primary-button ON fill: a COLOUR fills the track directly (it won't
+	-- bloom). Only the pure-light mono default keeps the softened anti-bloom light
+	-- (P.switchOn) — a near-white fill blooms/reads larger against the dark OFF.
+	local mono = math.abs(col.r - P.goldInt.r) < 0.02
+		and math.abs(col.g - P.goldInt.g) < 0.02
+		and math.abs(col.b - P.goldInt.b) < 0.02
+	UI.Accent.switchOn = mono and P.switchOn or col
+	-- These captured the accent BY VALUE at load, so re-point them at the new one:
+	UI.Border.active = col -- the "active/open" border token
+	if ns.W and ns.W.RefreshButtonVariants then ns.W.RefreshButtonVariants() end -- button variants
+end
+
+-- Curated accent presets (Florian-approved 2026-07-23). The user picks one in
+-- the Global tab; "light" is the mono shipping default. A custom hue (step 6b)
+-- stores its own hex and matches no preset (none highlighted). hex = the value
+-- stored in db.global.accent (UI.hex parses it); col = the ready colour table.
+UI.ACCENT_PRESETS = {
+	{ key = "light",  name = "Pure Light", hex = "F4F4F6", col = P.goldInt },
+	{ key = "gold",   name = "Gold",       hex = "E7C68C", col = hex("E7C68C") },
+	{ key = "amber",  name = "Amber",      hex = "EFA96E", col = hex("EFA96E") },
+	{ key = "sage",   name = "Sage",       hex = "93CFA6", col = hex("93CFA6") },
+	{ key = "azure",  name = "Azure",      hex = "89B7EA", col = hex("89B7EA") },
+	{ key = "violet", name = "Violet",     hex = "B49BE8", col = hex("B49BE8") },
+	{ key = "rose",   name = "Rose",       hex = "E58FB3", col = hex("E58FB3") },
 }
 
 -- ---------------------------------------------------------------------------
---  Fonts — bundled under <addon>/Fonts/ (Cinzel + Hanken Grotesk, SIL OFL)
+--  SEMANTIC TOKENS (v3 Design-System doc) — the forward-looking API. Components
+--  should name a role (Surface.Card, Text.Body, Border.Default, Accent.color),
+--  never a colour. Legacy UI.C.* aliases keep the existing ~7900 lines working
+--  until call sites migrate onto these names.
+-- ---------------------------------------------------------------------------
+UI.Surface = {
+	Window  = P.panel,        -- main window surface
+	Sidebar = P.sidebar,      -- nav column
+	Card    = P.card,         -- section cards
+	Input   = P.inset,        -- edit boxes, dropdowns (closed & open), rows, neutral buttons, inactive tabs
+	Hover   = P.elementHover, -- hover step; also the unfilled slider track channel
+	Scrim   = P.page,         -- dim behind the panel + soft icon shadow
+}
+UI.Text = {
+	Primary     = P.textPrimary,   -- Heading (brightest): titles, wordmark, active nav, values
+	Secondary   = P.textBody,      -- Body (mid): row & checkbox labels
+	Description = P.textSecondary,  -- muted: descriptions, hints, field labels, min/max, idle nav
+	Disabled    = P.textDisabled,  -- greyed-out
+	Value       = P.sliderValue,   -- slider readout (leads over the label, not pure white)
+	OnAccent    = P.textOnGold,    -- text/knob ON the light accent (dark, so it reads)
+}
+-- Border lines — pure white at LOW alpha (hierarchy leans on the graduated
+-- surface layers + fill, not on heavy borders). "active" = the pure-light accent
+-- for open/selected edges. THE tuning spot.
+UI.Border = {
+	faint    = withA(P.borderSoft, 0.04),   -- finest content separators
+	default  = withA(P.borderSoft, 0.05),   -- card / row borders
+	hover    = withA(P.borderStrong, 0.10), -- standard control borders / hover edges
+	divider  = withA(P.borderSoft, 0.10),   -- structural divider lines (header / nav)
+	active   = UI.Accent.color,             -- active / open border (= accent)
+}
+UI.Status = {
+	danger      = P.danger,
+	dangerHover = P.dangerHover,
+	dangerLine  = withA(P.danger, 0.55), -- destructive outline
+	dangerWash  = withA(P.danger, 0.12), -- destructive fill wash
+}
+
+-- Danger colour at an arbitrary alpha (destructive control variants). Reads the
+-- palette directly (UI.C is gone — every call site now uses UI.Surface/Text/
+-- Border/Accent/Status).
+function UI.dangerA(a) return withA(P.danger, a) end
+
+-- ---------------------------------------------------------------------------
+--  Fonts — bundled under <addon>/Fonts/ (Inter, SIL OFL)
 -- ---------------------------------------------------------------------------
 -- Built from the real addon-folder name (ADDON) so the path survives a folder
 -- rename (e.g. Lumen -> LumenUI). ADDON is the first vararg = the folder name.
 local FP = "Interface\\AddOns\\" .. ADDON .. "\\Fonts\\"
+-- v3: ONE clean UI sans everywhere — Inter (SIL OFL). The mockup dropped Cinzel's
+-- serif display face + Hanken for a single uniform sans (the SF-Pro-like look; SF
+-- Pro itself is Apple-proprietary and can't be bundled). Inter switches heading
+-- case to sentence case automatically (Cinzel was caps-only). The old Cinzel/
+-- Hanken TTFs were removed in the v3 cleanup.
 UI.FONT = {
-	cinzelSemi   = FP .. "Cinzel-SemiBold.ttf",
-	cinzelBold   = FP .. "Cinzel-Bold.ttf",
-	hankenReg    = FP .. "HankenGrotesk-Regular.ttf",
-	hankenMed    = FP .. "HankenGrotesk-Medium.ttf",
-	hankenSemi   = FP .. "HankenGrotesk-SemiBold.ttf",
-	hankenBold   = FP .. "HankenGrotesk-Bold.ttf",
+	interReg  = FP .. "Inter-Regular.ttf",
+	interMed  = FP .. "Inter-Medium.ttf",
+	interSemi = FP .. "Inter-SemiBold.ttf",
+	interBold = FP .. "Inter-Bold.ttf",
 }
+-- Semantic weight names (v3 cleanup): components/roles name a WEIGHT, not a
+-- typeface — so the bundled font can be swapped in one place. Every UI.ROLE
+-- entry + call site reads these; the old cinzel/hanken aliases are gone.
+UI.FONT.regular  = UI.FONT.interReg
+UI.FONT.medium   = UI.FONT.interMed
+UI.FONT.semibold = UI.FONT.interSemi
+UI.FONT.bold     = UI.FONT.interBold
 
 -- (Font warm-up happens BELOW UI.ROLE — it warms every actually used
 -- font+size pair, so it needs the role table first.)
 
 -- Roles -> { path, size, flags }. Sizes from typography.css.
 UI.ROLE = {
-	wordmark = { UI.FONT.cinzelSemi, 26, "" }, -- LUMENUI (sized to fit the 260px sidebar)
-	display  = { UI.FONT.cinzelSemi, 22, "" },
-	section  = { UI.FONT.cinzelSemi, 20, "" }, -- section heading (Cinzel)
-	nav      = { UI.FONT.hankenMed,  18, "" },
-	body     = { UI.FONT.hankenReg,  14, "" },
-	label    = { UI.FONT.hankenMed,  14, "" },
-	tab      = { UI.FONT.hankenMed,  18, "" },
-	caption  = { UI.FONT.hankenReg,  12, "" },
-	hint     = { UI.FONT.hankenReg,  16, "" }, -- description/hint text under controls
-	tagline  = { UI.FONT.hankenReg,  12, "" },
+	wordmark = { UI.FONT.bold, 23, "" }, -- LUMENUI (mockup ratio: 18px@680w -> ~23px design-px, Bold = nearest cut to 680)
+	display  = { UI.FONT.semibold, 22, "" },
+	section  = { UI.FONT.semibold, 20, "" }, -- section heading (Cinzel)
+	nav      = { UI.FONT.medium,  18, "" },
+	body     = { UI.FONT.regular,  14, "" },
+	label    = { UI.FONT.medium,  14, "" },
+	tab      = { UI.FONT.medium,  18, "" },
+	caption  = { UI.FONT.regular,  12, "" },
+	hint     = { UI.FONT.regular,  16, "" }, -- description/hint text under controls
+	tagline  = { UI.FONT.medium,  12, "" }, -- mockup ratio: 10px@500w -> Medium
+	navGroupLabel = { UI.FONT.semibold, 12, "" }, -- "MODULES" nav-group caption (mockup: 10px@600w -> SemiBold; distinct from the shared "caption" role so it doesn't collapse onto the tagline's weight)
 
 	-- Widget toolkit (phase 2) — small, control-near roles. Sizes on the
 	-- 4px grid (12/16/20). Change here centrally -> propagates everywhere.
-	fieldLabel = { UI.FONT.hankenMed,  16, "" }, -- gold label above a control (dropdown etc.)
-	sectionHead= { UI.FONT.cinzelSemi, 20, "" }, -- card/section titles + tab heading
-	groupTitle = { UI.FONT.cinzelSemi, 16, "" }, -- GroupPanel title / IconTile letter
-	sliderCap  = { UI.FONT.cinzelSemi, 16, "" }, -- slider caption
-	value      = { UI.FONT.hankenMed,  14, "" }, -- value box
-	ends       = { UI.FONT.hankenMed,  14, "" }, -- slider min/max numbers
-	selectText = { UI.FONT.hankenMed,  16, "" }, -- dropdown header + rows
-	checkLabel = { UI.FONT.hankenMed,  16, "" }, -- checkbox label
-	listLabel  = { UI.FONT.hankenMed,  18, "" }, -- list row (role sort list)
+	fieldLabel = { UI.FONT.medium,  16, "" }, -- MUTED label above a control (slider/dropdown/segment); coloured Text.Description, not bright (mockup .flabel)
+	sectionHead= { UI.FONT.semibold, 20, "" }, -- card/section titles + tab heading
+	groupTitle = { UI.FONT.semibold, 16, "" }, -- GroupPanel title / IconTile letter
+	sliderCap  = { UI.FONT.semibold, 16, "" }, -- slider caption
+	value      = { UI.FONT.semibold, 14, "" }, -- value box (mockup ratio: 12px@580w -> nearest cut SemiBold)
+	ends       = { UI.FONT.medium,  14, "" }, -- slider min/max numbers
+	selectText = { UI.FONT.medium,  16, "" }, -- dropdown header + rows
+	checkLabel = { UI.FONT.medium,  16, "" }, -- checkbox label
+	listLabel  = { UI.FONT.medium,  18, "" }, -- list row (role sort list)
 	-- (subDivider role retired with SectionDivider/SectionLabel.)
-	btn        = { UI.FONT.hankenSemi, 16, "" }, -- button label (weight per variant, see Widgets)
+	btn        = { UI.FONT.semibold, 16, "" }, -- button label (weight per variant, see Widgets)
 
 	-- Custom Lumen tooltip — own roles so font size/weight can be tuned
 	-- independently (Florian adjusts these himself).
-	tipTitle = { UI.FONT.hankenSemi, 18, "" }, -- tooltip title / spell name (gold)
-	tipBody  = { UI.FONT.hankenReg,  16, "" }, -- tooltip text / spell description
+	tipTitle = { UI.FONT.semibold, 18, "" }, -- tooltip title / spell name (gold)
+	tipBody  = { UI.FONT.regular,  16, "" }, -- tooltip text / spell description
 }
 
 -- Font warm-up: on a COLD START the FIRST SetFont per custom TTF renders empty
@@ -237,19 +335,25 @@ UI.S = {
 	s1 = 2, s2 = 6, s3 = 8, s4 = 12, s5 = 14, s6 = 16, s7 = 20, s8 = 24, s9 = 36,
 	cardPad     = 20,
 	panelGutter = 30, -- content padding (spec 24 screen px)
-	navWidth    = 275, -- sidebar (spec 220 screen px)
-	navBrandH   = 88, -- brand block (wordmark + tagline) at the top of the sidebar
-	                  -- (spec "Header 56" maps to app headers, not this block — kept as is)
-	tabH        = 48, -- tab strip / tab button height (spec 38 screen px -> 47.5, on-grid 48)
+	navWidth    = 315, -- sidebar (v3: +40 wider so the navbar gains L/R breathing room without cramping content)
+	navGutter   = 50, -- v3: nav-specific left inset for wordmark/tagline/MODULES/items (more air than the content panelGutter)
+	navBrandH   = 108, -- brand block (wordmark + tagline) at the top of the sidebar
+	                  -- (v3: taller -> more air between the tagline and the MODULES caption / first item)
+	tabH        = 52, -- tab strip / tab button height (v3: +4 taller, more generous row)
+	tabStripPad = 7,  -- v3: inner padding of the tab-strip capsule around the tab pills (also the pill's vertical inset; pill height = tabH - 2*this = 38)
+	tabGlowX    = 26, -- v3: baked glow horizontal bleed beyond the sliding tab pill (soft halo LARGER than the tab, spills past the strip edge)
+	tabGlowTop  = 18, -- v3: glow bleed above the pill (broad halo, not just an underglow)
+	tabGlowBot  = 22, -- v3: glow bleed below the pill
 	navItemH    = 58, -- sidebar nav row height (Florian 2026-07-05: +8 taller)
-	navPillPadX = 12, -- active-pill inset from the sidebar edges (v3 nav mockup)
+	navPillPadX = 32, -- active-pill / hover-pill inset from the sidebar edges (v3: more L/R air, matches the wider navGutter)
 	navPillPadY = 4,  -- active-pill vertical inset within the nav row
 	navIconSize = 18, -- nav-row Lucide icon (TGA rendered at 32px, shown ~18)
 	navIconGap  = 10, -- gap: nav icon -> label
-	navGroupGap = 10, -- "MODULES" caption -> first nav item
+	navGroupGap = 18, -- "MODULES" caption -> first nav item (mockup ratio: 14px @ 1x -> ~18 design-px)
+	navItemGap  = 4,  -- v3: uniform gap between nav rows (group divider lines removed per the mockup)
 	closeGlyph  = 18, -- close-button "x" glyph (Lucide) inside the 34px button
-	scrollBarW  = 4,  -- width of the content scrollbar
-	scrollBarGap = 14, -- gap ScrollFrame -> scrollbar (in the gutter)
+	scrollBarW  = 2,  -- width of the content scrollbar (Florian 2026-07-22: halved from 4 for a quieter, unobtrusive line; the thumb's hit-rect is padded in Shell.lua so grabbing it stays easy despite the thinner visual)
+	scrollBarGap = 20, -- gap ScrollFrame -> scrollbar (Florian 2026-07-22: raised from 14 to match the unified 20px card rhythm, so the right-side gutter reads as generous as the left)
 	tabBadgeH   = 26, -- tab-strip info badge height (v2 refinement no. 4, e.g. active spec)
 	tabBadgePad = 12, -- inner L/R padding of the tab-strip badge
 	contentTopGap = 26, -- tab strip -> content area (carried by the banner zone height)
@@ -265,11 +369,14 @@ UI.R = {
 --  table conversions land on the 5px design grid instead (see UI.S note).
 -- ---------------------------------------------------------------------------
 UI.WIDGET = {
-	controlH    = 45, -- dropdown/input height (spec 36 screen px)
-	selectChevSize = 14, -- dropdown chevron glyph (Lucide chevron-down)
+	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
+	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
+	segHugPad   = 20, -- horizontal padding per cell for a content-width (hug) segment (tab-like, not stretched)
+	menuItemPadX = 6, -- horizontal inset of a dropdown item's rounded hover pill (nav-item language)
+	menuItemPadY = 3, -- vertical inset of the pill (also the gap between stacked pills)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
 	sortArrowGlyph = 14, -- sort up/down arrow glyph (Lucide chevron-up/down)
-	buttonH     = 45, -- button height (= controlH: uniform, hierarchy comes from the variant colors — Florian 2026-07-05)
+	buttonH     = 48, -- button height (v3 2026-07-22: 48, deliberately < controlH 51 + fully-round PILL shape, matching the mockup where buttons are shorter pills than the taller selects; uses the existing pill-*-h48 assets)
 	btnIcon     = 18, -- optional leading Lucide icon inside a W.Button (Edit Mode button)
 	btnIconGap  = 8,  -- gap icon -> button label
 	fieldGap    = 26, -- vertical gap label -> control below
@@ -278,16 +385,18 @@ UI.WIDGET = {
 	checkBox    = 20, -- box edge length (spec 16 screen px)
 	checkLabelGap = 10,
 
-	selectRowH  = 38, -- dropdown menu row height (Florian 2026-07-05: 34 read too cramped)
+	selectRowH  = 50, -- dropdown menu row height (Florian 2026-07-22: 38 -> 44 -> 50, comfortable list rows)
+	selectMenuPad = 10, -- inner padding of the dropdown popover (was 6; more air around the list + search)
+	selectCheckSize = 15, -- selected-item check glyph (Lucide check, right-aligned like the mockup's ItemIndicator)
 
 	-- Stacked option row (W.OptionRow — stacked-row standard, design bible §8):
 	-- hairline on top, label left, compact control (switchSmallH tall) right.
-	optionRowH  = 48, -- row height (28-high control + even air)
+	optionRowH  = 62, -- row height (28-high control + even air; Florian 2026-07-22: raised from 48 to match the mockup's more generous row padding, better readability)
 
 	-- Slider
 	sliderH     = 86, -- total height (label + track row + value box)
 	sliderTrackH= 18, -- height of the clickable track row
-	sliderBarH  = 4,  -- thickness of the bar
+	sliderBarH  = 5,  -- thickness of the bar (Florian 2026-07-22: was 4, a raw copy of the mockup's 4 CSS-px without the x1.25 physical-scale conversion used elsewhere -> rendered thinner than intended at our 0.80 panel scale)
 	sliderThumb = 20, -- thumb disc diameter (spec 16 screen px; needs circle-<n> + circle-<n+4> assets -> circle-20 + circle-24)
 	sliderCapGap= 30, -- yOffset label -> track row
 	sliderEndW  = 28, -- width of the min/max number fields
@@ -305,12 +414,12 @@ UI.WIDGET = {
 	sliderCompactCapGap = 39, -- label line -> track row (26 + (45 - 18) / 2, rounded down)
 	sliderCompactValW   = 64, -- width of the inline value EditBox (right-aligned)
 	sliderCompactValH   = 18, -- height of the inline value EditBox (one text line)
-	-- Boxed compact slider (v3 mockup): each slider in its own inset box (A1,
-	-- one step darker than the card), so a slider group reads as one unit.
-	sliderBoxPadY = 12, -- inner top padding of the box
-	sliderBoxPadX = 20, -- inner left/right padding (slider needs air to the box edge; 4pt raster)
-	sliderBoxH   = 72, -- box height (row height for boxed slider rows)
-	sliderBoxCapGap = 24, -- tighter label -> track gap inside a box
+	-- Bare compact slider (Florian 2026-07-22, Option A -> matches the mockup):
+	-- no sunken box, no fill/border/extra L-R padding -- just the label above a
+	-- thin track, full cell width. sliderBoxH is still the standard row height
+	-- every FieldRow-based slider is placed at (name kept for the moment; the
+	-- "box" itself is gone).
+	sliderBoxH = 72, -- row height for slider rows (matches sliderCompactH=71)
 
 	-- GroupPanel
 	groupTitleY = -16, -- yOffset of the title from the top edge
@@ -320,18 +429,18 @@ UI.WIDGET = {
 
 	-- Section panel (concept A: each section = own card with header). Centrally
 	-- tunable; stack:section() in Shell.lua only reads from it.
-	sectionPad         = 20, -- inner L/R + bottom padding of the card (spec 16 screen px)
+	sectionPad         = 30, -- inner L/R + bottom padding of the card (Florian 2026-07-22: raised from 20 to match the mockup's card padding, less cramped)
 	sectionHeaderH     = 46, -- collapsed-card header row (W.Collapsible)
-	sectionAfterHeader = 18, -- header bottom edge -> first content row
+	sectionAfterHeader = 26, -- DIVIDER -> first content row (Florian 2026-07-22: split from the title-to-divider gap, which now lives in cardHeadH/cardHeadSubH below, so this only covers the mockup's post-divider margin — no more double-counting now that the divider is real)
 	-- In-card head (v3, Florian's mockup): title + optional muted description
 	-- INSIDE the card body — no header bar, no divider, no accent bar.
-	cardHeadTop  = 18, -- top padding above the title
-	cardHeadH    = 48, -- head block height without a description line
-	cardHeadSubH = 68, -- head block height WITH a description line
-	cardSubY     = 42, -- yOffset of the description line from the card top
+	cardHeadTop  = 28, -- top padding above the title (Florian 2026-07-22: raised from 18 to match the mockup's card padding)
+	cardHeadH    = 66, -- head block height without a description line -- DIVIDER sits at -cardHeadH, so this must clear cardHeadTop + the title's own rendered height + a little breathing room (Florian 2026-07-22: was 48, too short once cardHeadTop grew -> the divider cut through the title; re-check live, may need a nudge)
+	cardHeadSubH = 84, -- head block height WITH a description line -- same fix, sized to clear cardHeadTop + title + subtitle line (was 68)
+	cardSubY     = 52, -- yOffset of the description line from the card top (shifted +10 with cardHeadTop, same internal gap)
 	cardEyeBtn   = 28, -- header eye toggle button edge length (preview/edit-mode layer visibility)
 	cardEyeGlyph = 20, -- Lucide eye glyph inside cardEyeBtn
-	sectionGap         = 26, -- gap between two section cards
+	sectionGap         = 20, -- gap between two section cards (Florian 2026-07-22: unified with G.cardGap so the horizontal and vertical card rhythm read as ONE consistent grid, per the mockup)
 	headerStackGap     = 8,  -- gap between stacked COLLAPSED headers (ctx tabs; Florian: tighter than sectionGap)
 	sectionTitleX      = 18, -- X indent of the header title
 	sectionCountGap    = 10, -- gap title -> count chip (v2 refinement no. 1)
@@ -368,6 +477,9 @@ UI.WIDGET = {
 	cpMarker = 10,  -- edge length of the markers
 	cpPrevH  = 30,  -- height of the preview/hex row
 	cpBtnGap = 8,   -- gap between Apply/Cancel in the color picker
+	cpPresetGap = 5, -- gap between the 9 quick-pick chips in the picker's top strip
+	cpHueH   = 16,  -- height of the horizontal hue slider
+	cpShuffle = 28, -- square randomize button beside the hue slider
 
 	rowGap      = 30, -- column gap in W.Row (row3/row2)
 
@@ -378,12 +490,12 @@ UI.WIDGET = {
 	spBtnW         = 210, -- width of the "+ Add spell" trigger button
 	spW            = 340, -- width of the spell-picker popover
 	spPad          = 10,  -- inner padding of the popover
-	spSearchH      = 32,  -- height of the search field
+	spSearchH      = 44,  -- height of the search field (Florian 2026-07-22: 32 -> 44, taller/roomier; shared by W.Select + SpellPicker)
 	spRowH         = 40,  -- height of a picker list row (roomier: +4px air top & bottom)
 	spVisibleRows  = 7,   -- simultaneously visible rows (rest scrolls)
 	spScrollW      = 4,   -- width of the picker scrollbar (also used by W.Select)
 	spScrollGap    = 6,   -- gap list <-> scrollbar
-	selectMaxRows  = 8,   -- W.Select: max. simultaneously visible options (rest scrolls)
+	selectMaxRows  = 6,   -- W.Select: max. simultaneously visible options (rest scrolls) — Florian 2026-07-22: 8 -> 6
 
 	-- Switch (pill on/off toggle) — reusable beyond Click-Cast. Grown +8 screen
 	-- px in height (Florian 2026-07-05 in-game review: switches read too small).
@@ -464,6 +576,19 @@ UI.LAYOUT = {
 		afterCheck = 30, -- after checkbox/short control -> tall control (dropdown/slider)
 		group      = 32, -- deliberate break between two sub-groups in a card
 	},
+	-- SEARCH — the global settings-search result screen (own screen, so its
+	-- measures live here rather than in UI.WIDGET; design bible §5.4).
+	search = {
+		headH     = 34, -- result heading line ("Results for …" + match count)
+		rowH      = 50, -- result row: ONE line now (the context moved into group headers)
+		groupH    = 38, -- "Raidframes > Raid" header above each run of results
+		rowGap    = 6,  -- rows are their own faces now, so they need a real gap
+		headGap   = 18, -- result heading -> first row
+		badgePadX = 9,  -- inner padding of the kind badge (Switch / Slider / …)
+		badgeH    = 22,
+		crumbGap  = 7,  -- label baseline -> breadcrumb line (they read as one unit, but must not stick together)
+		emptyTop  = 90, -- air above the "nothing found" message
+	},
 	-- GENERAL — cross-screen constants used by several tabs.
 	general = {
 		tabTop      = 0, -- tab strip -> first element (0: air above/below the strip is EQUAL — Florian 2026-07-05)
@@ -489,7 +614,7 @@ UI.LAYOUT = {
 		afterList    = 8,   -- last box -> "+ add" button
 		emptyH       = 30,  -- height of the "(no bindings)" row
 		-- dimensions (catalog rows)
-		rowH     = 60,  -- card row height (keeps ~7px air around the keybind field at controlH 45)
+		rowH     = 66,  -- card row height (keeps ~7px air around the keybind field at controlH 51)
 		rowGap   = 8,   -- gap between rounded row cards (Option b: no longer flush)
 		                -- so adjacent rows share ONE 1px line (no doubled border)
 		rowPad   = 20,  -- inner left/right padding inside a row card
@@ -538,7 +663,7 @@ UI.LAYOUT = {
 -- (v2: no footer and no full-width header anymore — the sidebar runs the full
 -- panel height and carries the brand block; see S.navBrandH.)
 UI.PANEL = {
-	w = 1750, h = 1250, scale = 0.80,
+	w = 1790, h = 1250, scale = 0.80, -- v3: +40 wider (the nav gained +40; content width unchanged)
 }
 
 -- ---------------------------------------------------------------------------
@@ -548,7 +673,7 @@ UI.PANEL = {
 -- ---------------------------------------------------------------------------
 UI.GRID = {
 	cols    = 12, -- page tracks (cards span even counts: 4/6/8/12)
-	cardGap = 16, -- gutter between two cards in a band AND between field cells (8pt)
+	cardGap = 20, -- gutter between two cards in a band AND between field cells (Florian 2026-07-22: raised from 16, unified with M.sectionGap so horizontal + vertical card rhythm match)
 	cellGap = 8,  -- gutter between tight utility cells (tracked-spell grid etc., 8pt)
 	pairGap = 32, -- gutter between WIDE controls sharing a row (8pt)
 	-- Control layout inside a card (stacked-row standard, design bible §8):
@@ -581,7 +706,10 @@ function UI.Fill(parent, col, layer)
 	return t
 end
 
--- 1px hairline border (4 edges) around frame, gold-at-opacity. Returns the 4 edge
+-- Draw a 1px hairline border (4 edges) around a frame in the given colour.
+-- Named UI.Stroke (not UI.Border) because UI.Border is the border-COLOUR token
+-- table; this is the drawing primitive, the hairline counterpart to UI.Fill.
+-- Returns the 4 edge
 -- textures (for later recoloring, e.g. hover/active).
 --
 -- IMPORTANT RULE (hard-learned, DO NOT revert): ONLY the THICKNESS is pixel-
@@ -593,7 +721,7 @@ end
 -- "off" and the 1px line fell between two pixels -> vanished (the recurring tab/
 -- dropdown/button border bug). Plain anchoring glues the line ALWAYS to the edge ->
 -- the whole bug class is eliminated.
-function UI.Border(frame, col, thick, layer)
+function UI.Stroke(frame, col, thick, layer)
 	thick = thick or 1
 	local edges = {}
 	local function mk()
@@ -635,8 +763,8 @@ end
 --    XS 4  — checkboxes, slider track, small badges/chips (count chip, tab badge)
 --    SM 6  — color swatches, small icons with a hover face, header chips
 --    MD 8  — buttons, dropdowns, tabs, text fields, segments, slider thumb/boxes
---    LG 10 — cards, panels, group boxes, floating popovers/menus/tooltip
---    XL 16 — main window (panel/sidebar/dock) + modal dialogs
+--    LG 18 — cards, panels, group boxes, floating popovers/menus/tooltip (v3: 10->18)
+--    XL 22 — main window (panel/sidebar/dock) + modal dialogs (v3: 16->22)
 --  Nesting rule stays: outer radius = inner radius + padding.
 --  Shapes: "full" (default) | "top" | "bottom" | "left" | "right" — the
 --  half-rounded variants are for flush-attached surfaces (collapsible header
@@ -647,10 +775,17 @@ end
 --  NOTE: never recolor these via SetColorTexture (that would replace the file
 --  texture with a solid quad) — UI.SetColor routes them to SetVertexColor.
 -- ---------------------------------------------------------------------------
-local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
-local ROUND_MARGIN = { [4] = 5, [6] = 7, [8] = 9, [10] = 11, [16] = 17 } -- source px covering the corner (+1px straight buffer)
+local ROUND_TEX    = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\round\\" -- round-fill/round-edge 9-slice assets
+local PILL_TEX     = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\pill\\"  -- pill-fill/pill-edge capsules + circle discs
+local ROUND_MARGIN = { [4] = 5, [6] = 7, [12] = 13, [14] = 15, [18] = 19, [22] = 23 } -- source px covering the corner (+1px straight buffer); radii = UI.RADIUS scale + nav-pill r12
 local ROUND_SUFFIX = { top = "-top", bottom = "-btm", left = "-left", right = "-right" } -- else full
-UI.RADIUS = { xs = 4, sm = 6, md = 8, lg = 10, xl = 16 } -- THE scale (see table above)
+-- v3 (2026-07-21): radii bumped toward GENEROUS on the headline surfaces —
+-- cards lg 10->18, chrome xl 16->22 (new 9-slice assets generated for both;
+-- 14 was too subtle at the 0.80 panel scale, bumped to 18). Controls: sm/xs
+-- unchanged; md later bumped 8->14 (v3 2026-07-22) so control faces (dropdowns/
+-- buttons/segments/inputs) match the mockup's rounder select — r14 assets baked,
+-- old r8 control assets now unused but left in place (harmless).
+UI.RADIUS = { xs = 4, sm = 6, md = 14, lg = 18, xl = 22 } -- THE scale (see table above; md 8->14 in v3 2026-07-22 = control faces rounder to match the mockup's ~11px@1x select radius. r14 fill/left/right/edge assets baked)
 UI.ROUND_R        = UI.RADIUS.lg -- cards/panels/popovers (default radius)
 UI.ROUND_R_CHROME = UI.RADIUS.xl -- main chrome: panel, sidebar, preview dock + modals
 UI.ROUND_R_CTRL   = UI.RADIUS.md -- control faces: fields, buttons, segments, inset boxes
@@ -691,12 +826,12 @@ end
 -- (32 / 28 switches; 4 slider bars) so only the straight middle stretches
 -- horizontally — vertical scale stays 1:1 and the end caps keep their curve.
 -- h must match the frame's height exactly.
-local PILL_MARGIN = { [32] = 17, [28] = 15, [22] = 12, [18] = 10, [4] = 3 } -- cap width (radius + 1px buffer)
+local PILL_MARGIN = { [52] = 27, [48] = 25, [38] = 20, [32] = 17, [28] = 15, [4] = 3 } -- cap width (radius + 1px buffer); heights = tab/segment 52+38, button 48, switch 32+28, slider bar 4
 
 local function pillTexture(parent, file, col, layer, h)
 	local m = PILL_MARGIN[h]
 	local t = markRound(parent:CreateTexture(nil, layer or "BACKGROUND"))
-	t:SetTexture(ROUND_TEX .. file .. "-h" .. h)
+	t:SetTexture(PILL_TEX .. file .. "-h" .. h)
 	t:SetTextureSliceMargins(m, 0, m, 0)
 	t:SetAllPoints(parent)
 	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
@@ -716,25 +851,58 @@ end
 -- anchors it; recolor via UI.SetColor/SetVertexColor.
 function UI.Circle(parent, col, layer, size)
 	local t = markRound(parent:CreateTexture(nil, layer or "ARTWORK"))
-	t:SetTexture(ROUND_TEX .. "circle-" .. size)
+	t:SetTexture(PILL_TEX .. "circle-" .. size)
 	t:SetSize(size, size)
 	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
 	return t
 end
 
--- Rounded-square knob (switch): the round-fill 9-slice asset at an explicit
--- size, positioned by the caller (like UI.Circle, but squared with radius r).
--- Lets the switch match the radius scale + the rounded-square checkboxes
--- instead of a pill/circle (Florian 2026-07-05).
-function UI.RoundKnob(parent, col, layer, size, r)
-	r = r or UI.RADIUS.xs
-	local m = ROUND_MARGIN[r]
-	local t = markRound(parent:CreateTexture(nil, layer or "ARTWORK"))
-	t:SetTexture(ROUND_TEX .. "round-fill-r" .. r)
-	t:SetTextureSliceMargins(m, m, m, m)
-	t:SetSize(size, size)
-	t:SetVertexColor(col.r, col.g, col.b, col.a or 1)
-	return t
+-- ---------------------------------------------------------------------------
+--  Sliding indicator engine (v3) — ONE pill that TWEENS to the active item.
+--  A SHORT, self-terminating ease-out-cubic (§9-safe: the OnUpdate stops itself
+--  after SLIDE_DUR, NOT a persistent per-frame poll). Shared by the Shell chrome
+--  (tabs slide in X + resize; nav slides in Y) AND the Segment control (Widgets),
+--  so they animate identically. ind._ref = the frame the (ox,oy) offsets anchor to.
+-- ---------------------------------------------------------------------------
+UI.SLIDE_DUR = 0.28
+function UI.slideTo(ind, ox, oy, w, h, animate)
+	w = math.max(1, w); h = math.max(1, h)
+	local function apply(x, y, ww, hh)
+		ind:ClearAllPoints()
+		ind:SetPoint("TOPLEFT", ind._ref, "TOPLEFT", x, y)
+		ind:SetSize(ww, hh)
+	end
+	if (not animate) or ind._cx == nil then
+		ind._cx, ind._cy, ind._cw, ind._ch = ox, oy, w, h
+		ind:SetScript("OnUpdate", nil)
+		apply(ox, oy, w, h); ind:Show()
+		return
+	end
+	local sx, sy, sw, sh = ind._cx, ind._cy, ind._cw, ind._ch
+	ind:Show()
+	local el = 0
+	ind:SetScript("OnUpdate", function(self, dt)
+		el = el + dt
+		local t = el / UI.SLIDE_DUR; if t > 1 then t = 1 end
+		local e = 1 - (1 - t) * (1 - t) * (1 - t) -- ease-out cubic
+		local x  = sx + (ox - sx) * e
+		local y  = sy + (oy - sy) * e
+		local ww = sw + (w - sw) * e
+		local hh = sh + (h - sh) * e
+		self._cx, self._cy, self._cw, self._ch = x, y, ww, hh
+		apply(x, y, ww, hh)
+		if t >= 1 then self:SetScript("OnUpdate", nil) end
+	end)
+end
+
+-- Geometry of `item` in `ref`'s LOCAL coordinate units (item and ref share the
+-- same effective scale, so their GetLeft/GetTop deltas are already local — no
+-- scale conversion). Returns nil while positions are unresolved (parent hidden).
+function UI.itemRectIn(item, ref)
+	local iL, iT = item:GetLeft(), item:GetTop()
+	local rL, rT = ref:GetLeft(), ref:GetTop()
+	if not (iL and iT and rL and rT) then return nil end
+	return (iL - rL), (iT - rT), item:GetWidth(), item:GetHeight()
 end
 
 -- WoW inline color escape ("|cffRRGGBB") from a palette color — keeps hex values

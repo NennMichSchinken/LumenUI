@@ -11,7 +11,7 @@ local Style = {}
 ns.Style = Style
 
 -- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
-local T = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local T = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\bars\\" -- Style draws bar textures (lumen-gradient/aurora/glow/light/shadow)
 Style.barTexture     = T .. "lumen-gradient"       -- default (bold), tinted by class color
 Style.barTextureSoft = T .. "lumen-gradient-soft"  -- soft (subtle)
 Style.lightOverlay  = T .. "lumen-light"      -- top light layer

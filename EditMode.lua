@@ -45,14 +45,21 @@ local InCombatLockdown = InCombatLockdown
 -- 2026-07-13). Converted to UIParent units per drag (depends on UI scale).
 local TOL_PX = 4
 
--- Brand gold (palette C1 #E9BB69 — kept literal here: this file loads before
--- Shell/Tokens; runtime-built parts below use the real tokens instead).
-local GOLD_R, GOLD_G, GOLD_B = 0.91, 0.73, 0.41
--- C2 interactive gold #CDA255 (coupled) + muted text #808283 (idle chain icon).
-local GOLDINT_R, GOLDINT_G, GOLDINT_B = 0.80, 0.64, 0.33
-local MUTED_R, MUTED_G, MUTED_B = 0.50, 0.51, 0.51
+-- In-world edit accents (monochrome, like the chrome — no warm gold on the game
+-- frames). These are the ONE deliberate hardcoded-colour exception in the addon:
+-- EditMode.lua loads BEFORE Shell/Tokens (toc order), so ns.UI does not exist yet
+-- at file scope. Every USE is inside a runtime function (edit-mode build, long
+-- after login) that reads ns.UI first and only falls back to these literals if UI
+-- is somehow absent — so they must stay literal, but their VALUES mirror the
+-- semantic tokens exactly (synced 2026-07-22 to the current palette, no drift):
+--   GOLD  = UI.Text.Primary  #F4F4F4 (guides, selection)
+--   GOLDINT = UI.Accent.color #F4F4F6 (coupled / active)
+--   MUTED = UI.Text.Description #9A9FA5 (idle chain icon)
+local GOLD_R, GOLD_G, GOLD_B = 0.957, 0.957, 0.957 -- #F4F4F4
+local GOLDINT_R, GOLDINT_G, GOLDINT_B = 0.957, 0.957, 0.965 -- #F4F4F6
+local MUTED_R, MUTED_G, MUTED_B = 0.604, 0.624, 0.647 -- #9A9FA5
 
-local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\icons\\" -- EditMode only draws icon-* textures
 local CHAIN = 20 -- chain-icon edge length (top-right of the overlay)
 
 -- ---------------------------------------------------------------------------
@@ -164,7 +171,7 @@ local function ensureGuides()
 	guideHost:Hide()
 	local function mkTex(a)
 		local t = guideHost:CreateTexture(nil, "OVERLAY")
-		if UI then UI.SetColor(t, UI.P.goldBrand)
+		if UI then UI.SetColor(t, UI.Text.Primary)
 		else t:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 1) end
 		t:SetAlpha(a or 0.9)
 		t:Hide()
@@ -187,10 +194,10 @@ local function ensureGuides()
 		local function mkBadge()
 			local b = CreateFrame("Frame", nil, guideHost)
 			b:SetFrameLevel(guideHost:GetFrameLevel() + 2)
-			local bg = { r = UI.P.inset.r, g = UI.P.inset.g, b = UI.P.inset.b, a = 0.92 }
+			local bg = { r = UI.Surface.Input.r, g = UI.Surface.Input.g, b = UI.Surface.Input.b, a = 0.92 }
 			UI.RoundFill(b, bg, "BACKGROUND", nil, UI.RADIUS.xs)
-			UI.RoundBorder(b, UI.line.mid, "OVERLAY", nil, UI.RADIUS.xs)
-			b.txt = UI.FS(b, "caption", UI.P.goldBrand)
+			UI.RoundBorder(b, UI.Border.hover, "OVERLAY", nil, UI.RADIUS.xs)
+			b.txt = UI.FS(b, "caption", UI.Text.Primary)
 			b.txt:SetPoint("CENTER", b, "CENTER", 0, 0)
 			b:Hide()
 			return b
@@ -355,7 +362,7 @@ local function updateLinkLines()
 				if not ln then
 					ln = linkHost:CreateLine(nil, "OVERLAY")
 					ln:SetThickness(2)
-					local col = ns.UI and ns.UI.P.goldBrand
+					local col = ns.UI and ns.UI.Text.Primary
 					if col then ln:SetColorTexture(col.r, col.g, col.b, 0.45)
 					else ln:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 0.45) end
 					linkLines[n] = ln
@@ -1063,8 +1070,8 @@ local function ensureToolbar()
 	toolbar:RegisterForDrag("LeftButton")
 	toolbar:SetScript("OnDragStart", toolbar.StartMoving)
 	toolbar:SetScript("OnDragStop", toolbar.StopMovingOrSizing)
-	UI.RoundFill(toolbar, UI.P.panel, "BACKGROUND", nil, UI.RADIUS.lg)
-	UI.RoundBorder(toolbar, UI.line.mid, "BORDER", nil, UI.RADIUS.lg)
+	UI.RoundFill(toolbar, UI.Surface.Window, "BACKGROUND", nil, UI.RADIUS.lg)
+	UI.RoundBorder(toolbar, UI.Border.hover, "BORDER", nil, UI.RADIUS.lg)
 
 	-- Grip glyph (Lucide grip-vertical): a visual "grab me" affordance at the
 	-- front (Florian 2026-07-13). The whole toolbar is the drag handle.
@@ -1073,11 +1080,11 @@ local function ensureToolbar()
 	grip:SetTexture(TEX .. "icon-grip")
 	grip:SetSnapToPixelGrid(false)
 	grip:SetTexelSnappingBias(0)
-	grip:SetVertexColor(UI.P.textSecondary.r, UI.P.textSecondary.g, UI.P.textSecondary.b)
+	grip:SetVertexColor(UI.Text.Description.r, UI.Text.Description.g, UI.Text.Description.b)
 	toolbar._grip = grip
 
 	-- EDIT MODE wordmark-style label (brand gold, non-clickable = C1).
-	local mark = UI.FS(toolbar, "groupTitle", UI.P.goldBrand)
+	local mark = UI.FS(toolbar, "groupTitle", UI.Text.Primary)
 	mark:SetText(UI.Track("EDIT MODE", " "))
 	toolbar._mark = mark
 
@@ -1085,7 +1092,7 @@ local function ensureToolbar()
 		onClick = function() EditMode:CloseSession(true) end })
 	toolbar._done = done
 
-	local hint = UI.FS(toolbar, "caption", UI.P.textSecondary)
+	local hint = UI.FS(toolbar, "caption", UI.Text.Description)
 	hint:SetText(T("Ctrl = move freely · Arrows = 1 px · Shift = 10 px"))
 	toolbar._hint = hint
 
@@ -1135,18 +1142,18 @@ local function ensurePanel()
 	panel:EnableMouse(true)               -- eat clicks so they don't fall through
 	panel:SetClampedToScreen(true)
 	panel:SetWidth(PANEL_INNER + M.sectionPad * 2)
-	UI.RoundFill(panel, UI.P.panel, "BACKGROUND", nil, UI.RADIUS.lg)
-	UI.RoundBorder(panel, UI.line.mid, "BORDER", nil, UI.RADIUS.lg)
+	UI.RoundFill(panel, UI.Surface.Window, "BACKGROUND", nil, UI.RADIUS.lg)
+	UI.RoundBorder(panel, UI.Border.hover, "BORDER", nil, UI.RADIUS.lg)
 
-	panel._title = UI.FS(panel, "groupTitle", UI.P.goldBrand)
+	panel._title = UI.FS(panel, "groupTitle", UI.Text.Primary)
 	panel._title:SetPoint("TOPLEFT", panel, "TOPLEFT", M.sectionPad, -M.sectionPad)
 
-	panel._sub = UI.FS(panel, "caption", UI.P.textSecondary)
+	panel._sub = UI.FS(panel, "caption", UI.Text.Description)
 	panel._sub:SetText(T("Quick settings"))
 	panel._sub:SetPoint("TOPLEFT", panel._title, "BOTTOMLEFT", 0, -2)
 
 	panel._x = W.IconButton(panel, { icon = "icon-x", size = S.closeGlyph,
-		color = UI.P.textSecondary, hoverColor = UI.P.goldBrand,
+		color = UI.Text.Description, hoverColor = UI.Text.Primary,
 		onClick = function() EditMode:Select(nil); EditMode:_updatePanel() end })
 	panel._x:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -M.sectionPad, -M.sectionPad)
 
@@ -1302,7 +1309,7 @@ local function ensureEditChrome()
 	host:EnableMouse(false)
 	local function mkLine()
 		local t = host:CreateTexture(nil, "OVERLAY")
-		if ns.UI then ns.UI.SetColor(t, ns.UI.P.goldBrand) else t:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 1) end
+		if ns.UI then ns.UI.SetColor(t, ns.UI.Text.Primary) else t:SetColorTexture(GOLD_R, GOLD_G, GOLD_B, 1) end
 		t:SetAlpha(0.30)
 		return t
 	end
@@ -1475,6 +1482,20 @@ function EditMode:SetBlizzard(on)       -- WoW Edit Mode (no Shell choreography)
 end
 
 function EditMode:IsActive() return self.session end
+
+-- Accent changed (from the Shell picker): the toolbar + selection panel are
+-- lazy, cached singletons whose accent-coloured chrome (the primary "Done"
+-- button, the panel's sliders/buttons) baked the accent at build time. Drop the
+-- cache so they rebuild with the NEW accent on the next open. Skipped while a
+-- session is live (can't safely tear down visible frames) — it refreshes the
+-- next time Edit Mode opens. The FUNCTIONAL in-world signals (guides, selection
+-- highlight, soft walls = the GOLD/GOLDINT/MUTED literals) and the white
+-- world-dim overlay stay NEUTRAL on purpose, so they are deliberately untouched.
+function EditMode:OnAccentChanged()
+	if self.session then return end
+	if toolbar then toolbar:Hide(); toolbar:SetParent(nil); toolbar = nil end
+	if panel then panel:Hide(); panel:SetParent(nil); panel = nil end
+end
 
 -- Combat starts -> end the session immediately and cleanly (toolbar closed,
 -- overlays hidden, NO Shell reopen in combat).

@@ -14,9 +14,10 @@ local ADDON, ns = ...
 
 local UI = ns.UI
 local W  = ns.W
-local M, C, L = UI.WIDGET, UI.C, UI.LAYOUT
+local M, L = UI.WIDGET, UI.LAYOUT
+local Surface, Text, Status = UI.Surface, UI.Text, UI.Status
 local T = ns.T   -- localization: T("english") -> display in the active language
-local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local TEX = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\icons\\" -- Screens only draws icon-* textures
 
 ns.Screens = ns.Screens or {}
 
@@ -28,7 +29,7 @@ ns.Screens = ns.Screens or {}
 local ALIGN_OPTS, HPTEXT_SEG_OPTS, POINT_OPTS, GROW_OPTS
 local AURA_FILTER_OPTS, SORT_MODE_OPTS
 local ROLE_LABEL, DISPEL_TYPES
-local OUTLINE_SEG_OPTS, DISPEL_SEG_OPTS, AGGRO_SEG_OPTS
+local OUTLINE_SEG_OPTS, DISPEL_SEG_OPTS, AGGRO_SEG_OPTS, POWER_COLOR_SEG_OPTS
 
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	ALIGN_OPTS = {
@@ -93,6 +94,12 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 		{ value = "border",      label = T("Border") },
 		{ value = "overlay",     label = T("+ Overlay") },
 		{ value = "overlaytext", label = T("+ Text") },
+	}
+	-- Resource bar fill: Blizzard's familiar resource colors (mana blue, rage red,
+	-- energy yellow…) or the unit's class color.
+	POWER_COLOR_SEG_OPTS = {
+		{ value = "power", label = T("Resource") },
+		{ value = "class", label = T("Class") },
 	}
 end
 
@@ -169,10 +176,18 @@ local function previewEyeDefs()
 			{ key = "debuffs",    label = T("Debuffs") },
 		} },
 		{ key = "shields", label = T("Shields & heal absorb") },
-		{ key = "text",    label = T("Text") },
-		{ key = "icons",   label = T("Role & leader icons") },
+		{ key = "power",   label = T("Resource bar") },
+		{ key = "text",    label = T("Text"), children = {
+			{ key = "nameText",   label = T("Name") },
+			{ key = "healthText", label = T("HP display") },
+		} },
+		{ key = "icons",   label = T("Role & leader icons"), children = {
+			{ key = "roleIcon",   label = T("Role icon") },
+			{ key = "leaderIcon", label = T("Leader icon") },
+		} },
 		{ key = "dispel",  label = T("Dispel display") },
 		{ key = "aggro",   label = T("Aggro warning") },
+		{ key = "background", label = T("Background") }, -- the preview stage backdrop (Florian 2026-07-22)
 	}
 end
 -- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/major/debuffs/
@@ -240,7 +255,10 @@ ns.ScreenPreviews["Raidframes/Group"] = previewDock({ kind = "ctx", ctx = "party
 -- the page long and buried the ones below on the next visit; pages now always
 -- start short and predictable). ctx = "raid" | "party".
 local auraOpenState, iconOpenState = {}, {}
-local function auraOpen(ctx) return auraOpenState[ctx] or false end
+-- ns.ShellIndexing: while the search index is being built every collapsible
+-- counts as OPEN, otherwise its rows are never created and the options inside
+-- (aura categories, icon settings) would be invisible to the search.
+local function auraOpen(ctx) return ns.ShellIndexing or auraOpenState[ctx] or false end
 local function setAuraOpen(ctx, v) auraOpenState[ctx] = v end
 
 -- Register a jumpable card's panel frame with the Shell (no-op outside a build).
@@ -249,7 +267,7 @@ local function regJump(key, cardBox)
 		ns.Shell:RegisterJumpCard(key, cardBox._panel)
 	end
 end
-local function iconOpen(ctx) return iconOpenState[ctx] or false end
+local function iconOpen(ctx) return ns.ShellIndexing or iconOpenState[ctx] or false end
 local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
 
 -- Click-to-configure (preview dock): called by Shell:JumpTo BEFORE the target
@@ -279,6 +297,15 @@ local baseAdvState = {}
 -- module's tabs (e.g. check Tracking, jump back to Auras) and only reset to the
 -- calm collapsed default once you leave the module entirely (Florian 2026-07-15).
 -- Returns true if any state was cleared (so the Shell rebuilds the screens).
+-- Search jump target may sit inside a collapsed section -> open them, so the
+-- row actually exists on the rebuilt screen (the Shell drops the cache first).
+function ns.ShellOpenAllSections()
+	for _, ctx in ipairs({ "raid", "party" }) do
+		auraOpenState[ctx] = true
+		iconOpenState[ctx] = true
+	end
+end
+
 function ns.SectionLeft(section)
 	if section ~= "Raidframes" then return false end
 	local had = next(baseAdvState) or next(auraAdvState)
@@ -342,15 +369,16 @@ end
 local function subHeadRow(d, label)
 	local head = CreateFrame("Frame", nil, d)
 	local hline = head:CreateTexture(nil, "ARTWORK")
-	UI.SetColor(hline, UI.line.faint)
+	UI.SetColor(hline, UI.Border.faint)
 	hline:SetPoint("TOPLEFT", head, "TOPLEFT", 0, 0)
 	hline:SetPoint("TOPRIGHT", head, "TOPRIGHT", 0, 0)
+	head._topLine = hline -- card stacker hides this when the boundary is already lined (no double divider)
 	local function snapH() PixelUtil.SetHeight(hline, 1) end
 	snapH()
 	C_Timer.After(0, snapH)
 	head:HookScript("OnSizeChanged", snapH)
 	head:HookScript("OnShow", snapH)
-	local fs = UI.FS(head, "checkLabel", C.textMuted)
+	local fs = UI.FS(head, "checkLabel", Text.Description)
 	fs:SetPoint("LEFT", head, "LEFT", 0, 0)
 	fs:SetText(label)
 	return head
@@ -379,15 +407,18 @@ end
 -- Boxed compact slider (v3 mockup): inset box per slider so slider groups read
 -- as one unit (design rule: a slider on a card ALWAYS sits in a box). Shared
 -- by the Base and Raid/Group builders.
+-- Bare slider (Florian 2026-07-22, Option A): the mockup has NO sunken box
+-- around a slider -- just the label line directly above a thin track, full
+-- width of its cell, no fill/border/extra L-R padding. Dropped the box (fill+
+-- border+PadX/PadY) that used to eat 20px off each side; the tighter
+-- "box" capGap was only there to compensate for that box's own top padding,
+-- so it goes too -- the slider's normal compact spacing already matches the
+-- mockup once nothing is squeezing it.
 local function sliderBox(cell, o2)
-	local box = CreateFrame("Frame", nil, cell)
-	box:SetAllPoints(cell)
-	UI.RoundFill(box, UI.P.inset, nil, nil, UI.ROUND_R_CTRL) -- A1: one step darker than the card (sunken, not raised)
-	UI.RoundBorder(box, UI.line.faint, "OVERLAY", nil, UI.ROUND_R_CTRL)
-	o2.compact, o2.capGap = true, M.sliderBoxCapGap
-	local s = W.Slider(box, o2)
-	s:SetPoint("TOPLEFT", box, "TOPLEFT", M.sliderBoxPadX, -M.sliderBoxPadY)
-	s:SetPoint("TOPRIGHT", box, "TOPRIGHT", -M.sliderBoxPadX, -M.sliderBoxPadY)
+	o2.compact = true
+	local s = W.Slider(cell, o2)
+	s:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
+	s:SetPoint("TOPRIGHT", cell, "TOPRIGHT", 0, 0)
 	return s
 end
 
@@ -428,15 +459,15 @@ local function buildRaid(d, stack, ctx)
 	-- Last non-off mode; restored when the HP header toggle switches back on.
 	local hpMode = (rf()[ctx] or {}).healthTextType
 	if hpMode == nil or hpMode == "Keine" then hpMode = "Aktuell" end
-	-- Both text cards carry the shared "text" preview eye (one text layer; the
+	-- Each text card carries its OWN preview eye (name / HP are separate layers; the
 	-- eye also lives on the Base tab's Text card and in the dock popover — all
 	-- stay in sync via _eyePaints). The master toggle sits right of the eye.
 	local textEyeTip = T("Show in preview")
 	local tb = stack:band({
-		{ span = 6, title = T("Text — name"), eye = eyeToggle("text", textEyeTip), toggle = {
+		{ span = 6, title = T("Text — name"), eye = eyeToggle("nameText", textEyeTip), toggle = {
 			get = vget(ctx, "showName"),
 			set = function(v) vset(ctx, "showName")(v); refreshName() end } },
-		{ span = 6, title = T("Text — HP display"), eye = eyeToggle("text", textEyeTip), toggle = {
+		{ span = 6, title = T("Text — HP display"), eye = eyeToggle("healthText", textEyeTip), toggle = {
 			get = function() return (rf()[ctx] or {}).healthTextType ~= "Keine" end,
 			set = function(v) vset(ctx, "healthTextType")(v and hpMode or "Keine"); refreshHP() end } },
 	})
@@ -487,12 +518,44 @@ local function buildRaid(d, stack, ctx)
 	for _, w in ipairs({ hpPos, hpSize, hpX, hpY, hpModeW }) do hpDeps[#hpDeps + 1] = w end
 	refreshName(); refreshHP()
 
+	-- ===== Resource bar (per context: height + WHO gets one) ================
+	-- Deliberate exception to "style = Base, size = context" (Florian 2026-07-26):
+	-- the ROLE FILTER lives here too, because it is the option that decides whether
+	-- the bar adds information or just eats space — in a 20-man you want the three
+	-- other healers' mana, not twelve DPS rage bars, while a 5-man can show all.
+	-- Look (fill color + texture) and the master switch stay shared in Base.
+	local pwBand = stack:band({
+		{ span = 6, title = T("Resource bar"), subtitle = T("Height and who gets one"),
+			eye = eyeToggle("power", T("Show in preview")) },
+	})
+	local sPw = pwBand.cards[1]
+	regJump("power-bar", sPw)
+	sPw:place(switchRow(d, T("Show for healers"), {
+		get = vget(ctx, "powerShowHealer"), set = vset(ctx, "powerShowHealer") }), M.optionRowH, 0)
+	sPw:place(switchRow(d, T("Show for tanks"), {
+		get = vget(ctx, "powerShowTank"), set = vset(ctx, "powerShowTank") }), M.optionRowH, 0)
+	sPw:place(switchRow(d, T("Show for DPS"), {
+		tooltip = T("Units without an assigned role follow this switch."),
+		get = vget(ctx, "powerShowDps"), set = vset(ctx, "powerShowDps") }), M.optionRowH, R.row)
+	local pwr, pwc = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	sliderBox(pwc[1], { label = T("Bar height"), min = 1, max = 20, unit = " px",
+		get = vget(ctx, "powerHeight"), set = vset(ctx, "powerHeight") })
+	sPw:place(pwr, M.sliderBoxH, R.tight)
+	sPw:close()
+	pwBand.close()
+	-- Master switch is shared (Base tab) -> grey the whole card while it is off.
+	-- The Base toggle drops the screen cache, so this state is always current.
+	if not rf().powerEnabled then
+		applyModuleGate(sPw._panel, false)
+	end
+
 	-- ===== Indicator icons (role / leader; per context, collapsible) =====
 	-- Same pattern as the aura section below: collapsed by default, state
 	-- remembered per context, toggling re-renders the screen.
 	local iOpen = iconOpen(ctx)
+	-- Eye lives on the CARDS, not the section header (Florian 2026-07-22, matching
+	-- the Aura section): both cards share the one "icons" preview layer.
 	local iconHead = W.Collapsible(d, { title = T("Role & leader icons"), open = iOpen,
-		eye = eyeToggle("icons", T("Show in preview")),
 		onToggle = function(v) setIconOpen(ctx, v); ns.Shell:RenderContent(true) end })
 	-- Closed headers used to stack flush (gap 0, borders merged); with rounded
 	-- cards they need a small gap so each reads as its own card (no pinched seam).
@@ -503,10 +566,10 @@ local function buildRaid(d, stack, ctx)
 		local roleDeps, leadDeps = {}, {}
 		local refreshRole, refreshLead
 		local ib = stack:band({
-			{ span = 6, title = T("Role icon"), toggle = {
+			{ span = 6, title = T("Role icon"), eye = eyeToggle("roleIcon", T("Show in preview")), toggle = {
 				get = vget(ctx, "roleShow"),
 				set = function(v) vset(ctx, "roleShow")(v); refreshRole() end } },
-			{ span = 6, title = T("Leader icon"), toggle = {
+			{ span = 6, title = T("Leader icon"), eye = eyeToggle("leaderIcon", T("Show in preview")), toggle = {
 				get = vget(ctx, "leadShow"),
 				set = function(v) vset(ctx, "leadShow")(v); refreshLead() end } },
 		})
@@ -630,14 +693,14 @@ local function arrowButton(parent, dir, onClick)
 	-- Two-gold rule: the arrows are clickable -> interactive gold (C2/C3), not
 	-- brand gold; a dimmed arrow (already at the edge) is TRUE disabled -> D3.
 	b._on = true
-	setCol(UI.P.goldInt)
-	b:SetScript("OnEnter", function() if b._on then setCol(UI.P.goldIntHover) end end)
-	b:SetScript("OnLeave", function() if b._on then setCol(UI.P.goldInt) end end)
+	setCol(UI.Accent.color)
+	b:SetScript("OnEnter", function() if b._on then setCol(UI.Accent.hover) end end)
+	b:SetScript("OnLeave", function() if b._on then setCol(UI.Accent.color) end end)
 	b:SetScript("OnClick", function() if b._on then onClick() end end)
 	b.setDim = function(on)
 		b._on = not on
-		if on then setCol(UI.P.textDisabled); b:EnableMouse(false)
-		else setCol(UI.P.goldInt); b:EnableMouse(true) end
+		if on then setCol(UI.Text.Disabled); b:EnableMouse(false)
+		else setCol(UI.Accent.color); b:EnableMouse(true) end
 	end
 	return b
 end
@@ -669,7 +732,7 @@ local function buildBase(d, stack)
 	local function checkDesc(cell, opts, desc)
 		local cb = W.Checkbox(cell, opts)
 		cb:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
-		local fs = UI.FS(cell, "caption", C.textMuted)
+		local fs = UI.FS(cell, "caption", Text.Description)
 		fs:SetPoint("TOPLEFT", cell, "TOPLEFT", M.checkBox + M.checkLabelGap, -(M.checkBox + 2))
 		fs:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
 		fs:SetJustifyH("LEFT")
@@ -703,16 +766,26 @@ local function buildBase(d, stack)
 	local bstack = ns.Shell.NewStack(body)
 	d, stack = body, bstack
 
-	-- ===== Band 1: Health bar (8) + Text (4) — card grid system ============
+	-- ===== Band 1: Health bar (6) + Text style (6) — card grid system ======
+	-- Band order (Florian 2026-07-26): pairing is by CARD HEIGHT, not by topic —
+	-- the short Resource bar card next to the tall Health bar left the band half
+	-- empty, so Text style (similar height) sits here and Resource bar pairs with
+	-- the equally short Absorbs card below. Sorting moved down beside Status.
 	-- (Boxed sliders come from the file-level sliderBox helper, shared with
 	-- the Raid/Group builder.)
+	-- Forward: the Resource bar card sits in band 2 below, but its header toggle
+	-- closure is built with the band spec and calls back into the card's refresh.
+	local powerRefresh
 	local b1 = stack:band({
-		{ span = 8, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
+		-- 6+6 (Florian 2026-07-22): Health bar's widest content is the 2 opacity
+		-- sliders, which fit a 6-card (field cells are constant width regardless of
+		-- span) — so the old 8+4 just wasted width.
+		{ span = 6, title = T("Health bar"), subtitle = T("Health bar and texture settings") },
 		-- No eye here: this card is the SHARED text STYLE (color + outline), not a
 		-- preview layer — the "text" preview eye lives on the per-context Text —
 		-- name / Text — HP display cards (Raid/Group). Name says "style" so it
 		-- doesn't read as "the text on/off card".
-		{ span = 4, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
+		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
 	})
 	local sBar = b1.cards[1]
 
@@ -727,6 +800,11 @@ local function buildBase(d, stack)
 	sBar:place(switchRow(d, T("Heal prediction"), {
 		tooltip = T("Incoming healing previewed on the health bar."),
 		get = tget("healPrediction"), set = tset("healPrediction") }), M.optionRowH, 0)
+	-- Native 12.0 StatusBar interpolation — covers the health segments AND the
+	-- resource bar, so it lives on the leading bar card rather than in both.
+	sBar:place(switchRow(d, T("Smooth bars"), {
+		tooltip = T("Bars glide to their new value instead of jumping. Applies to the health and resource bars."),
+		get = tget("smoothBars"), set = tset("smoothBars") }), M.optionRowH, 0)
 	sBar:place(switchRow(d, T("Class color as fill color"), { get = tget("useClassColor"),
 		set = function(v) rf().useClassColor = v; relayout(); refreshFill() end }), M.optionRowH, 0)
 	local rowFill = colorRow(d, T("Fill color"), tcget("fillColor"), tcset("fillColor"))
@@ -741,7 +819,7 @@ local function buildBase(d, stack)
 	W.Select(tc1[1], { label = T("Bar texture"), options = textureOptions(), wheelPreview = true, search = true, get = tget("healthTexture"), set = tset("healthTexture") }):SetAllPoints(tc1[1])
 	sBar:place(tr1, fieldH, L.raidframes.base.healthbar.afterTexHint)
 	-- Visible hint (instead of a hover tooltip) for the mouse-wheel preview + search field of the texture dropdowns.
-	local texHint = W.Hint(d, T("Scroll the mouse wheel over a texture dropdown to preview textures live. In the open menu, the search box at the top filters."))
+	local texHint = W.Hint(d, T("Shift-scroll a texture dropdown to preview live."))
 	sBar:place(texHint, M.hintH, R.row)
 
 	-- Background + health-bar opacity (boxed sliders, two unit cells).
@@ -751,7 +829,7 @@ local function buildBase(d, stack)
 	sBar:place(trA, M.sliderBoxH, R.tight)
 	sBar:close()
 
-	-- ===== Text (SHARED: color + outline apply equally to Raid & Group) =====
+	-- ===== Text style (SHARED: color + outline apply equally to Raid & Group) =
 	local sText = b1.cards[2]
 	local nameColDeps = {}
 	local function refreshNameCol()
@@ -760,13 +838,13 @@ local function buildBase(d, stack)
 	end
 	sText:place(switchRow(d, T("Name in class color"), { get = tget("nameClassColor"),
 		set = function(v) rf().nameClassColor = v; relayout(); refreshNameCol() end }), M.optionRowH, R.row)
-	-- Narrow 4-card -> ONE unit field per row (§8).
-	local txR1, txc1 = W.FieldRow(d, d, 1, { height = fieldH })
-	W.Segment(txc1[1], { label = T("Name outline"), options = OUTLINE_SEG_OPTS, get = tget("nameOutline"), set = tset("nameOutline") }):SetAllPoints(txc1[1])
-	sText:place(txR1, fieldH, R.tight)
-	local txR2, txc2 = W.FieldRow(d, d, 1, { height = fieldH })
-	W.Segment(txc2[1], { label = T("HP outline"), options = OUTLINE_SEG_OPTS, get = tget("healthTextOutline"), set = tset("healthTextOutline") }):SetAllPoints(txc2[1])
-	sText:place(txR2, fieldH, R.row)
+	-- Outline segments HUG their content (Florian 2026-07-22): 4 short options
+	-- stretched across the full 6-card read too wide, so the strip is sized to the
+	-- options + padding and left-aligned, exactly like the tab bar.
+	local nameOut = W.Segment(d, { label = T("Name outline"), hug = true, options = OUTLINE_SEG_OPTS, get = tget("nameOutline"), set = tset("nameOutline") })
+	sText:place(nameOut, fieldH, R.tight)
+	local hpOut = W.Segment(d, { label = T("HP outline"), hug = true, options = OUTLINE_SEG_OPTS, get = tget("healthTextOutline"), set = tset("healthTextOutline") })
+	sText:place(hpOut, fieldH, R.row)
 	-- Advanced: the two text colors as chip rows (rarely touched — most run
 	-- class color/white; curation 2026-07-04).
 	if baseAdvState.text then
@@ -780,19 +858,29 @@ local function buildBase(d, stack)
 		hint = T("Name color") .. " · " .. T("HP text color"),
 		onToggle = function(v) baseAdvState.text = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
 	sText:close()
-	b1.close()
 	refreshNameCol()
+	b1.close()
 
-	-- ===== Absorbs: shield + heal-absorb (SHARED, central — like EllesmereUI) ==
-	-- Their display lives here (not folded into the Health bar card); the eye
-	-- toggles the absorb overlay in the preview / on the selected Edit-Mode frame.
-	-- Absorbs (6) + Sorting (6) share a row (Florian 2026-07-16: even split reads
-	-- better than 8/4). Sorting moved up from the old Sorting/Status band; Status
-	-- now sits alone below where the pair used to be.
+	-- ===== Band 2: Absorbs (6) + Resource bar (6) ==========================
+	-- Absorbs: shield + heal-absorb (SHARED, central — like EllesmereUI). Their
+	-- display lives here (not folded into the Health bar card); the eye toggles
+	-- the absorb overlay in the preview / on the selected Edit-Mode frame.
 	local absBand = stack:band({
 		{ span = 6, title = T("Shields & heal absorb"), subtitle = T("Absorb overlay display"),
 			eye = eyeToggle("shields", T("Show in preview")) },
-		{ span = 6, title = T("Sorting"), subtitle = T("Order and role priority") },
+		-- Resource bar: SHARED style only (color mode + texture). Height and the
+		-- role filter that decides WHO gets one live per context (Raid/Group) —
+		-- a deliberate exception to "style = Base", so a 5-man can show everything
+		-- while the raid restricts itself to the healers.
+		{ span = 6, title = T("Resource bar"), subtitle = T("Mana and other resources"),
+			eye = eyeToggle("power", T("Show in preview")), toggle = {
+			get = tget("powerEnabled"),
+			set = function(v)
+				rf().powerEnabled = v; relayout(); powerRefresh()
+				-- The Raid/Group tabs gate their resource card on this at build
+				-- time -> drop the cached screens so they rebuild.
+				if ns.Shell and ns.Shell.InvalidateScreenCache then ns.Shell:InvalidateScreenCache() end
+			end } },
 	})
 	local sAbs = absBand.cards[1]
 	local abR1, abC1 = W.FieldRow(d, d, 2, { height = fieldH })
@@ -805,70 +893,32 @@ local function buildBase(d, stack)
 	sAbs:place(abR2, M.sliderBoxH, R.tight)
 	sAbs:close()
 
-	-- RIGHT card: Sorting (moved up next to Absorbs). NORMAL card; the
-	-- reorderable role-priority list lives behind a "More options" disclosure.
-	local sSort = absBand.cards[2]
-	local smr, smc = W.FieldRow(d, d, 1, { height = fieldH })
-	local sortSel = W.Select(smc[1], { label = T("Sort by"), options = SORT_MODE_OPTS,
-		get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end })
-	sortSel:SetAllPoints(smc[1])
-	sSort:place(smr, fieldH, rf().sortMode == "role" and R.row or 0)
-	if rf().sortMode == "role" then
-		sSort:place(checkRow(d, T("Also sort by role in raid"), {
-			tooltip = T("Off: your arrangement is kept in raids. On: role sorting also applies in raids. (Dungeon/party is always sorted.)"),
-			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, R.row)
-		if baseAdvState.sort then
-			local function swapRole(i, j)
-				local o = rf().sortRoleOrder
-				if not (o and o[i] and o[j]) then return end
-				o[i], o[j] = o[j], o[i]
-				relayout(); ns.Shell:RenderContent(true)
-			end
-			local order = rf().sortRoleOrder or {}
-			local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
-			local cardH = #order * rowH + pad * 2
-			local cr, cc = W.FieldRow(d, d, 1, { height = cardH })
-			local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
-			local prevRow
-			for i = 1, #order do
-				local role = order[i]
-				local acc = ROLE_ACCENT[role] or { r = 0.6, g = 0.6, b = 0.6 }
-				local row = CreateFrame("Frame", nil, card)
-				row:SetHeight(rowH)
-				row:SetPoint("LEFT", card, "LEFT", pad, 0)
-				row:SetPoint("RIGHT", card, "RIGHT", -pad, 0)
-				if prevRow then row:SetPoint("TOP", prevRow, "BOTTOM", 0, 0)
-				else row:SetPoint("TOP", card, "TOP", 0, -pad) end
-				local bg = row:CreateTexture(nil, "BACKGROUND")
-				bg:SetAllPoints(row); UI.SetColor(bg, C.ink600)
-				local wash = row:CreateTexture(nil, "BACKGROUND", nil, 1)
-				wash:SetAllPoints(row); wash:SetColorTexture(acc.r, acc.g, acc.b, 0.10)
-				local barL = row:CreateTexture(nil, "ARTWORK")
-				barL:SetWidth(L.raidframes.base.sort.accentW)
-				barL:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-				barL:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-				barL:SetColorTexture(acc.r, acc.g, acc.b, 0.95)
-				local up = arrowButton(row, "up", function() swapRole(i, i - 1) end)
-				up:SetPoint("LEFT", row, "LEFT", 14, 0)
-				local down = arrowButton(row, "down", function() swapRole(i, i + 1) end)
-				down:SetPoint("LEFT", up, "RIGHT", 2, 0)
-				if i == 1 then up.setDim(true) end
-				if i == #order then down.setDim(true) end
-				local lbl = UI.FS(row, "listLabel", C.textStrong)
-				lbl:SetPoint("LEFT", down, "RIGHT", 16, 0)
-				lbl:SetText(ROLE_LABEL[role] or "?")
-				prevRow = row
-			end
-			sSort:place(cr, cardH, R.tight)
-		end
-		local hintParts = {}
-		for _, role in ipairs(rf().sortRoleOrder or {}) do hintParts[#hintParts + 1] = ROLE_LABEL[role] or "?" end
-		sSort:place(W.Disclosure(d, { open = baseAdvState.sort,
-			label = baseAdvState.sort and T("Less") or T("More options"),
-			hint = (not baseAdvState.sort) and table.concat(hintParts, " > ") or nil,
-			onToggle = function(v) baseAdvState.sort = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
+	-- ===== Resource bar (SHARED style: color mode + texture) ================
+	-- The strip itself sits at the frame BOTTOM (Blizzard standard, not placeable
+	-- — Florian's call: keep the gameplay layer familiar). Showing it takes its
+	-- height from the health bar and hiding it gives the height back.
+	local sPower = absBand.cards[2]
+	local powerDeps = {}
+	function powerRefresh()
+		local on = rf().powerEnabled and true or false
+		for _, w in ipairs(powerDeps) do w:SetWidgetEnabled(on) end
 	end
-	sSort:close()
+	local pwR1, pwC1 = W.FieldRow(d, d, 1, { height = fieldH })
+	local pwTex = W.Select(pwC1[1], { label = T("Bar texture"), options = textureOptions(),
+		wheelPreview = true, search = true, get = tget("powerTexture"), set = tset("powerTexture") })
+	pwTex:SetAllPoints(pwC1[1])
+	sPower:place(pwR1, fieldH, R.row)
+	local pwR2, pwC2 = W.FieldRow(d, d, 1, { height = fieldH })
+	local pwCol = W.Segment(pwC2[1], { label = T("Fill color"), options = POWER_COLOR_SEG_OPTS,
+		tooltip = T("Resource = Blizzard's familiar colors (mana blue, rage red, energy yellow)."),
+		get = tget("powerColorMode"), set = tset("powerColorMode") })
+	pwCol:SetAllPoints(pwC2[1])
+	sPower:place(pwR2, fieldH, R.row)
+	-- One LINE (W.Hint reserves M.hintH — a longer text would wrap out of the card).
+	sPower:place(W.Hint(d, T("Height and role filter: see the Raid / Group tabs.")), M.hintH, R.tight)
+	sPower:close()
+	powerDeps[1], powerDeps[2] = pwTex, pwCol
+	powerRefresh()
 	absBand.close()
 
 	-- ===== Band 2: Dispel (6) + Aggro (6) — master toggles in the header ====
@@ -1015,14 +1065,81 @@ local function buildBase(d, stack)
 	b2.close()
 	refreshAggro()
 
-	-- ===== Status (ready check / summon) — where the Sorting/Status pair sat ==
-	-- Sorting moved up next to Absorbs (above); Status now sits alone on the left
-	-- (span 6, air on the right). The Dead/Ghost/Offline/Rez center TEXT is always
-	-- on (core correctness, option-free); only the two icon feeds are toggleable.
+	-- ===== Band 4: Sorting (6) + Status (6) =================================
+	-- Both are "who sits where / what is going on with them" — the pair that is
+	-- left once the bars, absorbs and highlights have their own bands (Florian
+	-- 2026-07-26). The Dead/Ghost/Offline/Rez center TEXT is always on (core
+	-- correctness, option-free); only the two icon feeds are toggleable.
 	local statBand = stack:band({
+		{ span = 6, title = T("Sorting"), subtitle = T("Order and role priority") },
 		{ span = 6, title = T("Status"), subtitle = T("Ready check and summon on the frames") },
 	})
-	local sStat = statBand.cards[1]
+	-- Sorting: NORMAL card; the reorderable role-priority list lives behind a
+	-- "More options" disclosure.
+	local sSort = statBand.cards[1]
+	local smr, smc = W.FieldRow(d, d, 1, { height = fieldH })
+	local sortSel = W.Select(smc[1], { label = T("Sort by"), options = SORT_MODE_OPTS,
+		get = tget("sortMode"), set = function(v) tset("sortMode")(v); ns.Shell:RenderContent(true) end })
+	sortSel:SetAllPoints(smc[1])
+	sSort:place(smr, fieldH, rf().sortMode == "role" and R.row or 0)
+	if rf().sortMode == "role" then
+		sSort:place(checkRow(d, T("Also sort by role in raid"), {
+			tooltip = T("Off: your arrangement is kept in raids. On: role sorting also applies in raids. (Dungeon/party is always sorted.)"),
+			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, R.row)
+		if baseAdvState.sort then
+			local function swapRole(i, j)
+				local o = rf().sortRoleOrder
+				if not (o and o[i] and o[j]) then return end
+				o[i], o[j] = o[j], o[i]
+				relayout(); ns.Shell:RenderContent(true)
+			end
+			local order = rf().sortRoleOrder or {}
+			local pad, rowH = L.raidframes.base.sort.cardPad, L.raidframes.base.sort.rowH
+			local cardH = #order * rowH + pad * 2
+			local cr, cc = W.FieldRow(d, d, 1, { height = cardH })
+			local card = W.Card(cc[1]); card:SetAllPoints(cc[1])
+			local prevRow
+			for i = 1, #order do
+				local role = order[i]
+				local acc = ROLE_ACCENT[role] or { r = 0.6, g = 0.6, b = 0.6 }
+				local row = CreateFrame("Frame", nil, card)
+				row:SetHeight(rowH)
+				row:SetPoint("LEFT", card, "LEFT", pad, 0)
+				row:SetPoint("RIGHT", card, "RIGHT", -pad, 0)
+				if prevRow then row:SetPoint("TOP", prevRow, "BOTTOM", 0, 0)
+				else row:SetPoint("TOP", card, "TOP", 0, -pad) end
+				local bg = row:CreateTexture(nil, "BACKGROUND")
+				bg:SetAllPoints(row); UI.SetColor(bg, Surface.Card)
+				local wash = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+				wash:SetAllPoints(row); wash:SetColorTexture(acc.r, acc.g, acc.b, 0.10)
+				local barL = row:CreateTexture(nil, "ARTWORK")
+				barL:SetWidth(L.raidframes.base.sort.accentW)
+				barL:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+				barL:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+				barL:SetColorTexture(acc.r, acc.g, acc.b, 0.95)
+				local up = arrowButton(row, "up", function() swapRole(i, i - 1) end)
+				up:SetPoint("LEFT", row, "LEFT", 14, 0)
+				local down = arrowButton(row, "down", function() swapRole(i, i + 1) end)
+				down:SetPoint("LEFT", up, "RIGHT", 2, 0)
+				if i == 1 then up.setDim(true) end
+				if i == #order then down.setDim(true) end
+				local lbl = UI.FS(row, "listLabel", Text.Primary)
+				lbl:SetPoint("LEFT", down, "RIGHT", 16, 0)
+				lbl:SetText(ROLE_LABEL[role] or "?")
+				prevRow = row
+			end
+			sSort:place(cr, cardH, R.tight)
+		end
+		local hintParts = {}
+		for _, role in ipairs(rf().sortRoleOrder or {}) do hintParts[#hintParts + 1] = ROLE_LABEL[role] or "?" end
+		sSort:place(W.Disclosure(d, { open = baseAdvState.sort,
+			label = baseAdvState.sort and T("Less") or T("More options"),
+			hint = (not baseAdvState.sort) and table.concat(hintParts, " > ") or nil,
+			onToggle = function(v) baseAdvState.sort = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
+	end
+	sSort:close()
+
+	local sStat = statBand.cards[2]
 	sStat:place(checkRow(d, T("Show ready check"), {
 		tooltip = T("Blizzard's familiar icons in the frame center: hourglass, green check, red X. Results stay visible for a few seconds."),
 		get = tget("showReadyCheck"),
@@ -1175,11 +1292,10 @@ local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) 
 -- One tracked-spell row (v2 refinement no. 3): icon + name + quiet trash button
 -- on the right (red only on hover); row hover = lighter surface + gold left edge.
 local function makeTrackRow(parent, e, onRemove)
-	local P = UI.P
 	local row = CreateFrame("Frame", nil, parent)
 	row:SetHeight(L.raidframes.tracking.rowH)
-	UI.RoundFill(row, P.element, nil, nil, UI.ROUND_R_CTRL)
-	UI.RoundBorder(row, UI.line.soft, "OVERLAY", nil, UI.ROUND_R_CTRL) -- L here is UI.LAYOUT; line colors live in UI.line
+	UI.RoundFill(row, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(row, UI.Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL) -- note: L here is UI.LAYOUT (not the border table UI.Border)
 	local icon = row:CreateTexture(nil, "ARTWORK")
 	icon:SetSize(M.spellIcon, M.spellIcon)
 	icon:SetPoint("LEFT", row, "LEFT", 10, 0)
@@ -1189,21 +1305,21 @@ local function makeTrackRow(parent, e, onRemove)
 	-- lighter red on hover, NO tooltip (it fought the row's spell tooltip = jumpy),
 	-- same size as the Click-Cast catalog trash.
 	local rm = W.IconButton(row, { icon = "icon-delete", size = M.iconAction,
-		color = C.danger500, hoverColor = C.danger300, onClick = onRemove })
+		color = Status.danger, hoverColor = Status.dangerHover, onClick = onRemove })
 	rm:SetPoint("RIGHT", row, "RIGHT", -12, 0)
-	local name = UI.FS(row, "selectText", C.textStrong)
+	local name = UI.FS(row, "selectText", Text.Primary)
 	name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
 	name:SetPoint("RIGHT", rm, "LEFT", -10, 0)
 	name:SetJustifyH("LEFT"); name:SetWordWrap(false)
 	name:SetText(e.name or (T("Spell") .. " " .. tostring(e.id)))
 	-- Hover: elementHover surface + gold left edge + own Lumen spell tooltip.
-	local hov = UI.RoundFill(row, P.elementHover, "BORDER", nil, UI.ROUND_R_CTRL); hov:SetAlpha(0)
+	local hov = UI.RoundFill(row, Surface.Hover, "BORDER", nil, UI.ROUND_R_CTRL); hov:SetAlpha(0)
 	local bar = row:CreateTexture(nil, "OVERLAY")
 	bar:SetWidth(3)
 	-- Straight edge bar stops before the rounded corners.
 	bar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -UI.ROUND_R_CTRL)
 	bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, UI.ROUND_R_CTRL)
-	UI.SetColor(bar, P.goldBrand); bar:Hide()
+	UI.SetColor(bar, Text.Primary); bar:Hide()
 	row:EnableMouse(true)
 	row:SetScript("OnEnter", function(self2)
 		hov:SetAlpha(1); bar:Show(); W.ShowSpellTip(self2, e.id)
@@ -1365,11 +1481,11 @@ local function ccCatalogRow(d, s, b, spec)
 	local H, PAD, GAPX = L.clickcast.rowH, L.clickcast.rowPad, L.clickcast.rowGapX
 	local row = CreateFrame("Frame", nil, d)
 	row:SetHeight(H)
-	UI.RoundFill(row, C.ink600, nil, nil, UI.ROUND_R_CTRL)
-	UI.RoundBorder(row, UI.line.soft, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	UI.RoundFill(row, Surface.Card, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(row, UI.Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL)
 
 	-- right cluster (from the RIGHT): trash (delete, FAR right) <- switch <- gear <- keybind
-	local trash = W.IconButton(row, { icon = "icon-delete", color = C.danger500, hoverColor = C.danger300,
+	local trash = W.IconButton(row, { icon = "icon-delete", color = Status.danger, hoverColor = Status.dangerHover,
 		size = M.iconAction,
 		onClick = function()
 			local idx
@@ -1379,7 +1495,7 @@ local function ccCatalogRow(d, s, b, spec)
 		end })
 	trash:SetPoint("RIGHT", row, "RIGHT", -PAD, 0)
 
-	local sw = W.Switch(row, {
+	local sw = W.Switch(row, { small = true, -- match the raidframe rows (Florian 2026-07-22: the full switch read too big/fat here)
 		get = function() return b.enabled ~= false end,
 		set = function(v) b.enabled = v; ccApply(); if row._setEnabled then row._setEnabled(v) end end })
 	sw:SetPoint("RIGHT", trash, "LEFT", -GAPX, 0)
@@ -1456,7 +1572,7 @@ local function ccCatalogRow(d, s, b, spec)
 	cover:SetPoint("RIGHT", sw, "LEFT", -GAPX, 0)          -- horizontally up to the switch
 	cover:SetFrameLevel(row:GetFrameLevel() + 60)
 	cover:EnableMouse(true)
-	UI.RoundFill(cover, { r = C.ink850.r, g = C.ink850.g, b = C.ink850.b, a = 0.55 },
+	UI.RoundFill(cover, { r = Surface.Window.r, g = Surface.Window.g, b = Surface.Window.b, a = 0.55 },
 		"OVERLAY", "left", UI.ROUND_R_CTRL)
 	row._setEnabled = function(on) cover:SetShown(not on) end
 	row._setEnabled(b.enabled ~= false)
@@ -1642,6 +1758,24 @@ local function buildGlobalBase(d, stack)
 	sMove:place(btnRow, M.buttonH, R.tight)
 	sMove:close()
 	b1.close()
+
+	-- ===== Band: Accent color (6) ==========================================
+	-- Suite-wide accent. Curated presets recolour the whole shell instantly via
+	-- Shell:RefreshAccent (event-driven, no rebuild flicker). Account-wide
+	-- (db.global), so it doesn't jump when switching raid profiles.
+	local bAcc = stack:band({
+		{ span = 6, title = T("Accent color"), subtitle = T("Suite-wide highlight — applies instantly.") },
+	})
+	local sAcc = bAcc.cards[1]
+	sAcc:place(W.AccentPresets(d, {
+		get = function() return ns.Lumen.db.global.accent end,
+		set = function(hex, col, live)
+			ns.Lumen.db.global.accent = hex
+			if ns.Shell and ns.Shell.RefreshAccent then ns.Shell:RefreshAccent(col, live) end
+		end,
+	}), M.optionRowH, R.row)
+	sAcc:close()
+	bAcc.close()
 
 	-- ===== Band 2: UI scale (6, ONE card) ===================================
 	-- Game UI scale + settings-window scale merged into one card, separated by
@@ -1834,18 +1968,22 @@ local function buildGlobalProfile(d, stack)
 		{ span = 6, title = T("Import"), subtitle = T("Take someone else's code — granular per module.") },
 	})
 
-	-- Export card
+	-- Export card — textarea on top, button below-right (mirrors the Import card
+	-- so both textareas sit at the same height and line up; Florian 2026-07-22).
 	local sExp = sb.cards[1]
-	local genBtn = W.Button(d, { text = T("Generate export code"), variant = "ghost",
+	local expTA = W.Textarea(d, { height = G.taH, readOnly = true,
+		placeholder = T("No code yet — click \"Generate export code\", then select here (Ctrl+A) and copy (Ctrl+C)."),
+		get = function() return shareExport end })
+	sExp:place(expTA, G.taH, R.row)
+	local genRow = CreateFrame("Frame", nil, d)
+	genRow:SetHeight(M.buttonH)
+	local genBtn = W.Button(genRow, { text = T("Generate export code"), variant = "ghost",
 		onClick = function()
 			shareExport = (ns.Share and ns.Share:Export()) or ""
 			ns.Shell:RenderContent(true)
 		end })
-	sExp:placeLeft(genBtn, M.buttonH, G.afterExportBtn)
-	local expTA = W.Textarea(d, { height = G.taH, readOnly = true,
-		placeholder = T("No code yet — click \"Generate export code\", then select here (Ctrl+A) and copy (Ctrl+C)."),
-		get = function() return shareExport end })
-	sExp:place(expTA, G.taH, R.tight)
+	genBtn:ClearAllPoints(); genBtn:SetPoint("RIGHT", genRow, "RIGHT", 0, 0)
+	sExp:place(genRow, M.buttonH, R.tight)
 	sExp:close()
 
 	-- Import card
@@ -2072,13 +2210,20 @@ local function buildQoLBase(d, stack)
 	tc:close()
 	bb.close()
 
-	-- ===== Windows band (6, ONE card) =======================================
+	-- ===== Windows + Invites band ===========================================
 	-- Movable Blizzard windows: one switch + a reset button. The positions
 	-- themselves live implicitly in the profile (saved per window on drag).
+	-- Invites: master toggle in the header, the two sources as rows below.
+	local refreshInvites
+	local function qi() return ns.Lumen.db.profile.qol.invites end
 	local wb = stack:band({
 		{ span = 6, title = T("Windows"), subtitle = T("Move Blizzard windows freely") },
+		{ span = 6, title = T("Invites"), subtitle = T("Accept group invites automatically"), toggle = {
+			get = function() return qi().enabled end,
+			set = function(v) qi().enabled = v; refreshInvites() end } },
 	})
 	local wc = wb.cards[1]
+	local ic = wb.cards[2]
 	local function qw() return ns.Lumen.db.profile.qol.windows end
 
 	local rowWin = switchRow(d, T("Movable windows"), {
@@ -2101,11 +2246,39 @@ local function buildQoLBase(d, stack)
 	wc:place(winBtnRow, M.buttonH, R.tight)
 
 	wc:close()
+
+	-- ===== Invites card =====================================================
+	local inviteDeps = {}
+	function refreshInvites()
+		local on = qi().enabled and true or false
+		for _, w in ipairs(inviteDeps) do w:SetWidgetEnabled(on) end
+	end
+
+	local rowFriends = switchRow(d, T("Friends"), {
+		get = function() return qi().friends end,
+		set = function(v) qi().friends = v end,
+		tooltip = T("Battle.net friends and character friends.") })
+	ic:place(rowFriends, rowH, 0)
+
+	local rowInvGuild = switchRow(d, T("Guild members"), {
+		get = function() return qi().guild end,
+		set = function(v) qi().guild = v end,
+		tooltip = T("Everyone in your guild.") })
+	ic:place(rowInvGuild, rowH, R.row)
+
+	local invHint = W.Hint(d, T("Only while you are alone and outside an instance — otherwise the normal dialog appears."))
+	ic:place(invHint, M.hintH, R.row)
+
+	inviteDeps[1] = rowFriends
+	inviteDeps[2] = rowInvGuild
+
+	ic:close()
 	wb.close()
 
 	refreshCursor()
 	refreshVendor()
 	refreshPull()
+	refreshInvites()
 end
 
 ns.Screens["Global/Base"]    = buildGlobalBase

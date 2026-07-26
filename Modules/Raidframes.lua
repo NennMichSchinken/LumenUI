@@ -46,8 +46,17 @@ local issecretvalue = issecretvalue or function() return false end
 local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
 local AbbrevNum = _G.AbbreviateNumbersAlt or _G.AbbreviateNumbers or tostring
 
+-- Native StatusBar interpolation (12.0): the client eases the fill C-side — no
+-- OnUpdate, no manual animation. Only used when the "smooth bars" option is on;
+-- without it we keep the plain one-argument SetValue call shape (proven live).
+local SB_EASE = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
+-- Latch: should a client/value combination ever reject the interpolation argument
+-- (our health segments are fed RAW, possibly SECRET values), we fall back to the
+-- plain call once and never probe again -> the hot path stays a boolean check.
+local smoothBroken = false
+
 -- Built from the real addon-folder name (ADDON) so the path survives a folder rename.
-local T = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\"
+local T = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\bars\\" -- Raidframes draws bar/absorb textures (lumen-*, blizzard-*)
 local SHIELD_OVL_TEX = T .. "blizzard-shield"      -- 256x40, opaque, diagonal stripes + shading
 local HEALABS_TEX    = T .. "blizzard-absorb.png"  -- 256x128, semi-transparent, heal-absorb pattern
 local STRIPE_TEX_W   = 256                          -- texture width of both stripe textures (for TexCoord tiling)
@@ -157,44 +166,58 @@ local FAKE_MAX = 600000
 -- `auras` = curated per-category preview icon counts (see RenderAurasFake):
 -- varied like a real raid snapshot; {} = clean frame, NO field = full load.
 local FAKE = {
-	{ name = "Owlday",     class = "DRUID",   hp = 0.84, aggro = 3, role = "HEALER", lead = true,
+	{ name = "Owlday",     class = "DRUID",   hp = 0.84, power = 0.72, aggro = 3, role = "HEALER", lead = true,
 		auras = { hotsOwn = 2, defensives = 1 } },
-	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, absorb = 0.25, role = "DAMAGER",
+	{ name = "Elyndra",    class = "MAGE",    hp = 0.90, power = 0.55, absorb = 0.25, role = "DAMAGER",
 		auras = {} },
-	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, dispel = "Curse", role = "DAMAGER",
+	{ name = "Zakhar",     class = "WARLOCK", hp = 0.62, power = 0.80, dispel = "Curse", role = "DAMAGER",
 		auras = { debuffs = 1 } },
-	{ name = "Briar",      class = "PALADIN", hp = 0.55, dispel = "Poison", role = "TANK",
+	{ name = "Briar",      class = "PALADIN", hp = 0.55, power = 0.44, dispel = "Poison", role = "TANK",
 		auras = { defensives = 1, debuffs = 1 } },
-	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, absorb = 0.22, aggro = 1, role = "DAMAGER",
+	{ name = "Tormund",    class = "SHAMAN",  hp = 0.60, power = 0.61, absorb = 0.22, aggro = 1, role = "DAMAGER",
 		auras = { hotsOwn = 1 } },
-	{ name = "Kaelura",    class = "PRIEST",  hp = 0.77, healAbsorb = 0.20, role = "HEALER" },
-	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, dispel = "Magic", role = "DAMAGER",
+	{ name = "Kaelura",    class = "PRIEST",  hp = 0.77, power = 0.38, healAbsorb = 0.20, role = "HEALER" },
+	{ name = "Nighthollow",class = "ROGUE",   hp = 0.43, power = 0.90, dispel = "Magic", role = "DAMAGER",
 		auras = { hotsOwn = 1, debuffs = 2 } },
-	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, predict = 0.25, role = "HEALER",
+	{ name = "Sylfaria",   class = "MONK",    hp = 0.55, power = 0.64, predict = 0.25, role = "HEALER",
 		auras = { hotsOwn = 3 } },
-	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, healAbsorb = 0.35, role = "TANK",
+	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, power = 0.35, healAbsorb = 0.35, role = "TANK",
 		auras = { defensives = 2 } },
-	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, dispel = "Disease", role = "HEALER",
+	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, power = 0.52, dispel = "Disease", role = "HEALER",
 		auras = { debuffs = 1, major = 1 } },
-	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, absorb = 0.10, role = "DAMAGER",
+	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, power = 0.86, absorb = 0.10, role = "DAMAGER",
 		auras = {} },
-	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, predict = 0.20, role = "TANK",
+	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, power = 0.28, predict = 0.20, role = "TANK",
 		auras = { defensives = 1 } },
-	{ name = "Brightwing", class = "PALADIN", hp = 0.50, predict = 0.30, role = "HEALER",
+	{ name = "Brightwing", class = "PALADIN", hp = 0.50, power = 0.47, predict = 0.30, role = "HEALER",
 		auras = { hotsOwn = 2, major = 1 } },
-	{ name = "Embertide",  class = "MAGE",    hp = 0.50, dispel = "Curse", role = "DAMAGER",
+	{ name = "Embertide",  class = "MAGE",    hp = 0.50, power = 0.70, dispel = "Curse", role = "DAMAGER",
 		auras = { hotsOwn = 1, debuffs = 1 } },
-	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, healAbsorb = 0.30, role = "DAMAGER",
+	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, power = 0.58, healAbsorb = 0.30, role = "DAMAGER",
 		auras = { major = 1 } },
-	{ name = "Solveig",    class = "PRIEST",  hp = 0.40, healAbsorb = 0.25, role = "DAMAGER" },
-	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, dispel = "Poison", role = "DAMAGER",
+	{ name = "Solveig",    class = "PRIEST",  hp = 0.40, power = 0.66, healAbsorb = 0.25, role = "DAMAGER" },
+	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, power = 0.74, dispel = "Poison", role = "DAMAGER",
 		auras = { debuffs = 1 } },
-	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, absorb = 0.30, role = "DAMAGER",
+	{ name = "Fenwick",    class = "HUNTER",  hp = 1.00, power = 0.93, absorb = 0.30, role = "DAMAGER",
 		auras = { hotsOwn = 1 } },
-	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, predict = 0.15, role = "DAMAGER",
+	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, power = 0.41, predict = 0.15, role = "DAMAGER",
 		auras = { hotsOwn = 2, defensives = 1 } },
-	{ name = "Aldris",     class = "DRUID",   hp = 0.45, absorb = 0.15, role = "DAMAGER",
+	{ name = "Aldris",     class = "DRUID",   hp = 0.45, power = 0.88, absorb = 0.15, role = "DAMAGER",
 		auras = { major = 2 } },
+}
+
+-- Preview only: which power token a fake unit shows. Healers always run on mana
+-- (Mistweaver/Resto/Holy), everyone else takes their class's default resource —
+-- so the preview shows the colour mix a real group has. Missing = mana.
+-- On the module table, not a local: see the LOCAL BUDGET note further down.
+Raidframes._POWER_TOKEN = {
+	WARRIOR     = "RAGE",
+	ROGUE       = "ENERGY",
+	MONK        = "ENERGY",
+	DRUID       = "ENERGY",
+	HUNTER      = "FOCUS",
+	DEATHKNIGHT = "RUNIC_POWER",
+	DEMONHUNTER = "FURY",
 }
 
 local GROUP_SIZE = 5   -- fixed group size: raid groups & dungeon group are always 5 (never mixed)
@@ -318,6 +341,7 @@ local HOT_DEFAULTS = {
 	[264]  = { 61295, 974, 382024, 207400, 444490 },               -- Resto Shaman: Riptide, Earth Shield, Earthliving, Ancestral Vigor, Hydrobubble
 	[65]   = { 156910, 156322, 53563, 1244893, 200025, 431381 },   -- Holy Pala: Beacon of Faith, Eternal Flame, Beacon of Light, Beacon of Savior, Beacon of Virtue, Dawnlight
 	[1468] = { 364343, 366155, 367364, 355941, 376788, 363502, 373267 }, -- Pres Evoker: Echo, Reversion, Echo Reversion, Dream Breath, Echo Dream Breath, Dream Flight, Lifebind
+	[1473] = { 410089, 413984, 360827, 410263, 410686, 395152, 369459 }, -- Aug Evoker: Prescience, Shifting Sands, Blistering Scales, Infernos Blessing, Symbiotic Bloom, Ebon Might, Source of Magic
 }
 -- specID -> classToken. For the class-wide defensive defaults (DEF_CLASS) and
 -- B4-capable (independent of the live class).
@@ -392,6 +416,7 @@ local DEF_DEFAULTS = {
 	[581]  = { 187827, 204021 },                     -- Vengeance: Metamorphosis, Fiery Brand
 	-- Evoker (Class deckt Obsidian Scales/Renewing Blaze)
 	[1468] = { 357170, 363534 },                     -- Preservation: Time Dilation, Rewind
+	[1473] = { 361022 },                             -- Augmentation: Sense Power (secret, signature-learned)
 }
 local MAJOR_DEFAULTS = {
 	[65]   = { 31884 },       -- Holy Paladin: Avenging Wrath (Wings)
@@ -1012,10 +1037,27 @@ local function Decorate(f)
 	f.bg:SetAllPoints()
 	f.bg:SetColorTexture(0.11, 0.11, 0.11, 1)
 
-	-- Health bar (base; its fill texture drives the clips)
+	-- Health bar (base; its fill texture drives the clips). Only the TOP edge is
+	-- anchored — the height is owned by the resource-bar pass (renderPower), which
+	-- takes the strip's height from the health bar when it shows one and gives it
+	-- back when it doesn't (otherwise a gap stays under the bar).
 	f.health = makeBar(f, WHITE8X8, base + 2)
-	f.health:SetAllPoints(f)
+	f.health:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+	f.health:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+	f.health:SetHeight(f:GetHeight() > 0 and f:GetHeight() or 60)
 	local hpTex = f.health:GetStatusBarTexture()
+
+	-- Resource bar: thin strip at the frame BOTTOM (Blizzard standard). Its own
+	-- dark track so an empty bar reads as empty instead of as frame background.
+	-- Created always + hidden; the render pass shows it per unit (role filter).
+	f.power = makeBar(f, WHITE8X8, base + 2)
+	f.power:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+	f.power:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+	f.power:SetHeight(4)
+	f.power:SetMinMaxValues(0, 100)
+	f.powerBg = f.power:CreateTexture(nil, "BACKGROUND")
+	f.powerBg:SetAllPoints()
+	f.power:Hide()
 
 	-- ----- Missing area (right of the current health): prediction + shield -----
 	f.missClip = CreateFrame("Frame", nil, f.health)
@@ -1223,15 +1265,157 @@ function Raidframes:SetAggro(f, status)
 	end
 end
 
+-- ----- Resource (power) bar ------------------------------------------------
+-- Secret-safe by construction: UnitPower/UnitPowerMax ARE secret numbers in group
+-- context (12.0.7+) and must never be compared or fed to SetMinMaxValues.
+-- UnitPowerPercent resolves the secret C-side against the ScaleTo100 curve and
+-- hands back a clean 0..100 -> the bar runs on a plain percent scale and needs
+-- none of the health bar's clip-frame apparatus.
+
+-- ⚠️ LOCAL BUDGET: a Lua 5.1 chunk allows only 200 locals and this file sits at
+-- that ceiling (adding the power block first blew it: "main function has more
+-- than 200 local variables"). The COLD helpers below therefore live on the
+-- module TABLE — the same pattern as every Raidframes:Method here and as
+-- EllesmereUI's ns.RF_*/ns._Resolve* helpers, which they call inside their own
+-- per-unit update. Reading a table field costs the same class as reading a
+-- global (one hash lookup); what the perf rules forbid is ALLOCATING tables in
+-- hot paths, which none of this does. The health-bar path keeps plain locals.
+
+-- Write a bar value, optionally with the native easing (see SB_EASE). LOCAL on
+-- purpose: the health path calls this 5x per event and unit.
+local function setBarValue(bar, v, ease)
+	if ease then bar:SetValue(v, ease) else bar:SetValue(v) end
+end
+
+-- Avoid SetHeight churn (§9.5): the power pass runs on every power event.
+function Raidframes._setBarHeight(bar, h)
+	if bar._lumenH ~= h then bar._lumenH = h; bar:SetHeight(h) end
+end
+
+-- Whose resource is shown: the three per-context role switches. Units with role
+-- NONE/unknown follow the DPS switch.
+function Raidframes._powerRoleShown(L, role)
+	if role == "HEALER" then return L.powerShowHealer and true or false end
+	if role == "TANK" then return L.powerShowTank and true or false end
+	return L.powerShowDps and true or false
+end
+
+-- A unit's role for DISPLAY purposes — shared by the resource-bar gate and the
+-- role indicator icon. `UnitGroupRolesAssigned` returns "NONE" whenever no role
+-- is assigned (solo, or a group that never went through the role check), which
+-- would hide a solo healer's mana and their role icon -> fall back to the spec
+-- role, but only for the PLAYER (no other unit has a readable spec role; in a
+-- real dungeon group Blizzard assigns roles, so "NONE" does not occur there).
+-- Same fallback `unitIsTank` already does for the aggro exemption.
+function Raidframes._unitRole(u)
+	local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(u)
+	if (role == "NONE" or not role) and UnitIsUnit and UnitIsUnit(u, "player") then
+		local spec = GetSpecialization and GetSpecialization()
+		local sr = spec and GetSpecializationRole and GetSpecializationRole(spec)
+		if sr then return sr end
+	end
+	return role
+end
+
+-- Bar colour: by power type (Blizzard's familiar mana blue / rage red / …) or the
+-- class colour. Power TYPE and its token are NOT secret — safe to branch on.
+function Raidframes._powerRGB(d, class, pType, token)
+	if d.powerColorMode == "class" then return classColor(class) end
+	local PBC = PowerBarColor
+	local c = PBC and ((token and PBC[token]) or (pType and PBC[pType]))
+	if c and c.r then return c.r, c.g, c.b end
+	return 0.20, 0.40, 0.85   -- fallback: mana blue
+end
+
+-- Show/hide the strip AND hand its height to/back from the health bar. Sole owner
+-- of the health-bar height; every render pass (live + fake) runs through here.
+function Raidframes._setPowerShown(f, on, L)
+	local full = L.height or 60
+	local setH = Raidframes._setBarHeight
+	if on then
+		-- Configured strip height, never taller than the frame minus 1px of health.
+		local ph = min(max(1, floor(L.powerHeight or 4)), max(1, full - 1))
+		setH(f.power, ph)
+		setH(f.health, full - ph)
+		if not f.power:IsShown() then
+			-- Fresh hidden->shown: animating in the same frame leaves the fill at 0.
+			f._powerArmed = nil
+			f.power:Show()
+		end
+	else
+		if f.power:IsShown() then f.power:Hide() end
+		f._powerArmed = nil
+		setH(f.health, full)
+	end
+end
+
+-- LIVE pass. Own render entry (power events only) — a mana tick must not drag the
+-- whole health/aura pipeline along.
+function Raidframes:RenderPower(f)
+	local u = f.unit
+	if not u or not UnitExists(u) then return end
+	local d, L = db(), layoutCtx()
+	if not d.powerEnabled then self._setPowerShown(f, false, L); return end
+
+	local pType, token = UnitPowerType(u)
+	pType = pType or 0
+	-- maxPower may be SECRET -> never compare it. Only a CLEAN zero max means the
+	-- unit genuinely has no resource to show.
+	local pmx = UnitPowerMax and UnitPowerMax(u, pType)
+	local cleanNoPower = (not issecretvalue(pmx)) and (not pmx or pmx == 0)
+	if cleanNoPower or not self._powerRoleShown(L, self._unitRole(u)) then
+		self._setPowerShown(f, false, L)
+		return
+	end
+
+	self._setPowerShown(f, true, L)
+	f.power:SetMinMaxValues(0, 100)
+	local p = 0
+	if UnitPowerPercent then
+		local ok, v = pcall(UnitPowerPercent, u, pType, true, CurveConstants and CurveConstants.ScaleTo100)
+		if ok and v then p = v end
+	end
+	setBarValue(f.power, p, (f._powerArmed and d.smoothBars and not smoothBroken) and SB_EASE or nil)
+	f._powerArmed = true
+	local _, class = UnitClass(u)
+	f.power:SetStatusBarColor(self._powerRGB(d, class, pType, token))
+end
+
+-- TEST/PREVIEW pass (fake roster, no real unit). `noPower` = the preview eye is
+-- off for this layer -> treated at data level so the health bar gets its height
+-- back (a hidden strip leaving a gap would misrepresent the layout).
+function Raidframes._renderPowerFake(f, fk, d, L)
+	local R = Raidframes
+	if not d.powerEnabled or fk.noPower or not R._powerRoleShown(L, fk.role) then
+		R._setPowerShown(f, false, L)
+		return
+	end
+	R._setPowerShown(f, true, L)
+	f.power:SetMinMaxValues(0, 100)
+	setBarValue(f.power, (fk.power or 0.7) * 100)
+	f._powerArmed = true
+	-- Healers always run on mana; everyone else takes their class's resource.
+	local token = (fk.role == "HEALER") and "MANA" or (R._POWER_TOKEN[fk.class] or "MANA")
+	f.power:SetStatusBarColor(R._powerRGB(d, fk.class, nil, token))
+end
+
 function Raidframes:ApplyConfig(f)
 	local d = db()
 	local L = layoutCtx()
 	f:SetSize(L.width, L.height)
 	f.health:SetStatusBarTexture(FetchTexture(d.healthTexture))
+	-- Resource bar: shared style (texture + track). Height/visibility belong to
+	-- the render pass; set a sane default here so a frame is never mis-sized
+	-- between layout and the first render.
+	f.power:SetStatusBarTexture(FetchTexture(d.powerTexture))
+	local ph = max(1, floor(L.powerHeight or 4))
+	self._setBarHeight(f.power, ph)
+	local healthH = max(1, L.height - ((d.powerEnabled and ph) or 0))
+	self._setBarHeight(f.health, healthH)
 	-- Keep segment bars at health size (anchors provide height/position)
-	f.predictBar:SetSize(L.width, L.height)
-	f.shieldBar:SetSize(L.width, L.height)
-	f.healAbsorbBar:SetSize(L.width, L.height)
+	f.predictBar:SetSize(L.width, healthH)
+	f.shieldBar:SetSize(L.width, healthH)
+	f.healAbsorbBar:SetSize(L.width, healthH)
 
 	-- Tile stripe overlays horizontally at FIXED pixel size (frame width / texture width).
 	-- Shield vertically full (0..1, CLAMP) as before — the 40px texture is not a power of two,
@@ -1242,7 +1426,9 @@ function Raidframes:ApplyConfig(f)
 	local sSpec = resolveTexSpec(d.shieldTexture, SHIELD_TEX_SPEC, SHIELD_PATTERN)
 	applyStripeTex(f.shieldStripe,   sSpec, SHIELD_OVL_TEX, L, 1, false)
 	applyStripeTex(f.backfillStripe, sSpec, SHIELD_OVL_TEX, L, 1, false)
-	applyStripeTex(f.healStripe, resolveTexSpec(d.healAbsorbTexture, HEALABS_TEX_SPEC, HEALABS_PATTERN), HEALABS_TEX, L, L.height / HEALABS_TEX_H, true)
+	-- Vertical tiling factor follows the HEALTH bar's height (not the frame's) —
+	-- the stripe spans f.health, which a shown resource bar shortens.
+	applyStripeTex(f.healStripe, resolveTexSpec(d.healAbsorbTexture, HEALABS_TEX_SPEC, HEALABS_PATTERN), HEALABS_TEX, L, healthH / HEALABS_TEX_H, true)
 
 	if ns.Style then
 		local t = d.healthTexture
@@ -1265,18 +1451,26 @@ function Raidframes:ApplyConfig(f)
 	-- Instead at render time as the alpha argument of SetStatusBarColor.
 	local bg = d.bgColor or {}
 	f.bg:SetColorTexture(bg.r or 0.11, bg.g or 0.11, bg.b or 0.11, d.bgAlpha or 1)
+	-- Resource-bar track: the frame background darkened, so it stays coherent with
+	-- a user-picked background but still reads as an (empty) bar. Opaque on purpose
+	-- -- a translucent track over the frame bg would wash the empty portion out.
+	f.powerBg:SetColorTexture((bg.r or 0.11) * 0.5, (bg.g or 0.11) * 0.5, (bg.b or 0.11) * 0.5, 1)
 	-- Opacity of the absorb overlays (shield = forward+backfill stripe, heal-absorb = stripe).
 	local sa = d.shieldAlpha or 1
 	f.shieldStripe:SetAlpha(sa); f.backfillStripe:SetAlpha(sa)
 	f.healStripe:SetAlpha(d.healAbsorbAlpha or 1)
 
 	-- Color + outline are SHARED (d), size/position/show per context (L).
+	-- Anchored to the HEALTH BAR, not the frame: with a resource bar at the bottom
+	-- the text belongs centred in the health area (it follows automatically when
+	-- the power pass changes the health height). Without a resource bar the health
+	-- bar spans the whole frame -> identical to before.
 	f.name:SetShown(L.showName)
-	applyText(f.name, f, L.namePoint, L.nameX, L.nameY, L.nameSize, d.nameColor, d.nameOutline)
-	applyText(f.htext, f, L.healthTextPoint, L.healthTextX, L.healthTextY, L.healthTextSize, d.healthTextColor, d.healthTextOutline)
+	applyText(f.name, f.health, L.namePoint, L.nameX, L.nameY, L.nameSize, d.nameColor, d.nameOutline)
+	applyText(f.htext, f.health, L.healthTextPoint, L.healthTextX, L.healthTextY, L.healthTextSize, d.healthTextColor, d.healthTextOutline)
 	-- Status text mirrors the HP-text style (shared Base look); position fixed center.
-	applyText(f.stext, f, "CENTER", 0, 0, L.healthTextSize, d.healthTextColor, d.healthTextOutline)
-		applyText(f.aggroText, f, d.aggroTextPoint, d.aggroTextX, d.aggroTextY, d.aggroTextSize, nil, d.aggroTextOutline)
+	applyText(f.stext, f.health, "CENTER", 0, 0, L.healthTextSize, d.healthTextColor, d.healthTextOutline)
+		applyText(f.aggroText, f.health, d.aggroTextPoint, d.aggroTextX, d.aggroTextY, d.aggroTextSize, nil, d.aggroTextOutline)
 
 	-- Indicator icons: anchor/size per context (visibility is render business).
 	f.roleIcon:ClearAllPoints()
@@ -1301,12 +1495,23 @@ function Raidframes:ApplyConfig(f)
 end
 
 -- All bars share the scale 0..maxH. Values may be secret; 0 -> invisible.
-local function setSegments(f, maxH, healthVal, incoming, absorb, healAbsorb)
-	f.health:SetMinMaxValues(0, maxH);        f.health:SetValue(healthVal)
-	f.predictBar:SetMinMaxValues(0, maxH);    f.predictBar:SetValue(incoming or 0)
-	f.shieldBar:SetMinMaxValues(0, maxH);     f.shieldBar:SetValue(absorb or 0)
-	f.backfillBar:SetMinMaxValues(0, maxH);   f.backfillBar:SetValue(absorb or 0)
-	f.healAbsorbBar:SetMinMaxValues(0, maxH); f.healAbsorbBar:SetValue(healAbsorb or 0)
+-- `ease` (optional) = native interpolation; ALL segments get it together so the
+-- absorb/prediction edges glide with the health edge instead of snapping past it.
+local function segWrite(f, maxH, healthVal, incoming, absorb, healAbsorb, ease)
+	f.health:SetMinMaxValues(0, maxH);        setBarValue(f.health, healthVal, ease)
+	f.predictBar:SetMinMaxValues(0, maxH);    setBarValue(f.predictBar, incoming or 0, ease)
+	f.shieldBar:SetMinMaxValues(0, maxH);     setBarValue(f.shieldBar, absorb or 0, ease)
+	f.backfillBar:SetMinMaxValues(0, maxH);   setBarValue(f.backfillBar, absorb or 0, ease)
+	f.healAbsorbBar:SetMinMaxValues(0, maxH); setBarValue(f.healAbsorbBar, healAbsorb or 0, ease)
+end
+local function setSegments(f, maxH, healthVal, incoming, absorb, healAbsorb, smooth)
+	if smooth and SB_EASE and not smoothBroken then
+		-- The values here are RAW (possibly secret). Should any client reject the
+		-- interpolation argument for them, latch it off and never try again.
+		if pcall(segWrite, f, maxH, healthVal, incoming, absorb, healAbsorb, SB_EASE) then return end
+		smoothBroken = true
+	end
+	segWrite(f, maxH, healthVal, incoming, absorb, healAbsorb, nil)
 end
 
 -- LIVE — secret-safe (calculator only for maxHealth, raw values to the bars).
@@ -1373,7 +1578,11 @@ function Raidframes:RenderHealth(f)
 	local incoming = (d.healPrediction and UnitGetIncomingHeals and UnitGetIncomingHeals(u)) or 0
 	local absorb   = (UnitGetTotalAbsorbs and UnitGetTotalAbsorbs(u)) or 0
 	local healAbs  = (UnitGetTotalHealAbsorbs and UnitGetTotalHealAbsorbs(u)) or 0
-	setSegments(f, maxH, UnitHealth(u), incoming, absorb, healAbs)
+	-- Ease only a frame that already rendered this unit once (`_barsArmed`, cleared
+	-- on every full pass): a fresh unit assignment must snap, not slide in from the
+	-- previous occupant's value.
+	setSegments(f, maxH, UnitHealth(u), incoming, absorb, healAbs, f._barsArmed and d.smoothBars)
+	f._barsArmed = true
 
 	self:RenderStatus(f) -- death/alive + offline transitions ride on health events
 	applyHealthColor(f, d, u)
@@ -1561,7 +1770,7 @@ function Raidframes:RefreshIndicators()
 	for i = 1, 40 do
 		local b = header[i]
 		if b and b._lumenSecured and b.unit and UnitExists(b.unit) then
-			setIndicators(b, UnitGroupRolesAssigned and UnitGroupRolesAssigned(b.unit),
+			setIndicators(b, Raidframes._unitRole(b.unit),
 				UnitIsGroupLeader and UnitIsGroupLeader(b.unit),
 				UnitIsGroupAssistant and UnitIsGroupAssistant(b.unit))
 		end
@@ -1577,6 +1786,7 @@ function Raidframes:RenderLive(f)
 	if not u or not UnitExists(u) then if not f._secure then f:Hide() end return end
 	if not f._secure then f:Show() end
 	local d = db()
+	f._barsArmed = nil   -- full pass = (re-)assignment: bars snap, they don't slide
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
@@ -1585,10 +1795,11 @@ function Raidframes:RenderLive(f)
 	if d.nameClassColor then local _, class = UnitClass(u); f.name:SetTextColor(classColor(class)) end
 
 	self:RenderDispelAuras(f)   -- fills the dispel cache + colors the bar + aura icons
+	self:RenderPower(f)         -- BEFORE the health pass: owns the health-bar height
 	self:RenderHealth(f)        -- segments + HP text + status (color re-uses the fresh cache)
 	self:RenderAggro(f)
 	self:RenderCenterIcon(f)
-	setIndicators(f, UnitGroupRolesAssigned and UnitGroupRolesAssigned(u),
+	setIndicators(f, self._unitRole(u),
 		UnitIsGroupLeader and UnitIsGroupLeader(u),
 		UnitIsGroupAssistant and UnitIsGroupAssistant(u))
 end
@@ -1604,10 +1815,14 @@ function Raidframes:RenderFake(f)
 	f._statusMode, f._greyed = nil, nil
 	f:SetAlpha(1)
 
+	local L = layoutCtx()
+	self._renderPowerFake(f, fk, d, L)   -- BEFORE the segments: owns the health-bar height
+
 	local hp = fk.hp or 1
 	local incoming   = (d.healPrediction and fk.predict or 0) * FAKE_MAX
 	local absorb     = (fk.absorb or 0) * FAKE_MAX
 	local healAbsorb = (fk.healAbsorb or 0) * FAKE_MAX
+	-- Fake values never change -> always snap (nothing to animate).
 	setSegments(f, FAKE_MAX, hp * FAKE_MAX, incoming, absorb, healAbsorb)
 
 	-- Test mode: no real aura object -> map the type directly to the configured color.
@@ -1629,7 +1844,6 @@ function Raidframes:RenderFake(f)
 
 	if d.aggroEnabled then self:SetAggro(f, fk.aggro) else self:SetAggro(f, nil) end
 
-	local L = layoutCtx()
 	if L.showName then f.name:SetText(fk.name) end
 	if d.nameClassColor then f.name:SetTextColor(classColor(fk.class)) end
 
@@ -1847,14 +2061,14 @@ end
 -- varied per frame like a real group; {} = deliberately clean (HP readable);
 -- NO field = full-load frame (maxIcons everywhere, judges max/auto-fit).
 local PREVIEW_FAKE = {
-	{ name = "Owlday",      class = "DRUID",  hp = 1.00, role = "HEALER", lead = true,
+	{ name = "Owlday",      class = "DRUID",  hp = 1.00, power = 0.72, role = "HEALER", lead = true,
 		auras = { hotsOwn = 2, defensives = 1 } },
-	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, absorb = 0.14, role = "DAMAGER",
+	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, power = 0.55, absorb = 0.14, role = "DAMAGER",
 		auras = {} },
-	{ name = "Kaelura",     class = "PRIEST", hp = 0.66, predict = 0.20, role = "HEALER" },
-	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, dispel = "Magic", aggro = 2, role = "DAMAGER",
+	{ name = "Kaelura",     class = "PRIEST", hp = 0.66, power = 0.38, predict = 0.20, role = "HEALER" },
+	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, power = 0.90, dispel = "Magic", aggro = 2, role = "DAMAGER",
 		auras = { hotsOwn = 1, debuffs = 1 } },
-	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, healAbsorb = 0.18, aggro = 3, role = "TANK",
+	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, power = 0.64, healAbsorb = 0.18, aggro = 3, role = "TANK",
 		auras = { defensives = 1, debuffs = 2 } },
 }
 local shellBands = {}   -- band -> spec: { kind = "base" } | { kind = "ctx", ctx = "raid"|"party" }
@@ -1944,11 +2158,16 @@ local function pvFrame(i, holder)
 		f:EnableMouse(false)
 		-- Click-to-configure hotspots: ring + tooltip on hover, jump on click.
 		-- Anchored to the element's region; pvFillOne gates each on visibility.
-		local function hotspot(region, label, cardKey)
+		-- `pad` = grow the hotspot beyond its region (default 3, comfortable for
+		-- small texts/icons). The resource bar passes 0: it is a thin strip at the
+		-- very bottom, and a padded hotspot would swallow clicks on the lower half
+		-- of a bottom-anchored aura icon.
+		local function hotspot(region, label, cardKey, pad)
+			pad = pad or 3
 			local b = CreateFrame("Button", nil, f.overlay)
 			b:SetFrameLevel(f.overlay:GetFrameLevel() + 12)
-			b:SetPoint("TOPLEFT", region, "TOPLEFT", -3, 3)
-			b:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", 3, -3)
+			b:SetPoint("TOPLEFT", region, "TOPLEFT", -pad, pad)
+			b:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", pad, -pad)
 			b:SetScript("OnEnter", function()
 				local r = c2cGetRing()
 				r:SetParent(b)
@@ -1964,10 +2183,11 @@ local function pvFrame(i, holder)
 			b:SetScript("OnClick", function() c2cJump(f, cardKey) end)
 			return b
 		end
-		f._c2cName = hotspot(f.name,     "Text — name",       "text-name")
-		f._c2cHP   = hotspot(f.htext,    "Text — HP display", "text-hp")
-		f._c2cRole = hotspot(f.roleIcon, "Role icon",         "icon-role")
-		f._c2cLead = hotspot(f.leadIcon, "Leader icon",       "icon-lead")
+		f._c2cName  = hotspot(f.name,     "Text — name",       "text-name")
+		f._c2cHP    = hotspot(f.htext,    "Text — HP display", "text-hp")
+		f._c2cRole  = hotspot(f.roleIcon, "Role icon",         "icon-role")
+		f._c2cLead  = hotspot(f.leadIcon, "Leader icon",       "icon-lead")
+		f._c2cPower = hotspot(f.power,    "Resource bar",      "power-bar", 0)
 		pvFrames[i] = f
 	end
 	f:SetParent(holder)
@@ -1995,19 +2215,31 @@ local function pvEyePass(f, eyes)
 	if eyes.shields == false then
 		f.shieldStripe:Hide(); f.backfillStripe:Hide(); f.healStripe:Hide()
 	end
-	if eyes.text == false then f.name:Hide(); f.htext:Hide() end
-	if eyes.icons == false then f.roleIcon:Hide(); f.leadIcon:Hide() end
+	-- Name and HP text are SEPARATE preview layers (Florian 2026-07-26: hiding
+	-- one used to hide both). `text` stays understood as the old shared key so
+	-- existing profiles keep working.
+	if eyes.nameText == false or eyes.text == false then f.name:Hide() end
+	if eyes.healthText == false or eyes.text == false then f.htext:Hide() end
+	-- Role and leader are SEPARATE preview layers (Florian 2026-07-22): each card's
+	-- eye toggles only its own icon (grouped under "Role & leader icons").
+	if eyes.roleIcon == false then f.roleIcon:Hide() end
+	if eyes.leaderIcon == false then f.leadIcon:Hide() end
 end
 
 -- Dispel/aggro filters work at the DATA level (a recolored health bar can't
 -- be "hidden" afterwards): render a scratch copy without those fields.
+-- The resource bar rides along here for the same reason: just hiding the strip
+-- would leave a gap under the health bar, so "eye off" means "this unit has no
+-- resource bar" and the health bar gets its height back.
 local pvScratch = {}
 local function pvEffectiveFake(fake, eyes)
-	if (eyes.dispel == false and fake.dispel) or (eyes.aggro == false and fake.aggro) then
+	if (eyes.dispel == false and fake.dispel) or (eyes.aggro == false and fake.aggro)
+		or eyes.power == false then
 		for k in pairs(pvScratch) do pvScratch[k] = nil end
 		for k, v in pairs(fake) do pvScratch[k] = v end
 		if eyes.dispel == false then pvScratch.dispel = nil end
 		if eyes.aggro == false then pvScratch.aggro = nil end
+		if eyes.power == false then pvScratch.noPower = true end
 		return pvScratch
 	end
 	return fake
@@ -2028,6 +2260,7 @@ local function pvFillOne(f, fake, ctx, eyes)
 		f._c2cHP:SetShown(f.htext:IsShown())
 		f._c2cRole:SetShown(f.roleIcon:IsShown())
 		f._c2cLead:SetShown(f.leadIcon:IsShown())
+		f._c2cPower:SetShown(f.power:IsShown())
 	end
 	previewCtx = nil
 	f:Show()
@@ -2544,6 +2777,11 @@ local UNIT_EVENT_METHOD = {
 	UNIT_ABSORB_AMOUNT_CHANGED      = "RenderHealth",
 	UNIT_HEAL_ABSORB_AMOUNT_CHANGED = "RenderHealth",
 	UNIT_HEAL_PREDICTION            = "RenderHealth",
+	-- Resource bar: own light pass (a mana tick must not drag the health/aura
+	-- pipeline along). DISPLAYPOWER = the power TYPE changed (druid shapeshift…).
+	UNIT_POWER_UPDATE               = "RenderPower",
+	UNIT_MAXPOWER                   = "RenderPower",
+	UNIT_DISPLAYPOWER               = "RenderPower",
 	UNIT_AURA                       = "RenderDispelAuras",
 	UNIT_THREAT_SITUATION_UPDATE    = "RenderAggro",
 	-- Status layer (offline/ghost/rez transitions + summon; death rides on UNIT_HEALTH)
@@ -2607,6 +2845,7 @@ local blizzParent                 -- permanently hidden parent frame
 local blizzSuppressed = false     -- are WE currently suppressing? (controls the popup)
 local blizzInit = false           -- attach hooks/watcher only once
 local blizzHooked = {}            -- SetParent hook per frame only once
+local blizzReparenting = false    -- re-entrancy guard for the SetParent hook (see blizzResetParent)
 local blizzLoose  = {}            -- frames not reparentable in combat -> catch up on regen
 
 -- Deliberately do NOT touch the Manager (left leader/marker bar): it contains leader
@@ -2619,10 +2858,21 @@ end
 
 local function blizzResetParent(self, parent)
 	if not blizzSuppressed or parent == blizzParent then return end
+	-- Re-entrancy guard: our SetParent(blizzParent) below fires this same hook
+	-- chain. The `parent == blizzParent` check stops OUR own recursion, but a
+	-- SECOND addon that also hooks SetParent + reparents the container to ITS
+	-- hidden parent (e.g. another raid-frame suite) would ping-pong with us
+	-- forever -> C stack overflow. This flag makes us yank the parent back at
+	-- most once per event, so the container simply lands wherever the last
+	-- writer put it (both parents are hidden -> no visible difference) instead
+	-- of crashing.
+	if blizzReparenting then return end
 	if InCombatLockdown() and self:IsProtected() then
 		blizzLoose[self] = true            -- forbidden in combat -> on PLAYER_REGEN_ENABLED
 	else
+		blizzReparenting = true
 		self:SetParent(blizzParent)
+		blizzReparenting = false
 	end
 end
 
