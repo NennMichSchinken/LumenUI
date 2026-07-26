@@ -2086,10 +2086,15 @@ function Shell:BuildSearchScreen(d, stack)
 				local function hsnap() PixelUtil.SetHeight(hline, 1) end
 				hsnap(); C_Timer.After(0, hsnap)
 			end
-			card:place(h, L.groupH, 0)
+			card:place(h, L.groupH, L.rowGap)
 		end
 
 		local b = CreateFrame("Button", nil, d)
+		-- Each result gets its own face, one lightness step above the card
+		-- (Surface.Card -> Input -> Hover): loose rows on a single large card
+		-- had nothing to sit on (Florian 2026-07-26). Depth comes from the
+		-- step between layers, per the design bible.
+		UI.RoundFill(b, Surface.Input, "BACKGROUND", nil, UI.RADIUS.sm)
 		local hover = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
 		hover:Hide()
 		local sel = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
@@ -2118,7 +2123,7 @@ function Shell:BuildSearchScreen(d, stack)
 		end
 		b:SetScript("OnClick", function() Shell:JumpToOption(e) end)
 
-		card:place(b, L.rowH, 0)
+		card:place(b, L.rowH, L.rowGap)
 		self._searchRowButtons[i] = b
 		if self._searchSel == i then b:SetSelected(true) end
 	end
