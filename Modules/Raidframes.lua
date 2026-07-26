@@ -341,6 +341,7 @@ local HOT_DEFAULTS = {
 	[264]  = { 61295, 974, 382024, 207400, 444490 },               -- Resto Shaman: Riptide, Earth Shield, Earthliving, Ancestral Vigor, Hydrobubble
 	[65]   = { 156910, 156322, 53563, 1244893, 200025, 431381 },   -- Holy Pala: Beacon of Faith, Eternal Flame, Beacon of Light, Beacon of Savior, Beacon of Virtue, Dawnlight
 	[1468] = { 364343, 366155, 367364, 355941, 376788, 363502, 373267 }, -- Pres Evoker: Echo, Reversion, Echo Reversion, Dream Breath, Echo Dream Breath, Dream Flight, Lifebind
+	[1473] = { 410089, 413984, 360827, 410263, 410686, 395152, 369459 }, -- Aug Evoker: Prescience, Shifting Sands, Blistering Scales, Infernos Blessing, Symbiotic Bloom, Ebon Might, Source of Magic
 }
 -- specID -> classToken. For the class-wide defensive defaults (DEF_CLASS) and
 -- B4-capable (independent of the live class).
@@ -415,6 +416,7 @@ local DEF_DEFAULTS = {
 	[581]  = { 187827, 204021 },                     -- Vengeance: Metamorphosis, Fiery Brand
 	-- Evoker (Class deckt Obsidian Scales/Renewing Blaze)
 	[1468] = { 357170, 363534 },                     -- Preservation: Time Dilation, Rewind
+	[1473] = { 361022 },                             -- Augmentation: Sense Power (secret, signature-learned)
 }
 local MAJOR_DEFAULTS = {
 	[65]   = { 31884 },       -- Holy Paladin: Avenging Wrath (Wings)
