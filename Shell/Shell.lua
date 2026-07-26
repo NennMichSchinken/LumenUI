@@ -493,8 +493,9 @@ function Shell:Build()
 	local searchH = UI.WIDGET.spSearchH
 	local sbox = CreateFrame("EditBox", nil, nav)
 	sbox:SetHeight(searchH)
-	sbox:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -S.s9)
-	sbox:SetPoint("RIGHT", nav, "RIGHT", -S.panelGutter, 0)
+	sbox:SetPoint("TOP", tag, "BOTTOM", 0, -S.s9)
+	sbox:SetPoint("LEFT", nav, "LEFT", S.navPillPadX, 0)
+	sbox:SetPoint("RIGHT", nav, "RIGHT", -S.navPillPadX, 0)
 	UI.RoundFill(sbox, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
 	-- RoundBorder returns a TABLE of edge textures (a shape can need several),
 	-- so recolouring goes through all of them.
@@ -523,7 +524,10 @@ function Shell:Build()
 	sclear:SetSize(searchH - 10, searchH - 10)
 	sclear:SetPoint("RIGHT", sbox, "RIGHT", -7, 0)
 	local sclearTex = sclear:CreateTexture(nil, "OVERLAY")
-	sclearTex:SetAllPoints(sclear)
+	sclearTex:SetSize(S.closeGlyph - 4, S.closeGlyph - 4)
+	sclearTex:SetPoint("CENTER", sclear, "CENTER", 0, 0)
+	sclearTex:SetSnapToPixelGrid(false)
+	sclearTex:SetTexelSnappingBias(0)
 	sclearTex:SetTexture(TEX .. "icon-x")
 	setColor(sclearTex, Text.Description)
 	sclear:SetScript("OnEnter", function() setColor(sclearTex, Text.Primary) end)
@@ -534,7 +538,7 @@ function Shell:Build()
 		sph:SetShown(txt == "" and not sbox:HasFocus())
 		sclear:SetShown(txt ~= "")
 		local live = txt ~= "" or sbox:HasFocus()
-		tintBorder(live and Accent.color or Border.default)
+		tintBorder(live and Border.hover or Border.default)
 		setColor(sicon, live and Text.Secondary or Text.Description)
 	end
 	sbox:SetScript("OnTextChanged", function(_, user)
@@ -578,7 +582,7 @@ function Shell:Build()
 	-- that used to sit under the tagline).
 	local navLabel = FS(nav, "navGroupLabel", Text.Description)
 	navLabel:SetText(UI.Track("MODULES", " "))
-	navLabel:SetPoint("TOPLEFT", sbox, "BOTTOMLEFT", 0, -S.s9)
+	navLabel:SetPoint("TOPLEFT", tag, "BOTTOMLEFT", 0, -(S.s9 + UI.WIDGET.spSearchH + S.s9))
 
 	-- Version chip (stage 3): muted "v<x.y.z>" pinned to the very bottom-right of
 	-- the sidebar so it never floats when the preview button is hidden (Florian
@@ -1960,7 +1964,9 @@ function Shell:BuildSearchScreen(d, stack)
 	local KINDS = { option = T("Switch"), slider = T("Slider"), select = T("Choice") }
 
 	for i, e in ipairs(res) do
-		local b = CreateFrame("Button", nil, card)
+		-- Parent is the SCREEN, not the card: a card is a table wrapper ({_panel})
+		-- and card:place() reparents the row anyway (same as every Screens.lua row).
+		local b = CreateFrame("Button", nil, d)
 		local hover = UI.RoundFill(b, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
 		hover:Hide()
 		local sel = UI.RoundFill(b, Accent.wash, "BACKGROUND", nil, UI.RADIUS.sm)
