@@ -157,7 +157,14 @@ local function applyDurStyle(button, fs, key)
 	fs:SetTextColor(1, 1, 1)
 	if on then
 		local fmt = getDurationFormatter()
-		pcall(button.SetDurationText, button, fs, fmt and { formatter = fmt } or {})
+		-- 68914 renamed this option key from `formatter` to `textFormatter`, and
+		-- the engine simply IGNORES an unknown key -- so passing the old name on a
+		-- new build silently falls back to the default formatter and the text reads
+		-- "14s" again instead of "14". No error to notice it by, hence both keys:
+		-- each build reads the one it knows.
+		local opts
+		if fmt then opts = { textFormatter = fmt, formatter = fmt } else opts = {} end
+		pcall(button.SetDurationText, button, fs, opts)
 		fs:Show()
 	else
 		pcall(button.ClearDurationText, button)
@@ -261,6 +268,23 @@ local function readLayout(button, key)
 	}
 end
 
+-- The container layout setters were renamed in 12.1 build 68914: the
+-- SetAuraLayout* family became SetFlowLayout*, and RowWidth generalized into
+-- MaximumLineSize. Signatures are unchanged, so one name table resolves both
+-- generations per container -- the PTR moved three builds in ten days, and an
+-- addon that hard-errors on the older name is worse than one that degrades.
+-- The pair is {new, old}; a build carrying neither leaves that knob alone.
+local LAYOUT_METHODS = {
+	anchor = { "SetFlowLayoutAnchorPoint",     "SetAuraLayoutAnchorPoint" },
+	growth = { "SetFlowLayoutGrowthDirection", "SetAuraLayoutGrowthDirection" },
+	line   = { "SetFlowLayoutMaximumLineSize", "SetAuraLayoutRowWidth" },
+}
+local function layoutCall(container, which, a, b)
+	local names = LAYOUT_METHODS[which]
+	local fn = container[names[1]] or container[names[2]]
+	if fn then fn(container, a, b) end
+end
+
 -- Container-level layout (anchor / growth / position) -- shared by every group
 -- in the container. Live-settable.
 local function applyContainerLayout(container, parent, lo)
@@ -270,9 +294,19 @@ local function applyContainerLayout(container, parent, lo)
 	local hDir, vDir, column = growthDirs(lo.grow)
 	container:ClearAllPoints()
 	container:SetPoint(lo.anchor, parent, lo.anchor, ix + lo.offX + ox, iy + lo.offY + oy)
-	container:SetAuraLayoutAnchorPoint(lo.anchor)
-	container:SetAuraLayoutGrowthDirection(hDir, vDir)
-	container:SetAuraLayoutRowWidth(column and (lo.size + 0.5) or nil) -- nil = unlimited
+	layoutCall(container, "anchor", lo.anchor)
+	layoutCall(container, "growth", hDir, vDir)
+	-- Columns: 68914 added a real flow AXIS, so a vertical growth direction can
+	-- say "lines are columns" instead of being faked by capping the line width to
+	-- one icon. Where the axis exists it owns the decision and the line size stays
+	-- unlimited; on older builds we fall back to the width cap as before.
+	local axes = AnchorUtil and AnchorUtil.FlowLayoutAxis
+	if axes and container.SetFlowLayoutAxis then
+		container:SetFlowLayoutAxis(column and axes.Vertical or axes.Horizontal)
+		layoutCall(container, "line", nil)
+	else
+		layoutCall(container, "line", column and (lo.size + 0.5) or nil)
+	end
 end
 
 -- Per-group size/spacing/count. The group must already exist.
