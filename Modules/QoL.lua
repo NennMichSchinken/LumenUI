@@ -925,11 +925,21 @@ local function winSavePos(name, point, relPoint, x, y)
 	wdb().positions[name] = { point = point, relPoint = relPoint, x = x, y = y }
 end
 
+-- Saved window spots travel with an imported profile, and the defaults describe
+-- no shape for them (positions starts empty), so Share's type guard cannot vet
+-- these — check them here, right before they reach SetPoint. A malformed entry
+-- would otherwise throw on every open of that window.
+local function winPosValid(pos)
+	return type(pos) == "table"
+		and type(pos.point) == "string" and type(pos.relPoint) == "string"
+		and type(pos.x) == "number" and type(pos.y) == "number"
+end
+
 local function winApplyPosition(frame, name)
 	if not wdb().enabled then return end
 	if InCombatLockdown() and frame:IsProtected() then return end
 	local pos = wdb().positions[name]
-	if not pos or not pos.point then return end
+	if not winPosValid(pos) then return end
 	winIgnoreSP[frame] = true
 	if frame:IsProtected() then
 		winSecureSetPoint(frame, pos.point, pos.relPoint, pos.x, pos.y)

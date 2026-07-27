@@ -240,6 +240,22 @@ end
 -- ---------------------------------------------------------------------------
 --  Spell resolution / macrotext
 -- ---------------------------------------------------------------------------
+-- A profile travels as a text code (Modules/Share.lua), so every field of a
+-- binding is untrusted input. The stored spell NAME is the one that reaches
+-- macrotext verbatim, and macrotext is line-based: a newline inside it appends
+-- further macro commands that then run on the player's own frame click
+-- ("/cast X\n/leave"). A spell name is always a single plain line, so anything
+-- else is refused and the binding stays inert. Names resolved by spellID below
+-- come from the game and never pass through here.
+local function plainSpellName(s)
+	-- 200 is a sanity bound in BYTES, generous enough for the longest localized
+	-- name incl. multi-byte locales (the control-char test is the real guard).
+	if type(s) ~= "string" or s == "" or #s > 200 then return nil end
+	if s:find("[%z\1-\31]") then return nil end   -- control chars = extra macro lines
+	if s:find("^%s*/") then return nil end        -- a leading slash is its own command
+	return s
+end
+
 -- Resolve to the BASE spell so talent/hero-talent overrides cast along.
 local function resolveSpellName(b)
 	local id = b.spellID
@@ -252,7 +268,9 @@ local function resolveSpellName(b)
 		end
 		if C_Spell.GetSpellName then local n = C_Spell.GetSpellName(id); if n then return n end end
 	end
-	return b.spell
+	-- Fallback for bindings whose spellID no longer resolves (removed spell,
+	-- other client locale): the stored name still casts — but only if it is one.
+	return plainSpellName(b.spell)
 end
 
 local function spellName(id)
