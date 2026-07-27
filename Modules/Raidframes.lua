@@ -645,7 +645,14 @@ local function layoutCtx()
 	return IsInRaid() and d.raid or d.party
 end
 
+-- Single funnel for every class-color lookup (fillRGB + _powerRGB both land here).
+-- 12.1 build 68914 made `UnitClass` return a SECRET token for identity-restricted
+-- units — and a secret cannot be used as a table KEY, so the lookup below would
+-- hard-error rather than just miss. Group members should never be restricted, but
+-- the check is one call and the failure mode would be an error per frame per
+-- event, so it is not worth betting on. Falls back to the neutral grey.
 local function classColor(class)
+	if class == nil or issecretvalue(class) then return 0.6, 0.6, 0.6 end
 	local c = RAID_CLASS_COLORS[class]
 	if c then return c.r, c.g, c.b end
 	return 0.6, 0.6, 0.6
