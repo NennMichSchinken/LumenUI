@@ -9,7 +9,9 @@ unused_args = false              -- event/handler args + implicit 'self' often u
 ignore = { "211/ADDON" }
 
 -- Writable WoW globals (we add entries, not only read).
-globals = { "StaticPopupDialogs", "SlashCmdList", "SLASH_LUMENPULL1" }
+-- LumenDB = our SavedVariables table; read once before AceDB creates it, to tell
+-- a fresh install apart from an existing one (see Core:OnInitialize).
+globals = { "StaticPopupDialogs", "SlashCmdList", "SLASH_LUMENPULL1", "LumenDB" }
 
 -- Don't check third-party libraries and tools.
 exclude_files = { "Libs/", "tools/" }

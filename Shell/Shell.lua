@@ -133,14 +133,15 @@ local function makeNavItem(parent, label, iconFile)
 	bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -S.navPillPadX, S.navPillPadY)
 	bg:Hide()
 
-	-- Lucide module icon (stage 3): white glyph tinted to MATCH the label in
-	-- every state (dark on the gold active pill, body grey otherwise). No mipmaps
-	-- for TGA -> disable grid snapping so the 32px source stays crisp at ~18px.
+	-- Lucide module icon: white glyph tinted to MATCH the label in every state.
+	-- No mipmaps for TGA -> disable grid snapping so the 32px source stays crisp
+	-- at ~18px. It sits ON the nav gutter (where a text-only label starts), so
+	-- the label moves right by icon + gap — the mockup's rhythm.
 	local icon
 	if iconFile then
 		icon = b:CreateTexture(nil, "ARTWORK")
 		icon:SetSize(S.navIconSize, S.navIconSize)
-		icon:SetPoint("LEFT", b, "LEFT", S.panelGutter, 0)
+		icon:SetPoint("LEFT", b, "LEFT", S.navGutter, 0)
 		icon:SetTexture(TEX .. iconFile)
 		icon:SetSnapToPixelGrid(false)
 		icon:SetTexelSnappingBias(0)
@@ -156,6 +157,12 @@ local function makeNavItem(parent, label, iconFile)
 	txt:SetText(label)
 
 	b._bg, b._txt, b._icon = bg, txt, icon
+	-- Label + icon always carry the SAME colour (idle / hover / active) — one row,
+	-- one voice.
+	local function paint(self, col)
+		self._txt:SetTextColor(col.r, col.g, col.b)
+		if self._icon then self._icon:SetVertexColor(col.r, col.g, col.b) end
+	end
 	b:SetScript("OnEnter", function(self)
 		if self._soon then
 			if ns.W and ns.W.ShowTextTip then
@@ -163,7 +170,7 @@ local function makeNavItem(parent, label, iconFile)
 			end
 		elseif not self._active then
 			setColor(self._bg, Surface.Input); self._bg:Show()
-			self._txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
+			paint(self, Text.Primary)
 		end
 	end)
 	b:SetScript("OnLeave", function(self)
@@ -171,24 +178,19 @@ local function makeNavItem(parent, label, iconFile)
 			if ns.W and ns.W.HideTip then ns.W.HideTip() end
 		elseif not self._active then
 			self._bg:Hide()
-			self._txt:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b)
+			paint(self, Text.Description)
 		end
 	end)
 	function b:SetActive(on)
 		self._active = on
 		self._bg:Hide() -- the active pill is the shared sliding indicator now; item shows only text
-		local col = on and Text.Primary or (self._soon and Text.Disabled or Text.Description)
-		self._txt:SetTextColor(col.r, col.g, col.b)
-		if self._icon then self._icon:SetVertexColor(col.r, col.g, col.b) end
+		paint(self, on and Text.Primary or (self._soon and Text.Disabled or Text.Description))
 	end
 	-- Coming-soon mode: TRUE disabled text (D3; no chip — greyed out + hover tooltip
 	-- is enough, a permanent chip would be redundant), never highlighted as active.
 	function b:SetComingSoon(on)
 		self._soon = on
-		if on then
-			self._txt:SetTextColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
-			if self._icon then self._icon:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b) end
-		end
+		if on then paint(self, Text.Disabled) end
 	end
 	return b
 end
@@ -623,26 +625,140 @@ function Shell:Build()
 		UI.RoundBorder(chip, Border.default, "OVERLAY", nil, UI.RADIUS.xs)
 	end
 
-	-- Edit Mode button (v2): a suite-global action, so it lives in the global
-	-- chrome — pinned above the version chip, ALWAYS visible on every screen.
-	-- Opens the Lumen edit session (Shell hides, mover overlays + toolbar show).
-	local emY = hasChip and (S.panelGutter + chipH + S.s4) or S.panelGutter
-	local emBtn = ns.W.Button(nav, { text = T("Edit Mode"), variant = "neutral", icon = "icon-move",
-		onClick = function() if ns.EditMode then ns.EditMode:OpenSession() end end })
-	emBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, emY)
-	emBtn:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, emY)
+	-- Sidebar actions (what's-new mockup, 2026-07-26): the two suite-global
+	-- actions are FLAT nav rows now, not filled buttons. Reason beyond looks: a
+	-- filled pill down here competed with the active nav item — two elements
+	-- claiming "most important control". Flat subordinates them to the nav
+	-- rhythm. Same builder as the module rows, so hover pill / icon tinting /
+	-- metrics stay in ONE place; they are simply never "active".
+	local function makeActionRow(label, iconFile, onClick, y)
+		local r = makeNavItem(nav, label, iconFile)
+		r:ClearAllPoints() -- makeNavItem anchors LEFT/RIGHT; re-pin to the sidebar bottom
+		r:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", 0, y)
+		r:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", 0, y)
+		r:SetScript("OnClick", onClick)
+		return r
+	end
 
-	-- Preview toggle (v3 mockup): ONE central point to open/close the preview
-	-- window. Stacks ABOVE the Edit Mode button. Hidden on screens without a
-	-- registered preview; label follows the open state (_UpdateDock keeps it
-	-- current).
-	local pvY = emY + UI.WIDGET.buttonH + S.s4
-	local pvBtn = ns.W.Button(nav, { text = "", variant = "neutral",
-		onClick = function() Shell:TogglePreview() end })
-	pvBtn:SetPoint("BOTTOMLEFT", nav, "BOTTOMLEFT", S.panelGutter, pvY)
-	pvBtn:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -S.panelGutter, pvY)
-	pvBtn:Hide()
-	self._previewBtn = pvBtn
+	-- Edit Mode: a suite-global action, so it lives in the global chrome —
+	-- pinned above the version chip, ALWAYS visible on every screen. Opens the
+	-- Lumen edit session (Shell hides, mover overlays + toolbar show).
+	local emY = hasChip and (S.panelGutter + chipH + S.s3) or S.panelGutter
+	local emRow = makeActionRow(T("Edit Mode"), "icon-move",
+		function() if ns.EditMode then ns.EditMode:OpenSession() end end, emY)
+	self._editRow = emRow
+
+	-- Preview toggle: ONE central point to open/close the preview window. Stacks
+	-- ABOVE the Edit Mode row. Hidden on screens without a registered preview;
+	-- the label follows the open state (_UpdateDock keeps it current, the eye
+	-- glyph stays put — the LABEL names the action).
+	local pvRow = makeActionRow("", "icon-eye", function() Shell:TogglePreview() end,
+		emY + S.navItemH + S.navItemGap)
+	pvRow:Hide()
+	self._previewRow = pvRow
+
+	-- Faint separator between the module list and the actions (mockup): flat rows
+	-- would otherwise read as two more modules. Inset to the nav gutter; sits
+	-- above whichever action row is currently the topmost visible one.
+	local navSep = nav:CreateTexture(nil, "ARTWORK")
+	setColor(navSep, Border.faint)
+	self._navSep = navSep
+	self:_UpdateNavSep()
+
+	-- News card ("what's new" after an update) — sits above the separator, the
+	-- only element down here that asks for attention, which is why the actions
+	-- went flat. A CARD, not a pill: a pill would have to be clicked before you
+	-- learn whether it's worth it; the card sells itself with a title and two
+	-- lines. Content + visibility come from Shell:_UpdateNewsCard (data in
+	-- Shell/News.lua).
+	local news = CreateFrame("Button", nil, nav)
+	news:SetHeight(S.newsCardH)
+	-- Anchored to the SEPARATOR, which re-anchors with the action rows — so the
+	-- card rides along. The x terms convert the separator's nav-gutter inset to
+	-- the card's (wider) pill inset, per the mockup: card 32, rule 50.
+	news:SetPoint("BOTTOMLEFT", navSep, "TOPLEFT", S.navPillPadX - S.navGutter, S.newsCardGap)
+	news:SetPoint("BOTTOMRIGHT", navSep, "TOPRIGHT", S.navGutter - S.navPillPadX, S.newsCardGap)
+	UI.RoundFill(news, Surface.Card, "BACKGROUND", nil, UI.RADIUS.lg)
+	local newsBorder = UI.RoundBorder(news, Border.hover, "BORDER", nil, UI.RADIUS.lg)
+
+	-- "New" badge: ACCENT, not the reference's green. Semantic colour lives on
+	-- the preview island only — a green chip would be the single semantic colour
+	-- in the chrome and would fight a user-picked accent (design bible).
+	local pill = CreateFrame("Frame", nil, news)
+	pill:SetHeight(S.newsPillH)
+	pill:SetPoint("TOPLEFT", news, "TOPLEFT", S.newsCardPad, -S.newsCardPad)
+	local pillBg = UI.PillFill(pill, Accent.color, "BACKGROUND", S.newsPillH)
+	local pillFS = FS(pill, "newsBadge", Text.OnAccent)
+	pillFS:SetPoint("CENTER", pill, "CENTER", 0, 0)
+
+	-- Dismiss: marks everything read (same as "Mark all as read" on the screen).
+	-- Turning the feature OFF for good is a switch in Global -> Base, not a
+	-- hidden meaning of this X.
+	local newsX = CreateFrame("Button", nil, news)
+	newsX:SetSize(S.newsCloseH, S.newsCloseH)
+	newsX:SetPoint("TOPRIGHT", news, "TOPRIGHT", -S.s3, -S.s3)
+	local newsXHover = UI.RoundFill(newsX, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
+	newsXHover:Hide()
+	local newsXTex = newsX:CreateTexture(nil, "OVERLAY")
+	newsXTex:SetSize(S.closeGlyph - 4, S.closeGlyph - 4)
+	newsXTex:SetPoint("CENTER", newsX, "CENTER", 0, 0)
+	newsXTex:SetTexture(TEX .. "icon-x")
+	newsXTex:SetSnapToPixelGrid(false); newsXTex:SetTexelSnappingBias(0)
+	newsXTex:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
+
+	-- TOPLEFT + TOPRIGHT (never TOPLEFT + RIGHT): two points may not both pin the
+	-- vertical axis, or the region resizes itself instead of wrapping.
+	local newsTitle = FS(news, "newsTitle", Text.Primary)
+	newsTitle:SetPoint("TOPLEFT", pill, "BOTTOMLEFT", 0, -S.s4)
+	newsTitle:SetPoint("TOPRIGHT", news, "TOPRIGHT", -S.newsCardPad, -(S.newsCardPad + S.newsPillH + S.s4))
+	newsTitle:SetJustifyH("LEFT")
+
+	-- Two lines, hard-capped: the card keeps ONE height, so a long summary is
+	-- truncated instead of pushing the module list around (write summaries to fit).
+	local newsBody = FS(news, "body", Text.Description)
+	newsBody:SetPoint("TOPLEFT", newsTitle, "BOTTOMLEFT", 0, -S.s2)
+	newsBody:SetPoint("TOPRIGHT", newsTitle, "BOTTOMRIGHT", 0, -S.s2)
+	newsBody:SetJustifyH("LEFT")
+	newsBody:SetWordWrap(true)
+	newsBody:SetMaxLines(2)
+	newsBody:SetSpacing(3)
+
+	local cta = CreateFrame("Frame", nil, news)
+	cta:SetHeight(S.newsCtaH)
+	cta:SetPoint("BOTTOMLEFT", news, "BOTTOMLEFT", S.newsCardPad, S.newsCardPad - S.s1)
+	local ctaBorder = UI.PillBorder(cta, Border.hover, "OVERLAY", S.newsCtaH)
+	local ctaFS = FS(cta, "label", Text.Secondary)
+	ctaFS:SetPoint("CENTER", cta, "CENTER", 0, 0)
+
+	local function paintNews(hovered)
+		local line = hovered and Accent.selection or Border.hover
+		for _, tex in ipairs(newsBorder) do setColor(tex, line) end
+		for _, tex in ipairs(ctaBorder) do setColor(tex, line) end
+		ctaFS:SetTextColor(hovered and Text.Primary.r or Text.Secondary.r,
+			hovered and Text.Primary.g or Text.Secondary.g,
+			hovered and Text.Primary.b or Text.Secondary.b)
+	end
+	news:SetScript("OnEnter", function() paintNews(true) end)
+	news:SetScript("OnLeave", function() paintNews(false) end)
+	news:SetScript("OnClick", function() Shell:ShowWhatsNew() end)
+	newsX:SetScript("OnEnter", function()
+		newsXHover:Show()
+		newsXTex:SetVertexColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
+		if ns.W and ns.W.ShowTextTip then ns.W.ShowTextTip(newsX, T("Mark as read")) end
+	end)
+	newsX:SetScript("OnLeave", function()
+		newsXHover:Hide()
+		newsXTex:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
+		if ns.W and ns.W.HideTip then ns.W.HideTip() end
+	end)
+	newsX:SetScript("OnClick", function() Shell:MarkNewsRead() end)
+
+	news._pill, news._pillBg, news._pillFS = pill, pillBg, pillFS
+	news._title, news._body, news._cta, news._ctaFS = newsTitle, newsBody, cta, ctaFS
+	news._paint = paintNews
+	news:Hide()
+	self._newsCard = news
+	self:_UpdateNewsCard()
 
 	local main = CreateFrame("Frame", nil, body)
 	main:SetPoint("TOPLEFT", nav, "TOPRIGHT", 0, 0)
@@ -862,7 +978,7 @@ function Shell:Build()
 	self._navButtons = {}
 	local prev
 	for i, sec in ipairs(SECTIONS) do
-		local nb = makeNavItem(nav, sec[1]) -- v3: text-only nav (icons dropped per the mockup; pass sec.icon to restore)
+		local nb = makeNavItem(nav, sec[1], sec.icon) -- Lucide module icon (what's-new mockup, 2026-07-26)
 		if prev then
 			-- v3: uniform spacing, NO group divider lines (mockup) — sec.sep kept in
 			-- SECTIONS for later but no longer draws a line or an extra gap.
@@ -872,7 +988,7 @@ function Shell:Build()
 		end
 		nb._index = i
 		if sec.soon then nb:SetComingSoon(true) end
-		nb:SetScript("OnClick", function() Shell:LeaveSearch(); Shell:SelectSection(i) end)
+		nb:SetScript("OnClick", function() Shell:LeaveSearch(); Shell:LeaveWhatsNew(); Shell:SelectSection(i) end)
 		self._navButtons[i] = nb
 		prev = nb
 	end
@@ -1006,6 +1122,9 @@ end
 -- Edit Mode flyout's "Open settings" jump for large modules. Name lookup keeps
 -- callers stable if the SECTIONS order ever changes.
 function Shell:OpenTo(sectionName, tabName)
+	-- Every jump lands on a real settings tab — leave the notes screen behind
+	-- (this covers the news rows, the search results and Edit Mode's jump).
+	self:LeaveWhatsNew()
 	-- Cold open? On a warm Shell the normal path is fine; but when OpenTo SHOWS the
 	-- panel and immediately selects a section, the target screen is built in the same
 	-- tick the panel became visible -> IsShown() is already true, so RenderContent
@@ -1576,6 +1695,9 @@ function Shell:RefreshAccent(col, chromeOnly)
 		if f._navEdge  then f._navEdge:SetVertexColor(c.r, c.g, c.b, NAV_EDGE_INTENSITY) end
 	end
 	if self._applyWordmarkAccent then self._applyWordmarkAccent() end
+	-- News card: only the "New" badge carries the accent (the card itself is
+	-- neutral chrome), so one re-tint is enough.
+	if self._newsCard and self._newsCard._pillBg then setColor(self._newsCard._pillBg, c) end
 	if self._tabGlow then local g = Accent.glow; self._tabGlow:SetVertexColor(g.r, g.g, g.b, g.a) end
 	if self._tabFill then local w = Accent.wash; self._tabFill:SetVertexColor(w.r, w.g, w.b, w.a) end
 	if self._paintThumb then self._paintThumb(0.55) end -- scrollbar thumb (idle alpha)
@@ -1620,6 +1742,22 @@ function Shell:SetPreviewOpen(v)
 end
 function Shell:TogglePreview() self:SetPreviewOpen(not self._previewOpen) end
 
+-- Sidebar separator above the action rows: re-anchored whenever the preview row
+-- shows/hides, so the line always hugs the topmost VISIBLE action (a line left
+-- floating over a gap reads as a stray rule). Thickness is pixel-snapped, the
+-- position stays plain SetPoint (border pixel-snap rule).
+function Shell:_UpdateNavSep()
+	local sep = self._navSep
+	if not sep then return end
+	local top = (self._previewRow and self._previewRow:IsShown()) and self._previewRow or self._editRow
+	if not top then return end
+	sep:ClearAllPoints()
+	sep:SetPoint("BOTTOMLEFT", top, "TOPLEFT", S.navGutter, S.s5)
+	sep:SetPoint("BOTTOMRIGHT", top, "TOPRIGHT", -S.navGutter, S.s5)
+	local function snap() PixelUtil.SetHeight(sep, 1) end
+	snap(); C_Timer.After(0, snap)
+end
+
 function Shell:_UpdateDock(key)
 	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
 	local dock = self._dock
@@ -1629,11 +1767,12 @@ function Shell:_UpdateDock(key)
 	if not frames then frames = {}; self._dockFrames = frames end
 	local builder = ns.ScreenPreviews and ns.ScreenPreviews[key]
 	-- Sidebar toggle: only screens with a preview get the button.
-	if self._previewBtn then
-		self._previewBtn:SetShown(builder ~= nil)
+	if self._previewRow then
+		self._previewRow:SetShown(builder ~= nil)
 		if builder then
-			self._previewBtn._txt:SetText(self._previewOpen and T("Close preview") or T("Open preview"))
+			self._previewRow._txt:SetText(self._previewOpen and T("Close preview") or T("Open preview"))
 		end
+		self:_UpdateNavSep() -- the separator hugs the topmost visible action row
 	end
 	for k, fr in pairs(frames) do fr:SetShown(builder ~= nil and k == key) end
 	if not builder or not self._previewOpen then
@@ -1944,6 +2083,7 @@ function Shell:SetSearchQuery(text)
 	self._searchSel = nil
 	self:_UpdateNavCounts()
 	if q then
+		self:LeaveWhatsNew() -- typing takes over the content area from the notes
 		self:RenderContent()
 	else
 		-- Leaving search: SelectSection restores the tab strip the search hid.
@@ -2133,6 +2273,218 @@ function Shell:BuildSearchScreen(d, stack)
 	band.close()
 end
 
+-- ---------------------------------------------------------------------------
+--  What's new — the sidebar news card and the release-notes pseudo screen.
+--  Same shape as the search: a screen key that never collides with a real
+--  "Section/Tab", the tab strip hidden while it shows, never cached. Data +
+--  read state live in Shell/News.lua.
+-- ---------------------------------------------------------------------------
+local NEWS_KEY = "\1whatsnew"
+
+-- Fill + show/hide the sidebar card from the unread releases. Called on build,
+-- after marking read, and from the Global/Base switch.
+function Shell:_UpdateNewsCard()
+	local card = self._newsCard
+	if not card then return end
+	local unread = (ns.NewsUnread and ns.NewsEnabled and ns.NewsEnabled()) and ns.NewsUnread() or nil
+	local latest = unread and unread[1]
+	if not latest then card:Hide(); return end
+
+	card._pillFS:SetText(T("New"))
+	card._title:SetText(T("New in %s"):format(latest.version))
+	card._body:SetText(T(latest.summary or ""))
+	card._ctaFS:SetText(T("View"))
+	-- Widths follow the strings; on a cold start GetStringWidth is still 0 while
+	-- the font rasterizes, so re-measure once the next frame (tab-strip pattern).
+	local function fit()
+		card._pill:SetWidth(math.ceil(card._pillFS:GetStringWidth()) + S.s5 * 2)
+		card._cta:SetWidth(math.ceil(card._ctaFS:GetStringWidth()) + S.s6 * 2)
+	end
+	fit(); C_Timer.After(0, fit)
+	card._paint(false)
+	card:Show()
+end
+
+function Shell:IsWhatsNew() return self._whatsNew == true end
+
+function Shell:ShowWhatsNew()
+	self:Show()
+	self:LeaveSearch() -- the results and the notes are both pseudo screens; one at a time
+	-- Snapshot what to show ONCE, when the screen opens: "Mark all as read"
+	-- must acknowledge the news without emptying the page under the cursor.
+	local unread = (ns.NewsUnread and ns.NewsUnread()) or {}
+	self._newsSnapshot = unread
+	-- Nothing unread (opened from the settings, not from the card) -> show the
+	-- whole history right away instead of a blank page.
+	self._newsShowAll = #unread == 0
+	self._whatsNew = true
+	self:RenderContent(true)
+end
+
+function Shell:LeaveWhatsNew()
+	if not self._whatsNew then return end
+	self._whatsNew = false
+end
+
+function Shell:MarkNewsRead()
+	if ns.NewsMarkRead then ns.NewsMarkRead() end
+	self:_UpdateNewsCard()
+	-- Re-render only to update the footer (the list itself stays on its snapshot).
+	if self._whatsNew then self:RenderContent(true) end
+end
+
+-- One note row: kind chip, the sentence, and — only when the entry really has a
+-- setting behind it — the path plus chevron. Entries without a target stay
+-- completely quiet: no path, no chevron, no hover, no click. A row that jumps
+-- nowhere reads as broken, and most bug fixes have nowhere to go.
+-- Kind chips. "New" carries the accent (the only loud one); changed/fixed stay
+-- outline-only, so a long list doesn't turn into a colour parade. Built ONCE
+-- per screen (labels are localized, so it can't be a file constant) and handed
+-- to every row instead of re-allocating it per note.
+local function newsKinds()
+	return {
+		["new"]     = { label = T("New"),     fill = Accent.color,  text = Text.OnAccent,   line = nil },
+		["fixed"]   = { label = T("Fixed"),   fill = Surface.Input, text = Text.Secondary,  line = Border.hover },
+		["changed"] = { label = T("Changed"), fill = nil,           text = Text.Description, line = Border.hover },
+	}
+end
+
+function Shell:_NewsRow(d, e, KIND)
+	local L = UI.LAYOUT.news
+	local jumps = e.section ~= nil
+	local row = CreateFrame(jumps and "Button" or "Frame", nil, d)
+	local hover
+	if jumps then
+		hover = UI.RoundFill(row, Surface.Hover, "BACKGROUND", nil, UI.RADIUS.sm)
+		hover:Hide()
+	end
+
+	local k = KIND[e.kind] or KIND["changed"]
+	local chip = CreateFrame("Frame", nil, row)
+	chip:SetHeight(L.kindH)
+	chip:SetPoint("LEFT", row, "LEFT", S.s5, 0)
+	if k.fill then UI.RoundFill(chip, k.fill, "BACKGROUND", nil, UI.RADIUS.xs) end
+	if k.line then UI.RoundBorder(chip, k.line, "BORDER", nil, UI.RADIUS.xs) end
+	local chipFS = FS(chip, "newsBadge", k.text)
+	chipFS:SetText(k.label)
+	chipFS:SetPoint("CENTER", chip, "CENTER", 0, 0)
+	local function fitChip() chip:SetWidth(math.ceil(chipFS:GetStringWidth()) + S.s4) end
+	fitChip(); C_Timer.After(0, fitChip)
+
+	-- Path, right-aligned, with the same chevron the rest of the Shell uses.
+	local crumb
+	if jumps then
+		crumb = CreateFrame("Frame", nil, row)
+		crumb:SetHeight(L.kindH)
+		crumb:SetPoint("RIGHT", row, "RIGHT", -S.s6, 0)
+		local chev = crumb:CreateTexture(nil, "ARTWORK")
+		chev:SetSize(S.s5, S.s5)
+		chev:SetPoint("RIGHT", crumb, "RIGHT", 0, 0)
+		chev:SetTexture(TEX .. "icon-chevron-right")
+		chev:SetSnapToPixelGrid(false); chev:SetTexelSnappingBias(0)
+		chev:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
+		local cfs = FS(crumb, "label", Text.Disabled)
+		cfs:SetText(T(e.section) .. (e.tab and ("  ›  " .. T(e.tab)) or "")) -- a section-only target is legal
+		cfs:SetPoint("RIGHT", chev, "LEFT", -S.s2, 0) -- NEGATIVE: a gap left of the chevron, not an overlap
+		local function fitCrumb() crumb:SetWidth(math.ceil(cfs:GetStringWidth()) + S.s5 + S.s2) end
+		fitCrumb(); C_Timer.After(0, fitCrumb)
+		crumb._fs, crumb._chev = cfs, chev
+	end
+
+	local txt = FS(row, "hint", Text.Secondary)
+	txt:SetJustifyH("LEFT")
+	txt:SetWordWrap(true)
+	txt:SetMaxLines(2)
+	txt:SetText(T(e.text))
+	txt:SetPoint("LEFT", row, "LEFT", L.kindW, 0)
+	if crumb then
+		txt:SetPoint("RIGHT", crumb, "LEFT", -L.crumbGap, 0)
+	else
+		txt:SetPoint("RIGHT", row, "RIGHT", -S.s6, 0)
+	end
+
+	if jumps then
+		row:SetScript("OnEnter", function()
+			hover:Show()
+			txt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
+			crumb._fs:SetTextColor(Text.Description.r, Text.Description.g, Text.Description.b)
+			crumb._chev:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
+		end)
+		row:SetScript("OnLeave", function()
+			hover:Hide()
+			txt:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
+			crumb._fs:SetTextColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
+			crumb._chev:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
+		end)
+		-- JumpTo takes the whole path: it opens section + tab, lets the screen
+		-- pre-open a collapsed disclosure and flashes the card. Without a card key
+		-- it simply lands on the tab.
+		row:SetScript("OnClick", function() Shell:JumpTo(e.section, e.tab, e.card) end)
+	end
+	return row
+end
+
+function Shell:BuildWhatsNewScreen(d, stack)
+	local L = UI.LAYOUT.news
+	local R = UI.LAYOUT.rhythm
+	local all = ns.News or {}
+	local blocks = self._newsShowAll and all or (self._newsSnapshot or {})
+
+	stack:gap(UI.LAYOUT.general.tabTop)
+
+	local head = CreateFrame("Frame", nil, d)
+	local title = FS(head, "sectionHead", Text.Primary)
+	title:SetText(T("What's new"))
+	title:SetPoint("TOPLEFT", head, "TOPLEFT", 0, 0)
+	local sub = FS(head, "hint", Text.Description)
+	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -S.s2)
+	local seen = ns.Lumen and ns.Lumen.db and ns.Lumen.db.global.lastSeenVersion
+	if self._newsShowAll then
+		sub:SetText(T("Every release Lumen ships notes for."))
+	elseif seen then
+		sub:SetText(T("Everything that changed since your version %s."):format(seen))
+	else
+		sub:SetText(T("Everything that changed since you last looked."))
+	end
+	stack:place(head, L.headH + L.introH, R.row)
+
+	local KIND = newsKinds()
+	for _, block in ipairs(blocks) do
+		local band = stack:band({
+			{ span = UI.GRID.cols, title = block.version, subtitle = block.date },
+		})
+		local card = band.cards[1]
+		for _, e in ipairs(block.entries) do
+			card:place(self:_NewsRow(d, e, KIND), L.rowH, L.rowGap)
+		end
+		card:close()
+		band.close()
+	end
+
+	-- Footer: acknowledge, and (unless we already show everything) unfold the
+	-- older releases — the "full patch notes" of the mockup, kept INSIDE the
+	-- window because the game has no browser to send anyone to.
+	local footRow = CreateFrame("Frame", nil, d)
+	local readBtn
+	-- "Mark all as read" only while something IS unread — after the click it
+	-- disappears instead of sitting there as a no-op.
+	if #(self._newsSnapshot or {}) > 0 and ns.NewsUnread and #ns.NewsUnread() > 0 then
+		readBtn = ns.W.Button(footRow, { text = T("Mark all as read"), variant = "primary",
+			onClick = function() Shell:MarkNewsRead() end })
+		readBtn:SetPoint("LEFT", footRow, "LEFT", 0, 0)
+	end
+	if not self._newsShowAll and #all > #blocks then
+		local moreBtn = ns.W.Button(footRow, { text = T("Show older releases"), variant = "neutral",
+			onClick = function()
+				Shell._newsShowAll = true
+				Shell:RenderContent(true)
+			end })
+		if readBtn then moreBtn:SetPoint("LEFT", readBtn, "RIGHT", UI.GRID.cardGap, 0)
+		else moreBtn:SetPoint("LEFT", footRow, "LEFT", 0, 0) end
+	end
+	stack:place(footRow, UI.WIDGET.buttonH, L.footTop)
+end
+
 function Shell:RenderContent(changed)
 	-- Release any keybind-capture before switching: hiding the screen orphans a
 	-- listening KeybindButton without firing its OnHide, which would leave the
@@ -2148,11 +2500,14 @@ function Shell:RenderContent(changed)
 	local sec = SECTIONS[self._section]
 	local key = sec[1] .. "/" .. ((not sec.soon and sec[2][self._tab]) or "")
 
-	-- Search mode renders a pseudo screen instead of the tab: results span tabs,
-	-- so the tab strip would be lying about where you are -- hide it.
+	-- Search and "what's new" render a pseudo screen instead of the tab: both
+	-- span tabs, so the tab strip would be lying about where you are -- hide it.
+	-- Search wins if somehow both are set (typing is the more recent intent).
 	local searching = self:IsSearching()
-	if searching then
-		key = SEARCH_KEY
+	local whatsNew = self._whatsNew and not searching
+	local pseudo = searching or whatsNew
+	if pseudo then
+		key = searching and SEARCH_KEY or NEWS_KEY
 		for _, t in ipairs(self._tabButtons or {}) do t:Hide() end
 		if self._tabStripBg then self._tabStripBg:Hide() end
 		if self._tabSlider then self._tabSlider:Hide(); self._tabSlider._cx = nil end
@@ -2161,7 +2516,7 @@ function Shell:RenderContent(changed)
 	-- Leaving a whole SECTION (not a tab switch within it): reset that section's
 	-- open disclosures and drop its cached screens so they rebuild collapsed on
 	-- the next visit. Switching tabs inside a section keeps everything open.
-	if not searching and self._lastKey and self._lastKey ~= key then
+	if not pseudo and self._lastKey and self._lastKey ~= key then
 		local oldSec = self._lastKey:match("^[^/]+")
 		if oldSec ~= key:match("^[^/]+") and ns.SectionLeft and ns.SectionLeft(oldSec) then
 			for k, entry in pairs(cache) do
@@ -2174,7 +2529,7 @@ function Shell:RenderContent(changed)
 			end
 		end
 	end
-	if not searching then self._lastKey = key end
+	if not pseudo then self._lastKey = key end
 
 	if changed then self:InvalidateScreenCache() end
 
@@ -2200,7 +2555,7 @@ function Shell:RenderContent(changed)
 
 	-- Cache hit: re-show as-is — values are guaranteed current because every
 	-- change since the build would have dropped the cache.
-	local hit = not searching and cache[key]
+	local hit = not pseudo and cache[key]
 	if hit then
 		self._screen, self._popovers = hit.frame, hit.popovers
 		-- New (lazily created) popovers of reused widgets must land in THIS
@@ -2240,6 +2595,8 @@ function Shell:RenderContent(changed)
 	local stack = newStack(d)
 	if searching then
 		self:BuildSearchScreen(d, stack)
+	elseif whatsNew then
+		self:BuildWhatsNewScreen(d, stack)
 	elseif sec.soon then
 		self:ComingSoon(d, stack, sec[1])
 	else
@@ -2266,8 +2623,9 @@ function Shell:RenderContent(changed)
 	holderParent:SetHeight(h)
 	-- Never CACHE a screen built while hidden (degenerate layout) — it gets
 	-- rebuilt by the deferred OnShow pass; caching it could revive it later.
-	-- The result screen is never cached: it changes with every keystroke.
-	if not d._builtHidden and not searching then
+	-- Pseudo screens are never cached: the results change with every keystroke,
+	-- the notes with the read state.
+	if not d._builtHidden and not pseudo then
 		cache[key] = { frame = d, popovers = self._popovers, height = h, badge = self._lastBadge }
 	end
 	if self._scroll then

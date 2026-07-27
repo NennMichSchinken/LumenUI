@@ -467,6 +467,43 @@ ns.RegisterLocale("deDE", {
 	["Reset window positions?"] = "Fensterpositionen zurücksetzen?",
 	["All Blizzard windows return to their default positions the next time they are opened."] = "Alle Blizzard-Fenster erscheinen beim nächsten Öffnen wieder an ihren Standardpositionen.",
 
+	-- ── What's new (sidebar card + release notes screen) ───────────────────
+	-- Chrome
+	["New"] = "Neu",
+	["New in %s"] = "Neu in %s",
+	["View"] = "Ansehen",
+	["Mark as read"] = "Als gelesen markieren",
+	["What's new"] = "Was ist neu",
+	["Fixed"] = "Behoben",
+	["Changed"] = "Geändert",
+	["Mark all as read"] = "Alles gelesen",
+	["Show older releases"] = "Ältere Versionen anzeigen",
+	["Every release Lumen ships notes for."] = "Alle Versionen, zu denen Lumen Notizen mitliefert.",
+	["Everything that changed since your version %s."] = "Alles, was sich seit deiner Version %s geändert hat.",
+	["Everything that changed since you last looked."] = "Alles, was sich seit deinem letzten Blick geändert hat.",
+	["Release notes after an update."] = "Versionshinweise nach einem Update.",
+	["Show a news card after an update"] = "Nach einem Update eine News-Karte zeigen",
+	["After an update the sidebar shows what changed. The notes stay available from the button below."] = "Nach einem Update zeigt die Seitenleiste, was sich geändert hat. Die Notizen bleiben über den Knopf darunter erreichbar.",
+	["Open what's new"] = "Was ist neu öffnen",
+	["%s is new — |cffE9BB69/lumen|r shows what changed."] = "%s ist neu — |cffE9BB69/lumen|r zeigt, was sich geändert hat.",
+
+	-- Release notes (Shell/News.lua) — translate every new entry here as well.
+	["The sidebar now shows what an update changed — and every note jumps to the setting behind it."] = "Die Seitenleiste zeigt jetzt, was ein Update geändert hat — und jede Notiz springt zur zugehörigen Einstellung.",
+	["What's new: after an update the sidebar carries a news card, and every note jumps to the setting behind it."] = "Was ist neu: Nach einem Update trägt die Seitenleiste eine News-Karte, und jede Notiz springt zur zugehörigen Einstellung.",
+	["The two sidebar actions are flat rows with icons now, and the module list carries its icons again."] = "Die beiden Aktionen in der Seitenleiste sind jetzt flache Zeilen mit Symbol, und die Modulliste trägt wieder ihre Symbole.",
+	["A rebuilt settings window with a free accent colour and a search — plus resource bars on the raid frames."] = "Ein neu gebautes Einstellungsfenster mit freier Akzentfarbe und Suche — dazu Ressourcenbalken an den Raidframes.",
+	["An accent colour of your choice — seven presets or a free colour picker, saved account-wide."] = "Eine Akzentfarbe deiner Wahl — sieben Vorlagen oder ein freier Farbwähler, accountweit gespeichert.",
+	["A search field above the module list finds a setting across every module and jumps straight to it."] = "Ein Suchfeld über der Modulliste findet Einstellungen über alle Module hinweg und springt direkt hin.",
+	["A resource bar at the bottom of each frame — the other healers' mana at a glance."] = "Ein Ressourcenbalken am unteren Rand jedes Frames — das Mana der anderen Heiler auf einen Blick.",
+	["Smooth bars: health and resources glide to their new value instead of jumping."] = "Weiche Balken: Leben und Ressourcen gleiten auf ihren neuen Wert, statt zu springen.",
+	["Augmentation Evoker aura defaults — Prescience, Ebon Might, Shifting Sands and the rest of the kit."] = "Auren-Vorgaben für Augmentation-Rufer — Vorauswissen, Ebenholzmacht, Wandelnder Sand und der Rest.",
+	["Accept group invites from friends and guild members automatically, while you are alone and outside an instance."] = "Gruppeneinladungen von Freunden und Gildenmitgliedern automatisch annehmen, solange du allein und außerhalb einer Instanz bist.",
+	["Settings window rebuilt: calmer monochrome surfaces, quieter text, bigger and rounder controls."] = "Einstellungsfenster neu gebaut: ruhigere, einfarbige Flächen, zurückhaltender Text, größere und rundere Bedienelemente.",
+	["Texture dropdowns need Shift or Ctrl before the mouse wheel previews, so scrolling no longer changes a setting by accident."] = "Textur-Auswahllisten brauchen Shift oder Strg, bevor das Mausrad eine Vorschau zeigt — so ändert Scrollen nicht mehr versehentlich eine Einstellung.",
+	["Name and HP text have their own preview eyes instead of one shared toggle."] = "Name und Lebenstext haben eigene Vorschau-Augen statt eines gemeinsamen Schalters.",
+	["The role icon stayed hidden whenever no group role was assigned — solo, or in a group that never went through a role check."] = "Das Rollensymbol blieb aus, wenn keine Gruppenrolle zugewiesen war — allein oder in einer Gruppe ohne Rollenabfrage.",
+	["Smaller download: the bundled font is subset to Western Latin and 19 unused textures are gone."] = "Kleinerer Download: Die mitgelieferte Schrift ist auf westliches Latein reduziert, 19 ungenutzte Texturen sind raus.",
+
 	-- Shell: global settings search
 	["Search"] = "Suche",
 	["Results for"] = "Ergebnisse für",

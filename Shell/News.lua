@@ -1,0 +1,147 @@
+local ADDON, ns = ...
+
+-- ===========================================================================
+--  Lumen — What's new (release notes data)
+--
+--  The table the Shell shows in its sidebar news card and on the "What's new"
+--  screen. It is written BY HAND for every release; the source are the patch
+--  notes we write anyway. That is a permanent extra release step, not a
+--  one-off — plan for it when tagging.
+--
+--  Rules that keep the screen honest:
+--   * NEWEST version first. `version` matches the released tag (without -beta).
+--   * `summary` = the two lines the sidebar card shows for that release. Keep
+--     it to two lines; the card truncates rather than growing.
+--   * `text` = ONE plain sentence per entry. No marketing.
+--   * `kind` = "new" | "fixed" | "changed".
+--   * A jump target is OPTIONAL: set `section`/`tab` (and `card`, only for a
+--     key a screen really registers via Shell:RegisterJumpCard) when there is
+--     a setting behind the line. Entries WITHOUT a target stay quiet — no
+--     path, no chevron, no hover. A row that jumps nowhere reads as broken,
+--     so bug fixes usually carry no target at all.
+--   * `date` is the release date, shown muted next to the version. Fix it up
+--     when the tag actually goes out if it was written ahead of time.
+--
+--  Registered card keys today:
+--   Raidframes › Raid / Group: power-bar, text-name, text-hp, icon-role,
+--     icon-lead, aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
+--   Raidframes › Base: health-bar, text-style
+--   Raidframes › Tracking: track-hot, track-def, track-major
+--   Global › Base: accent, whatsnew
+--   QoL › Base: qol-windows, qol-invites
+--  A key is what makes the target card FLASH on arrival. A jump without one
+--  only opens the tab and nothing lights up — so give every jumping entry a
+--  key, and register a new one (regJump in Screens.lua) if the card lacks it.
+--
+--  Strings stay ENGLISH here — they are the localization keys; T() is applied
+--  when the row is drawn and Locales/deDE.lua carries the translations.
+-- ===========================================================================
+
+ns.News = {
+	{
+		version = "0.9.289",
+		date = "2026-07-27",
+		summary = "The sidebar now shows what an update changed — and every note jumps to the setting behind it.",
+		entries = {
+			{ kind = "new",
+			  text = "What's new: after an update the sidebar carries a news card, and every note jumps to the setting behind it.",
+			  section = "Global", tab = "Base", card = "whatsnew" },
+			{ kind = "changed",
+			  text = "The two sidebar actions are flat rows with icons now, and the module list carries its icons again." },
+		},
+	},
+	{
+		version = "0.9.287",
+		date = "2026-07-26",
+		summary = "A rebuilt settings window with a free accent colour and a search — plus resource bars on the raid frames.",
+		entries = {
+			{ kind = "new",
+			  text = "An accent colour of your choice — seven presets or a free colour picker, saved account-wide.",
+			  section = "Global", tab = "Base", card = "accent" },
+			{ kind = "new",
+			  text = "A search field above the module list finds a setting across every module and jumps straight to it." },
+			{ kind = "new",
+			  text = "A resource bar at the bottom of each frame — the other healers' mana at a glance.",
+			  section = "Raidframes", tab = "Raid", card = "power-bar" },
+			{ kind = "new",
+			  text = "Smooth bars: health and resources glide to their new value instead of jumping.",
+			  section = "Raidframes", tab = "Base", card = "health-bar" },
+			{ kind = "new",
+			  text = "Augmentation Evoker aura defaults — Prescience, Ebon Might, Shifting Sands and the rest of the kit.",
+			  section = "Raidframes", tab = "Tracking", card = "track-hot" },
+			{ kind = "new",
+			  text = "Accept group invites from friends and guild members automatically, while you are alone and outside an instance.",
+			  section = "QoL", tab = "Base", card = "qol-invites" },
+			{ kind = "changed",
+			  text = "Settings window rebuilt: calmer monochrome surfaces, quieter text, bigger and rounder controls." },
+			{ kind = "changed",
+			  text = "Texture dropdowns need Shift or Ctrl before the mouse wheel previews, so scrolling no longer changes a setting by accident.",
+			  section = "Raidframes", tab = "Base", card = "health-bar" },
+			{ kind = "changed",
+			  text = "Name and HP text have their own preview eyes instead of one shared toggle.",
+			  section = "Raidframes", tab = "Raid", card = "text-name" },
+			{ kind = "fixed",
+			  text = "The role icon stayed hidden whenever no group role was assigned — solo, or in a group that never went through a role check." },
+			{ kind = "changed",
+			  text = "Smaller download: the bundled font is subset to Western Latin and 19 unused textures are gone." },
+		},
+	},
+}
+
+-- ---------------------------------------------------------------------------
+--  Read state. "Read up to" is stored as the newest NEWS version, never as the
+--  addon version: local dev builds report "dev" as their version, and a user
+--  who skips a release must still see the releases in between. Account-wide
+--  (db.global), like the accent — news is not a per-profile matter.
+-- ---------------------------------------------------------------------------
+local function store()
+	local db = ns.Lumen and ns.Lumen.db
+	return db and db.global
+end
+
+-- Compare two version strings by their numeric parts ("0.9.9" < "0.9.10").
+-- Anything unparseable (a "dev" build) sorts as 0 and therefore counts as
+-- older than every real release.
+local function parts(v)
+	local t = {}
+	for n in tostring(v or ""):gmatch("%d+") do t[#t + 1] = tonumber(n) end
+	return t
+end
+function ns.NewsCompare(a, b)
+	local pa, pb = parts(a), parts(b)
+	for i = 1, math.max(#pa, #pb) do
+		local x, y = pa[i] or 0, pb[i] or 0
+		if x ~= y then return (x < y) and -1 or 1 end
+	end
+	return 0
+end
+
+function ns.NewsLatestVersion()
+	local first = ns.News[1]
+	return first and first.version
+end
+
+-- The releases the user has not seen yet, newest first. No stored version =
+-- everything we ship notes for (an existing install meeting the feature for
+-- the first time); a FRESH install is silenced in Core instead, by marking it
+-- read before the first login print.
+function ns.NewsUnread()
+	local g = store()
+	local seen = g and g.lastSeenVersion
+	local out = {}
+	for _, block in ipairs(ns.News) do
+		if seen and ns.NewsCompare(block.version, seen) <= 0 then break end -- table is sorted: the rest is older too
+		out[#out + 1] = block
+	end
+	return out
+end
+
+function ns.NewsEnabled()
+	local g = store()
+	return not g or g.showWhatsNew ~= false
+end
+
+function ns.NewsMarkRead()
+	local g = store()
+	if g then g.lastSeenVersion = ns.NewsLatestVersion() end
+end
