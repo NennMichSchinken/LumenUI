@@ -2385,7 +2385,7 @@ function Shell:_NewsRow(d, e, KIND)
 		chev:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b)
 		local cfs = FS(crumb, "label", Text.Disabled)
 		cfs:SetText(T(e.section) .. (e.tab and ("  ›  " .. T(e.tab)) or "")) -- a section-only target is legal
-		cfs:SetPoint("RIGHT", chev, "LEFT", S.s2, 0)
+		cfs:SetPoint("RIGHT", chev, "LEFT", -S.s2, 0) -- NEGATIVE: a gap left of the chevron, not an overlap
 		local function fitCrumb() crumb:SetWidth(math.ceil(cfs:GetStringWidth()) + S.s5 + S.s2) end
 		fitCrumb(); C_Timer.After(0, fitCrumb)
 		crumb._fs, crumb._chev = cfs, chev
