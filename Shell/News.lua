@@ -22,9 +22,16 @@ local ADDON, ns = ...
 --   * `date` is the release date, shown muted next to the version. Fix it up
 --     when the tag actually goes out if it was written ahead of time.
 --
---  Registered card keys today (Raidframes › Raid / Group): power-bar,
---  text-name, text-hp, icon-role, icon-lead, aura-hotsOwn, aura-defensives,
---  aura-major, aura-debuffs.
+--  Registered card keys today:
+--   Raidframes › Raid / Group: power-bar, text-name, text-hp, icon-role,
+--     icon-lead, aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
+--   Raidframes › Base: health-bar, text-style
+--   Raidframes › Tracking: track-hot, track-def, track-major
+--   Global › Base: accent, whatsnew
+--   QoL › Base: qol-windows, qol-invites
+--  A key is what makes the target card FLASH on arrival. A jump without one
+--  only opens the tab and nothing lights up — so give every jumping entry a
+--  key, and register a new one (regJump in Screens.lua) if the card lacks it.
 --
 --  Strings stay ENGLISH here — they are the localization keys; T() is applied
 --  when the row is drawn and Locales/deDE.lua carries the translations.
@@ -38,7 +45,7 @@ ns.News = {
 		entries = {
 			{ kind = "new",
 			  text = "What's new: after an update the sidebar carries a news card, and every note jumps to the setting behind it.",
-			  section = "Global", tab = "Base" },
+			  section = "Global", tab = "Base", card = "whatsnew" },
 			{ kind = "changed",
 			  text = "The two sidebar actions are flat rows with icons now, and the module list carries its icons again." },
 		},
@@ -50,7 +57,7 @@ ns.News = {
 		entries = {
 			{ kind = "new",
 			  text = "An accent colour of your choice — seven presets or a free colour picker, saved account-wide.",
-			  section = "Global", tab = "Base" },
+			  section = "Global", tab = "Base", card = "accent" },
 			{ kind = "new",
 			  text = "A search field above the module list finds a setting across every module and jumps straight to it." },
 			{ kind = "new",
@@ -58,18 +65,18 @@ ns.News = {
 			  section = "Raidframes", tab = "Raid", card = "power-bar" },
 			{ kind = "new",
 			  text = "Smooth bars: health and resources glide to their new value instead of jumping.",
-			  section = "Raidframes", tab = "Base" },
+			  section = "Raidframes", tab = "Base", card = "health-bar" },
 			{ kind = "new",
 			  text = "Augmentation Evoker aura defaults — Prescience, Ebon Might, Shifting Sands and the rest of the kit.",
-			  section = "Raidframes", tab = "Tracking" },
+			  section = "Raidframes", tab = "Tracking", card = "track-hot" },
 			{ kind = "new",
 			  text = "Accept group invites from friends and guild members automatically, while you are alone and outside an instance.",
-			  section = "QoL", tab = "Base" },
+			  section = "QoL", tab = "Base", card = "qol-invites" },
 			{ kind = "changed",
 			  text = "Settings window rebuilt: calmer monochrome surfaces, quieter text, bigger and rounder controls." },
 			{ kind = "changed",
 			  text = "Texture dropdowns need Shift or Ctrl before the mouse wheel previews, so scrolling no longer changes a setting by accident.",
-			  section = "Raidframes", tab = "Base" },
+			  section = "Raidframes", tab = "Base", card = "health-bar" },
 			{ kind = "changed",
 			  text = "Name and HP text have their own preview eyes instead of one shared toggle.",
 			  section = "Raidframes", tab = "Raid", card = "text-name" },

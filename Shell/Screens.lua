@@ -788,6 +788,8 @@ local function buildBase(d, stack)
 		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
 	})
 	local sBar = b1.cards[1]
+	regJump("health-bar", sBar)
+	regJump("text-style", b1.cards[2])
 
 	-- Stacked rows first (§8: compact options on top, field blocks below):
 	-- heal prediction, class color and the two color chips — the fill chip
@@ -1397,9 +1399,12 @@ local function buildTracking(d, stack)
 	local tb1 = stack:band({ catDef(TRACK_CATS[1], entries[1]), catDef(TRACK_CATS[2], entries[2]) })
 	fillCat(tb1.cards[1], TRACK_CATS[1], entries[1])
 	fillCat(tb1.cards[2], TRACK_CATS[2], entries[2])
+	regJump("track-hot", tb1.cards[1])
+	regJump("track-def", tb1.cards[2])
 	tb1.close()
 	local tb2 = stack:band({ catDef(TRACK_CATS[3], entries[3]) })
 	fillCat(tb2.cards[1], TRACK_CATS[3], entries[3])
+	regJump("track-major", tb2.cards[1])
 	tb2.close()
 
 	applyModuleGate(d, rf().enabled) -- module off -> whole screen greyed + locked
@@ -1752,6 +1757,8 @@ local function buildGlobalBase(d, stack)
 		{ span = 6, title = T("What's new"), subtitle = T("Release notes after an update.") },
 	})
 	local sAcc = bAcc.cards[1]
+	regJump("accent", sAcc)
+	regJump("whatsnew", bAcc.cards[2])
 	sAcc:place(W.AccentPresets(d, {
 		get = function() return ns.Lumen.db.global.accent end,
 		set = function(hex, col, live)
@@ -2227,6 +2234,8 @@ local function buildQoLBase(d, stack)
 	})
 	local wc = wb.cards[1]
 	local ic = wb.cards[2]
+	regJump("qol-windows", wc)
+	regJump("qol-invites", ic)
 	local function qw() return ns.Lumen.db.profile.qol.windows end
 
 	local rowWin = switchRow(d, T("Movable windows"), {
