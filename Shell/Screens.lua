@@ -1749,6 +1749,7 @@ local function buildGlobalBase(d, stack)
 	-- (db.global), so it doesn't jump when switching raid profiles.
 	local bAcc = stack:band({
 		{ span = 6, title = T("Accent color"), subtitle = T("Suite-wide highlight — applies instantly.") },
+		{ span = 6, title = T("What's new"), subtitle = T("Release notes after an update.") },
 	})
 	local sAcc = bAcc.cards[1]
 	sAcc:place(W.AccentPresets(d, {
@@ -1759,6 +1760,24 @@ local function buildGlobalBase(d, stack)
 		end,
 	}), M.optionRowH, R.row)
 	sAcc:close()
+
+	-- What's new: the switch only controls the SIDEBAR CARD. The notes stay
+	-- reachable from here either way, so turning the card off never buries them.
+	local sNews = bAcc.cards[2]
+	sNews:place(checkRow(d, T("Show a news card after an update"), {
+		tooltip = T("After an update the sidebar shows what changed. The notes stay available from the button below."),
+		get = function() return ns.Lumen.db.global.showWhatsNew ~= false end,
+		set = function(v)
+			ns.Lumen.db.global.showWhatsNew = v and true or false
+			if ns.Shell and ns.Shell._UpdateNewsCard then ns.Shell:_UpdateNewsCard() end
+		end }), M.optionRowH, 0)
+
+	local newsRow = CreateFrame("Frame", nil, d)
+	local newsBtn = W.Button(newsRow, { text = T("Open what's new"), variant = "neutral",
+		onClick = function() if ns.Shell then ns.Shell:ShowWhatsNew() end end })
+	newsBtn:SetPoint("LEFT", newsRow, "LEFT", 0, 0)
+	sNews:place(newsRow, M.buttonH, R.afterCheck)
+	sNews:close()
 	bAcc.close()
 
 	-- ===== Band 2: UI scale (6, ONE card) ===================================
