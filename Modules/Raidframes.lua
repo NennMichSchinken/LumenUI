@@ -756,11 +756,22 @@ local function shadowFonts()
 	SHADOW_FONTS = { none = mk("None", 0), shadow = mk("Soft", 0.6), outline = faint, thick = faint }
 	return SHADOW_FONTS
 end
+-- ONE funnel for every frame-text typeface, so the Global-tab font choice reaches
+-- all of them. The typeface + cold-start fallback live in UI:SetFrameFont (shared
+-- with the QoL trackers); this only guards against the Shell layer being absent.
+local function setFrameFont(fs, size, flags)
+	if ns.UI and ns.UI.SetFrameFont then
+		ns.UI:SetFrameFont(fs, size, flags)
+	else
+		fs:SetFont(STANDARD_TEXT_FONT, size, flags)
+	end
+end
+
 local function applyText(fs, frame, point, x, y, size, color, outline)
 	point = point or "CENTER"
 	local sf = shadowFonts()
 	fs:SetFontObject(sf[outline] or sf.none)   -- inherit shadow BEFORE SetFont (12.0.7)
-	fs:SetFont(STANDARD_TEXT_FONT, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
+	setFrameFont(fs, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
 	fs:ClearAllPoints()
 	local ix, iy = pointInset(point, x, y)
 	fs:SetPoint(point, frame, point, ix, iy)
@@ -1208,16 +1219,16 @@ local function Decorate(f)
 	f.auraHolders = {}   -- [catKey] = holder frame with icon pool (lazy in ApplyConfig)
 
 	f.name = f.overlay:CreateFontString(nil, "OVERLAY")
-	f.name:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
+	setFrameFont(f.name, 11, "OUTLINE")
 	f.name:SetPoint("TOPLEFT", 4, -3)
 	f.htext = f.overlay:CreateFontString(nil, "OVERLAY")
-	f.htext:SetFont(STANDARD_TEXT_FONT, 16, "OUTLINE")
+	setFrameFont(f.htext, 16, "OUTLINE")
 	f.htext:SetPoint("CENTER")
 
 	-- Status layer: center text (Offline/Dead/Ghost/Rez — replaces the HP text
 	-- while shown) + center icon (ready check / incoming summon).
 	f.stext = f.overlay:CreateFontString(nil, "OVERLAY")
-	f.stext:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+	setFrameFont(f.stext, 12, "OUTLINE")
 	f.stext:SetPoint("CENTER")
 	f.stext:Hide()
 	f.statusIcon = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
@@ -1263,7 +1274,7 @@ local function Decorate(f)
 	f.aL:SetPoint("TOPLEFT"); f.aL:SetPoint("BOTTOMLEFT"); f.aL:SetWidth(2)
 	f.aR:SetPoint("TOPRIGHT"); f.aR:SetPoint("BOTTOMRIGHT"); f.aR:SetWidth(2)
 	f.aggroText = f.overlay:CreateFontString(nil, "OVERLAY")
-	f.aggroText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+	setFrameFont(f.aggroText, 12, "OUTLINE")
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 
 	-- Indicator icons: role (Blizzard LFG atlases) + leader/assistant crown.
