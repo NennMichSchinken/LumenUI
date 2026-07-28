@@ -41,21 +41,42 @@ local LAYOUT_CTX = { "raid", "party" }
 
 -- ---- Helpers --------------------------------------------------------------
 
-local function deepcopy(t)
+-- Depth limit for the recursive walkers below. The deepest real Lumen structure
+-- is ~5 levels (profile.qol.trackers.brez.pos.point), so 16 never touches valid
+-- data — it only stops a hand-crafted code from driving the recursion into a
+-- Lua stack overflow.
+local MAX_DEPTH = 16
+
+local function deepcopy(t, depth)
 	if type(t) ~= "table" then return t end
+	depth = (depth or 0) + 1
+	if depth > MAX_DEPTH then return nil end
 	local r = {}
-	for k, v in pairs(t) do r[k] = deepcopy(v) end
+	for k, v in pairs(t) do r[k] = deepcopy(v, depth) end
 	return r
 end
 
 -- Deep-merge src into dst: tables recursively, scalars overwrite.
-local function deepmerge(dst, src)
+--
+-- TYPE GUARD: dst is a fresh copy of the Lumen defaults, so wherever it already
+-- holds a value that value's type is the expected one. An incoming field of a
+-- different type is dropped and the default survives — a pasted code can then
+-- no longer put a string where the render path expects a number (SetSize) or a
+-- point name (SetPoint). Keys the defaults do not describe (free-form maps like
+-- clickCast.specs or the aura whitelist) pass through unchanged as before; for
+-- those the guard sits at the point of use instead (see ClickCast's
+-- plainSpellName).
+local function deepmerge(dst, src, depth)
+	depth = (depth or 0) + 1
+	if depth > MAX_DEPTH then return dst end
 	for k, v in pairs(src) do
-		if type(v) == "table" and type(dst[k]) == "table" then
-			deepmerge(dst[k], v)
-		else
+		local cur = dst[k]
+		if type(v) == "table" and type(cur) == "table" then
+			deepmerge(dst[k], v, depth)
+		elseif cur == nil or type(cur) == type(v) then
 			dst[k] = deepcopy(v)
 		end
+		-- else: type mismatch against the Lumen default -> drop it, ours stands
 	end
 	return dst
 end

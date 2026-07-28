@@ -1804,6 +1804,7 @@ local function buildGlobalBase(d, stack)
 
 	local b2 = stack:band({
 		{ span = 6, title = T("UI scale"), subtitle = T("Scales the whole game interface. Off: Lumen leaves WoW's own setting untouched.") },
+		{ span = 6, title = T("Font"), subtitle = T("Typeface on the frames — applies instantly.") },
 	})
 
 	local sUI = b2.cards[1]
@@ -1845,6 +1846,30 @@ local function buildGlobalBase(d, stack)
 	sUI:place(scr, M.sliderBoxH, R.tight)
 	sUI:close()
 	refreshUS()
+
+	-- Frame font: WoW's client font (familiar default) vs. Lumen's bundled Inter,
+	-- which reads better at the 10-12px the frame texts run at. Account-wide like
+	-- the accent. This deliberately covers the GAMEPLAY frames only — the settings
+	-- window stays on Inter, whose weight hierarchy the client font cannot provide.
+	local sFont = b2.cards[2]
+	regJump("font", sFont)   -- what's-new / search land here and the card flashes
+	local fontSeg = W.Segment(d, { label = T("Frame font"), hug = true,
+		options = { { value = "wow", label = "WoW" }, { value = "lumen", label = "LumenUI" } },
+		tooltip = T("Applies to raid frames and trackers. Lumen's font covers Latin script only — if you regularly play with names in other alphabets, pick WoW."),
+		get = function() return ns.Lumen.db.global.frameFont or "wow" end,
+		set = function(v)
+			ns.Lumen.db.global.frameFont = v
+			-- Re-style every frame text: the layout pass owns the fontstrings, the
+			-- aura pass owns the native duration text, QoL owns the trackers.
+			if ns.Raidframes then
+				ns.Raidframes:UpdateLayout()
+				ns.Raidframes:RefreshAuras()
+			end
+			if ns.QoL and ns.QoL.ApplyTrackers then ns.QoL:ApplyTrackers() end
+		end })
+	sFont:place(fontSeg, fieldH, R.tight)
+	sFont:place(W.Hint(d, T("The settings window always uses Lumen's own font.")), M.hintH, R.tight)
+	sFont:close()
 	b2.close()
 end
 
