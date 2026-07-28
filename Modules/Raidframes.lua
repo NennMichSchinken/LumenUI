@@ -2835,6 +2835,11 @@ function Raidframes:UpdateLayout()
 	dispelCurve = nil   -- dispel colors may have changed -> have the curve rebuilt
 	wlInvalidate()      -- profile may have switched -> re-resolve the whitelist table
 	self:LayoutLive()
+	-- Native aura path: its containers ANCHOR to the health bar, so they follow a
+	-- changed bar height on their own -- but auto-fit reads that height as a NUMBER,
+	-- so the icon size only tracks a frame-height or resource-bar change from here.
+	-- No-op unless the native path is on (12.1).
+	if ns.RFC and ns.RFC.Relayout then ns.RFC.Relayout() end
 	self:RefreshShellPreview()   -- settings changes route through here -> keep the band live
 	-- If the raidframes are a coupled child, LayoutLive just reset the container
 	-- to its absolute position -> re-anchor it onto its Edit Mode link anchor.

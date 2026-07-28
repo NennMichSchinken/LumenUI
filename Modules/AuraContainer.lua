@@ -101,14 +101,37 @@ local function buildInclude(wlType)
 	return include
 end
 
+-- The height the icons actually have available: the HEALTH bar, not the whole
+-- button, because a resource strip takes the bottom off (Raidframes _healthHeight
+-- is the same value on the layout side). Falls back to the button while the bar
+-- has no rect yet.
+local function usableHeight(button)
+	local hb = button.health
+	local h = (hb and hb:GetHeight()) or 0
+	if h < 2 then h = button:GetHeight() or 0 end
+	return h >= 2 and h or 60
+end
+
 -- Icon size of a category (explicit only when auto-fit is off, else derived from
--- the frame height; the exact auto-fit math from Raidframes is a follow-up).
+-- the usable height; the exact auto-fit math from Raidframes is a follow-up).
 local function iconSizeFor(button, key)
 	local cat, sfx = catCfg(key), ctxSfx()
 	if cat and not cat["autoFit" .. sfx] and cat["size" .. sfx] then
 		return cat["size" .. sfx]
 	end
-	return math.max(10, math.min(40, floor((button:GetHeight() or 60) * 0.3)))
+	return math.max(10, math.min(40, floor(usableHeight(button) * 0.3)))
+end
+
+-- What the container is measured against. INSIDE icons follow the HEALTH BAR, so
+-- a bottom-anchored row sits ON the health bar instead of covering the resource
+-- strip underneath it. OUTSIDE means "beyond the frame", so those keep the button
+-- as their reference -- measuring them against the health bar would push a bottom
+-- row straight onto the resource bar. Same split as the old holder path.
+-- The container stays PARENTED to the non-secure overlay either way (that is what
+-- makes the engine's icon texture display); only the anchor target changes.
+local function anchorRef(button, outside)
+	if outside then return button end
+	return button.health or button
 end
 
 -- Number-only duration formatter: bare seconds under a minute ("14", not "14s"),
@@ -286,14 +309,15 @@ local function layoutCall(container, which, a, b)
 end
 
 -- Container-level layout (anchor / growth / position) -- shared by every group
--- in the container. Live-settable.
-local function applyContainerLayout(container, parent, lo)
+-- in the container. `ref` is the frame the icons are measured against (anchorRef),
+-- which is NOT necessarily the container's parent. Live-settable.
+local function applyContainerLayout(container, ref, lo)
 	local ix, iy = insetFor(lo.anchor)
 	local ox, oy = 0, 0
 	if lo.outside then ox, oy = outsideOffset(lo.anchor, lo.grow, lo.size) end
 	local hDir, vDir, column = growthDirs(lo.grow)
 	container:ClearAllPoints()
-	container:SetPoint(lo.anchor, parent, lo.anchor, ix + lo.offX + ox, iy + lo.offY + oy)
+	container:SetPoint(lo.anchor, ref, lo.anchor, ix + lo.offX + ox, iy + lo.offY + oy)
 	layoutCall(container, "anchor", lo.anchor)
 	layoutCall(container, "growth", hDir, vDir)
 	-- Columns: 68914 added a real flow AXIS, so a vertical growth direction can
@@ -333,7 +357,7 @@ end
 
 -- Reconcile the debuffs container to the active filter mode: the active preset's
 -- groups get maxFrameCount = N, every other already-declared debuff group 0.
-local function syncDebuffs(container, parent, lo)
+local function syncDebuffs(container, ref, lo)
 	local active = {}
 	for _, g in ipairs(DEBUFF_PRESETS[debuffMode()] or DEBUFF_PRESETS.raid) do
 		active[g.key] = true
@@ -344,7 +368,7 @@ local function syncDebuffs(container, parent, lo)
 			container:SetAuraGroupMaxFrameCount(gkey, 0)
 		end
 	end
-	applyContainerLayout(container, parent, lo)
+	applyContainerLayout(container, ref, lo)
 end
 
 local function forEachLiveButton(fn)
@@ -364,18 +388,19 @@ local function attachCat(button, parent, c)
 	if not ok or not container then return nil end -- not 12.1 -> silently inert
 	button._rfc[key] = container
 
-	local lo = readLayout(button, key)
+	local lo  = readLayout(button, key)
+	local ref = anchorRef(button, lo.outside)
 	local built = pcall(function()
 		container:SetSize(1, 1)
 		if c.harmful then
-			syncDebuffs(container, parent, lo)
+			syncDebuffs(container, ref, lo)
 		else
 			container:AddAuraGroup(key, "HELPFUL", {
 				maxFrameCount    = lo.maxN,
 				candidateFilters = { includeSpellIDs = buildInclude(c.wl) },
 				initializeFrame  = makeInitializer(lo.size, key),
 			})
-			applyContainerLayout(container, parent, lo)
+			applyContainerLayout(container, ref, lo)
 			applyGroupLayout(container, key, lo, lo.maxN)
 		end
 		local u = button.unit or button:GetAttribute("unit")
@@ -430,14 +455,15 @@ function RFC.Relayout()
 					if container then RFC.SetUnit(btn, btn.unit or btn:GetAttribute("unit")) end
 				end
 				if container then
-					local lo = readLayout(btn, c.key)
+					local lo  = readLayout(btn, c.key)
+					local ref = anchorRef(btn, lo.outside)
 					sizes[c.key] = lo.size
 					container:Show(); container:SetEnabled(true)
 					if c.harmful then
-						pcall(syncDebuffs, container, parent, lo)
+						pcall(syncDebuffs, container, ref, lo)
 					else
 						pcall(function()
-							applyContainerLayout(container, parent, lo)
+							applyContainerLayout(container, ref, lo)
 							applyGroupLayout(container, c.key, lo, lo.maxN)
 						end)
 					end
