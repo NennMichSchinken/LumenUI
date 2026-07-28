@@ -27,7 +27,7 @@ local ADDON, ns = ...
 --     icon-lead, aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
 --   Raidframes › Base: health-bar, text-style
 --   Raidframes › Tracking: track-hot, track-def, track-major
---   Global › Base: accent, whatsnew
+--   Global › Base: accent, whatsnew, font
 --   QoL › Base: qol-windows, qol-invites
 --  A key is what makes the target card FLASH on arrival. A jump without one
 --  only opens the tab and nothing lights up — so give every jumping entry a
@@ -38,6 +38,30 @@ local ADDON, ns = ...
 -- ===========================================================================
 
 ns.News = {
+	{
+		version = "0.9.290",
+		date = "2026-07-28",
+		summary = "The frames can use Lumen's own font now, aura icons stay clear of the resource bar, and imported profiles are checked before they apply.",
+		entries = {
+			{ kind = "new",
+			  text = "The frames can use Lumen's own font instead of WoW's — it reads better at the small sizes the frame texts run at.",
+			  section = "Global", tab = "Base", card = "font" },
+			{ kind = "fixed",
+			  text = "Aura icons covered the resource bar: a bottom row now sits on the health bar, and auto-fit shrinks the icons instead of letting them overflow." },
+			{ kind = "fixed",
+			  text = "Both Delves windows could never be moved — the window list carried a wrong addon name all along.",
+			  section = "QoL", tab = "Base", card = "qol-windows" },
+			{ kind = "fixed",
+			  text = "The settings search did not find the mode switches — HP display, outline, dispel, aggro and fill colour were all missing from it." },
+			{ kind = "changed",
+			  text = "Raid frames do noticeably less work per aura update, which tells the most in a full raid." },
+			{ kind = "changed",
+			  text = "Imported profiles are checked before they are applied, so a shared code cannot smuggle extra macro commands into a click-cast binding.",
+			  section = "Global", tab = "Profile" },
+			{ kind = "changed",
+			  text = "Prepared for patch 12.1, where a group member's class can arrive as a protected value." },
+		},
+	},
 	{
 		version = "0.9.289",
 		date = "2026-07-27",

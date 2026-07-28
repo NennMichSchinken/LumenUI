@@ -1852,6 +1852,7 @@ local function buildGlobalBase(d, stack)
 	-- the accent. This deliberately covers the GAMEPLAY frames only — the settings
 	-- window stays on Inter, whose weight hierarchy the client font cannot provide.
 	local sFont = b2.cards[2]
+	regJump("font", sFont)   -- what's-new / search land here and the card flashes
 	local fontSeg = W.Segment(d, { label = T("Frame font"), hug = true,
 		options = { { value = "wow", label = "WoW" }, { value = "lumen", label = "LumenUI" } },
 		tooltip = T("Applies to raid frames and trackers. Lumen's font covers Latin script only — if you regularly play with names in other alphabets, pick WoW."),
