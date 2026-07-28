@@ -730,6 +730,12 @@ function Shell:Build()
 	local ctaFS = FS(cta, "label", Text.Secondary)
 	ctaFS:SetPoint("CENTER", cta, "CENTER", 0, 0)
 
+	-- The summary's FLOOR (set here because it needs the CTA to exist). Anchored
+	-- top-only, a two-line summary grew down into the CTA and the pill overlapped
+	-- the second line (Florian, 0.9.290). With a bottom edge the region can only
+	-- truncate, never collide — which is what SetMaxLines was meant to guarantee.
+	newsBody:SetPoint("BOTTOMLEFT", cta, "TOPLEFT", 0, S.s3)
+
 	local function paintNews(hovered)
 		local line = hovered and Accent.selection or Border.hover
 		for _, tex in ipairs(newsBorder) do setColor(tex, line) end

@@ -381,7 +381,7 @@ UI.S = {
 	navIconGap  = 16, -- gap: nav icon -> label (what's-new mockup, 2026-07-26: icon sits ON the nav gutter, label shifts right)
 	navGroupGap = 18, -- "MODULES" caption -> first nav item (mockup ratio: 14px @ 1x -> ~18 design-px)
 	-- Sidebar news card ("what's new" after an update, 2026-07-27 mockup).
-	newsCardH   = 190, -- total height: badge + title + two summary lines + CTA
+	newsCardH   = 200, -- total height: badge + title + two summary lines + gap + CTA
 	newsCardPad = 18, -- inner padding
 	newsCardGap = 16, -- news card -> the separator above the sidebar actions
 	newsPillH   = 28, -- the "New" badge (pill assets exist at 28/32/48/52 only)
