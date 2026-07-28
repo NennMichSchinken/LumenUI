@@ -903,18 +903,20 @@ for _, s in ipairs({ "Raid", "Party" }) do
 end
 -- Key set of the ACTIVE context (raid vs party) — one table lookup.
 local function auraKeys() return AURA_KEYS[auraCtxSuffix()] end
--- Icon size of a category: auto-fit -> derived from the frame height (so it scales
--- automatically between raid/group), otherwise explicit per context.
-local function auraIconSize(cat, L)
+-- Icon size of a category: auto-fit -> derived from the height the icons actually
+-- have (so it scales automatically between raid/group), otherwise explicit per
+-- context. availH = that usable height -- the health bar, not the whole frame,
+-- whenever a resource strip takes the bottom off.
+local function auraIconSize(cat, L, availH)
 	local sfx = auraCtxSuffix()
 	local K = AURA_KEYS[sfx]
 	if not cat[K.autoFit] then
 		return cat[K.size] or (sfx == "Raid" and 16 or 22)
 	end
-	-- Auto-fit: ~30% of the frame height, BUT capped so the full row/column fits into
-	-- the frame (no overflow past the edge on narrow/short frames):
+	-- Auto-fit: ~30% of the available height, BUT capped so the full row/column fits
+	-- (no overflow past the edge on narrow/short frames):
 	-- cap horizontal growth at the width, vertical at the height.
-	local h, w = L.height or 60, L.width or 114
+	local h, w = availH or L.height or 60, L.width or 114
 	local n  = max(1, cat[K.maxIcons] or 5)
 	local sp = cat[K.spacing] or 0
 	local size = h * 0.30
@@ -1020,12 +1022,23 @@ local function layoutAuraCat(f, key, cat, size)
 	end
 	if not holder then
 		holder = CreateFrame("Frame", nil, f.overlay)
-		holder:SetAllPoints(f)
 		holder.icons = {}
 		holder._host, holder._cat = f, key   -- click-to-configure needs owner + category
 		f.auraHolders[key] = holder
 	end
 	holder:Show()
+	-- What the icons are measured against. INSIDE icons follow the HEALTH BAR, so a
+	-- bottom-anchored row sits ON the health bar instead of covering the resource
+	-- strip underneath it (the name/HP text has been anchored this way all along).
+	-- OUTSIDE means "beyond the frame", so those keep the frame as their reference --
+	-- otherwise pushing a row out the bottom would land it right on the resource bar.
+	-- SetAllPoints is an anchor, not a snapshot: when the render pass changes the
+	-- health height, the holder follows on its own. Re-anchored only on change (§9.5).
+	local ref = (cat[K.outside] and f) or f.health
+	if holder._ref ~= ref then
+		holder._ref = ref
+		holder:SetAllPoints(ref)
+	end
 	-- Remember layout parameters for the render-time positioning (positionAuraIcons).
 	holder._anchor  = cat[K.anchor] or "BOTTOMLEFT"
 	holder._grow    = cat[K.grow] or "RIGHT"
@@ -1421,6 +1434,16 @@ function Raidframes._renderPowerFake(f, fk, d, L)
 	f.power:SetStatusBarColor(R._powerRGB(d, fk.class, nil, token))
 end
 
+-- Height the HEALTH bar gets: the frame minus the resource strip when one is
+-- shown. Everything that has to stay clear of the resource bar (aura icons and
+-- their auto-fit sizing) measures against this rather than the frame height.
+-- The render pass owns the live heights (_setPowerShown); this is the same
+-- arithmetic for the layout side, which runs before any render.
+function Raidframes._healthHeight(d, L)
+	local ph = max(1, floor(L.powerHeight or 4))
+	return max(1, (L.height or 60) - ((d.powerEnabled and ph) or 0))
+end
+
 function Raidframes:ApplyConfig(f)
 	local d = db()
 	local L = layoutCtx()
@@ -1432,7 +1455,7 @@ function Raidframes:ApplyConfig(f)
 	f.power:SetStatusBarTexture(FetchTexture(d.powerTexture))
 	local ph = max(1, floor(L.powerHeight or 4))
 	self._setBarHeight(f.power, ph)
-	local healthH = max(1, L.height - ((d.powerEnabled and ph) or 0))
+	local healthH = self._healthHeight(d, L)
 	self._setBarHeight(f.health, healthH)
 	-- Keep segment bars at health size (anchors provide height/position)
 	f.predictBar:SetSize(L.width, healthH)
@@ -1506,11 +1529,12 @@ function Raidframes:ApplyConfig(f)
 	f.eL:ClearAllPoints(); f.eL:SetPoint("TOPLEFT"); f.eL:SetPoint("BOTTOMLEFT"); f.eL:SetWidth(2)
 	f.eR:ClearAllPoints(); f.eR:SetPoint("TOPRIGHT"); f.eR:SetPoint("BOTTOMRIGHT"); f.eR:SetWidth(2)
 
-	-- Layout aura indicators. Auto-fit derives the icon size from L.height.
+	-- Layout aura indicators. Auto-fit measures against the health bar, so a
+	-- resource strip shrinks the icons instead of pushing them over it.
 	if d.auras then
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
-			local size = (cat and auraIconSize(cat, L)) or 16
+			local size = (cat and auraIconSize(cat, L, healthH)) or 16
 			layoutAuraCat(f, c.key, cat, size)
 		end
 	end
@@ -2706,11 +2730,12 @@ function Raidframes:RefreshAuras()
 	local d = db()
 	if not d.auras then return end
 	local L = layoutCtx()
+	local healthH = self._healthHeight(d, L)
 	local function relayout(f)
 		if not f.auraHolders then return end
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
-			local size = (cat and auraIconSize(cat, L)) or 16
+			local size = (cat and auraIconSize(cat, L, healthH)) or 16
 			layoutAuraCat(f, c.key, cat, size)
 		end
 	end
