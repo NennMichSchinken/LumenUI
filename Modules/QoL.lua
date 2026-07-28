@@ -833,52 +833,59 @@ local WIN_PRELOADED = {
 	"GuildInviteFrame", "TabardFrame", "GuildRegistrarFrame",
 }
 
-local WIN_ADDON_FRAMES = {
-	["Blizzard_AchievementUI"]                     = { "AchievementFrame" },
-	["Blizzard_AlliedRacesUI"]                     = { "AlliedRacesFrame" },
-	["Blizzard_ArchaeologyUI"]                     = { "ArchaeologyFrame" },
-	["Blizzard_ArtifactUI"]                        = { "ArtifactFrame" },
-	["Blizzard_AuctionHouseUI"]                    = { "AuctionHouseFrame" },
-	["Blizzard_BlackMarketUI"]                     = { "BlackMarketFrame" },
-	["Blizzard_Calendar"]                          = { "CalendarFrame", "CalendarViewEventFrame" },
-	["Blizzard_ChallengesUI"]                      = { "ChallengesKeystoneFrame" },
-	["Blizzard_ChromieTimeUI"]                     = { "ChromieTimeFrame" },
-	["Blizzard_ClassTalentUI"]                     = { "ClassTalentFrame" },
-	["Blizzard_Collections"]                       = { "CollectionsJournal", "WardrobeFrame" },
-	["Blizzard_Communities"]                       = { "CommunitiesFrame" },
-	["Blizzard_CooldownViewer"]                    = { "CooldownViewerSettings" },
-	["Blizzard_EncounterJournal"]                  = { "EncounterJournal" },
-	["Blizzard_ExpansionLandingPage"]              = { "ExpansionLandingPage" },
-	["Blizzard_FlightMap"]                         = { "FlightMapFrame" },
-	["Blizzard_GenericTraitUI"]                    = { "GenericTraitFrame" },
-	["Blizzard_GuildBankUI"]                       = { "GuildBankFrame" },
-	["Blizzard_GuildControlUI"]                    = { "GuildControlUI" },
-	["Blizzard_InspectUI"]                         = { "InspectFrame" },
-	["Blizzard_ItemInteractionUI"]                 = { "ItemInteractionFrame" },
-	["Blizzard_ItemSocketingUI"]                   = { "ItemSocketingFrame" },
-	["Blizzard_ItemUpgradeUI"]                     = { "ItemUpgradeFrame" },
-	["Blizzard_MacroUI"]                           = { "MacroFrame" },
-	["Blizzard_MajorFactions"]                     = { "MajorFactionRenownFrame" },
-	["Blizzard_PlayerSpells"]                      = { "PlayerSpellsFrame" },
-	["Blizzard_Professions"]                       = { "ProfessionsFrame" },
-	["Blizzard_ProfessionsBook"]                   = { "ProfessionsBookFrame" },
-	["Blizzard_ProfessionsCustomerOrders"]         = { "ProfessionsCustomerOrdersFrame" },
-	["Blizzard_ScrappingMachineUI"]                = { "ScrappingMachineFrame" },
-	["Blizzard_StableUI"]                          = { "StableFrame" },
-	["Blizzard_TokenUI"]                           = { "CurrencyTransferMenu" },
-	["Blizzard_TrainerUI"]                         = { "ClassTrainerFrame" },
-	["Blizzard_TradeSkillUI"]                      = { "TradeSkillFrame" },
-	["Blizzard_Transmog"]                          = { "TransmogFrame" },
-	["Blizzard_WeeklyRewards"]                     = { "WeeklyRewardsFrame" },
-	["Blizzard_WorldMap"]                          = { "WorldMapFrame" },
-	["Blizzard_HousingDashboard"]                  = { "HousingDashboardFrame" },
-	["Blizzard_HousingCornerstone"]                = { "HousingCornerstonePurchaseFrame" },
-	["Blizzard_HousingHouseFinder"]                = { "HouseFinderFrame" },
-	["Blizzard_HousingHouseSettings"]              = { "HousingHouseSettingsFrame" },
-	["Blizzard_HousingBulletinBoard"]              = { "HousingBulletinBoardFrame" },
-	["Blizzard_HousingModelPreview"]               = { "HousingModelPreviewFrame" },
-	["Blizzard_DelvesCompanionConfigurationFrame"] = { "DelvesCompanionConfigurationFrame", "DelvesCompanionAbilityListFrame" },
-	["Blizzard_DelvesDifficultyPicker"]            = { "DelvesDifficultyPickerFrame" },
+-- Load-on-demand panels: these only exist once their Blizzard addon has loaded,
+-- so they are hooked from ADDON_LOADED. Listed BY WINDOW (that is how someone
+-- looks for one), with the addon that carries it; winInit inverts this into the
+-- addon->windows map the event needs. Every addon name below was verified
+-- against the 12.1 client source -- the names drift between expansions, and a
+-- wrong one silently means "that window is simply never movable".
+local WIN_LOD = {
+	{ "AchievementFrame",                  "Blizzard_AchievementUI" },
+	{ "AlliedRacesFrame",                  "Blizzard_AlliedRacesUI" },
+	{ "ArchaeologyFrame",                  "Blizzard_ArchaeologyUI" },
+	{ "ArtifactFrame",                     "Blizzard_ArtifactUI" },
+	{ "AuctionHouseFrame",                 "Blizzard_AuctionHouseUI" },
+	{ "BlackMarketFrame",                  "Blizzard_BlackMarketUI" },
+	{ "CalendarFrame",                     "Blizzard_Calendar" },
+	{ "CalendarViewEventFrame",            "Blizzard_Calendar" },
+	{ "ChallengesKeystoneFrame",           "Blizzard_ChallengesUI" },
+	{ "ChromieTimeFrame",                  "Blizzard_ChromieTimeUI" },
+	{ "ClassTrainerFrame",                 "Blizzard_TrainerUI" },
+	{ "CollectionsJournal",                "Blizzard_Collections" },
+	{ "CommunitiesFrame",                  "Blizzard_Communities" },
+	{ "CooldownViewerSettings",            "Blizzard_CooldownViewer" },
+	{ "CurrencyTransferMenu",              "Blizzard_TokenUI" },
+	{ "DelvesCompanionAbilityListFrame",   "Blizzard_DelvesCompanionConfiguration" },
+	{ "DelvesCompanionConfigurationFrame", "Blizzard_DelvesCompanionConfiguration" },
+	{ "DelvesDifficultyPickerFrame",       "Blizzard_DelvesDifficultyPicker" },
+	{ "EncounterJournal",                  "Blizzard_EncounterJournal" },
+	{ "ExpansionLandingPage",              "Blizzard_ExpansionLandingPage" },
+	{ "FlightMapFrame",                    "Blizzard_FlightMap" },
+	{ "GenericTraitFrame",                 "Blizzard_GenericTraitUI" },
+	{ "GuildBankFrame",                    "Blizzard_GuildBankUI" },
+	{ "GuildControlUI",                    "Blizzard_GuildControlUI" },
+	{ "HouseFinderFrame",                  "Blizzard_HousingHouseFinder" },
+	{ "HousingBulletinBoardFrame",         "Blizzard_HousingBulletinBoard" },
+	{ "HousingCornerstonePurchaseFrame",   "Blizzard_HousingCornerstone" },
+	{ "HousingDashboardFrame",             "Blizzard_HousingDashboard" },
+	{ "HousingHouseSettingsFrame",         "Blizzard_HousingHouseSettings" },
+	{ "HousingModelPreviewFrame",          "Blizzard_HousingModelPreview" },
+	{ "InspectFrame",                      "Blizzard_InspectUI" },
+	{ "ItemInteractionFrame",              "Blizzard_ItemInteractionUI" },
+	{ "ItemSocketingFrame",                "Blizzard_ItemSocketingUI" },
+	{ "ItemUpgradeFrame",                  "Blizzard_ItemUpgradeUI" },
+	{ "MacroFrame",                        "Blizzard_MacroUI" },
+	{ "MajorFactionRenownFrame",           "Blizzard_MajorFactions" },
+	{ "PlayerSpellsFrame",                 "Blizzard_PlayerSpells" },
+	{ "ProfessionsBookFrame",              "Blizzard_ProfessionsBook" },
+	{ "ProfessionsCustomerOrdersFrame",    "Blizzard_ProfessionsCustomerOrders" },
+	{ "ProfessionsFrame",                  "Blizzard_Professions" },
+	{ "ScrappingMachineFrame",             "Blizzard_ScrappingMachineUI" },
+	{ "StableFrame",                       "Blizzard_StableUI" },
+	{ "TransmogFrame",                     "Blizzard_Transmog" },
+	{ "WardrobeFrame",                     "Blizzard_Collections" },
+	{ "WeeklyRewardsFrame",                "Blizzard_WeeklyRewards" },
+	{ "WorldMapFrame",                     "Blizzard_WorldMap" },
 }
 
 -- Frames whose body swallows the drag (map clicks, model rotate): the drag
@@ -902,23 +909,35 @@ local winInited = false
 local winEvents            -- ADDON_LOADED / PLAYER_REGEN_ENABLED driver (lazy)
 local securePositioner     -- SecureHandler for protected frames (lazy)
 
+-- The snippet reads its inputs back out of the handler, so the four values are
+-- staged as attributes first and the frame as a ref. Anchoring happens against
+-- self:GetParent(), which is UIParent because that is what the handler is
+-- parented to -- the snippet therefore needs no reference to UIParent itself.
+local WIN_MOVE_SNIPPET = [[
+	local target = self:GetFrameRef("target")
+	if not target then return end
+	target:ClearAllPoints()
+	target:SetPoint(
+		self:GetAttribute("anchor"),
+		self:GetParent(),
+		self:GetAttribute("relAnchor"),
+		self:GetAttribute("offsetX"),
+		self:GetAttribute("offsetY")
+	)
+]]
+
 local function winSecureSetPoint(frame, point, relPoint, x, y)
 	if InCombatLockdown() then return end
 	if not securePositioner then
-		-- Parented to UIParent so self:GetParent() inside the snippet IS UIParent.
 		securePositioner = CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
 	end
-	securePositioner:SetFrameRef("f", frame)
-	securePositioner:SetAttribute("p", point)
-	securePositioner:SetAttribute("rp", relPoint)
-	securePositioner:SetAttribute("x", x)
-	securePositioner:SetAttribute("y", y)
-	securePositioner:Execute([[
-		local f = self:GetFrameRef("f")
-		if not f then return end
-		f:ClearAllPoints()
-		f:SetPoint(self:GetAttribute("p"), self:GetParent(), self:GetAttribute("rp"), self:GetAttribute("x"), self:GetAttribute("y"))
-	]])
+	local h = securePositioner
+	h:SetFrameRef("target", frame)
+	h:SetAttribute("anchor", point)
+	h:SetAttribute("relAnchor", relPoint)
+	h:SetAttribute("offsetX", x)
+	h:SetAttribute("offsetY", y)
+	h:Execute(WIN_MOVE_SNIPPET)
 end
 
 local function winSavePos(name, point, relPoint, x, y)
@@ -1106,11 +1125,19 @@ local function winInit()
 		end
 	end)
 	for i = 1, #WIN_PRELOADED do winTryHook(WIN_PRELOADED[i]) end
-	for addon, frames in pairs(WIN_ADDON_FRAMES) do
+	-- Invert the by-window list into the addon->windows map ADDON_LOADED needs.
+	-- Already-loaded addons are hooked straight away; the rest wait for their event.
+	for i = 1, #WIN_LOD do
+		local frame, addon = WIN_LOD[i][1], WIN_LOD[i][2]
 		if C_AddOns.IsAddOnLoaded(addon) then
-			for i = 1, #frames do winTryHook(frames[i]) end
+			winTryHook(frame)
 		else
-			winPendingAddons[addon] = frames
+			local pending = winPendingAddons[addon]
+			if pending then
+				pending[#pending + 1] = frame
+			else
+				winPendingAddons[addon] = { frame }
+			end
 		end
 	end
 	if next(winPendingAddons) then winEvents:RegisterEvent("ADDON_LOADED") end
