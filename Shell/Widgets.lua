@@ -1492,6 +1492,13 @@ function W.Segment(parent, o)
 	else
 		f:SetHeight(cellH)
 	end
+	-- Settings search: like the slider and the select, a labelled segment carries
+	-- its own label (it sits in a FieldRow cell, not a W.OptionRow) and so has to
+	-- register itself — otherwise the mode switches (HP display, outline, dispel,
+	-- aggro, fill colour, frame font) stay unfindable by search.
+	if o.label and ns.Shell and ns.Shell.IndexOption then
+		ns.Shell:IndexOption(o.label, f, "segment", o.tooltip)
+	end
 
 	-- Strip backing + a sliding translucent PILL for the active option (tab style,
 	-- Florian 2026-07-22): same "switch between mutually-exclusive options" logic as

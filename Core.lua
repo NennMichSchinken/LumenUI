@@ -304,6 +304,10 @@ local defaults = {
 		-- notes for"; a fresh install is marked read below, before the first login.
 		shellScale = 0.7,    -- user multiplier on the responsive Suite-Shell scale (0.7 = Florian's sweet spot, 2026-07-16)
 		accent = "F4F4F6",   -- suite-wide accent hex (default = Pure Light / mono); UI.SetAccent applies it
+		-- Typeface on the gameplay frames: "wow" (the client's own font, familiar
+		-- default) | "lumen" (our bundled Inter, easier to read at 10-12px). The
+		-- Shell always stays on Inter -- see UI:FrameFont.
+		frameFont = "wow",
 	},
 }
 
