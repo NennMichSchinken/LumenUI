@@ -311,6 +311,10 @@ local defaults = {
 	global = {
 		auraSigs = {},
 		language = "auto",   -- UI language: "auto" (system language) | "enUS" | "deDE"
+		showWhatsNew = true, -- show the sidebar news card after an update (Shell/News.lua)
+		-- lastSeenVersion: newest release the user has marked as read. Deliberately
+		-- NOT defaulted — nil means "existing install, show everything we have
+		-- notes for"; a fresh install is marked read below, before the first login.
 		shellScale = 0.7,    -- user multiplier on the responsive Suite-Shell scale (0.7 = Florian's sweet spot, 2026-07-16)
 		accent = "F4F4F6",   -- suite-wide accent hex (default = Pure Light / mono); UI.SetAccent applies it
 	},
@@ -441,7 +445,13 @@ local function migrateLayout(rf)
 end
 
 function Lumen:OnInitialize()
+	-- A fresh install has no SavedVariables yet — read that BEFORE AceDB creates
+	-- them. First-time users get no "what's new" (they have not missed anything);
+	-- an existing install without the field is someone meeting the feature for
+	-- the first time and does see the notes.
+	local freshInstall = (LumenDB == nil)
 	self.db = LibStub("AceDB-3.0"):New("LumenDB", defaults, true)
+	if freshInstall and ns.NewsMarkRead then ns.NewsMarkRead() end
 	-- 'global' is an AceDB top-level namespace (db.global), NOT db.profile.global.
 	if ns.ApplyLocale then ns.ApplyLocale(self.db.global.language) end
 	if ns.RunLocaleReady then ns.RunLocaleReady() end   -- build localized module constants now (after language choice)
@@ -460,6 +470,16 @@ function Lumen:OnInitialize()
 	self:RegisterChatCommand("lu",      "OpenConfig")
 
 	self:Print(ns.T("loaded. |cffE9BB69/lumen|r opens the settings."))
+
+	-- One quiet line on the login after an update actually brought something new
+	-- — no pop-up (an unasked-for window does not fit Lumen); the news card
+	-- itself waits inside /lumen until someone opens it.
+	if ns.NewsUnread and ns.NewsEnabled and ns.NewsEnabled() then
+		local unread = ns.NewsUnread()
+		if #unread > 0 then
+			self:Print(ns.T("%s is new — |cffE9BB69/lumen|r shows what changed."):format(unread[1].version))
+		end
+	end
 end
 
 function Lumen:OnEnable()

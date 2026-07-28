@@ -788,6 +788,8 @@ local function buildBase(d, stack)
 		{ span = 6, title = T("Text style"), subtitle = T("Color & outline — shared by Raid & Group") },
 	})
 	local sBar = b1.cards[1]
+	regJump("health-bar", sBar)
+	regJump("text-style", b1.cards[2])
 
 	-- Stacked rows first (§8: compact options on top, field blocks below):
 	-- heal prediction, class color and the two color chips — the fill chip
@@ -1413,9 +1415,12 @@ local function buildTracking(d, stack)
 	local tb1 = stack:band({ catDef(TRACK_CATS[1], entries[1]), catDef(TRACK_CATS[2], entries[2]) })
 	fillCat(tb1.cards[1], TRACK_CATS[1], entries[1])
 	fillCat(tb1.cards[2], TRACK_CATS[2], entries[2])
+	regJump("track-hot", tb1.cards[1])
+	regJump("track-def", tb1.cards[2])
 	tb1.close()
 	local tb2 = stack:band({ catDef(TRACK_CATS[3], entries[3]) })
 	fillCat(tb2.cards[1], TRACK_CATS[3], entries[3])
+	regJump("track-major", tb2.cards[1])
 	tb2.close()
 
 	applyModuleGate(d, rf().enabled) -- module off -> whole screen greyed + locked
@@ -1765,8 +1770,11 @@ local function buildGlobalBase(d, stack)
 	-- (db.global), so it doesn't jump when switching raid profiles.
 	local bAcc = stack:band({
 		{ span = 6, title = T("Accent color"), subtitle = T("Suite-wide highlight — applies instantly.") },
+		{ span = 6, title = T("What's new"), subtitle = T("Release notes after an update.") },
 	})
 	local sAcc = bAcc.cards[1]
+	regJump("accent", sAcc)
+	regJump("whatsnew", bAcc.cards[2])
 	sAcc:place(W.AccentPresets(d, {
 		get = function() return ns.Lumen.db.global.accent end,
 		set = function(hex, col, live)
@@ -1775,6 +1783,24 @@ local function buildGlobalBase(d, stack)
 		end,
 	}), M.optionRowH, R.row)
 	sAcc:close()
+
+	-- What's new: the switch only controls the SIDEBAR CARD. The notes stay
+	-- reachable from here either way, so turning the card off never buries them.
+	local sNews = bAcc.cards[2]
+	sNews:place(checkRow(d, T("Show a news card after an update"), {
+		tooltip = T("After an update the sidebar shows what changed. The notes stay available from the button below."),
+		get = function() return ns.Lumen.db.global.showWhatsNew ~= false end,
+		set = function(v)
+			ns.Lumen.db.global.showWhatsNew = v and true or false
+			if ns.Shell and ns.Shell._UpdateNewsCard then ns.Shell:_UpdateNewsCard() end
+		end }), M.optionRowH, 0)
+
+	local newsRow = CreateFrame("Frame", nil, d)
+	local newsBtn = W.Button(newsRow, { text = T("Open what's new"), variant = "neutral",
+		onClick = function() if ns.Shell then ns.Shell:ShowWhatsNew() end end })
+	newsBtn:SetPoint("LEFT", newsRow, "LEFT", 0, 0)
+	sNews:place(newsRow, M.buttonH, R.afterCheck)
+	sNews:close()
 	bAcc.close()
 
 	-- ===== Band 2: UI scale (6, ONE card) ===================================
@@ -2224,6 +2250,8 @@ local function buildQoLBase(d, stack)
 	})
 	local wc = wb.cards[1]
 	local ic = wb.cards[2]
+	regJump("qol-windows", wc)
+	regJump("qol-invites", ic)
 	local function qw() return ns.Lumen.db.profile.qol.windows end
 
 	local rowWin = switchRow(d, T("Movable windows"), {

@@ -255,6 +255,8 @@ UI.ROLE = {
 	hint     = { UI.FONT.regular,  16, "" }, -- description/hint text under controls
 	tagline  = { UI.FONT.medium,  12, "" }, -- mockup ratio: 10px@500w -> Medium
 	navGroupLabel = { UI.FONT.semibold, 12, "" }, -- "MODULES" nav-group caption (mockup: 10px@600w -> SemiBold; distinct from the shared "caption" role so it doesn't collapse onto the tagline's weight)
+	newsTitle = { UI.FONT.semibold, 17, "" }, -- sidebar news card title ("New in 0.9.289")
+	newsBadge = { UI.FONT.semibold, 12, "" }, -- "New" badge + the kind chips on the what's-new screen
 
 	-- Widget toolkit (phase 2) — small, control-near roles. Sizes on the
 	-- 4px grid (12/16/20). Change here centrally -> propagates everywhere.
@@ -348,8 +350,15 @@ UI.S = {
 	navPillPadX = 32, -- active-pill / hover-pill inset from the sidebar edges (v3: more L/R air, matches the wider navGutter)
 	navPillPadY = 4,  -- active-pill vertical inset within the nav row
 	navIconSize = 18, -- nav-row Lucide icon (TGA rendered at 32px, shown ~18)
-	navIconGap  = 10, -- gap: nav icon -> label
+	navIconGap  = 16, -- gap: nav icon -> label (what's-new mockup, 2026-07-26: icon sits ON the nav gutter, label shifts right)
 	navGroupGap = 18, -- "MODULES" caption -> first nav item (mockup ratio: 14px @ 1x -> ~18 design-px)
+	-- Sidebar news card ("what's new" after an update, 2026-07-27 mockup).
+	newsCardH   = 190, -- total height: badge + title + two summary lines + CTA
+	newsCardPad = 18, -- inner padding
+	newsCardGap = 16, -- news card -> the separator above the sidebar actions
+	newsPillH   = 28, -- the "New" badge (pill assets exist at 28/32/48/52 only)
+	newsCtaH    = 32, -- the "View" pill inside the card (ditto)
+	newsCloseH  = 30, -- the card's dismiss button (square)
 	navItemGap  = 4,  -- v3: uniform gap between nav rows (group divider lines removed per the mockup)
 	closeGlyph  = 18, -- close-button "x" glyph (Lucide) inside the 34px button
 	scrollBarW  = 2,  -- width of the content scrollbar (Florian 2026-07-22: halved from 4 for a quieter, unobtrusive line; the thumb's hit-rect is padded in Shell.lua so grabbing it stays easy despite the thinner visual)
@@ -588,6 +597,19 @@ UI.LAYOUT = {
 		badgeH    = 22,
 		crumbGap  = 7,  -- label baseline -> breadcrumb line (they read as one unit, but must not stick together)
 		emptyTop  = 90, -- air above the "nothing found" message
+	},
+	-- WHAT'S NEW — the release-notes screen behind the sidebar news card. Same
+	-- reasoning as `search`: its own screen, so its measures live here.
+	news = {
+		headH    = 34, -- "What's new" heading line
+		introH   = 32, -- the "since your version …" line under the heading
+		groupH   = 42, -- version group header (version + release date)
+		rowH     = 54, -- one note row (the text may wrap to a second line)
+		rowGap   = 6,
+		kindW    = 96, -- fixed kind-chip column, so every note text starts on one line
+		kindH    = 24,
+		crumbGap = 16, -- note text -> the right-aligned path
+		footTop  = 24, -- last version card -> the footer buttons
 	},
 	-- GENERAL — cross-screen constants used by several tabs.
 	general = {

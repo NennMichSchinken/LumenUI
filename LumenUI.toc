@@ -3,7 +3,7 @@
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## IconTexture: Interface\AddOns\LumenUI\Textures\Logo
 ## Author: NennMichSchinken
-## Version: 0.9.287
+## Version: 0.9.289
 ## SavedVariables: LumenDB
 ## OptionalDeps: MiniCC
 ## X-Website: https://github.com/NennMichSchinken
@@ -17,6 +17,7 @@ Shell\Tokens.lua
 Locales\Locale.lua
 Locales\deDE.lua
 Shell\Widgets.lua
+Shell\News.lua
 Shell\Screens.lua
 Shell\Shell.lua
 Modules\Raidframes.lua

@@ -300,7 +300,17 @@ local function auraSig(u, iid)
 end
 -- Already-fingerprinted aura instances -> compute each instance only ONCE. Keeps the
 -- OOC steady-state cost effectively at a pure aura scan. Cleared on spec change.
+-- OUT-OF-COMBAT cache (the learner below early-outs in combat) -> dropped when
+-- combat starts, which also keeps it from growing over a whole raid night.
 local learnedIID = {}
+-- IN-COMBAT counterpart: resolved aura instance -> spellID (false = "not
+-- resolvable"). An aura INSTANCE keeps its signature for its entire lifetime, so
+-- the four filter probes plus the signature string in auraSig only need to run
+-- once per instance instead of on every UNIT_AURA. Dropped when combat ENDS
+-- (that is when it stops being useful and would otherwise accumulate) and
+-- whenever the learner records a new signature — a negative entry from before
+-- the learning must not outlive it.
+local resolvedIID = {}
 -- Learn passively: ONLY out of combat (in combat zero cost -> early early-out), scan
 -- the own auras on u, remember new signature->spellID. Called once per UNIT_AURA of the unit.
 local function learnUnitSigs(u)
@@ -323,7 +333,13 @@ local function learnUnitSigs(u)
 			local sid = aura.spellId
 			if sid and not issecretvalue(sid) then
 				local sig = auraSig(u, iid)
-				if sig and not s[sig] then s[sig] = sid end
+				if sig and not s[sig] then
+					s[sig] = sid
+					-- A new signature can turn earlier "unresolvable" answers into
+					-- real hits -> drop the resolve cache rather than keep stale
+					-- negatives (rare: only fires for genuinely new signatures).
+					wipe(resolvedIID)
+				end
 			end
 		end
 	end
@@ -579,12 +595,20 @@ local function resolveSpellId(u, aura, spec)
 	if sid ~= nil and not issecretvalue(sid) then return PRIMARY_BY_ALT[sid] or sid end
 	local iid = aura.auraInstanceID
 	if not iid or issecretvalue(iid) then return nil end
+	-- Cached per aura instance: the signature below costs four C probes plus a
+	-- string build, and this runs for every aura of every frame on UNIT_AURA.
+	local hit = resolvedIID[iid]
+	if hit ~= nil then return hit or nil end   -- false = cached "unresolvable"
+	local out
 	local sig = auraSig(u, iid)
-	if not sig then return nil end
-	local g = ns.Lumen.db and ns.Lumen.db.global
-	local store = g and g.auraSigs
-	local s = store and store[spec]
-	return s and s[sig] or nil
+	if sig then
+		local g = ns.Lumen.db and ns.Lumen.db.global
+		local store = g and g.auraSigs
+		local s = store and store[spec]
+		out = s and s[sig] or nil
+	end
+	resolvedIID[iid] = out or false
+	return out
 end
 
 -- Whitelist type of a spellId: directly OR via the base spell (GetBaseSpell) so that
@@ -621,7 +645,14 @@ local function layoutCtx()
 	return IsInRaid() and d.raid or d.party
 end
 
+-- Single funnel for every class-color lookup (fillRGB + _powerRGB both land here).
+-- 12.1 build 68914 made `UnitClass` return a SECRET token for identity-restricted
+-- units — and a secret cannot be used as a table KEY, so the lookup below would
+-- hard-error rather than just miss. Group members should never be restricted, but
+-- the check is one call and the failure mode would be an error per frame per
+-- event, so it is not worth betting on. Falls back to the neutral grey.
 local function classColor(class)
+	if class == nil or issecretvalue(class) then return 0.6, 0.6, 0.6 end
 	local c = RAID_CLASS_COLORS[class]
 	if c then return c.r, c.g, c.b end
 	return 0.6, 0.6, 0.6
@@ -865,21 +896,41 @@ end
 -- Suffix of the context-dependent aura fields (anchorRaid/anchorParty, growRaid/…, sizeRaid/…,
 -- offX/offY, outside) — position/size are separate per context (like frame size/text).
 local function auraCtxSuffix() return isRaidContext() and "Raid" or "Party" end
--- Icon size of a category: auto-fit -> derived from the frame height (so it scales
--- automatically between raid/group), otherwise explicit per context.
-local function auraIconSize(cat, L)
-	local sfx = auraCtxSuffix()
-	if not cat["autoFit" .. sfx] then
-		return cat["size" .. sfx] or (sfx == "Raid" and 16 or 22)
+-- The suffixed key NAMES, built once per context instead of on every read.
+-- RenderAurasLive runs for every UNIT_AURA of every frame and touched four
+-- keys per category — building those strings there cost up to 16 concatenations
+-- (each one a hash + string-table lookup) per event. §9.3. The benchmark suite
+-- caches its filter strings the same way (EllesmereUI_AuraKit.lua, AK.Filter).
+local AURA_KEYS = {}
+for _, s in ipairs({ "Raid", "Party" }) do
+	local t = {}
+	for _, base in ipairs({ "enabled", "maxIcons", "showSwipe", "filterMode", "autoFit",
+		"size", "spacing", "grow", "anchor", "offX", "offY", "outside",
+		"showDuration", "durationSize", "durationOutline" }) do
+		t[base] = base .. s
 	end
-	-- Auto-fit: ~30% of the frame height, BUT capped so the full row/column fits into
-	-- the frame (no overflow past the edge on narrow/short frames):
+	AURA_KEYS[s] = t
+end
+-- Key set of the ACTIVE context (raid vs party) — one table lookup.
+local function auraKeys() return AURA_KEYS[auraCtxSuffix()] end
+-- Icon size of a category: auto-fit -> derived from the height the icons actually
+-- have (so it scales automatically between raid/group), otherwise explicit per
+-- context. availH = that usable height -- the health bar, not the whole frame,
+-- whenever a resource strip takes the bottom off.
+local function auraIconSize(cat, L, availH)
+	local sfx = auraCtxSuffix()
+	local K = AURA_KEYS[sfx]
+	if not cat[K.autoFit] then
+		return cat[K.size] or (sfx == "Raid" and 16 or 22)
+	end
+	-- Auto-fit: ~30% of the available height, BUT capped so the full row/column fits
+	-- (no overflow past the edge on narrow/short frames):
 	-- cap horizontal growth at the width, vertical at the height.
-	local h, w = L.height or 60, L.width or 114
-	local n  = max(1, cat["maxIcons" .. sfx] or 5)
-	local sp = cat["spacing" .. sfx] or 0
+	local h, w = availH or L.height or 60, L.width or 114
+	local n  = max(1, cat[K.maxIcons] or 5)
+	local sp = cat[K.spacing] or 0
 	local size = h * 0.30
-	local grow = cat["grow" .. sfx] or "RIGHT"
+	local grow = cat[K.grow] or "RIGHT"
 	if grow == "UP" or grow == "DOWN" then
 		size = min(size, (h - sp * (n - 1)) / n)
 	else
@@ -991,30 +1042,41 @@ local function layoutAuraCat(f, key, cat, size)
 		return
 	end
 	-- All display knobs are per context (raid/party) since Feature 1.
-	local sfx = auraCtxSuffix()
-	if not (cat and cat["enabled" .. sfx]) then
+	local K = auraKeys()
+	if not (cat and cat[K.enabled]) then
 		if holder then holder:Hide() end
 		return
 	end
 	if not holder then
 		holder = CreateFrame("Frame", nil, f.overlay)
-		holder:SetAllPoints(f)
 		holder.icons = {}
 		holder._host, holder._cat = f, key   -- click-to-configure needs owner + category
 		f.auraHolders[key] = holder
 	end
 	holder:Show()
+	-- What the icons are measured against. INSIDE icons follow the HEALTH BAR, so a
+	-- bottom-anchored row sits ON the health bar instead of covering the resource
+	-- strip underneath it (the name/HP text has been anchored this way all along).
+	-- OUTSIDE means "beyond the frame", so those keep the frame as their reference --
+	-- otherwise pushing a row out the bottom would land it right on the resource bar.
+	-- SetAllPoints is an anchor, not a snapshot: when the render pass changes the
+	-- health height, the holder follows on its own. Re-anchored only on change (§9.5).
+	local ref = (cat[K.outside] and f) or f.health
+	if holder._ref ~= ref then
+		holder._ref = ref
+		holder:SetAllPoints(ref)
+	end
 	-- Remember layout parameters for the render-time positioning (positionAuraIcons).
-	holder._anchor  = cat["anchor" .. sfx] or "BOTTOMLEFT"
-	holder._grow    = cat["grow" .. sfx] or "RIGHT"
-	holder._offX    = cat["offX" .. sfx] or 0
-	holder._offY    = cat["offY" .. sfx] or 0
-	holder._outside = cat["outside" .. sfx] or false
+	holder._anchor  = cat[K.anchor] or "BOTTOMLEFT"
+	holder._grow    = cat[K.grow] or "RIGHT"
+	holder._offX    = cat[K.offX] or 0
+	holder._offY    = cat[K.offY] or 0
+	holder._outside = cat[K.outside] or false
 	holder._size    = size
-	holder._spacing = cat["spacing" .. sfx] or 0
+	holder._spacing = cat[K.spacing] or 0
 	holder._posCount = nil   -- layout params reset -> discard position cache
-	local showSwipe = cat["showSwipe" .. sfx]
-	local maxN = cat["maxIcons" .. sfx] or 5
+	local showSwipe = cat[K.showSwipe]
+	local maxN = cat[K.maxIcons] or 5
 	for i = 1, maxN do
 		local ic = holder.icons[i] or makeAuraIcon(holder)
 		holder.icons[i] = ic
@@ -1399,6 +1461,16 @@ function Raidframes._renderPowerFake(f, fk, d, L)
 	f.power:SetStatusBarColor(R._powerRGB(d, fk.class, nil, token))
 end
 
+-- Height the HEALTH bar gets: the frame minus the resource strip when one is
+-- shown. Everything that has to stay clear of the resource bar (aura icons and
+-- their auto-fit sizing) measures against this rather than the frame height.
+-- The render pass owns the live heights (_setPowerShown); this is the same
+-- arithmetic for the layout side, which runs before any render.
+function Raidframes._healthHeight(d, L)
+	local ph = max(1, floor(L.powerHeight or 4))
+	return max(1, (L.height or 60) - ((d.powerEnabled and ph) or 0))
+end
+
 function Raidframes:ApplyConfig(f)
 	local d = db()
 	local L = layoutCtx()
@@ -1410,7 +1482,7 @@ function Raidframes:ApplyConfig(f)
 	f.power:SetStatusBarTexture(FetchTexture(d.powerTexture))
 	local ph = max(1, floor(L.powerHeight or 4))
 	self._setBarHeight(f.power, ph)
-	local healthH = max(1, L.height - ((d.powerEnabled and ph) or 0))
+	local healthH = self._healthHeight(d, L)
 	self._setBarHeight(f.health, healthH)
 	-- Keep segment bars at health size (anchors provide height/position)
 	f.predictBar:SetSize(L.width, healthH)
@@ -1484,11 +1556,12 @@ function Raidframes:ApplyConfig(f)
 	f.eL:ClearAllPoints(); f.eL:SetPoint("TOPLEFT"); f.eL:SetPoint("BOTTOMLEFT"); f.eL:SetWidth(2)
 	f.eR:ClearAllPoints(); f.eR:SetPoint("TOPRIGHT"); f.eR:SetPoint("BOTTOMRIGHT"); f.eR:SetWidth(2)
 
-	-- Layout aura indicators. Auto-fit derives the icon size from L.height.
+	-- Layout aura indicators. Auto-fit measures against the health bar, so a
+	-- resource strip shrinks the icons instead of pushing them over it.
 	if d.auras then
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
-			local size = (cat and auraIconSize(cat, L)) or 16
+			local size = (cat and auraIconSize(cat, L, healthH)) or 16
 			layoutAuraCat(f, c.key, cat, size)
 		end
 	end
@@ -1866,7 +1939,7 @@ function Raidframes:RenderAurasLive(f)
 	learnUnitSigs(u)   -- passive signature learning (out of combat; groundwork for the whitelist)
 	local spec = currentSpecID()
 	local wl   = whitelistCached(spec)   -- whitelist of the active spec (cached; seeded once)
-	local sfx  = auraCtxSuffix()       -- display knobs are per context (Feature 1)
+	local K    = auraKeys()            -- display knobs are per context (Feature 1)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
@@ -1874,10 +1947,10 @@ function Raidframes:RenderAurasLive(f)
 		-- while enabled -> skip the old manual render for them (avoids double display).
 		if ns.RFC and ns.RFC.Suppresses and ns.RFC.Suppresses(c.key) then
 			if holder then holder:Hide() end
-		elseif cat and cat["enabled" .. sfx] and holder then
-			local maxN     = cat["maxIcons" .. sfx] or 5
-			local showSwipe = cat["showSwipe" .. sfx]
-			local filterMode = cat["filterMode" .. sfx]
+		elseif cat and cat[K.enabled] and holder then
+			local maxN     = cat[K.maxIcons] or 5
+			local showSwipe = cat[K.showSwipe]
+			local filterMode = cat[K.filterMode]
 			local fn   = C_UnitAuras.IsAuraFilteredOutByInstanceID
 			local shown, i = 0, 1
 			while shown < maxN do
@@ -1984,11 +2057,11 @@ end
 function Raidframes:RenderAurasFake(f)
 	local A = db().auras
 	if not A then return end
-	local sfx = auraCtxSuffix()        -- display knobs are per context (Feature 1)
+	local K = auraKeys()               -- display knobs are per context (Feature 1)
 	for _, c in ipairs(AURA_CATS) do
 		local cat    = A[c.key]
 		local holder = f.auraHolders and f.auraHolders[c.key]
-		if cat and cat["enabled" .. sfx] and holder then
+		if cat and cat[K.enabled] and holder then
 			-- Varied preview (Florian 2026-07-17): each fake entry carries curated
 			-- per-category icon counts (`auras`), so the roster reads like a real
 			-- group snapshot instead of max icons everywhere. DETERMINISTIC on
@@ -1996,10 +2069,10 @@ function Raidframes:RenderAurasFake(f)
 			-- would reshuffle mid-drag. Entries WITHOUT an `auras` table are the
 			-- deliberate full-load frames (maxIcons of every enabled category —
 			-- for judging max icons / auto-fit).
-			local maxN = cat["maxIcons" .. sfx] or 5
+			local maxN = cat[K.maxIcons] or 5
 			local plan = f.fake.auras
 			local n = plan and min(plan[c.key] or 0, maxN) or maxN
-			local showSwipe = cat["showSwipe" .. sfx]
+			local showSwipe = cat[K.showSwipe]
 			-- Icon source: the player's actually-tracked spells for the category
 			-- (cached per spec via previewIconsFor -- the dev-side cache replaces
 			-- the older per-render WhitelistEntries scan; falls back to the static
@@ -2007,10 +2080,10 @@ function Raidframes:RenderAurasFake(f)
 			local fakeTex = previewIconsFor(c)
 			-- Duration-text options mirror the native path (per context): show
 			-- on/off, size, and outline (same outline set as the name text).
-			local durOn = cat["showDuration" .. sfx]
+			local durOn = cat[K.showDuration]
 			if durOn == nil then durOn = true end
-			local durSize    = cat["durationSize" .. sfx] or 12
-			local durOutline = cat["durationOutline" .. sfx] or "shadow"
+			local durSize    = cat[K.durationSize] or 12
+			local durOutline = cat[K.durationOutline] or "shadow"
 			for k = 1, n do
 				local ic = holder.icons[k]
 				if ic then
@@ -2714,11 +2787,12 @@ function Raidframes:RefreshAuras()
 	local d = db()
 	if not d.auras then return end
 	local L = layoutCtx()
+	local healthH = self._healthHeight(d, L)
 	local function relayout(f)
 		if not f.auraHolders then return end
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
-			local size = (cat and auraIconSize(cat, L)) or 16
+			local size = (cat and auraIconSize(cat, L, healthH)) or 16
 			layoutAuraCat(f, c.key, cat, size)
 		end
 	end
@@ -3005,17 +3079,55 @@ function Raidframes:Setup()
 	container:RegisterEvent("PLAYER_ENTERING_WORLD")
 	container:RegisterEvent("GROUP_ROSTER_UPDATE")
 	container:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	container:RegisterEvent("PLAYER_REGEN_DISABLED")  -- combat start -> drop the OOC caches
 	container:RegisterEvent("PLAYER_REGEN_ENABLED")   -- combat end -> catch up deferred layout
 	container:RegisterEvent("PARTY_LEADER_CHANGED")   -- leader/assist + role icons repaint
 	container:RegisterEvent("PLAYER_ROLES_ASSIGNED")
 	container:RegisterEvent("READY_CHECK")            -- status center icon
 	container:RegisterEvent("READY_CHECK_CONFIRM")
 	container:RegisterEvent("READY_CHECK_FINISHED")
-	for ev in pairs(UNIT_EVENT_METHOD) do container:RegisterEvent(ev) end
+
+	-- Unit events go to PER-UNIT trackers instead of one global registration:
+	-- RegisterUnitEvent filters C-side, so a nameplate's or the target's
+	-- UNIT_HEALTH never enters Lua at all (previously every one of them paid for
+	-- a handler call plus a hash lookup — in an AoE pull with a dozen nameplates
+	-- that is the bulk of the traffic). Registration is STATIC: one frame per
+	-- possible group token, created once. A token nobody occupies simply never
+	-- fires, so roster changes need no re-registration — this is what makes the
+	-- approach cheap. Same construction as the benchmark suite
+	-- (EllesmereUIRaidFrames.lua, MakeUnitTracker).
+	-- The two non-UNIT_ entries (INCOMING_RESURRECT_CHANGED / INCOMING_SUMMON_CHANGED)
+	-- carry a unit payload but are NOT unit events -> they stay on the container
+	-- and keep going through the routing block below.
+	local function onUnitEvent(_, event, unit)
+		local f = unitToButton[unit]
+		if f and f:IsVisible() then Raidframes[UNIT_EVENT_METHOD[event]](Raidframes, f) end
+	end
+	if container.RegisterUnitEvent then
+		-- No table keeping the trackers: a created frame is owned by the C side and
+		-- never collected, and nothing re-registers them afterwards.
+		local function track(unit)
+			local t = CreateFrame("Frame")
+			for ev in pairs(UNIT_EVENT_METHOD) do
+				if ev:sub(1, 5) == "UNIT_" then t:RegisterUnitEvent(ev, unit) end
+			end
+			t:SetScript("OnEvent", onUnitEvent)
+		end
+		track("player")
+		for i = 1, 4 do track("party" .. i) end
+		for i = 1, 40 do track("raid" .. i) end
+		for ev in pairs(UNIT_EVENT_METHOD) do
+			if ev:sub(1, 5) ~= "UNIT_" then container:RegisterEvent(ev) end
+		end
+	else
+		for ev in pairs(UNIT_EVENT_METHOD) do container:RegisterEvent(ev) end
+	end
+
 	container:SetScript("OnEvent", function(_, event, unit)
-		-- HOT PATH first: unit events fire for EVERY unit in the world (incl.
-		-- nameplates). One table lookup routes/bails; IsVisible also covers
-		-- test mode + disabled module (header hidden -> buttons not visible).
+		-- Unit-payload routing: with the trackers above this only serves the two
+		-- non-UNIT_ events; without RegisterUnitEvent it is the full old path.
+		-- IsVisible also covers test mode + disabled module (header hidden ->
+		-- buttons not visible).
 		local m = UNIT_EVENT_METHOD[event]
 		if m then
 			local f = unitToButton[unit]
@@ -3027,10 +3139,19 @@ function Raidframes:Setup()
 			return
 		end
 		if event == "PLAYER_REGEN_ENABLED" then
+			-- The in-combat resolve cache has done its job; dropping it here keeps
+			-- it from carrying an evening's worth of aura instances around.
+			wipe(resolvedIID)
 			if secureLayoutDirty then
 				secureLayoutDirty = false
 				Raidframes:UpdateLayout()
 			end
+			return
+		end
+		if event == "PLAYER_REGEN_DISABLED" then
+			-- The learner only runs out of combat, so its cache is dead weight from
+			-- here on — and this is what bounds it within a long session.
+			wipe(learnedIID)
 			return
 		end
 		if event == "PARTY_LEADER_CHANGED" or event == "PLAYER_ROLES_ASSIGNED" then
@@ -3042,9 +3163,11 @@ function Raidframes:Setup()
 			-- change matters here (whitelist + signatures are player-scoped).
 			if unit and unit ~= "player" then return end
 			wipe(learnedIID)   -- signatures are spec-scoped -> relearn
+			wipe(resolvedIID)
 			wlInvalidate()
 		elseif event == "PLAYER_ENTERING_WORLD" then
 			wipe(learnedIID)   -- fresh world: drop stale aura-instance fingerprints
+			wipe(resolvedIID)
 		elseif event == "GROUP_ROSTER_UPDATE" and InCombatLockdown() then
 			-- Mid-combat roster change: the secure header re-sorts on its own, but a
 			-- unit token can change OCCUPANT without its attribute value changing ->
