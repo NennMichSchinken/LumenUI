@@ -785,7 +785,7 @@ end
 function Raidframes:StyleTextFont(fs, size, outline)
 	local sf = shadowFonts()
 	fs:SetFontObject(sf[outline] or sf.none)   -- inherit shadow BEFORE SetFont
-	fs:SetFont(STANDARD_TEXT_FONT, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
+	setFrameFont(fs, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
 end
 
 local function GetFakeList(size)
