@@ -239,6 +239,34 @@ UI.FONT.medium   = UI.FONT.interMed
 UI.FONT.semibold = UI.FONT.interSemi
 UI.FONT.bold     = UI.FONT.interBold
 
+-- Typeface of the GAMEPLAY frames (raid frames, trackers) — user choice in
+-- Global/Base, account-wide like the accent. The Shell is deliberately NOT part
+-- of it: its roles name WEIGHTS (Regular/Medium/SemiBold/Bold) and the client
+-- font has none, so the whole v3 hierarchy would collapse onto one weight.
+--
+-- LOCALE GUARD: our bundled Inter is subsetted to Latin (428 glyphs, verified).
+-- A Cyrillic or CJK client would render its own UI as empty boxes, so there the
+-- choice is ignored rather than honoured. Player names in another script on a
+-- Latin client stay a known limitation of picking Inter — the way out is the
+-- setting itself.
+local NON_LATIN_LOCALE = { ruRU = true, koKR = true, zhCN = true, zhTW = true }
+function UI:FrameFont()
+	local db = ns.Lumen and ns.Lumen.db
+	local pick = db and db.global and db.global.frameFont
+	if pick ~= "lumen" then return STANDARD_TEXT_FONT end
+	if NON_LATIN_LOCALE[GetLocale()] then return STANDARD_TEXT_FONT end
+	return self.FONT.regular
+end
+
+-- Apply that typeface to a frame FontString. Lives here so raid frames and QoL
+-- share one implementation of the cold-start fallback: a custom TTF can fail to
+-- set before its file is rasterized, and an unset font renders nothing at all.
+function UI:SetFrameFont(fs, size, flags)
+	if not fs:SetFont(self:FrameFont(), size, flags) then
+		fs:SetFont(STANDARD_TEXT_FONT, size, flags)
+	end
+end
+
 -- (Font warm-up happens BELOW UI.ROLE — it warms every actually used
 -- font+size pair, so it needs the role table first.)
 

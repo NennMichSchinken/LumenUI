@@ -800,8 +800,14 @@ function QoL:ApplyTrackers()
 		local f, s = defs[i].f, defs[i].s
 		local size = s.size or 40
 		f:SetSize(size, size)
-		f.count:SetFont(STANDARD_TEXT_FONT, max(10, floor(size * 0.32)), "OUTLINE")
-		f.timer:SetFont(STANDARD_TEXT_FONT, max(10, floor(size * 0.30)), "OUTLINE")
+		-- Same typeface funnel as the raid frames (Global tab: client font vs. Inter).
+		if ns.UI and ns.UI.SetFrameFont then
+			ns.UI:SetFrameFont(f.count, max(10, floor(size * 0.32)), "OUTLINE")
+			ns.UI:SetFrameFont(f.timer, max(10, floor(size * 0.30)), "OUTLINE")
+		else
+			f.count:SetFont(STANDARD_TEXT_FONT, max(10, floor(size * 0.32)), "OUTLINE")
+			f.timer:SetFont(STANDARD_TEXT_FONT, max(10, floor(size * 0.30)), "OUTLINE")
+		end
 		local pos = s.pos or {}
 		f:ClearAllPoints()
 		f:SetPoint(pos.point or "CENTER", UIParent, pos.point or "CENTER", pos.x or 0, pos.y or -240)
