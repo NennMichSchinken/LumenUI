@@ -847,6 +847,19 @@ function Shell:Build()
 	-- (The preview DOCK — a draggable satellite window beside the panel — was
 	-- removed 2026-07-29: every raidframe tab carries the preview anchored at the
 	-- top of its own page instead, so there is nothing to open, drag or lose.)
+	-- Sticky area between the tab strip and the scroll frame. A screen can park
+	-- ONE frame here (Shell:SetSticky) — the raidframe preview does: it must stay
+	-- put while the settings scroll under it, which is the entire point of an
+	-- anchored preview (Florian 2026-07-29). Empty = zero height, scroll starts
+	-- right under the tabs as before.
+	self._main = main
+	local sticky = CreateFrame("Frame", nil, main)
+	sticky:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -S.contentTopGap)
+	sticky:SetPoint("TOPRIGHT", main, "TOPRIGHT", -S.panelGutter, -S.contentTopGap)
+	sticky:SetHeight(1)
+	sticky:Hide()
+	self._sticky = sticky
+
 	local scroll = CreateFrame("ScrollFrame", nil, main)
 	scroll:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -S.contentTopGap)
 	scroll:SetPoint("BOTTOMRIGHT", main, "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
@@ -1197,6 +1210,10 @@ function Shell:JumpTo(sectionName, tabName, cardKey)
 		prepared = ns.ShellJumpPrep(sectionName, tabName, cardKey) ~= false
 	end
 	if here and not prepared then
+		-- Nothing changed and the card is on screen: do nothing at all. Flashing
+		-- a card you are already looking at is noise, and on the Auras tab the
+		-- card is the whole editor.
+		if self:_CardInView(here) then return end
 		self:_ResolveJump(cardKey)
 		return
 	end
@@ -1418,6 +1435,21 @@ local function newStack(holder)
 				sw:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
 				panel._switch = sw
 			end
+			-- Header controls slot: extra widgets that belong to the card as a
+			-- WHOLE (the Auras editor puts its Display/Spells switch and the copy
+			-- button here). They chain leftwards from the master switch, so the
+			-- head reads as one row instead of a second row under the title
+			-- (Florian 2026-07-29).
+			if o.headerControls then
+				local anchorTo, gap = panel._switch, S.s5
+				for _, w in ipairs(o.headerControls) do
+					w:SetParent(panel)
+					w:ClearAllPoints()
+					if anchorTo then w:SetPoint("RIGHT", anchorTo, "LEFT", -gap, 0)
+					else w:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY) end
+					anchorTo, gap = w, S.s4
+				end
+			end
 			-- Header EYE toggle (card-eye system): shows/hides THIS card's layer in
 			-- the live preview (and, from the selected frame, in Edit Mode). Sits
 			-- left of the master switch if the card has one, else at the switch
@@ -1561,6 +1593,7 @@ local function newStack(holder)
 			title = title, afterHeader = M.sectionAfterHeader,
 			count = opts and opts.count, action = opts and opts.action,
 			toggle = opts and opts.toggle, eye = opts and opts.eye,
+			headerControls = opts and opts.headerControls,
 			subtitle = opts and opts.subtitle,
 			-- Cards are rounded by default; opts.round = "bottom" for bodies
 			-- flush-attached under a collapsible header (seam edge square).
@@ -1722,6 +1755,40 @@ end
 -- The panel frame (nil before the first Build). Screens use it as the scale
 -- reference when they need to size something in on-screen units.
 function Shell:Frame() return self._frame end
+
+-- Park a frame in the STICKY area above the scroll region (or clear it with
+-- nil). The scroll frame starts below it, so the parked frame stays put while
+-- the settings scroll. Called by a screen builder BEFORE it fills its stack;
+-- the Shell resets it on every render, so a screen without a sticky frame gets
+-- the full content area back automatically.
+function Shell:SetSticky(frame, height)
+	local sticky, scroll = self._sticky, self._scroll
+	if not (sticky and scroll) then return end
+	-- Recorded so a cached screen can restore it without re-running its builder.
+	self._stickySpec = frame and { frame = frame, height = height } or nil
+	if self._stickyChild and self._stickyChild ~= frame then
+		self._stickyChild:Hide()
+		self._stickyChild:SetParent(nil)
+	end
+	self._stickyChild = frame
+	scroll:ClearAllPoints()
+	scroll:SetPoint("BOTTOMRIGHT", self._main or scroll:GetParent(), "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
+	if not frame then
+		sticky:Hide()
+		sticky:SetHeight(1)
+		scroll:SetPoint("TOPLEFT", self._tabStrip, "BOTTOMLEFT", 0, -S.contentTopGap)
+		return
+	end
+	frame:SetParent(sticky)
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", sticky, "TOPLEFT", 0, 0)
+	frame:SetPoint("TOPRIGHT", sticky, "TOPRIGHT", 0, 0)
+	frame:SetHeight(height)
+	frame:Show()
+	sticky:SetHeight(height)
+	sticky:Show()
+	scroll:SetPoint("TOPLEFT", sticky, "BOTTOMLEFT", 0, -S.contentTopGap)
+end
 
 -- Sidebar separator above the action rows: hugs the topmost visible action.
 -- Thickness is pixel-snapped, the position stays plain SetPoint (border
@@ -2423,10 +2490,16 @@ function Shell:RenderContent(changed)
 		self._screen, self._popovers = nil, nil
 	end
 
+	-- Sticky area belongs to the screen being shown: clear it first, so a screen
+	-- without one (Global, QoL) gets the full content height back. A cache hit
+	-- does not run its builder, so it restores what its build recorded.
+	self:SetSticky(nil)
+
 	-- Cache hit: re-show as-is — values are guaranteed current because every
 	-- change since the build would have dropped the cache.
 	local hit = not pseudo and cache[key]
 	if hit then
+		if hit.sticky then self:SetSticky(hit.sticky.frame, hit.sticky.height) end
 		self._screen, self._popovers = hit.frame, hit.popovers
 		-- New (lazily created) popovers of reused widgets must land in THIS
 		-- screen's list again, not in the last-built screen's.
@@ -2496,7 +2569,8 @@ function Shell:RenderContent(changed)
 	-- Pseudo screens are never cached: the results change with every keystroke,
 	-- the notes with the read state.
 	if not d._builtHidden and not pseudo then
-		cache[key] = { frame = d, popovers = self._popovers, height = h, badge = self._lastBadge }
+		cache[key] = { frame = d, popovers = self._popovers, height = h, badge = self._lastBadge,
+			sticky = self._stickySpec }
 	end
 	if self._scroll then
 		-- On a forced rebuild (e.g. role reordering, collapsing the aura section) keep

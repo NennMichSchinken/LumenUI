@@ -3631,7 +3631,10 @@ function W.PreviewBand(parent, o)
 	if o.eyeDefs then
 		ebtn = CreateFrame("Button", nil, head)
 		ebtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-		ebtn:SetPoint("RIGHT", resetAnchor, "LEFT", -S.s4, 0)
+		-- Inline: the collapse button is hidden, so anchoring off it would leave
+		-- the eye floating short of the right edge.
+		if o.inline then ebtn:SetPoint("RIGHT", head, "RIGHT", 0, 0)
+		else ebtn:SetPoint("RIGHT", resetAnchor, "LEFT", -S.s4, 0) end
 		UI.RoundFill(ebtn, Surface.Input, nil, nil, R_CTRL)
 		eEdges = UI.RoundBorder(ebtn, Border.hover, "OVERLAY", nil, R_CTRL)
 		eGlyph = ebtn:CreateTexture(nil, "ARTWORK")
@@ -3639,8 +3642,15 @@ function W.PreviewBand(parent, o)
 		eGlyph:SetPoint("CENTER", ebtn, "CENTER", 0, 0)
 		eGlyph:SetSnapToPixelGrid(false); eGlyph:SetTexelSnappingBias(0)
 
-		eyePop = CreateFrame("Frame", nil, f)
-		eyePop:SetFrameLevel(f:GetFrameLevel() + 40)
+		-- The popover floats on the menu HOST, not inside the band: an inline band
+		-- lives in the panel's content area, where a plain child would open
+		-- BEHIND the surrounding shell chrome (Florian 2026-07-29). Same host and
+		-- strata the dropdowns use. Deliberately NOT registered in W._popovers —
+		-- that list is wiped per screen, and the band outlives a screen.
+		local popHost = W._menuHost or f
+		eyePop = CreateFrame("Frame", nil, popHost)
+		eyePop:SetFrameStrata("FULLSCREEN_DIALOG")
+		eyePop:SetFrameLevel(popHost:GetFrameLevel() + 60)
 		eyePop:SetClampedToScreen(true)
 		UI.RoundFill(eyePop, Surface.Input, nil, nil, RAD.lg)
 		UI.RoundBorder(eyePop, Border.default, "OVERLAY", nil, RAD.lg) -- subtle, matches the new dropdown (Florian 2026-07-22: Accent.color read as a hard white outline)
@@ -3708,7 +3718,14 @@ function W.PreviewBand(parent, o)
 			if eyePop:IsShown() then eyePop:Hide() return end
 			for _, rp in ipairs(eyeRepaints) do rp() end
 			paintEyeBtn()
+			-- Inline bands re-anchor per render (SetExtent runs for the dock
+			-- variant only), so pin the popover under the button on every open.
+			if o.inline then
+				eyePop:ClearAllPoints()
+				eyePop:SetPoint("TOPRIGHT", ebtn, "BOTTOMRIGHT", 0, -S.s3)
+			end
 			eyePop:Show()
+			eyePop:Raise()
 		end)
 		paintEyeBtn()
 		resetAnchor = ebtn

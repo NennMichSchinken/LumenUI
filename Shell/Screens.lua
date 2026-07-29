@@ -255,25 +255,29 @@ local function previewBandFor(key, container, spec, opts)
 	return band
 end
 
--- Places the band for `key` at the top of the screen and reserves exactly the
--- height its content needs. The extent is computed from the profile BEFORE
--- anything renders (Raidframes:PreviewExtent) — the stacker places frames at
--- build time, so a height discovered afterwards would come too late.
-local function previewRow(d, stack, key, spec, opts)
-	local host = CreateFrame("Frame", nil, d)
-	local band = previewBandFor(key, host, spec, opts)
+-- Parks the band for `key` in the Shell's STICKY area above the scroll region,
+-- sized to exactly the height its content needs. It therefore stays put while
+-- the settings scroll under it — a preview that scrolls away is no preview
+-- (Florian 2026-07-29). The extent is computed from the profile BEFORE anything
+-- renders (Raidframes:PreviewExtent), because the height must be known when the
+-- area is reserved.
+local pvHostFrames = {}   -- tab key -> the sticky host (reused across renders)
+local function previewRow(d, key, spec, opts)
+	local host = pvHostFrames[key]
+	if not host then
+		host = CreateFrame("Frame", nil, ns.Shell:Frame() or d)
+		pvHostFrames[key] = host
+	end
+	previewBandFor(key, host, spec, opts)
 	local h = L.raidframes.preview.minH
 	if ns.Raidframes and ns.Raidframes.PreviewExtent then
 		local _, ch = ns.Raidframes:PreviewExtent(spec, ns.Shell:Frame() or d)
 		h = math.max(h, math.ceil(ch) + L.raidframes.preview.chromeH)
 	end
-	stack:place(host, h, L.raidframes.preview.after)
+	ns.Shell:SetSticky(host, h)
 	-- Fill once the frame has real dimensions (a screen built while the panel is
-	-- hidden has none). OnShow covers a cached screen coming back, where the
-	-- builder does not run again.
+	-- hidden has none).
 	C_Timer.After(0, function() if host:IsVisible() then previewRefresh() end end)
-	host:HookScript("OnShow", function() C_Timer.After(0, previewRefresh) end)
-	return band
 end
 
 -- Per-tab preview specs. `kind`/`ctx` are read by the module's render.
@@ -321,11 +325,11 @@ local function previewOpts(key)
 	end
 end
 
--- One call for a tab builder: put the preview on top of this screen.
-local function placePreview(d, stack, key)
+-- One call for a tab builder: park this screen's preview above the scroll area.
+local function placePreview(d, key)
 	local spec = PV_SPECS[key]
 	if not spec then return end
-	return previewRow(d, stack, key, spec, previewOpts(key))
+	previewRow(d, key, spec, previewOpts(key))
 end
 
 -- Expand state of the icon section per context — SESSION-ONLY and auto-collapsed
@@ -519,7 +523,7 @@ local function buildRaid(d, stack, ctx)
 	local fieldH = M.controlH + M.fieldGap -- height of a select WITH label
 	local R = L.rhythm
 
-	placePreview(d, stack, (ctx == "raid") and "Raidframes/Raid" or "Raidframes/Group")
+	placePreview(d, (ctx == "raid") and "Raidframes/Raid" or "Raidframes/Group")
 
 	-- ===== Size & arrangement (12-card with exactly ONE field row) ==========
 	-- Full width is fine here BECAUSE there are no stacked rows: four unit
@@ -773,7 +777,7 @@ local function buildBase(d, stack)
 	local body -- forward-declare: the master closure gates this body frame
 	local G = UI.GRID
 	stack:gap(L.general.tabTop) -- more air on top before the master toggle
-	placePreview(d, stack, "Raidframes/Base")
+	placePreview(d, "Raidframes/Base")
 	-- Full-width card with the global module switches (v3 mockup); each
 	-- checkbox carries a muted description line below its label.
 	local function checkDesc(cell, opts, desc)
@@ -1471,10 +1475,14 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 	-- Two blocks side by side INSIDE the editor card. W.Row splits the width;
 	-- each cell gets its own block, and both are stretched to the taller one so
 	-- the pair shares a clean bottom edge (band behaviour, one level down).
+	-- The blocks are children of the PAGE, not of the cells: a cell is 1px high
+	-- while its contents are built, and children of a zero-height intermediate
+	-- frame do not render (the same trap the Edit Mode flyout hit). The cells
+	-- only provide the x-geometry to anchor against.
 	local row, cells = W.Row(d, 2, { gap = UI.GRID.cardGap, height = 1 })
 
 	-- --- Placement -----------------------------------------------------------
-	local pBox, pSt, pC = innerBlock(cells[1], T("Placement"), T("Where the icon row sits on the frame"))
+	local pBox, pSt, pC = innerBlock(d, T("Placement"), T("Where the icon row sits on the frame"))
 	pBox:SetPoint("TOPLEFT", cells[1], "TOPLEFT", 0, 0)
 	pBox:SetPoint("TOPRIGHT", cells[1], "TOPRIGHT", 0, 0)
 	local p1, pc = W.FieldRow(pC, page, 2, { height = fieldH })
@@ -1497,11 +1505,11 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 		get = cget("offX"), set = cset("offX") })
 	sliderBox(pc3[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px",
 		get = cget("offY"), set = cset("offY") })
-	pSt:place(p3, M.sliderBoxH, R.tight)
+	pSt:place(p3, M.sliderBoxH, 0)
 	local pH = blockClose(pBox, pSt, pC)
 
 	-- --- Appearance ----------------------------------------------------------
-	local aBox, aSt, aC = innerBlock(cells[2], T("Appearance"), T("How many icons and how large"))
+	local aBox, aSt, aC = innerBlock(d, T("Appearance"), T("How many icons and how large"))
 	aBox:SetPoint("TOPLEFT", cells[2], "TOPLEFT", 0, 0)
 	aBox:SetPoint("TOPRIGHT", cells[2], "TOPRIGHT", 0, 0)
 	local a1, ac = W.FieldRow(aC, page, 2, { height = M.sliderBoxH })
@@ -1514,7 +1522,7 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 		get = cget("autoFit"),
 		set = function(v) cset("autoFit")(v); refreshSize() end }), M.optionRowH, 0)
 	aSt:place(checkRow(aC, T("Cooldown swipe"),
-		{ get = cget("showSwipe"), set = cset("showSwipe") }), M.optionRowH, R.tight)
+		{ get = cget("showSwipe"), set = cset("showSwipe") }), M.optionRowH, 0)
 	local aH = blockClose(aBox, aSt, aC)
 
 	-- Equal heights (shared bottom edge), then the row itself.
@@ -1556,7 +1564,7 @@ local function buildAuras(d, stack)
 	end
 
 	stack:gap(L.general.tabTop)
-	placePreview(d, stack, "Raidframes/Auras")
+	placePreview(d, "Raidframes/Auras")
 
 	-- Chip bar: pick the category. The dot shows whether it renders at all in
 	-- THIS context, the badge its icon count (or "off").
@@ -1578,41 +1586,21 @@ local function buildAuras(d, stack)
 	})
 	stack:place(chips, M.chipH, L.raidframes.auras.afterChips)
 
-	-- Editor card: master switch + Display/Spells panes + the copy popover.
+	-- Editor card. Its head carries EVERYTHING that belongs to the category as a
+	-- whole: eye, title + description, the Display/Spells switch, the copy button
+	-- and the master toggle — one row, so the head visibly belongs to the options
+	-- under it instead of sitting above them as a separate strip.
 	local paneSpells = (auraTabPane == "spells")
-	local editor = stack:section(cat.label, {
-		subtitle = cat.desc,
-		eye = eyeToggle(cat.key, T("Show in preview")),
-		toggle = {
-			get = aget(cat.key, "enabled" .. sfx),
-			set = function(v)
-				aset(cat.key, "enabled" .. sfx)(v)
-				ns.Shell:RenderContent(true)  -- chip dot/badge + greyed body follow
-			end,
-		},
-	})
 
-	-- Head row: which context is edited (repeated from the preview switch, so
-	-- the answer is next to the values too) | pane switch | copy.
-	local head = CreateFrame("Frame", nil, d)
-	head:SetHeight(M.buttonH)
-	-- Which context these values belong to. Deliberately a LABEL, not a second
-	-- switch: the anchored preview above carries the one switch, and two controls
-	-- for one state is exactly the confusion this tab exists to remove. It repeats
-	-- the answer next to the values, where you are looking while editing.
-	local ctxLbl = UI.FS(head, "caption", Text.Description)
-	ctxLbl:SetPoint("LEFT", head, "LEFT", 0, 0)
-	ctxLbl:SetText(("%s  ·  %s"):format(T("Editing"), ctx == "raid" and T("Raid") or T("Group")))
-
-	local paneSeg = W.Segment(head, {
+	local paneSeg = W.Segment(d, {
 		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
 		get = function() return auraTabPane end,
 		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
 		width = L.raidframes.auras.paneSegW,
+		cellH = M.buttonH,
 	})
-	paneSeg:SetPoint("CENTER", head, "CENTER", 0, 0)
 
-	local copyBtn = W.CopyPopover(head, {
+	local copyBtn = W.CopyPopover(d, {
 		text  = T("Copy"),
 		title = T("Copy settings"),
 		groups = {
@@ -1655,8 +1643,21 @@ local function buildAuras(d, stack)
 			ns.Shell:RenderContent(true)
 		end,
 	})
-	copyBtn:SetPoint("RIGHT", head, "RIGHT", 0, 0)
-	editor:place(head, M.buttonH, L.rhythm.row)
+	-- The card is created LAST of the head parts, because its header takes the
+	-- already-built controls (they chain leftwards from the master switch).
+	local editor = stack:section(("%s  ·  %s"):format(cat.label,
+			ctx == "raid" and T("Raid") or T("Group")), {
+		subtitle = cat.desc,
+		eye = eyeToggle(cat.key, T("Show in preview")),
+		toggle = {
+			get = aget(cat.key, "enabled" .. sfx),
+			set = function(v)
+				aset(cat.key, "enabled" .. sfx)(v)
+				ns.Shell:RenderContent(true)  -- chip dot/badge + greyed body follow
+			end,
+		},
+		headerControls = { copyBtn, paneSeg },
+	})
 
 	-- Body of the picked pane, built INSIDE the same card as the head — the head
 	-- belongs to these options, so it must not float above them as its own card
