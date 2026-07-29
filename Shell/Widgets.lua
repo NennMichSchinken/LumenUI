@@ -3945,7 +3945,10 @@ function W.PreviewBand(parent, o)
 		chevDir(side == "right" and "left" or "up")
 		-- Eye popover opens away from the stage (old grouped-filter rule):
 		-- right dock -> outward right, bottom dock -> upward above the header.
-		if eyePop then
+		-- NOT for inline bands: they anchor it once when it opens, and toggling a
+		-- row refreshes the preview — which ran through here and moved the popover
+		-- out from under the cursor mid-click (Florian 2026-07-29).
+		if eyePop and not o.inline then
 			eyePop:ClearAllPoints()
 			if side == "right" then
 				eyePop:SetPoint("TOPLEFT", head, "TOPRIGHT", S.s3, 0)
