@@ -3562,7 +3562,9 @@ function W.PreviewBand(parent, o)
 	-- Inline: the title slot names what the switch next to it DOES ("Editing"),
 	-- because that switch picks the context whose values you are editing — not
 	-- merely what the preview shows. Dock: it is just a preview window.
-	lbl:SetText((o.inline and o.ctx and o.ctx.caption) and o.ctx.caption or T("PREVIEW"))
+	-- Sentence case, like every other title in the shell — the shouted version was
+	-- from the dock, which was its own window (Florian 2026-07-30).
+	lbl:SetText((o.inline and o.ctx and o.ctx.caption) and o.ctx.caption or T("Preview"))
 
 	-- Inline: a collapse chevron leads the row, sitting on the left edge the
 	-- content blocks below use, with the title right beside it (Florian

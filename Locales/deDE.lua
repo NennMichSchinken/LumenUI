@@ -413,7 +413,6 @@ ns.RegisterLocale("deDE", {
 	["Shell error in"] = "Shell-Fehler in",
 
 	-- ── Live preview dock (satellite window next to the shell panel) ──────
-	["PREVIEW"] = "VORSCHAU",
 	["Auras"] = "Auren",
 	["Shields"] = "Schilde",
 	["Defensives"] = "Defensives",
