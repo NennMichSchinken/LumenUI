@@ -212,8 +212,33 @@ ns.RegisterLocale("deDE", {
 	["All"] = "Alle",
 	["Dispellable only"] = "Nur dispellbar",
 
+	-- ── Auras tab (category chips + inline editor) ───────────────────────
+	-- NOTE "Display" and "Placement" already exist above (HP display mode / the
+	-- inside-outside segment) — reused here on purpose instead of duplicated.
+	["Editing"] = "Bearbeiten",
+	["Spells"] = "Zauber",
+	["Tracked spells"] = "Erfasste Zauber",
+	["off"] = "aus",
+	["Where the icon row sits on the frame"] = "Wo die Icon-Reihe am Frame sitzt",
+	["Appearance"] = "Aussehen",
+	["Inside / outside"] = "Innen / außen",
+	["How many icons and how large"] = "Wie viele Icons und wie groß",
+	["Size from frame height"] = "Größe aus Frame-Höhe",
+	["Applies to Raid and Group"] = "Gilt für Raid und Gruppe",
+	["Harmful effects on your group. Picked by filter, not one by one."] = "Schädliche Effekte auf deiner Gruppe. Per Filter gewählt, nicht einzeln.",
+	["Debuffs are chosen by filter, not one by one — WoW does not allow picking individual harmful effects on other players."] = "Debuffs werden per Filter gewählt, nicht einzeln — WoW erlaubt es nicht, einzelne schädliche Effekte auf anderen Spielern auszuwählen.",
+
+	-- ── Copy popover (what + where-to grid) ──────────────────────────────
+	["Copy settings"] = "Einstellungen kopieren",
+	["From"] = "Von",
+	["What"] = "Was",
+	["Where to"] = "Wohin",
+	["Source"] = "Quelle",
+	["Position · Offsets"] = "Position · Versatz",
+	["Count · Size"] = "Anzahl · Größe",
+	["Copying placement onto another category stacks its icons in the same corner."] = "Die Platzierung auf eine andere Kategorie zu kopieren stapelt deren Icons in dieselbe Ecke.",
+
 	-- ── Tracking ─────────────────────────────────────────────────────────
-	["Which spells are tracked as aura icons — display & position are set per context in the \"Raid\" and \"Group\" tabs. Your active spec is edited automatically (WoW cannot read talents of other specs; their defaults apply automatically once you play them)."] = "Welche Spells als Aura-Icons getrackt werden — Anzeige & Position regelst du pro Kontext in den Tabs „Raid\" und „Gruppe\". Bearbeitet wird automatisch deine aktive Spec (Talente anderer Specs kann WoW nicht auslesen; deren Defaults greifen automatisch, sobald du sie spielst).",
 	["Active spec:"] = "Aktive Spec:",
 	["(no spells)"] = "(keine Spells)",
 	["No spells tracked yet — add the first one."] = "Noch keine Zauber erfasst — füge den ersten hinzu.",
@@ -497,6 +522,11 @@ ns.RegisterLocale("deDE", {
 	["The frames can use Lumen's own font instead of WoW's — it reads better at the small sizes the frame texts run at."] = "Die Frames können Lumens eigene Schrift statt WoWs nutzen — sie liest sich in den kleinen Größen der Frame-Texte besser.",
 	["Aura icons covered the resource bar: a bottom row now sits on the health bar, and auto-fit shrinks the icons instead of letting them overflow."] = "Aura-Symbole verdeckten den Ressourcenbalken: Eine untere Reihe sitzt jetzt auf dem Lebensbalken, und Auto-Fit verkleinert die Symbole, statt sie überstehen zu lassen.",
 	["Both Delves windows could never be moved — the window list carried a wrong addon name all along."] = "Beide Tiefen-Fenster ließen sich nie verschieben — in der Fensterliste stand von Anfang an ein falscher Addon-Name.",
+	["Aura settings now live on their own tab, with a preview and a copy dialog."] = "Die Auren-Einstellungen liegen jetzt auf einem eigenen Tab, mit Vorschau und Kopier-Dialog.",
+	["Aura indicators have their own tab: pick a category, edit it below the preview, and switch between Raid and Group with one control."] = "Die Auren-Anzeigen haben einen eigenen Tab: Kategorie wählen, unter der Vorschau bearbeiten, und mit einem Schalter zwischen Raid und Gruppe wechseln.",
+	["Copy settings from one category or context to another — the dialog shows every destination as a grid, so you pick exactly where they land."] = "Einstellungen von einer Kategorie oder einem Kontext auf andere kopieren — der Dialog zeigt alle Ziele als Raster, du wählst also genau, wo sie landen.",
+	["Which spells are tracked moved into the same tab, so a category is set up in one place instead of three; the separate Tracking tab is gone."] = "Welche Zauber erfasst werden, liegt jetzt im selben Tab — eine Kategorie wird an einem Ort eingerichtet statt an dreien; der eigene Tracking-Tab entfällt.",
+	["All options of a category are visible at once — the \"More options\" link on the aura cards is gone."] = "Alle Optionen einer Kategorie sind auf einmal sichtbar — der Link „Mehr Optionen\" auf den Auren-Karten entfällt.",
 	["The settings search did not find the mode switches — HP display, outline, dispel, aggro and fill colour were all missing from it."] = "Die Einstellungssuche fand die Umschalter nicht — HP-Anzeige, Umrandung, Dispel, Aggro und Füllfarbe fehlten darin.",
 	["Raid frames do noticeably less work per aura update, which tells the most in a full raid."] = "Die Raidframes leisten pro Aura-Aktualisierung spürbar weniger Arbeit — am deutlichsten im vollen Raid.",
 	["Imported profiles are checked before they are applied, so a shared code cannot smuggle extra macro commands into a click-cast binding."] = "Importierte Profile werden vor dem Anwenden geprüft, damit ein geteilter Code keine zusätzlichen Makro-Befehle in eine Click-Cast-Belegung schmuggeln kann.",

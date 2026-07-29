@@ -25,10 +25,10 @@ local ADDON, ns = ...
 --     when the tag actually goes out if it was written ahead of time.
 --
 --  Registered card keys today:
---   Raidframes › Raid / Group: power-bar, text-name, text-hp, icon-role,
---     icon-lead, aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
+--   Raidframes › Raid / Group: power-bar, text-name, text-hp, icon-role, icon-lead
 --   Raidframes › Base: health-bar, text-style
---   Raidframes › Tracking: track-hot, track-def, track-major
+--   Raidframes › Auras: aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
+--     (the key also PRESELECTS that category when the jump lands)
 --   Global › Base: accent, whatsnew, font
 --   QoL › Base: qol-windows, qol-invites
 --  A key is what makes the target card FLASH on arrival. A jump without one
@@ -40,6 +40,24 @@ local ADDON, ns = ...
 -- ===========================================================================
 
 ns.News = {
+	{
+		version = "0.9.291",
+		date = "2026-07-29",
+		summary = "Aura settings now live on their own tab, with a preview and a copy dialog.",
+		entries = {
+			{ kind = "new",
+			  text = "Aura indicators have their own tab: pick a category, edit it below the preview, and switch between Raid and Group with one control.",
+			  section = "Raidframes", tab = "Auras", card = "aura-hotsOwn" },
+			{ kind = "new",
+			  text = "Copy settings from one category or context to another — the dialog shows every destination as a grid, so you pick exactly where they land.",
+			  section = "Raidframes", tab = "Auras" },
+			{ kind = "changed",
+			  text = "Which spells are tracked moved into the same tab, so a category is set up in one place instead of three; the separate Tracking tab is gone.",
+			  section = "Raidframes", tab = "Auras" },
+			{ kind = "changed",
+			  text = "All options of a category are visible at once — the \"More options\" link on the aura cards is gone." },
+		},
+	},
 	{
 		version = "0.9.290",
 		date = "2026-07-28",
