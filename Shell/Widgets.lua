@@ -3757,15 +3757,26 @@ function W.PreviewBand(parent, o)
 			if eyePop:IsShown() then eyePop:Hide() return end
 			for _, rp in ipairs(eyeRepaints) do rp() end
 			paintEyeBtn()
-			-- Inline bands re-anchor per render (SetExtent runs for the dock
-			-- variant only), so pin the popover under the button on every open.
+			-- Inline: open BESIDE the panel, not over the preview. Anchored under
+			-- the button it covered the button itself and jumped around as the
+			-- screen clamped it (Florian 2026-07-29). The panel edge is a fixed,
+			-- roomy spot — the same place the Edit Mode flyout uses.
 			if o.inline then
 				eyePop:ClearAllPoints()
-				eyePop:SetPoint("TOPRIGHT", ebtn, "BOTTOMRIGHT", 0, -S.s3)
+				local panel = ns.Shell and ns.Shell:Frame()
+				if panel then
+					eyePop:SetPoint("TOPLEFT", panel, "TOPRIGHT", M.pvDockGap, -M.pvDockPad)
+				else
+					eyePop:SetPoint("TOPRIGHT", ebtn, "BOTTOMRIGHT", 0, -S.s3)
+				end
 			end
 			eyePop:Show()
 			eyePop:Raise()
 		end)
+		-- The popover lives on the menu host, so it does NOT disappear with the
+		-- band: close it when the band goes away (tab switch, panel closed),
+		-- otherwise it hangs around over an unrelated screen.
+		f:HookScript("OnHide", function() eyePop:Hide() end)
 		paintEyeBtn()
 		resetAnchor = ebtn
 	end

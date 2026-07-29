@@ -750,6 +750,7 @@ UI.LAYOUT = {
 			-- (introH/afterIntro retired with the standalone Tracking tab — the
 			-- shared-list hint is a normal W.Hint row inside the Spells pane now.)
 			betweenRows = 8,   -- between two tracked spell rows (v2: more air)
+			maxHits     = 8,   -- search results shown at once (the field narrows further, a long list would push the tracked list off screen)
 			emptyH      = 52,  -- height of the empty-state box when the list is empty
 			afterList   = 18,  -- list -> action buttons (picker)
 			rowH        = 44,  -- height of a tracked-spell row (v2: roomier)
