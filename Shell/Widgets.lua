@@ -3096,6 +3096,389 @@ function W.OptionRow(parent, label)
 end
 
 -- ---------------------------------------------------------------------------
+--  ChipBar — the category selector above an inline editor (Auras tab; Unit
+--  Frames inherits it). One chip per category: a state DOT (category colour
+--  when the category is on, muted when off), the label, and a badge showing
+--  either the icon count or "off". The selected chip carries the hover surface
+--  + a brighter label, so "what am I editing" reads at a glance.
+--  o = { defs = { { key, label, color = {r,g,b}, on = fn -> bool,
+--                   badge = fn -> string }, .. },
+--        get = fn -> key, set = fn(key) }
+--  :Repaint() re-reads on/badge without a rebuild (a master toggle in the
+--  editor must show up on its chip immediately).
+-- ---------------------------------------------------------------------------
+function W.ChipBar(parent, o)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(M.chipH)
+	local chips = {}
+
+	local function paintOne(c)
+		local sel = (o.get() == c._key)
+		local on  = c._def.on and c._def.on() or false
+		UI.SetColor(c._fill, sel and Surface.Hover or Surface.Input)
+		-- RoundBorder returns a TABLE of edge textures (one 9-slice ring here).
+		UI.SetColor(c._ring[1], sel and Border.hover or Border.faint)
+		c._label:SetTextColor(sel and Text.Primary.r or Text.Description.r,
+			sel and Text.Primary.g or Text.Description.g,
+			sel and Text.Primary.b or Text.Description.b)
+		-- Dot: the category's own colour while it renders, muted while it's off —
+		-- the one place semantic colour is allowed in the chrome (it mirrors the
+		-- preview, where the same colour identifies the icon row).
+		if on and c._def.color then
+			c._dot:SetVertexColor(c._def.color.r, c._def.color.g, c._def.color.b, 1)
+		else
+			c._dot:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 1)
+		end
+		local badge = c._def.badge and c._def.badge() or ""
+		c._badgeText:SetText(badge)
+		c._badgeText:SetTextColor(sel and Text.Description.r or Text.Disabled.r,
+			sel and Text.Description.g or Text.Disabled.g,
+			sel and Text.Description.b or Text.Disabled.b)
+		local bw = math.ceil(c._badgeText:GetStringWidth()) + M.chipCountPad * 2
+		c._badge:SetWidth(math.max(bw, M.chipCountH))
+		-- Width follows the content (dot + label + badge + padding).
+		local w = M.chipPadX * 2 + M.chipDot + M.chipDotGap
+			+ math.ceil(c._label:GetStringWidth()) + M.chipCountGap + math.max(bw, M.chipCountH)
+		c:SetWidth(w)
+	end
+
+	local function relayoutChips()
+		local x = 0
+		for _, c in ipairs(chips) do
+			c:ClearAllPoints()
+			c:SetPoint("TOPLEFT", f, "TOPLEFT", x, 0)
+			x = x + (c:GetWidth() or 0) + M.chipGap
+		end
+	end
+
+	for _, def in ipairs(o.defs) do
+		local c = CreateFrame("Button", nil, f)
+		c:SetHeight(M.chipH)
+		c._key, c._def = def.key, def
+		c._fill = UI.RoundFill(c, Surface.Input, nil, nil, R_CTRL)
+		c._ring = UI.RoundBorder(c, Border.faint, "OVERLAY", nil, R_CTRL)
+		-- Disc assets exist at 12/16/20/24 only -> chipDot must stay one of those.
+		c._dot = UI.Circle(c, Text.Disabled, "OVERLAY", M.chipDot)
+		c._dot:SetPoint("LEFT", c, "LEFT", M.chipPadX, 0)
+		c._label = UI.FS(c, "checkLabel", Text.Description)
+		c._label:SetPoint("LEFT", c._dot, "RIGHT", M.chipDotGap, 0)
+		c._label:SetText(def.label)
+		c._badge = CreateFrame("Frame", nil, c)
+		c._badge:SetHeight(M.chipCountH)
+		c._badge:SetPoint("LEFT", c._label, "RIGHT", M.chipCountGap, 0)
+		UI.RoundFill(c._badge, Border.faint, nil, nil, UI.RADIUS.xs)
+		c._badgeText = UI.FS(c._badge, "caption", Text.Disabled)
+		c._badgeText:SetPoint("CENTER", c._badge, "CENTER", 0, 0)
+		c:SetScript("OnEnter", function()
+			if o.get() ~= c._key then UI.SetColor(c._fill, Surface.Hover) end
+		end)
+		c:SetScript("OnLeave", function()
+			if o.get() ~= c._key then UI.SetColor(c._fill, Surface.Input) end
+		end)
+		c:SetScript("OnClick", function()
+			if o.get() == c._key then return end
+			o.set(c._key)
+		end)
+		chips[#chips + 1] = c
+	end
+
+	function f:Repaint()
+		for _, c in ipairs(chips) do paintOne(c) end
+		relayoutChips()
+	end
+	f:Repaint()
+	-- Font glyphs may still be cold at build time -> widths measure short. One
+	-- deferred repaint settles the layout (same cure as the button text heal).
+	C_Timer.After(0, function() if f:IsShown() then f:Repaint() end end)
+	f:HookScript("OnShow", function() f:Repaint() end)
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  CopyPopover — "copy these settings somewhere else", opened from an editor
+--  header. TWO questions, in this order:
+--    WHAT  — one checkbox per settings GROUP (the groups are the editor's own
+--            cards, so what you see is what you copy; no second taxonomy).
+--    WHERE — a GRID of every possible destination (rows = categories, columns =
+--            contexts). The source cell is marked and not selectable.
+--  Why a grid and not a list: destinations have TWO dimensions. A flat list
+--  ("Group", "Debuffs", ..) mixes them, and picking two entries has no
+--  guessable meaning (Florian 2026-07-29). Column headers select a whole
+--  context, row labels a whole category.
+--  o = { groups = { { key, label, hint }, .. }, defaults = { [key] = bool },
+--        rows = { { key, label, color }, .. },      -- categories
+--        cols = { { key, label }, .. },             -- contexts
+--        source = fn -> rowKey, colKey,
+--        warn = optional fn(groupSel, targets) -> string or nil,
+--        onCopy = fn(groupKeys, targets)  -- targets = { {row=, col=}, .. }
+--      }
+--  Returns the trigger BUTTON (label + copy glyph).
+-- ---------------------------------------------------------------------------
+function W.CopyPopover(parent, o)
+	-- Text-only trigger: the Lucide set has no copy glyph yet (Textures/icons/).
+	local btn = W.Button(parent, { text = o.text or T("Copy"), variant = "secondary",
+		width = o.width })
+
+	local host = W._menuHost or parent
+	local closer = CreateFrame("Button", nil, host)
+	closer:SetAllPoints(UIParent)
+	closer:SetFrameStrata("FULLSCREEN_DIALOG")
+	closer:Hide()
+	local pop = CreateFrame("Frame", nil, host)
+	pop:SetFrameStrata("FULLSCREEN_DIALOG")
+	pop:SetFrameLevel(closer:GetFrameLevel() + 10)
+	pop:SetWidth(M.copyPopW)
+	pop:Hide()
+	UI.RoundFill(pop, Surface.Card)
+	UI.RoundBorder(pop, Border.hover, "OVERLAY")
+	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = pop end
+
+	local groupSel, targets = {}, {}   -- what / where, both reset on every open
+	local rebuild                       -- forward: repaint after each click
+	local function closePop() pop:Hide(); closer:Hide() end
+	closer:SetScript("OnClick", closePop)
+
+	local function targetList()
+		local out = {}
+		for key in pairs(targets) do
+			local r, c = key:match("^(.-)|(.+)$")
+			if r then out[#out + 1] = { row = r, col = c } end
+		end
+		return out
+	end
+	local function anyGroup()
+		for _, g in ipairs(o.groups) do if groupSel[g.key] then return true end end
+		return false
+	end
+
+	-- Children are rebuilt on every repaint (the popover is small and only
+	-- redraws on a click — no hot path). Kept in a pool-free list so the old
+	-- widgets are released with the popover, not leaked per click.
+	local kids = {}
+	local function clearKids()
+		for _, k in ipairs(kids) do k:Hide(); k:SetParent(nil) end
+		wipe(kids)
+	end
+
+	function rebuild()
+		clearKids()
+		local pad = M.copyPopPad
+		local y = -pad
+		local srcRow, srcCol = o.source()
+
+		local function add(frame) kids[#kids + 1] = frame; return frame end
+		-- FontStrings can't be re-parented away like frames, so each rebuild parks
+		-- them on a throwaway holder frame that IS in `kids`.
+		local textHost = add(CreateFrame("Frame", nil, pop))
+		textHost:SetAllPoints(pop)
+		local function label(text, role, col, x, yy)
+			local fs = UI.FS(textHost, role, col)
+			fs:SetPoint("TOPLEFT", pop, "TOPLEFT", x, yy)
+			fs:SetText(text)
+			return fs
+		end
+
+		-- Title + source line
+		local title = label(o.title or T("Copy settings"), "sectionHead", Text.Primary, pad, y)
+		y = y - math.ceil(title:GetStringHeight()) - 4
+		local fromRow, fromCol
+		for _, r in ipairs(o.rows) do if r.key == srcRow then fromRow = r.label end end
+		for _, c in ipairs(o.cols) do if c.key == srcCol then fromCol = c.label end end
+		local sub = label(("%s %s · %s"):format(T("From"), fromRow or "?", fromCol or "?"),
+			"caption", Text.Description, pad, y)
+		y = y - math.ceil(sub:GetStringHeight()) - M.copyGroupGap
+
+		-- WHAT
+		local wh = label(T("What"), "caption", Text.Disabled, pad, y)
+		y = y - math.ceil(wh:GetStringHeight()) - 6
+		for _, g in ipairs(o.groups) do
+			local row = add(CreateFrame("Frame", nil, pop))
+			row:SetHeight(M.copyRowH)
+			row:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+			row:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y)
+			local cb = W.Checkbox(row, {
+				label = g.label, tooltipTitle = g.label,
+				get = function() return groupSel[g.key] end,
+				set = function(v) groupSel[g.key] = v or nil; rebuild() end,
+			})
+			cb:SetPoint("LEFT", row, "LEFT", 0, 0)
+			if g.hint then
+				local h = UI.FS(row, "caption", Text.Disabled)
+				h:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+				h:SetText(g.hint)
+			end
+			y = y - M.copyRowH
+		end
+		y = y - M.copyGroupGap
+
+		-- WHERE (grid)
+		local wt = label(T("Where to"), "caption", Text.Disabled, pad, y)
+		y = y - math.ceil(wt:GetStringHeight()) - 6
+
+		local labelColW = M.copyPopW - pad * 2 - (#o.cols * (M.copyCellW + M.copyGridGap))
+		-- Column headers double as "select this whole context".
+		for ci, c in ipairs(o.cols) do
+			local hb = add(CreateFrame("Button", nil, pop))
+			hb:SetSize(M.copyCellW, M.copyHeadH)
+			hb:SetPoint("TOPLEFT", pop, "TOPLEFT",
+				pad + labelColW + (ci - 1) * (M.copyCellW + M.copyGridGap), y)
+			local fs = UI.FS(hb, "caption", Text.Disabled)
+			fs:SetPoint("CENTER", hb, "CENTER", 0, 0)
+			fs:SetText(c.label)
+			hb:SetScript("OnEnter", function() fs:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b) end)
+			hb:SetScript("OnLeave", function() fs:SetTextColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b) end)
+			hb:SetScript("OnClick", function()
+				local all = true
+				for _, r in ipairs(o.rows) do
+					if not (r.key == srcRow and c.key == srcCol) and not targets[r.key .. "|" .. c.key] then all = false end
+				end
+				for _, r in ipairs(o.rows) do
+					if not (r.key == srcRow and c.key == srcCol) then
+						targets[r.key .. "|" .. c.key] = (not all) or nil
+					end
+				end
+				rebuild()
+			end)
+		end
+		y = y - M.copyHeadH - 2
+
+		for _, r in ipairs(o.rows) do
+			-- Row label = "select this category in every context".
+			local rb = add(CreateFrame("Button", nil, pop))
+			rb:SetSize(labelColW - M.copyGridGap, M.copyCellH)
+			rb:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+			local dot = rb:CreateTexture(nil, "OVERLAY")
+			dot:SetTexture(TEX .. "circle-20")
+			dot:SetSize(M.chipDot - 3, M.chipDot - 3)
+			dot:SetPoint("LEFT", rb, "LEFT", 0, 0)
+			dot:SetSnapToPixelGrid(false); dot:SetTexelSnappingBias(0)
+			if r.color then dot:SetVertexColor(r.color.r, r.color.g, r.color.b, 1)
+			else dot:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 1) end
+			local rfs = UI.FS(rb, "checkLabel", Text.Secondary)
+			rfs:SetPoint("LEFT", dot, "RIGHT", 8, 0)
+			rfs:SetJustifyH("LEFT"); rfs:SetWordWrap(false)
+			rfs:SetText(r.label)
+			rb:SetScript("OnEnter", function() rfs:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end)
+			rb:SetScript("OnLeave", function() rfs:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b) end)
+			rb:SetScript("OnClick", function()
+				local all = true
+				for _, c in ipairs(o.cols) do
+					if not (r.key == srcRow and c.key == srcCol) and not targets[r.key .. "|" .. c.key] then all = false end
+				end
+				for _, c in ipairs(o.cols) do
+					if not (r.key == srcRow and c.key == srcCol) then
+						targets[r.key .. "|" .. c.key] = (not all) or nil
+					end
+				end
+				rebuild()
+			end)
+
+			for ci, c in ipairs(o.cols) do
+				local key = r.key .. "|" .. c.key
+				local cx = pad + labelColW + (ci - 1) * (M.copyCellW + M.copyGridGap)
+				if r.key == srcRow and c.key == srcCol then
+					-- The source: dashed, inert, labelled — never a destination.
+					local src = add(CreateFrame("Frame", nil, pop))
+					src:SetSize(M.copyCellW, M.copyCellH)
+					src:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
+					UI.RoundBorder(src, Border.default, "OVERLAY", nil, R_CTRL)
+					local sfs = UI.FS(src, "caption", Text.Disabled)
+					sfs:SetPoint("CENTER", src, "CENTER", 0, 0)
+					sfs:SetText(T("Source"))
+				else
+					local cell = add(CreateFrame("Button", nil, pop))
+					cell:SetSize(M.copyCellW, M.copyCellH)
+					cell:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
+					local on = targets[key] and true or false
+					local cf = UI.RoundFill(cell, on and Accent.selection or Surface.Input, nil, nil, R_CTRL)
+					UI.RoundBorder(cell, on and Border.hover or Border.faint, "OVERLAY", nil, R_CTRL)
+					local tick = cell:CreateTexture(nil, "OVERLAY")
+					tick:SetSize(M.copyTick, M.copyTick)
+					tick:SetPoint("CENTER", cell, "CENTER", 0, 0)
+					if on then
+						tick:SetTexture(TEX .. "icon-check")
+						tick:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, 1)
+					else
+						tick:SetTexture(TEX .. "icon-check")
+						tick:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 0.28)
+					end
+					tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
+					cell:SetScript("OnEnter", function() if not targets[key] then UI.SetColor(cf, Surface.Hover) end end)
+					cell:SetScript("OnLeave", function() if not targets[key] then UI.SetColor(cf, Surface.Input) end end)
+					cell:SetScript("OnClick", function()
+						targets[key] = (not targets[key]) or nil
+						rebuild()
+					end)
+				end
+			end
+			y = y - M.copyCellH - M.copyGridGap
+		end
+		y = y - 4
+
+		-- Optional warning (e.g. copying placement across categories).
+		local picked = targetList()
+		local warnText = o.warn and o.warn(groupSel, picked) or nil
+		if warnText then
+			local wf = add(CreateFrame("Frame", nil, pop))
+			wf:SetHeight(M.copyWarnH)
+			wf:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+			wf:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y)
+			UI.RoundFill(wf, Border.faint, nil, nil, R_CTRL)
+			local wfs = UI.FS(wf, "caption", Text.Description)
+			wfs:SetPoint("TOPLEFT", wf, "TOPLEFT", 10, -8)
+			wfs:SetPoint("BOTTOMRIGHT", wf, "BOTTOMRIGHT", -10, 8)
+			wfs:SetJustifyH("LEFT"); wfs:SetJustifyV("TOP")
+			wfs:SetText(warnText)
+			y = y - M.copyWarnH - 8
+		end
+
+		-- Footer: cancel + the counting confirm button.
+		local foot = add(CreateFrame("Frame", nil, pop))
+		foot:SetHeight(M.buttonH)
+		foot:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+		foot:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y)
+		local cancel = W.Button(foot, { text = T("Cancel"), variant = "secondary",
+			width = (M.copyPopW - pad * 2 - 10) / 2, onClick = closePop })
+		cancel:SetPoint("LEFT", foot, "LEFT", 0, 0)
+		local n = #picked
+		local go = W.Button(foot, {
+			text = (n > 0) and (T("Copy") .. " (" .. n .. ")") or T("Copy"),
+			variant = "primary", width = (M.copyPopW - pad * 2 - 10) / 2,
+			onClick = function()
+				if not (anyGroup() and n > 0) then return end
+				local keys = {}
+				for _, g in ipairs(o.groups) do if groupSel[g.key] then keys[#keys + 1] = g.key end end
+				closePop()
+				o.onCopy(keys, picked)
+			end,
+		})
+		go:SetPoint("RIGHT", foot, "RIGHT", 0, 0)
+		-- W.Button has no SetWidgetEnabled — same dim+deafen pattern the other
+		-- widgets use for their disabled state.
+		local usable = anyGroup() and n > 0
+		go:SetAlpha(usable and 1 or 0.35)
+		go:EnableMouse(usable)
+		y = y - M.buttonH
+
+		pop:SetHeight(-y + pad)
+	end
+
+	btn:SetScript("OnClick", function()
+		if pop:IsShown() then closePop(); return end
+		wipe(targets)
+		for _, g in ipairs(o.groups) do
+			groupSel[g.key] = (o.defaults and o.defaults[g.key]) or nil
+		end
+		rebuild()
+		pop:ClearAllPoints()
+		pop:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -6)
+		pop:SetClampedToScreen(true)
+		closer:Show(); pop:Show(); pop:Raise()
+	end)
+	return btn
+end
+
+-- ---------------------------------------------------------------------------
 --  PreviewBand — content of the Shell's preview DOCK (the satellite window
 --  right of / below the panel, see Shell:SetDockLayout). Chrome: a v3 header
 --  CARD (PREVIEW title left, right-aligned: context/size chip groups + collapse
@@ -3363,7 +3746,19 @@ function W.PreviewBand(parent, o)
 		for _, v in ipairs(o.sizes.values) do items[#items + 1] = { v = v, label = tostring(v) } end
 		chipGroup(items, o.sizes.get, o.sizes.set)
 	end
-	if o.ctx then chipGroup(o.ctx.values, o.ctx.get, o.ctx.set) end
+	if o.ctx then
+		chipGroup(o.ctx.values, o.ctx.get, o.ctx.set)
+		-- Caption in front of the chips. Without it "PREVIEW [Group|Raid]" reads
+		-- like a preview FILTER; the chips actually pick what you are editing
+		-- (Florian 2026-07-29). o.ctx.caption names that.
+		if o.ctx.caption then
+			local cap = UI.FS(head, "caption", Text.Disabled)
+			cap:SetPoint("RIGHT", chainAnchor, "LEFT", -M.pvEyeGap, 0)
+			cap:SetText(o.ctx.caption)
+			chipsW = chipsW + math.ceil(cap:GetStringWidth()) + M.pvEyeGap
+			chainAnchor, chainGap = cap, M.pvChipGroupGap
+		end
+	end
 	function f:PaintChips()
 		for _, rp in ipairs(repaints) do rp() end
 	end

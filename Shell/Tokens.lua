@@ -501,6 +501,32 @@ UI.WIDGET = {
 	hintH       = 40, -- default height of a hint block (1–2 lines)
 	subHeadH    = 26, -- left-aligned sub-heading (e.g. aggro-stage blocks)
 
+	-- Category chip bar (W.ChipBar) — the selector above an inline editor. Shared
+	-- component: the Auras tab uses it today, Unit Frames inherits it later.
+	chipH        = 50, -- chip height (mockup 40 CSS-px x1.25)
+	chipPadX     = 18, -- inner L/R padding
+	chipGap      = 10, -- gap between two chips
+	chipDot      = 12, -- state dot (category color when on, muted when off) — MUST be an existing circle-<n> asset (12/16/20/24)
+	chipDotGap   = 11, -- gap dot -> label
+	chipCountGap = 10, -- gap label -> count/off badge
+	chipCountH   = 22, -- count badge height (width grows with the number)
+	chipCountPad = 8,  -- inner L/R padding of the count badge
+
+	-- Copy popover (W.CopyPopover) — "what" checkboxes + a category x context
+	-- TARGET GRID. Every possible destination is a visible cell, so "where to" is
+	-- never inferred (Florian 2026-07-29: a flat list mixed two axes and the
+	-- combination of two picks had no guessable meaning).
+	copyPopW     = 430, -- popover width (label column + 2 context columns)
+	copyPopPad   = 20,  -- inner padding
+	copyRowH     = 40,  -- one "what" row
+	copyGridGap  = 6,   -- gap between grid cells
+	copyCellW    = 96,  -- target cell width (one context column)
+	copyCellH    = 40,  -- target cell height (= one grid row)
+	copyHeadH    = 24,  -- column header row above the grid
+	copyTick     = 20,  -- tick box inside a target cell
+	copyGroupGap = 18,  -- gap between the "what" block and the target grid
+	copyWarnH    = 52,  -- placement-clash warning line
+
 	-- (SCREEN-SPECIFIC measures live in UI.LAYOUT below, mirroring the nav tree —
 	-- here in UI.WIDGET only dimensions of SHARED components. Rule: visible in
 	-- more than one screen -> UI.WIDGET; only in one screen -> UI.LAYOUT.<screen>.)
@@ -692,10 +718,12 @@ UI.LAYOUT = {
 		},
 		-- (sizeArrange spacings retired with the Raid/Group card-grid migration —
 		-- those rows now use the shared rhythm tokens like every other card.)
-		tracking = {            -- Tracking tab (whitelist editor)
-			introH      = 58,  -- height of the multi-line intro hint
-			afterIntro  = 22,  -- intro -> first category card (spec moved to the tab-strip badge)
-			-- (afterDesc retired: the category description is the card subtitle now)
+		auras = {               -- Auras tab (category chips + inline editor)
+			afterChips = 20,  -- chip bar -> editor card
+		},
+		tracking = {            -- spell lists (folded into the Auras tab's "Spells" pane)
+			-- (introH/afterIntro retired with the standalone Tracking tab — the
+			-- shared-list hint is a normal W.Hint row inside the Spells pane now.)
 			betweenRows = 8,   -- between two tracked spell rows (v2: more air)
 			emptyH      = 52,  -- height of the empty-state box when the list is empty
 			afterList   = 18,  -- list -> action buttons (picker)
