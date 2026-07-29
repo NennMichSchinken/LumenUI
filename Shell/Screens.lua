@@ -1495,7 +1495,7 @@ local function buildAuras(d, stack)
 			previewRefresh()          -- preview follows the values (one switch, both)
 			ns.Shell:RenderContent(true)
 		end,
-		hug = true,
+		width = L.raidframes.auras.ctxSegW,
 	})
 	ctxChip:SetPoint("LEFT", head, "LEFT", 0, 0)
 
@@ -1503,7 +1503,7 @@ local function buildAuras(d, stack)
 		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
 		get = function() return auraTabPane end,
 		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
-		hug = true,
+		width = L.raidframes.auras.paneSegW,
 	})
 	paneSeg:SetPoint("CENTER", head, "CENTER", 0, 0)
 

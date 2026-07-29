@@ -720,6 +720,12 @@ UI.LAYOUT = {
 		-- those rows now use the shared rhythm tokens like every other card.)
 		auras = {               -- Auras tab (category chips + inline editor)
 			afterChips = 20,  -- chip bar -> editor card
+			-- Editor head: the two segment switches carry an EXPLICIT width. A
+			-- "hug" segment sizes its inner bar from the measured text and leaves
+			-- the outer frame at 0 — it then renders nothing in a hand-anchored
+			-- row (it only works inside a cell that stretches it).
+			ctxSegW  = 210,   -- Group | Raid
+			paneSegW = 230,   -- Display | Spells
 		},
 		tracking = {            -- spell lists (folded into the Auras tab's "Spells" pane)
 			-- (introH/afterIntro retired with the standalone Tracking tab — the
