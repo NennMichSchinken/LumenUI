@@ -1596,8 +1596,10 @@ local function buildAuras(d, stack)
 		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
 		get = function() return auraTabPane end,
 		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
+		-- NO cellH override: the pill assets exist only at the standard heights
+		-- (S.tabH and tabH - 2*tabStripPad). A custom height leaves the sliding
+		-- pill without a margin entry and the whole screen errors out.
 		width = L.raidframes.auras.paneSegW,
-		cellH = M.buttonH,
 	})
 
 	local copyBtn = W.CopyPopover(d, {

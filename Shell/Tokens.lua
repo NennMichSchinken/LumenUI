@@ -921,6 +921,19 @@ local PILL_MARGIN = { [52] = 27, [48] = 25, [38] = 20, [32] = 17, [28] = 15, [4]
 
 local function pillTexture(parent, file, col, layer, h)
 	local m = PILL_MARGIN[h]
+	if not m then
+		-- No asset at this height. Fall back to the nearest one we have instead
+		-- of handing nil to SetTextureSliceMargins, which errors and takes the
+		-- whole screen down with it (Florian 2026-07-29: a custom segment height
+		-- made the Auras tab fail to build at all). The cap curve is then a hair
+		-- off — visible only if someone invents a new height, which this warns
+		-- about in the only way the client offers.
+		local best
+		for known in pairs(PILL_MARGIN) do
+			if not best or math.abs(known - h) < math.abs(best - h) then best = known end
+		end
+		h, m = best, PILL_MARGIN[best]
+	end
 	local t = markRound(parent:CreateTexture(nil, layer or "BACKGROUND"))
 	t:SetTexture(PILL_TEX .. file .. "-h" .. h)
 	t:SetTextureSliceMargins(m, 0, m, 0)
