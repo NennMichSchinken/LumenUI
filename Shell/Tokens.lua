@@ -718,12 +718,15 @@ UI.LAYOUT = {
 		},
 		-- (sizeArrange spacings retired with the Raid/Group card-grid migration —
 		-- those rows now use the shared rhythm tokens like every other card.)
+		preview = {             -- anchored preview band (top of EVERY raidframe tab)
+			-- The band is as tall as its frames need: chromeH = everything around
+			-- them (header row + paddings + caption line), minH keeps an empty or
+			-- cold band from collapsing to a sliver.
+			chromeH = 130,
+			minH    = 180,
+			after   = 20,     -- preview -> first settings row
+		},
 		auras = {               -- Auras tab (category chips + inline editor)
-			-- Anchored preview at the top of the tab (NOT the satellite dock the
-			-- other raidframe tabs use). Fixed height: the content scales down to
-			-- fit, so switching Raid/Group never makes the page jump.
-			previewH   = 340,
-			afterPv    = 18,  -- preview -> chip bar
 			afterChips = 20,  -- chip bar -> editor card
 			-- Editor head: the pane switch carries an EXPLICIT width. A "hug"
 			-- segment sizes its inner bar from the measured text and leaves the

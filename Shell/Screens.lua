@@ -205,55 +205,9 @@ local function eyeToggle(key, tip)
 		end,
 	}
 end
--- Open state lives in the SHELL (sidebar "Open preview" button = the single
--- toggle, v3; session-only — the shell always starts with the preview closed).
-
-ns.ScreenPreviews = ns.ScreenPreviews or {}
-local function previewDock(spec)
-	return function(holder)
-		local band = W.PreviewBand(holder, {
-			eyes = previewEyes,
-			eyeDefs = previewEyeDefs(),
-			onEye = previewRefresh,
-			onLayout = function(side, w, h) ns.Shell:SetDockLayout(side, w, h) end,
-			onChrome = function(v) ns.Shell:SetDockChrome(v) end,
-			onResetPos = function() ns.Shell:ResetDockPosition() end,
-			-- Open state (session-only, shared across the three tabs; the band's
-			-- collapse chevron just closes the window via the Shell).
-			open = {
-				get = function() return ns.Shell:IsPreviewOpen() end,
-				set = function(v) ns.Shell:SetPreviewOpen(v) end,
-			},
-			-- Base tab: Raid/Group switch — Base settings (aggro, dispel,
-			-- colors) are judged on the real context layout of choice. (The
-			-- Auras tab has its own anchored band, see auraPreview below.)
-			ctx = spec.baseSwitch and {
-				values = {
-					{ v = "party", label = T("Group") },
-					{ v = "raid",  label = T("Raid") },
-				},
-				get = function() return rf().previewBaseCtx or "party" end,
-				set = function(v) rf().previewBaseCtx = v; previewRefresh() end,
-			} or nil,
-			sizes = spec.sizes and {
-				values = { 5, 10, 20, 25 },
-				-- Clamp: profiles from the 5/10/20/40 era may still hold 40.
-				get = function() return math.min(rf().previewSize or 5, 25) end,
-				set = function(v) rf().previewSize = v; previewRefresh() end,
-			} or nil,
-		})
-		if ns.Raidframes then ns.Raidframes:AttachShellPreview(band, spec) end
-		pvBands[band] = true   -- eye-sync repaint target (previewRefresh)
-		holder._onShow = previewRefresh
-	end
-end
-ns.ScreenPreviews["Raidframes/Base"]  = previewDock({ kind = "ctx", baseSwitch = true })
-ns.ScreenPreviews["Raidframes/Raid"]  = previewDock({ kind = "ctx", ctx = "raid", sizes = true })
-ns.ScreenPreviews["Raidframes/Group"] = previewDock({ kind = "ctx", ctx = "party" })
 -- Which context the Auras tab edits. PERSISTED in the profile (like
 -- previewBaseCtx / previewSize): you come back to the tab to keep working on the
--- same thing. Declared HERE because both the anchored preview's switch (below)
--- and the editor (further down) read/write it — one definition, one behaviour.
+-- same thing.
 local function auraTabCtx()
 	return (rf().auraTabCtx == "raid") and "raid" or "party"
 end
@@ -261,30 +215,87 @@ local function setAuraTabCtx(v)
 	rf().auraTabCtx = (v == "raid") and "raid" or "party"
 end
 
--- Auras tab: the preview is ANCHORED IN THE PAGE (top of the tab), not in the
--- satellite dock the other raidframe tabs use — you are editing one category
--- against it constantly, so it must not be foldable or float away (Florian
--- 2026-07-29). Its header carries the Raid/Group switch captioned "Editing":
--- that switch drives the edited VALUES, not just what the preview shows.
--- Built ONCE and re-parented into each rebuild's container, so repeated screen
--- renders don't pile up dead bands in the module's band registry.
-local auraBand
-local function auraPreview(container)
-	if auraBand then
-		auraBand:SetParent(container)
-		auraBand:ClearAllPoints()
-		auraBand:SetAllPoints(container)
-		auraBand:Show()
-		return auraBand
+-- ---------------------------------------------------------------------------
+--  ANCHORED PREVIEW (2026-07-29) — every raidframe tab opens with the preview
+--  as the first thing on the page: one card, header row on top, frames below,
+--  settings scrolling underneath. It replaces the old collapsible satellite
+--  DOCK entirely (Florian: "dann haben wir einen sauberen Stand für alles und
+--  immer in der Shell") — no window to fold away, drag or lose, and no second
+--  place the same thing could live.
+--  The height is NOT capped and nothing is scaled down: the band is as tall as
+--  its content needs, so a 20-man raid sample simply pushes the cards further
+--  down. Frames therefore always render at TRUE on-screen size.
+--  One band is built PER TAB KEY and re-parented into each rebuild's container,
+--  so repeated renders never pile up dead bands in the module's registry.
+-- ---------------------------------------------------------------------------
+local pvHosts = {}   -- tab key -> the band built for it
+
+local function previewBandFor(key, container, spec, opts)
+	local band = pvHosts[key]
+	if band then
+		band:SetParent(container)
+		band:ClearAllPoints()
+		band:SetAllPoints(container)
+		band:Show()
+		return band
 	end
-	local spec = { kind = "ctx", raidN = 10, inline = true, ctxGet = auraTabCtx }
-	auraBand = W.PreviewBand(container, {
-		inline  = true,
-		eyes    = previewEyes,
-		eyeDefs = previewEyeDefs(),
-		onEye   = previewRefresh,
-		onLayout = function() end, -- fixed height; the module fit-scales instead
-		ctx = {
+	band = W.PreviewBand(container, {
+		inline   = true,
+		eyes     = previewEyes,
+		eyeDefs  = previewEyeDefs(),
+		onEye    = previewRefresh,
+		onLayout = function() end,   -- the screen owns the height (see previewRow)
+		hint     = T("Click an icon to edit"),
+		ctx      = opts and opts.ctx or nil,
+		sizes    = opts and opts.sizes or nil,
+	})
+	if ns.Raidframes then ns.Raidframes:AttachShellPreview(band, spec) end
+	pvBands[band] = true   -- eye-sync repaint target (previewRefresh)
+	pvHosts[key] = band
+	return band
+end
+
+-- Places the band for `key` at the top of the screen and reserves exactly the
+-- height its content needs. The extent is computed from the profile BEFORE
+-- anything renders (Raidframes:PreviewExtent) — the stacker places frames at
+-- build time, so a height discovered afterwards would come too late.
+local function previewRow(d, stack, key, spec, opts)
+	local host = CreateFrame("Frame", nil, d)
+	local band = previewBandFor(key, host, spec, opts)
+	local h = L.raidframes.preview.minH
+	if ns.Raidframes and ns.Raidframes.PreviewExtent then
+		local _, ch = ns.Raidframes:PreviewExtent(spec, ns.Shell:Frame() or d)
+		h = math.max(h, math.ceil(ch) + L.raidframes.preview.chromeH)
+	end
+	stack:place(host, h, L.raidframes.preview.after)
+	-- Fill once the frame has real dimensions (a screen built while the panel is
+	-- hidden has none). OnShow covers a cached screen coming back, where the
+	-- builder does not run again.
+	C_Timer.After(0, function() if host:IsVisible() then previewRefresh() end end)
+	host:HookScript("OnShow", function() C_Timer.After(0, previewRefresh) end)
+	return band
+end
+
+-- Per-tab preview specs. `kind`/`ctx` are read by the module's render.
+local PV_SPECS = {
+	["Raidframes/Base"]  = { kind = "ctx", baseSwitch = true },
+	["Raidframes/Raid"]  = { kind = "ctx", ctx = "raid", sizes = true },
+	["Raidframes/Group"] = { kind = "ctx", ctx = "party" },
+	["Raidframes/Auras"] = { kind = "ctx", raidN = 10, ctxGet = auraTabCtx },
+}
+
+-- Header controls per tab: Base switches which context it PREVIEWS, Auras
+-- switches which context it EDITS (values follow), Raid picks the sample size.
+local function previewOpts(key)
+	if key == "Raidframes/Base" then
+		return { ctx = {
+			values  = { { v = "party", label = T("Group") }, { v = "raid", label = T("Raid") } },
+			caption = T("Preview"),
+			get = function() return rf().previewBaseCtx or "party" end,
+			set = function(v) rf().previewBaseCtx = v; previewRefresh() end,
+		} }
+	elseif key == "Raidframes/Auras" then
+		return { ctx = {
 			values  = { { v = "party", label = T("Group") }, { v = "raid", label = T("Raid") } },
 			caption = T("Editing"),
 			get = auraTabCtx,
@@ -293,11 +304,28 @@ local function auraPreview(container)
 				previewRefresh()
 				if ns.Shell then ns.Shell:RenderContent(true) end -- values follow the preview
 			end,
-		},
-	})
-	if ns.Raidframes then ns.Raidframes:AttachShellPreview(auraBand, spec) end
-	pvBands[auraBand] = true
-	return auraBand
+		} }
+	elseif key == "Raidframes/Raid" then
+		return { sizes = {
+			values = { 5, 10, 20, 25 },
+			-- Clamp: profiles from the 5/10/20/40 era may still hold 40.
+			get = function() return math.min(rf().previewSize or 5, 25) end,
+			set = function(v)
+				rf().previewSize = v
+				previewRefresh()
+				-- A different sample size means a different band height -> the
+				-- screen has to re-reserve it.
+				if ns.Shell then ns.Shell:RenderContent(true) end
+			end,
+		} }
+	end
+end
+
+-- One call for a tab builder: put the preview on top of this screen.
+local function placePreview(d, stack, key)
+	local spec = PV_SPECS[key]
+	if not spec then return end
+	return previewRow(d, stack, key, spec, previewOpts(key))
 end
 
 -- Expand state of the icon section per context — SESSION-ONLY and auto-collapsed
@@ -320,16 +348,27 @@ local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
 -- screen renders — open the context's collapsed aura/icon section so the target
 -- cards exist to scroll to. Other card keys need no preparation (their bands
 -- are always built).
+-- Returns FALSE when nothing had to change — the Shell then skips the rebuild
+-- and just flashes the card (a jump onto what is already on screen must not
+-- make the page twitch).
 ns.ShellJumpPrep = function(section, tab, cardKey)
-	if section ~= "Raidframes" or not cardKey then return end
+	if section ~= "Raidframes" or not cardKey then return false end
 	local ctx = (tab == "Raid") and "raid" or "party"
+	-- The caller already changed something the screen depends on (the Auras
+	-- context, set by c2cJump before the jump) -> a rebuild is required.
+	if ns.ShellJumpDirty then ns.ShellJumpDirty = nil; return true end
 	if cardKey:find("^aura%-") then
 		-- Aura jumps land on the Auras tab: preselect the clicked CATEGORY so the
 		-- editor already shows it. (The CONTEXT is set by the caller before the
 		-- jump — the tab name can't carry it, see c2cJump in Raidframes.lua.)
-		rf().auraTabCat = cardKey:gsub("^aura%-", "")
+		local want = cardKey:gsub("^aura%-", "")
+		if rf().auraTabCat == want then return false end
+		rf().auraTabCat = want
 	elseif cardKey:find("^icon%-") then
+		if iconOpenState[ctx] then return false end
 		setIconOpen(ctx, true)
+	else
+		return false -- plain cards (health bar, text, …) are always built
 	end
 end
 
@@ -479,6 +518,8 @@ end
 local function buildRaid(d, stack, ctx)
 	local fieldH = M.controlH + M.fieldGap -- height of a select WITH label
 	local R = L.rhythm
+
+	placePreview(d, stack, (ctx == "raid") and "Raidframes/Raid" or "Raidframes/Group")
 
 	-- ===== Size & arrangement (12-card with exactly ONE field row) ==========
 	-- Full width is fine here BECAUSE there are no stacked rows: four unit
@@ -732,6 +773,7 @@ local function buildBase(d, stack)
 	local body -- forward-declare: the master closure gates this body frame
 	local G = UI.GRID
 	stack:gap(L.general.tabTop) -- more air on top before the master toggle
+	placePreview(d, stack, "Raidframes/Base")
 	-- Full-width card with the global module switches (v3 mockup); each
 	-- checkbox carries a muted description line below its label.
 	local function checkDesc(cell, opts, desc)
@@ -1273,6 +1315,51 @@ local function makeTrackRow(parent, e, onRemove)
 end
 
 -- ---------------------------------------------------------------------------
+--  INNER BLOCK — a lighter box INSIDE a settings card, with its own title and
+--  its own stacker. The Shell's cards are page-level (one per band); this is the
+--  level below, so an editor can read as ONE card whose head belongs to the
+--  options under it instead of four cards floating next to each other (Florian
+--  2026-07-29). Returns the box, its stacker and the content frame — the caller
+--  places rows on the stacker and calls blockClose(...) when done.
+-- ---------------------------------------------------------------------------
+local function innerBlock(parent, title, desc)
+	local pad = M.subgroupPad
+	local box = CreateFrame("Frame", nil, parent)
+	UI.RoundFill(box, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(box, UI.Border.faint, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local content = CreateFrame("Frame", nil, box)
+	content:SetPoint("TOPLEFT", box, "TOPLEFT", pad, -pad)
+	content:SetPoint("TOPRIGHT", box, "TOPRIGHT", -pad, -pad)
+	local st = ns.Shell.NewStack(content)
+	-- Title + description as the first rows (same anatomy as a card header, one
+	-- level quieter).
+	local head = CreateFrame("Frame", nil, content)
+	local t = UI.FS(head, "sectionHead", Text.Primary)
+	t:SetPoint("TOPLEFT", head, "TOPLEFT", 0, 0)
+	t:SetText(title)
+	local hH = M.sectionHeaderH - M.subgroupPad
+	if desc then
+		local dfs = UI.FS(head, "caption", Text.Description)
+		dfs:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -2)
+		dfs:SetPoint("RIGHT", head, "RIGHT", 0, 0)
+		dfs:SetJustifyH("LEFT"); dfs:SetWordWrap(false)
+		dfs:SetText(desc)
+		hH = hH + M.subHeadH
+	end
+	st:place(head, hH, L.rhythm.row)
+	return box, st, content
+end
+
+-- Finish an inner block: content height -> box height. `minH` stretches it to a
+-- shared height (two blocks side by side share the taller one's bottom edge).
+local function blockClose(box, st, content, minH)
+	local h = st:height()
+	content:SetHeight(h)
+	box:SetHeight(math.max(h + M.subgroupPad * 2, minH or 0))
+	return h + M.subgroupPad * 2
+end
+
+-- ---------------------------------------------------------------------------
 --  SPELLS pane — the tracked-spell list of ONE category (this is the former
 --  standalone "Tracking" tab, folded into the Auras editor 2026-07-29 so a
 --  category is set up in ONE place). ALWAYS bound to the ACTIVE spec (WoW only
@@ -1280,49 +1367,50 @@ end
 --  SHARED by Raid + Group — the hint above the list says so, because everything
 --  else on this tab is per context.
 -- ---------------------------------------------------------------------------
-local function auraSpellsPane(d, s, cat)
+local function auraSpellsPane(d, host, cat, page)
 	local RFm  = ns.Raidframes
 	local spec = trkSpec()
+	local R    = L.rhythm
 
 	if not cat.typ then
 		-- Debuffs: per-spellId whitelisting is not permitted for harmful auras
 		-- (12.1 API constraint), so this category is filter-based by design.
 		local sfx = ctxSfx(auraTabCtx())
-		local f1, fc = W.FieldRow(d, d, 1, { height = M.controlH + M.fieldGap })
-		local filterW = W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
+		local box, st, content = innerBlock(d, T("Which debuffs"), nil)
+		local f1, fc = W.FieldRow(content, page, 1, { height = M.controlH + M.fieldGap })
+		W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
 			tooltip = T("Which debuffs are shown. Raid-relevant = Blizzard's default selection."),
 			get = aget(cat.key, "filterMode" .. sfx), set = aset(cat.key, "filterMode" .. sfx) })
-		filterW:SetAllPoints(fc[1])
-		s:place(f1, M.controlH + M.fieldGap, L.rhythm.row)
-		s:place(W.Hint(d, T("Debuffs are chosen by filter, not one by one — WoW does not allow "
+			:SetAllPoints(fc[1])
+		st:place(f1, M.controlH + M.fieldGap, R.row)
+		st:place(W.Hint(content, T("Debuffs are chosen by filter, not one by one — WoW does not allow "
 			.. "picking individual harmful effects on other players."), M.hintH), M.hintH, 0)
-		s:close()
+		host:place(box, blockClose(box, st, content), 0)
 		return
 	end
 
 	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
-	local shared = W.Hint(d, ("%s  ·  %s %s"):format(
-		T("Applies to Raid and Group"),
-		T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"), M.hintH)
-	s:place(shared, M.hintH, L.rhythm.row)
+	local box, st, content = innerBlock(d, T("Tracked spells"),
+		("%s  ·  %s %s"):format(T("Applies to Raid and Group"),
+			T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))
 
 	if #entries == 0 then
-		s:place(W.EmptyState(d, { text = T("No spells tracked yet — add the first one.") }),
+		st:place(W.EmptyState(content, { text = T("No spells tracked yet — add the first one.") }),
 			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
 	else
 		local rowH = L.raidframes.tracking.rowH
 		for i, e in ipairs(entries) do
-			local tr = makeTrackRow(d, e, function()
+			local tr = makeTrackRow(content, e, function()
 				if RFm then RFm:RemoveWhitelist(spec, e.id) end
 				ns.Shell:RenderContent(true)
 			end)
-			s:place(tr, rowH, (i == #entries) and L.raidframes.tracking.afterList
+			st:place(tr, rowH, (i == #entries) and L.raidframes.tracking.afterList
 				or L.raidframes.tracking.betweenRows)
 		end
 	end
 
 	-- Action row: add a spell + restore this category's curated defaults.
-	local actionRow = CreateFrame("Frame", nil, d)
+	local actionRow = CreateFrame("Frame", nil, content)
 	actionRow:SetHeight(M.buttonH)
 	local picker = W.SpellPicker(actionRow, {
 		text = T("+ Add spell"), width = M.spBtnW,
@@ -1356,8 +1444,8 @@ local function auraSpellsPane(d, s, cat)
 			})
 		end })
 	reset:SetPoint("LEFT", picker, "RIGHT", L.general.sideGap, 0)
-	s:place(actionRow, M.buttonH, 0)
-	s:close()
+	st:place(actionRow, M.buttonH, 0)
+	host:place(box, blockClose(box, st, content), 0)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1368,70 +1456,72 @@ end
 --  Band 2 ("Restzeit"/duration text) arrives with the 12.1 aura rework, which
 --  owns those profile fields.
 -- ---------------------------------------------------------------------------
-local function auraDisplayPane(d, stack, cat, ctx)
+local function auraDisplayPane(d, host, cat, ctx, page)
 	local sfx = ctxSfx(ctx)
 	local R   = L.rhythm
 	local fieldH = M.controlH + M.fieldGap
 	local function cget(base) return aget(cat.key, base .. sfx) end
 	local function cset(base) return aset(cat.key, base .. sfx) end
 
-	local sizeW, autoFitOn
+	local sizeW
 	local function refreshSize()
 		if sizeW then sizeW:SetWidgetEnabled(not cget("autoFit")()) end
 	end
 
-	local b = stack:band({
-		{ span = 6, title = T("Placement"), subtitle = T("Where the icon row sits on the frame") },
-		{ span = 6, title = T("Appearance"), subtitle = T("How many icons and how large") },
-	})
+	-- Two blocks side by side INSIDE the editor card. W.Row splits the width;
+	-- each cell gets its own block, and both are stretched to the taller one so
+	-- the pair shares a clean bottom edge (band behaviour, one level down).
+	local row, cells = W.Row(d, 2, { gap = UI.GRID.cardGap, height = 1 })
 
 	-- --- Placement -----------------------------------------------------------
-	local sPlace = b.cards[1]
-	local p1, pc = W.FieldRow(d, d, 2, { height = fieldH })
-	local anchorW = W.Select(pc[1], { label = T("Position (anchor)"), options = POINT_OPTS,
-		get = cget("anchor"), set = cset("anchor") })
-	anchorW:SetAllPoints(pc[1])
-	local growW = W.Select(pc[2], { label = T("Growth direction"), options = GROW_OPTS,
-		get = cget("grow"), set = cset("grow") })
-	growW:SetAllPoints(pc[2])
-	sPlace:place(p1, fieldH, R.row)
+	local pBox, pSt, pC = innerBlock(cells[1], T("Placement"), T("Where the icon row sits on the frame"))
+	pBox:SetPoint("TOPLEFT", cells[1], "TOPLEFT", 0, 0)
+	pBox:SetPoint("TOPRIGHT", cells[1], "TOPRIGHT", 0, 0)
+	local p1, pc = W.FieldRow(pC, page, 2, { height = fieldH })
+	W.Select(pc[1], { label = T("Position (anchor)"), options = POINT_OPTS,
+		get = cget("anchor"), set = cset("anchor") }):SetAllPoints(pc[1])
+	W.Select(pc[2], { label = T("Growth direction"), options = GROW_OPTS,
+		get = cget("grow"), set = cset("grow") }):SetAllPoints(pc[2])
+	pSt:place(p1, fieldH, R.row)
 
-	local p2, pc2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	local p2, pc2 = W.FieldRow(pC, page, 2, { height = M.sliderBoxH })
 	sliderBox(pc2[1], { label = T("Spacing"), min = 0, max = 20, unit = " px",
 		get = cget("spacing"), set = cset("spacing") })
-	-- Label is NOT "Placement" — that is the card's own title right above it.
-	local outW = W.Segment(pc2[2], { label = T("Inside / outside"), options = PLACE_OPTS,
-		get = cget("outside"), set = cset("outside") })
-	outW:SetAllPoints(pc2[2])
-	sPlace:place(p2, M.sliderBoxH, R.row)
+	-- Label is NOT "Placement" — that is the block's own title right above it.
+	W.Segment(pc2[2], { label = T("Inside / outside"), options = PLACE_OPTS,
+		get = cget("outside"), set = cset("outside") }):SetAllPoints(pc2[2])
+	pSt:place(p2, M.sliderBoxH, R.row)
 
-	local p3, pc3 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	local p3, pc3 = W.FieldRow(pC, page, 2, { height = M.sliderBoxH })
 	sliderBox(pc3[1], { label = T("Offset X"), min = -80, max = 80, unit = " px",
 		get = cget("offX"), set = cset("offX") })
 	sliderBox(pc3[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px",
 		get = cget("offY"), set = cset("offY") })
-	sPlace:place(p3, M.sliderBoxH, R.tight)
-	sPlace:close()
+	pSt:place(p3, M.sliderBoxH, R.tight)
+	local pH = blockClose(pBox, pSt, pC)
 
 	-- --- Appearance ----------------------------------------------------------
-	local sLook = b.cards[2]
-	local a1, ac = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	local aBox, aSt, aC = innerBlock(cells[2], T("Appearance"), T("How many icons and how large"))
+	aBox:SetPoint("TOPLEFT", cells[2], "TOPLEFT", 0, 0)
+	aBox:SetPoint("TOPRIGHT", cells[2], "TOPRIGHT", 0, 0)
+	local a1, ac = W.FieldRow(aC, page, 2, { height = M.sliderBoxH })
 	sliderBox(ac[1], { label = T("Max. icons"), min = 1, max = 8,
 		get = cget("maxIcons"), set = cset("maxIcons") })
 	sizeW = sliderBox(ac[2], { label = T("Size"), min = 8, max = 80, unit = " px",
 		get = cget("size"), set = cset("size") })
-	sLook:place(a1, M.sliderBoxH, R.row)
-
-	autoFitOn = checkRow(d, T("Size from frame height"), {
+	aSt:place(a1, M.sliderBoxH, R.row)
+	aSt:place(checkRow(aC, T("Size from frame height"), {
 		get = cget("autoFit"),
-		set = function(v) cset("autoFit")(v); refreshSize() end })
-	sLook:place(autoFitOn, M.optionRowH, 0)
-	local swipe = checkRow(d, T("Cooldown swipe"), { get = cget("showSwipe"), set = cset("showSwipe") })
-	sLook:place(swipe, M.optionRowH, R.tight)
-	sLook:close()
+		set = function(v) cset("autoFit")(v); refreshSize() end }), M.optionRowH, 0)
+	aSt:place(checkRow(aC, T("Cooldown swipe"),
+		{ get = cget("showSwipe"), set = cset("showSwipe") }), M.optionRowH, R.tight)
+	local aH = blockClose(aBox, aSt, aC)
 
-	b.close()
-	regJump("aura-" .. cat.key, b.cards[1])
+	-- Equal heights (shared bottom edge), then the row itself.
+	local maxH = math.max(pH, aH)
+	pBox:SetHeight(maxH); aBox:SetHeight(maxH)
+	row:SetHeight(maxH)
+	host:place(row, maxH, 0)
 	refreshSize()
 end
 
@@ -1457,26 +1547,16 @@ local function buildAuras(d, stack)
 		for _, c in ipairs(AURA_CATS) do
 			ns.ShellIndexScope = c.key
 			local sec = stack:section(c.label, { subtitle = c.desc })
-			auraSpellsPane(d, sec, c)
-			auraDisplayPane(d, stack, c, ctx)
+			auraSpellsPane(d, sec, c, d)
+			auraDisplayPane(d, sec, c, ctx, d)
+			sec:close()
 		end
 		ns.ShellIndexScope = nil
 		return
 	end
 
 	stack:gap(L.general.tabTop)
-
-	-- Anchored preview: first thing on the tab, fixed height, cards scroll under it.
-	local pvHost = CreateFrame("Frame", nil, d)
-	auraPreview(pvHost)
-	stack:place(pvHost, L.raidframes.auras.previewH, L.raidframes.auras.afterPv)
-	-- Fill it once the frame has real dimensions (a screen built while hidden has
-	-- none, and the fit-scaling needs the stage size). OnShow covers the cached
-	-- screen coming back, where the builder does not run again.
-	C_Timer.After(0, function()
-		if pvHost:IsVisible() then previewRefresh() end
-	end)
-	pvHost:HookScript("OnShow", function() C_Timer.After(0, previewRefresh) end)
+	placePreview(d, stack, "Raidframes/Auras")
 
 	-- Chip bar: pick the category. The dot shows whether it renders at all in
 	-- THIS context, the badge its icon count (or "off").
@@ -1577,22 +1657,24 @@ local function buildAuras(d, stack)
 	})
 	copyBtn:SetPoint("RIGHT", head, "RIGHT", 0, 0)
 	editor:place(head, M.buttonH, L.rhythm.row)
-	editor:close()
 
-	-- Body of the picked pane. Built into its own stack so the master switch can
-	-- grey it out without touching the head row. The index scope matches the
+	-- Body of the picked pane, built INSIDE the same card as the head — the head
+	-- belongs to these options, so it must not float above them as its own card
+	-- (Florian 2026-07-29). Its own stack lets the category master switch grey
+	-- the options without touching the head row. The index scope matches the
 	-- warm-up pass above, so a search hit resolves to the row on this screen.
 	local body = CreateFrame("Frame", nil, d)
 	local bstack = ns.Shell.NewStack(body)
 	ns.ShellIndexScope = cat.key
 	if paneSpells then
-		local sp = bstack:section(T("Tracked spells"))
-		auraSpellsPane(body, sp, cat)
+		auraSpellsPane(body, bstack, cat, d)
 	else
-		auraDisplayPane(body, bstack, cat, ctx)
+		auraDisplayPane(body, bstack, cat, ctx, d)
 	end
 	ns.ShellIndexScope = nil
-	stack:place(body, bstack:height(), 0)
+	editor:place(body, bstack:height(), 0)
+	editor:close()
+	regJump("aura-" .. cat.key, editor)
 	-- Category off -> its options are dimmed + locked (same gate as the module
 	-- master); the spell list stays operable, it is shared and context-free.
 	if not paneSpells then

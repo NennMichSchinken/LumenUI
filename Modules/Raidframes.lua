@@ -2147,9 +2147,17 @@ local function c2cJump(host, cardKey)
 	if cardKey:find("^aura%-") then
 		tab = "Auras"
 		-- The Auras tab carries its own context; the target tab name can no longer
-		-- express it, so hand it over through the profile before the jump.
+		-- express it, so hand it over through the profile before the jump. Flag a
+		-- real change so the Shell knows it must rebuild (an unchanged jump only
+		-- flashes the card instead of re-rendering the page).
 		local d = db()
-		if d then d.auraTabCtx = (host._pvCtx == "raid") and "raid" or "party" end
+		if d then
+			local want = (host._pvCtx == "raid") and "raid" or "party"
+			if d.auraTabCtx ~= want then
+				d.auraTabCtx = want
+				ns.ShellJumpDirty = true
+			end
+		end
 	else
 		tab = (host._pvCtx == "raid") and "Raid" or "Group"
 	end
@@ -2314,6 +2322,54 @@ function Raidframes:AttachShellPreview(band, spec)
 	shellBands[band] = spec
 end
 
+-- Which context a preview spec is showing right now.
+local function pvSpecCtx(spec, d)
+	if spec.ctxGet then return spec.ctxGet() end
+	if spec.baseSwitch then return (d.previewBaseCtx == "raid") and "raid" or "party" end
+	return spec.ctx
+end
+
+-- Sample size for a spec: the Raid tab has its 5/10/20/25 chips, a spec may pin
+-- a raid-context count (Auras tab), everything else shows one group.
+local function pvSpecCount(spec, ctx, d)
+	local n = GROUP_SIZE
+	if spec.ctx == "raid" then n = d.previewSize or GROUP_SIZE
+	elseif spec.raidN and ctx == "raid" then n = spec.raidN end
+	return min(n, 25)
+end
+
+-- Grid extent of a preview in HOLDER units (before the true-size scale).
+local function pvExtent(spec, ctx, n, d)
+	local L = d[ctx]
+	local w, h, sp = L.width, L.height, L.spacing
+	local horizontal = (L.orientation == "horizontal")
+	local groups  = max(1, ceil(n / GROUP_SIZE))
+	local inGroup = max(1, min(n, GROUP_SIZE))
+	local cols, rows
+	if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
+	return cols * (w + sp) - sp, rows * (h + sp) - sp, horizontal
+end
+
+-- VISUAL height a preview needs, in the units of `ref` (the shell frame the
+-- stage lives in). The anchored bands are placed by the settings stack BEFORE
+-- anything renders, so the screen has to know the height up front — this is the
+-- same arithmetic RefreshShellPreview uses, just without touching frames.
+function Raidframes:PreviewExtent(spec, ref)
+	local d = db()
+	if not (d and ref) then return 1, 1 end
+	local sUI, sRef = UIParent:GetEffectiveScale(), ref:GetEffectiveScale()
+	if not (sUI and sRef) or sRef <= 0 then return 1, 1 end
+	local ok, cw, ch = pcall(function()
+		local ctx = pvSpecCtx(spec, d)
+		local n = pvSpecCount(spec, ctx, d)
+		local w, h = pvExtent(spec, ctx, n, d)
+		return w, h
+	end)
+	if not ok then return 1, 1 end
+	local s = sUI / sRef
+	return (cw or 1) * s, (ch or 1) * s
+end
+
 function Raidframes:RefreshShellPreview()
 	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
 	-- During an Edit Mode session the world previews mirror the same settings —
@@ -2347,23 +2403,13 @@ function Raidframes:RefreshShellPreview()
 		-- Context: fixed per tab (Raid/Group) — the Base tab switches via its
 		-- Raid/Group chips instead (so Base settings like aggro/dispel are
 		-- judged on the real group layout).
-		local ctx = spec.ctx
-		if spec.baseSwitch then ctx = (d.previewBaseCtx == "raid") and "raid" or "party" end
-		-- Auras tab: the context lives on the TAB (its editor chip), so the spec
-		-- resolves it on every refresh instead of holding a fixed value.
-		if spec.ctxGet then ctx = spec.ctxGet() end
+		-- Context / sample size / grid: shared with PreviewExtent above, so the
+		-- height a screen reserved and the height actually rendered can't drift.
+		local ctx = pvSpecCtx(spec, d)
+		local n = pvSpecCount(spec, ctx, d)
 		local L = d[ctx]
 		local w, h, sp = L.width, L.height, L.spacing
 		local horizontal = (L.orientation == "horizontal")
-		-- Sample size: the Raid tab has 5/10/20/25 chips; Base/Group show one
-		-- group. Clamp legacy values (the first chip set went up to 40).
-		-- Sample size: the Raid tab has 5/10/20/25 chips; the Auras tab shows a
-		-- fixed 10 in raid context (Florian: enough to judge at true size, and
-		-- the tab has no size chips of its own); everything else = one group.
-		local n = GROUP_SIZE
-		if spec.ctx == "raid" then n = d.previewSize or GROUP_SIZE
-		elseif spec.raidN and ctx == "raid" then n = spec.raidN end
-		n = min(n, 25)
 		-- 5 = the curated showcase roster; bigger samples use the test-mode
 		-- roster incl. its role-sort preview (honest sorting picture).
 		local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
@@ -2381,11 +2427,7 @@ function Raidframes:RefreshShellPreview()
 			f:SetPoint("TOPLEFT", holder, "TOPLEFT", col * (w + sp), -row * (h + sp))
 		end
 		used = n
-		local groups  = max(1, ceil(n / GROUP_SIZE))
-		local inGroup = max(1, min(n, GROUP_SIZE))
-		local cols, rows
-		if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
-		cw, ch = cols * (w + sp) - sp, rows * (h + sp) - sp
+		cw, ch = pvExtent(spec, ctx, n, d)
 		caption = ("%s  ·  %d  ·  %s"):format(
 			ctx == "raid" and ns.T("Raid") or ns.T("Group"), n,
 			horizontal and ns.T("horizontal") or ns.T("vertical"))
@@ -2402,18 +2444,10 @@ function Raidframes:RefreshShellPreview()
 
 	for i = used + 1, #pvFrames do pvFrames[i]:Hide() end
 	holder:SetSize(cw, ch)
-	-- Inline band (anchored in the content area): its height is fixed by the
-	-- screen, so a vertical group of five frames would overflow the stage. Scale
-	-- DOWN to fit — never up, true on-screen size stays the ceiling.
-	if band.inline and band.GetStageSpace then
-		local availW, availH = band:GetStageSpace()
-		local visW, visH = cw * s, ch * s
-		if visW > 0 and visH > 0 then
-			local fit = min(1, availW / visW, availH / visH)
-			if fit < 1 then s = s * fit; holder:SetScale(s) end
-		end
-	end
 	-- Report side + VISUAL extent (stage units): holder units render at scale s.
+	-- Anchored bands always render at TRUE on-screen size and the screen grew to
+	-- fit them (PreviewExtent) — no fit-scaling, so 20 raid frames simply make
+	-- the preview taller and the cards scroll further down (Florian 2026-07-29).
 	band:SetExtent(side, cw * s, ch * s, caption)
 end
 

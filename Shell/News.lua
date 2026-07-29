@@ -56,6 +56,9 @@ ns.News = {
 			  section = "Raidframes", tab = "Auras" },
 			{ kind = "changed",
 			  text = "All options of a category are visible at once — the \"More options\" link on the aura cards is gone." },
+			{ kind = "changed",
+			  text = "The preview is now anchored at the top of every raid frame tab and grows with its content; the separate preview window and its sidebar button are gone.",
+			  section = "Raidframes", tab = "Base" },
 		},
 	},
 	{

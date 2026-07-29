@@ -63,8 +63,8 @@ ns.RegisterLocale("deDE", {
 	["+ Overlay"] = "+ Fläche",
 	["More options"] = "Mehr Optionen",
 	["Less"] = "Weniger",
-	["Open preview"] = "Vorschau öffnen",
-	["Close preview"] = "Vorschau schließen",
+	["Preview"] = "Vorschau",
+	["Click an icon to edit"] = "Klick ein Icon zum Bearbeiten",
 
 	-- ── Card subtitles / global switch descriptions (v3 card mockup) ────
 	["Health bar and texture settings"] = "Einstellungen für Lebensbalken und Texturen",
@@ -218,6 +218,7 @@ ns.RegisterLocale("deDE", {
 	["Editing"] = "Bearbeiten",
 	["Spells"] = "Zauber",
 	["Tracked spells"] = "Erfasste Zauber",
+	["Which debuffs"] = "Welche Debuffs",
 	["off"] = "aus",
 	["Where the icon row sits on the frame"] = "Wo die Icon-Reihe am Frame sitzt",
 	["Appearance"] = "Aussehen",
@@ -523,6 +524,7 @@ ns.RegisterLocale("deDE", {
 	["Aura icons covered the resource bar: a bottom row now sits on the health bar, and auto-fit shrinks the icons instead of letting them overflow."] = "Aura-Symbole verdeckten den Ressourcenbalken: Eine untere Reihe sitzt jetzt auf dem Lebensbalken, und Auto-Fit verkleinert die Symbole, statt sie überstehen zu lassen.",
 	["Both Delves windows could never be moved — the window list carried a wrong addon name all along."] = "Beide Tiefen-Fenster ließen sich nie verschieben — in der Fensterliste stand von Anfang an ein falscher Addon-Name.",
 	["Aura settings now live on their own tab, with a preview and a copy dialog."] = "Die Auren-Einstellungen liegen jetzt auf einem eigenen Tab, mit Vorschau und Kopier-Dialog.",
+	["The preview is now anchored at the top of every raid frame tab and grows with its content; the separate preview window and its sidebar button are gone."] = "Die Vorschau sitzt jetzt oben in jedem Raidframe-Tab und wächst mit ihrem Inhalt; das separate Vorschau-Fenster und sein Knopf in der Seitenleiste entfallen.",
 	["Aura indicators have their own tab: pick a category, edit it below the preview, and switch between Raid and Group with one control."] = "Die Auren-Anzeigen haben einen eigenen Tab: Kategorie wählen, unter der Vorschau bearbeiten, und mit einem Schalter zwischen Raid und Gruppe wechseln.",
 	["Copy settings from one category or context to another — the dialog shows every destination as a grid, so you pick exactly where they land."] = "Einstellungen von einer Kategorie oder einem Kontext auf andere kopieren — der Dialog zeigt alle Ziele als Raster, du wählst also genau, wo sie landen.",
 	["Which spells are tracked moved into the same tab, so a category is set up in one place instead of three; the separate Tracking tab is gone."] = "Welche Zauber erfasst werden, liegt jetzt im selben Tab — eine Kategorie wird an einem Ort eingerichtet statt an dreien; der eigene Tracking-Tab entfällt.",

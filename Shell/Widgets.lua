@@ -3512,19 +3512,41 @@ function W.PreviewBand(parent, o)
 	-- controls. It stands out from the dock surface (esp. with the backdrop
 	-- hidden via the filter) and IS the drag handle — so the separate grip is
 	-- gone (Florian 2026-07-05).
+	-- INLINE: the whole band is ONE card — header row on top, hairline, stage
+	-- below. A separate header card floating over a separate stage read as two
+	-- unrelated things sitting next to each other (Florian 2026-07-29).
+	if o.inline then
+		UI.RoundFill(f, Surface.Card, nil, nil, RAD.lg)
+		UI.RoundBorder(f, Border.default, "OVERLAY", nil, RAD.lg)
+	end
+
 	local head = CreateFrame("Frame", nil, f)
 	head:SetPoint("TOPLEFT", f, "TOPLEFT", M.pvDockPad, -M.pvDockPad)
 	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", -M.pvDockPad, -M.pvDockPad)
 	head:SetHeight(M.sectionHeaderH)
-	-- The head is a REAL card matching the settings cards EXACTLY: same fill
-	-- (Surface.Card) and border (Border.default). With the page-colored stage below (no black
-	-- box) this reads as page + card — like the settings page itself, not a
-	-- nested "double frame" (Florian 2026-07-05).
-	UI.RoundFill(head, Surface.Card, nil, nil, RAD.lg)
-	UI.RoundBorder(head, Border.default, "OVERLAY", nil, RAD.lg)
+	if o.inline then
+		-- Header row INSIDE the card: no own fill/border, just a hairline to the
+		-- stage (same separator language as the stacked option rows).
+		local hl = head:CreateTexture(nil, "OVERLAY")
+		hl:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", 0, 0)
+		hl:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", 0, 0)
+		UI.SetColor(hl, Border.faint)
+		local function snapHL() PixelUtil.SetHeight(hl, 1) end
+		snapHL(); C_Timer.After(0, snapHL)
+	else
+		-- The head is a REAL card matching the settings cards EXACTLY: same fill
+		-- (Surface.Card) and border (Border.default). With the page-colored stage below (no black
+		-- box) this reads as page + card — like the settings page itself, not a
+		-- nested "double frame" (Florian 2026-07-05).
+		UI.RoundFill(head, Surface.Card, nil, nil, RAD.lg)
+		UI.RoundBorder(head, Border.default, "OVERLAY", nil, RAD.lg)
+	end
 	local lbl = UI.FS(head, "sectionHead", Text.Primary)
-	lbl:SetText(T("PREVIEW"))
-	lbl:SetPoint("LEFT", head, "LEFT", M.sectionTitleX, 0)
+	-- Inline: the title slot names what the switch next to it DOES ("Editing"),
+	-- because that switch picks the context whose values you are editing — not
+	-- merely what the preview shows. Dock: it is just a preview window.
+	lbl:SetText((o.inline and o.ctx and o.ctx.caption) and o.ctx.caption or T("PREVIEW"))
+	lbl:SetPoint("LEFT", head, "LEFT", o.inline and 0 or M.sectionTitleX, 0)
 
 	-- Icon order (right to left): collapse chevron — then the chip groups chain
 	-- further left. The old funnel filter popover is GONE (Florian 2026-07-16):
@@ -3711,11 +3733,17 @@ function W.PreviewBand(parent, o)
 
 	local repaints = {}
 	local chipsW = 0
-	local chainAnchor, chainGap = resetAnchor, M.pvChipGroupGap
+	-- Dock: chips chain RIGHT-to-left from the collapse button. Inline: they sit
+	-- directly after the title, so "Editing [Group|Raid]" reads as one phrase.
+	local leftChain = o.inline and true or false
+	local chainAnchor, chainGap = leftChain and lbl or resetAnchor, M.pvChipGroupGap
 	-- items = { { v =, label = }, ... }; paints selection from get(), sets via set(v).
 	local function chipGroup(items, get, set)
 		local chips = {}
-		for i = #items, 1, -1 do
+		local order = {}
+		if leftChain then for i = 1, #items do order[#order + 1] = i end
+		else for i = #items, 1, -1 do order[#order + 1] = i end end
+		for _, i in ipairs(order) do
 			local item = items[i]
 			local chip = CreateFrame("Button", nil, head)
 			chip:SetHeight(M.pvEyeH)
@@ -3725,7 +3753,8 @@ function W.PreviewBand(parent, o)
 			txt:SetPoint("CENTER", chip, "CENTER", 0, 0)
 			txt:SetText(item.label)
 			chip:SetWidth(math.max(M.pvEyeH, math.ceil(txt:GetStringWidth()) + M.pvEyePadX * 2))
-			chip:SetPoint("RIGHT", chainAnchor, "LEFT", -chainGap, 0)
+			if leftChain then chip:SetPoint("LEFT", chainAnchor, "RIGHT", chainGap, 0)
+			else chip:SetPoint("RIGHT", chainAnchor, "LEFT", -chainGap, 0) end
 			chipsW = chipsW + chip:GetWidth() + chainGap
 			chainAnchor, chainGap = chip, M.pvEyeGap
 			chips[#chips + 1] = { v = item.v, paint = function(on)
@@ -3748,18 +3777,13 @@ function W.PreviewBand(parent, o)
 		for _, v in ipairs(o.sizes.values) do items[#items + 1] = { v = v, label = tostring(v) } end
 		chipGroup(items, o.sizes.get, o.sizes.set)
 	end
-	if o.ctx then
-		chipGroup(o.ctx.values, o.ctx.get, o.ctx.set)
-		-- Caption in front of the chips. Without it "PREVIEW [Group|Raid]" reads
-		-- like a preview FILTER; the chips actually pick what you are editing
-		-- (Florian 2026-07-29). o.ctx.caption names that.
-		if o.ctx.caption then
-			local cap = UI.FS(head, "caption", Text.Disabled)
-			cap:SetPoint("RIGHT", chainAnchor, "LEFT", -M.pvEyeGap, 0)
-			cap:SetText(o.ctx.caption)
-			chipsW = chipsW + math.ceil(cap:GetStringWidth()) + M.pvEyeGap
-			chainAnchor, chainGap = cap, M.pvChipGroupGap
-		end
+	if o.ctx then chipGroup(o.ctx.values, o.ctx.get, o.ctx.set) end
+	-- Inline: a quiet right-aligned hint that the stage is clickable (the
+	-- click-to-configure affordance is otherwise only discoverable by hovering).
+	if o.inline and o.hint then
+		local hint = UI.FS(head, "caption", Text.Disabled)
+		hint:SetPoint("RIGHT", head, "RIGHT", 0, 0)
+		hint:SetText(o.hint)
 	end
 	function f:PaintChips()
 		for _, rp in ipairs(repaints) do rp() end
