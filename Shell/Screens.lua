@@ -299,6 +299,13 @@ local function previewRow(d, key, spec, opts)
 	for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do
 		C_Timer.After(dl, function() if host:IsVisible() then previewRefresh() end end)
 	end
+	-- A cached screen does not run its builder again; SetSticky re-shows the host,
+	-- so refill from there (Florian 2026-07-29: returning to Base showed an empty
+	-- band until you toggled something).
+	if not host._pvShowHooked then
+		host._pvShowHooked = true
+		host:HookScript("OnShow", function() C_Timer.After(0, previewRefresh) end)
+	end
 end
 
 -- Per-tab preview specs. `kind`/`ctx` are read by the module's render.
@@ -341,7 +348,7 @@ local function previewOpts(key)
 		return { sizes = {
 			values = { 5, 10, 20, 25 },
 			-- Clamp: profiles from the 5/10/20/40 era may still hold 40.
-			get = function() return math.min(rf().previewSize or 5, 25) end,
+			get = function() return math.min(rf().previewSize or 10, 25) end,
 			set = function(v)
 				rf().previewSize = v
 				previewRefresh()
@@ -1284,9 +1291,8 @@ local function auraTabCat()
 end
 local function setAuraTabCat(v) rf().auraTabCat = v end
 -- "Display" | "Spells" pane of the inline editor (session-only: the pane is a
--- view, not a setting). Same for the spell list's search term.
+-- view, not a setting).
 local auraTabPane = "display"
-local auraSpellFilter = ""
 
 -- Suffix of the per-context profile fields ("sizeRaid" / "sizeParty").
 local function ctxSfx(ctx) return (ctx == "raid") and "Raid" or "Party" end
@@ -1346,19 +1352,23 @@ local function makeTrackRow(parent, e, onRemove, onAdd)
 	name:SetPoint("RIGHT", rm, "LEFT", -10, 0)
 	name:SetJustifyH("LEFT"); name:SetWordWrap(false)
 	name:SetText(e.name or (T("Spell") .. " " .. tostring(e.id)))
-	-- Hover: elementHover surface + gold left edge + own Lumen spell tooltip.
+	-- Hover: just a lighter surface. The gold left edge was a leftover marker from
+	-- the list's first version and read like a selection state on a row that has
+	-- none (Florian 2026-07-29).
 	local hov = UI.RoundFill(row, Surface.Hover, "BORDER", nil, UI.ROUND_R_CTRL); hov:SetAlpha(0)
-	local bar = row:CreateTexture(nil, "OVERLAY")
-	bar:SetWidth(3)
-	-- Straight edge bar stops before the rounded corners.
-	bar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -UI.ROUND_R_CTRL)
-	bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, UI.ROUND_R_CTRL)
-	UI.SetColor(bar, Text.Primary); bar:Hide()
 	row:EnableMouse(true)
+	row._spellID = e.id
 	row:SetScript("OnEnter", function(self2)
-		hov:SetAlpha(1); bar:Show(); W.ShowSpellTip(self2, e.id)
+		hov:SetAlpha(1); W.ShowSpellTip(self2, self2._spellID, "CURSOR")
 	end)
-	row:SetScript("OnLeave", function() hov:SetAlpha(0); bar:Hide(); W.HideTip() end)
+	row:SetScript("OnLeave", function() hov:SetAlpha(0); W.HideTip() end)
+	-- Reuse: the search popover keeps a small pool of rows and re-points them at
+	-- another spell instead of building one per keystroke.
+	function row:SetEntry(e2)
+		icon:SetTexture(e2.icon or 136243)
+		name:SetText(e2.name or (T("Spell") .. " " .. tostring(e2.id)))
+		self._spellID = e2.id
+	end
 	return row
 end
 
@@ -1449,48 +1459,74 @@ local function auraSpellsPane(d, host, cat, page)
 			T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))
 
 	-- The search field IS the add control (Florian 2026-07-29): typing lists the
-	-- spells of your spec that are NOT tracked yet, click adds one. A separate
-	-- "add" button next to a field that only filtered read as a dead end - you
-	-- click into the field expecting to find a spell.
+	-- spells of your spec that are NOT tracked yet, click adds one.
+	-- Results appear in a POPOVER under the field, not in the page: re-rendering
+	-- the screen on every keystroke destroyed the edit box mid-typing, which is
+	-- why the field felt dead. The popover leaves the layout alone entirely.
 	local searchRow = CreateFrame("Frame", nil, content)
 	searchRow:SetHeight(M.controlH)
-	local search = W.TextInput(searchRow, {
-		placeholder = T("Search a spell to add …"),
-		get = function() return auraSpellFilter end,
-		onChange = function(v) auraSpellFilter = v; ns.Shell:RenderContent(true) end,
-	})
+	local search = W.TextInput(searchRow, { placeholder = T("Search a spell to add …") })
 	search:SetPoint("LEFT", searchRow, "LEFT", 0, 0)
 	search:SetPoint("RIGHT", searchRow, "RIGHT", 0, 0)
 	st:place(searchRow, M.controlH, R.row)
 
-	-- Candidates: spellbook + chosen talents, minus what is already tracked.
-	local needle = (auraSpellFilter or ""):lower()
-	if needle ~= "" then
+	-- Result popover (floats on the menu host, like the dropdowns).
+	local resPop = CreateFrame("Frame", nil, W._menuHost or d)
+	resPop:SetFrameStrata("FULLSCREEN_DIALOG")
+	resPop:SetFrameLevel((W._menuHost or d):GetFrameLevel() + 70)
+	resPop:Hide()
+	UI.RoundFill(resPop, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(resPop, UI.Border.hover, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	if W._popovers then W._popovers[#W._popovers + 1] = resPop end
+	local resRows = {}
+
+	local function refreshResults()
+		for _, r in ipairs(resRows) do r:Hide() end
+		local needle = (search:GetText() or ""):lower()
+		if needle == "" then resPop:Hide(); return end
 		local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
-		local hits = 0
+		local pad, rowH = UI.S.s2, L.raidframes.tracking.rowH
+		local y, shownN = -pad, 0
 		for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
 			-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
 			local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
-			if not tracked[rid] and (sp.name or ""):lower():find(needle, 1, true) then
-				hits = hits + 1
-				if hits <= L.raidframes.tracking.maxHits then
-					local id = sp.id
-					local row = makeTrackRow(content, sp, nil, function()
-						if RFm then RFm:AddWhitelist(spec, id, cat.typ) end
-						auraSpellFilter = ""
-						ns.Shell:RenderContent(true)
-					end)
-					st:place(row, L.raidframes.tracking.rowH, L.raidframes.tracking.betweenRows)
+			if not tracked[rid] and (sp.name or ""):lower():find(needle, 1, true)
+				and shownN < L.raidframes.tracking.maxHits then
+				shownN = shownN + 1
+				local id = sp.id
+				local r = resRows[shownN]
+				if not r then
+					r = makeTrackRow(resPop, sp, nil, function() end)
+					resRows[shownN] = r
+				else
+					r:SetEntry(sp)
 				end
+				r:SetScript("OnClick", function()
+					if RFm then RFm:AddWhitelist(spec, id, cat.typ) end
+					search:ClearText()
+					resPop:Hide()
+					ns.Shell:RenderContent(true)
+				end)
+				r:ClearAllPoints()
+				r:SetPoint("TOPLEFT", resPop, "TOPLEFT", pad, y)
+				r:SetPoint("TOPRIGHT", resPop, "TOPRIGHT", -pad, y)
+				r:Show()
+				y = y - rowH - UI.S.s1
 			end
 		end
-		if hits == 0 then
-			st:place(W.EmptyState(content, { text = T("No spell matches your search.") }),
-				L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
-		else
-			st:gap(L.raidframes.tracking.afterList)
-		end
+		if shownN == 0 then resPop:Hide(); return end
+		resPop:ClearAllPoints()
+		resPop:SetPoint("TOPLEFT", searchRow, "BOTTOMLEFT", 0, -UI.S.s2)
+		resPop:SetPoint("TOPRIGHT", searchRow, "BOTTOMRIGHT", 0, -UI.S.s2)
+		resPop:SetHeight(-y + pad - UI.S.s1)
+		resPop:Show(); resPop:Raise()
 	end
+	search._edit:HookScript("OnTextChanged", refreshResults)
+	search._edit:HookScript("OnEditFocusLost", function()
+		-- Deferred: a click ON a result must land before the popover closes.
+		C_Timer.After(0.12, function() if not search._edit:HasFocus() then resPop:Hide() end end)
+	end)
+	content:HookScript("OnHide", function() resPop:Hide() end)
 
 	local shown = entries
 	if #entries == 0 then
@@ -1552,19 +1588,17 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 		if sizeW then sizeW:SetWidgetEnabled(not cget("autoFit")()) end
 	end
 
-	-- Two blocks side by side INSIDE the editor card. W.Row splits the width;
-	-- each cell gets its own block, and both are stretched to the taller one so
-	-- the pair shares a clean bottom edge (band behaviour, one level down).
-	-- The blocks are children of the PAGE, not of the cells: a cell is 1px high
-	-- while its contents are built, and children of a zero-height intermediate
-	-- frame do not render (the same trap the Edit Mode flyout hit). The cells
-	-- only provide the x-geometry to anchor against.
-	local row, cells = W.Row(d, 2, { gap = UI.GRID.cardGap, height = 1 })
+	-- Two blocks side by side INSIDE the editor card. Both are children of the
+	-- row and positioned by ONE explicit split — deliberately NOT via W.Row
+	-- cells: those resolve their width through OnSizeChanged, and a block
+	-- anchored to a cell that had not resolved yet came up completely empty
+	-- (Florian 2026-07-29, seen after a jump from another category). One local
+	-- layout function is predictable and re-runs on every resize.
+	local row = CreateFrame("Frame", nil, d)
+	row:SetHeight(1)
 
 	-- --- Placement -----------------------------------------------------------
-	local pBox, pSt, pC = innerBlock(d, T("Placement"), T("Where the icon row sits on the frame"))
-	pBox:SetPoint("TOPLEFT", cells[1], "TOPLEFT", 0, 0)
-	pBox:SetPoint("TOPRIGHT", cells[1], "TOPRIGHT", 0, 0)
+	local pBox, pSt, pC = innerBlock(row, T("Placement"), T("Where the icon row sits on the frame"))
 	local p1, pc = W.FieldRow(pC, page, 2, { height = fieldH })
 	W.Select(pc[1], { label = T("Position (anchor)"), options = POINT_OPTS,
 		get = cget("anchor"), set = cset("anchor") }):SetAllPoints(pc[1])
@@ -1589,9 +1623,7 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 	local pH = blockClose(pBox, pSt, pC)
 
 	-- --- Appearance ----------------------------------------------------------
-	local aBox, aSt, aC = innerBlock(d, T("Appearance"), T("How many icons and how large"))
-	aBox:SetPoint("TOPLEFT", cells[2], "TOPLEFT", 0, 0)
-	aBox:SetPoint("TOPRIGHT", cells[2], "TOPRIGHT", 0, 0)
+	local aBox, aSt, aC = innerBlock(row, T("Appearance"), T("How many icons and how large"))
 	local a1, ac = W.FieldRow(aC, page, 2, { height = M.sliderBoxH })
 	sliderBox(ac[1], { label = T("Max. icons"), min = 1, max = 8,
 		get = cget("maxIcons"), set = cset("maxIcons") })
@@ -1609,7 +1641,24 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 	local maxH = math.max(pH, aH)
 	pBox:SetHeight(maxH); aBox:SetHeight(maxH)
 	row:SetHeight(maxH)
+	-- The split: left block from the left edge, right block from the right, each
+	-- half the width minus half the gutter. Re-applied on resize so a panel
+	-- rescale keeps them aligned.
+	local function splitRow(w)
+		w = w or row:GetWidth() or 0
+		if w <= 0 then return end
+		local half = (w - UI.GRID.cardGap) / 2
+		pBox:ClearAllPoints()
+		pBox:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+		pBox:SetWidth(half)
+		aBox:ClearAllPoints()
+		aBox:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+		aBox:SetWidth(half)
+	end
+	row:SetScript("OnSizeChanged", function(_, w) splitRow(w) end)
+	splitRow()
 	host:place(row, maxH, 0)
+	splitRow()  -- place() gives the row its real width
 	refreshSize()
 end
 

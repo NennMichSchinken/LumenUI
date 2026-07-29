@@ -2342,7 +2342,9 @@ end
 -- a raid-context count (Auras tab), everything else shows one group.
 local function pvSpecCount(spec, ctx, d)
 	local n = GROUP_SIZE
-	if spec.ctx == "raid" then n = d.previewSize or GROUP_SIZE
+	-- Raid default is 10, not one group: five frames say nothing about a raid
+	-- layout (Florian 2026-07-29, matching what the Auras tab pins).
+	if spec.ctx == "raid" then n = d.previewSize or 10
 	elseif spec.raidN and ctx == "raid" then n = spec.raidN end
 	return min(n, 25)
 end

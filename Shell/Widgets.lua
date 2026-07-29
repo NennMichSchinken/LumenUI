@@ -1310,6 +1310,17 @@ local function applyTip(owner, icon, titleText, bodyText, anchor)
 		-- Open ABOVE the owner (grows upward), so it never covers the row it
 		-- belongs to — used by the card-header eye (Florian 2026-07-16).
 		t.tip:SetPoint("BOTTOMLEFT", owner, "TOPLEFT", 0, M.tipGap)
+	elseif anchor == "CURSOR" then
+		-- At the pointer. For FULL-WIDTH rows: anchoring off the owner's right
+		-- edge threw the tip to the far side of the panel, miles from what you
+		-- were pointing at (Florian 2026-07-29).
+		local cx, cy = GetCursorPosition()
+		local sc = t.tip:GetEffectiveScale()
+		if cx and cy and sc and sc > 0 then
+			t.tip:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cx / sc + M.tipGap, cy / sc - M.tipGap)
+		else
+			t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+		end
 	else
 		t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
 	end
@@ -1323,12 +1334,12 @@ local function applyTip(owner, icon, titleText, bodyText, anchor)
 	t.tip:Show()
 end
 
-function W.ShowSpellTip(owner, spellID)
+function W.ShowSpellTip(owner, spellID, anchor)
 	if not spellID then return end
 	local nm = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)
 	local tx = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
 	local ds = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(spellID)
-	applyTip(owner, tx or 136243, nm or ("Spell " .. tostring(spellID)), ds)
+	applyTip(owner, tx or 136243, nm or ("Spell " .. tostring(spellID)), ds, anchor)
 end
 
 function W.ShowTextTip(owner, title, body, anchor)
