@@ -310,7 +310,9 @@ end
 
 -- Per-tab preview specs. `kind`/`ctx` are read by the module's render.
 local PV_SPECS = {
-	["Raidframes/Base"]  = { kind = "ctx", baseSwitch = true },
+	-- raidN: Base has no size chips, so its raid view pins the same 10 the Auras
+	-- tab uses — one group says nothing about a raid layout.
+	["Raidframes/Base"]  = { kind = "ctx", baseSwitch = true, raidN = 10 },
 	["Raidframes/Raid"]  = { kind = "ctx", ctx = "raid", sizes = true },
 	["Raidframes/Group"] = { kind = "ctx", ctx = "party" },
 	["Raidframes/Auras"] = { kind = "ctx", raidN = 10, ctxGet = auraTabCtx },
@@ -1483,14 +1485,18 @@ local function auraSpellsPane(d, host, cat, page)
 	local function refreshResults()
 		for _, r in ipairs(resRows) do r:Hide() end
 		local needle = (search:GetText() or ""):lower()
-		if needle == "" then resPop:Hide(); return end
+		-- Focused but empty = show what IS addable right away. An empty field
+		-- that answers a click with nothing reads as broken (Florian 2026-07-29);
+		-- the list is what tells you there is anything to add at all.
+		if needle == "" and not search._edit:HasFocus() then resPop:Hide(); return end
 		local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
 		local pad, rowH = UI.S.s2, L.raidframes.tracking.rowH
 		local y, shownN = -pad, 0
 		for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
 			-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
 			local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
-			if not tracked[rid] and (sp.name or ""):lower():find(needle, 1, true)
+			if not tracked[rid]
+				and (needle == "" or (sp.name or ""):lower():find(needle, 1, true))
 				and shownN < L.raidframes.tracking.maxHits then
 				shownN = shownN + 1
 				local id = sp.id
@@ -1522,6 +1528,7 @@ local function auraSpellsPane(d, host, cat, page)
 		resPop:Show(); resPop:Raise()
 	end
 	search._edit:HookScript("OnTextChanged", refreshResults)
+	search._edit:HookScript("OnEditFocusGained", refreshResults)
 	search._edit:HookScript("OnEditFocusLost", function()
 		-- Deferred: a click ON a result must land before the popover closes.
 		C_Timer.After(0.12, function() if not search._edit:HasFocus() then resPop:Hide() end end)
