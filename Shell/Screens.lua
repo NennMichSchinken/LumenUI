@@ -240,11 +240,9 @@ local function previewBandFor(key, container, spec, opts)
 		return band
 	end
 	band = W.PreviewBand(container, {
-		inline   = true,
 		eyes     = previewEyes,
 		eyeDefs  = previewEyeDefs(),
 		onEye    = previewRefresh,
-		onLayout = function() end,   -- the screen owns the height (see previewRow)
 		hint     = T("Click an icon to edit"),
 		ctx      = opts and opts.ctx or nil,
 		sizes    = opts and opts.sizes or nil,

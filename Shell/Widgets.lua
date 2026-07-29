@@ -3500,78 +3500,49 @@ function W.CopyPopover(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  PreviewBand — content of the Shell's preview DOCK (the satellite window
---  right of / below the panel, see Shell:SetDockLayout). Chrome: a v3 header
---  CARD (PREVIEW title left, right-aligned: context/size chip groups + collapse
---  chevron; the card is the drag handle) and the inset stage with a caption
---  line. Per-layer visibility lives as an eye on each SETTING CARD now (the old
---  funnel filter popover was removed, Florian 2026-07-16); o.eyes() is still the
---  profile table the render reads to hide/restore layers.
---  The owning MODULE fills band.holder with its preview frames (true
---  on-screen size via SetScale on the holder) and reports the VISUAL extent
---  + dock side via band:SetExtent(side, w, h, caption).
---  o = { eyes = fn -> tbl, onEye = fn(),
---        ctx = optional { values = { { v =, label = }, .. }, get, set } —
---              context switch chips (Base tab: Raid/Group),
+--  PreviewBand — the live preview ANCHORED at the top of a settings tab. ONE
+--  card: header row (fold chevron, title, context/size switch, layer eye) over
+--  the stage the owning module fills with frames. The screen reserves its height
+--  and parks it in the Shell's sticky area (Shell:SetSticky), so it stays put
+--  while the settings scroll under it.
+--  (Until 2026-07-29 this was the content of a draggable satellite DOCK window;
+--  that mode is gone entirely — see the raidframe tabs in Screens.lua.)
+--  The module fills band.holder at TRUE on-screen size (SetScale on the holder)
+--  and reports the visual extent via band:SetExtent(w, h, caption).
+--  o = { eyes = fn -> tbl, eyeDefs = list, onEye = fn(),
+--        ctx = optional { values = { { v =, label = }, .. }, get, set, caption },
 --        sizes = optional { values = { .. }, get = fn, set = fn(v) },
---        open = optional { get = fn, set = fn(v) } — collapse state,
---        onLayout = fn(side, dockW or nil, dockH),
---        onChrome = optional fn(on) — dock window chrome (now always on),
---        onResetPos = optional fn() — header action (re-dock the window) }
+--        fold = optional { get = fn, set = fn(v) } — collapse state,
+--        hint = optional right-aligned caption }
 -- ---------------------------------------------------------------------------
 function W.PreviewBand(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetAllPoints(parent)
 	local stageFill -- forward-declared: the eye popover's "Background" row toggles it via RepaintEyes (created below with the stage)
-	-- The stage fill AND the dock's own fill are BOTH Surface.Window, so hiding just the
-	-- stage reveals an identical colour = no visible change. The "Background" eye
-	-- hides both, so the shell's dotted content shows through (frames "float").
-	local dockFrame = parent:GetParent() -- the Shell dock (carries ._fill)
 
-	-- Header CARD (v3 top-card style, like the Base "enable" card): a rounded
-	-- fill+border card inset from the dock edges, holding the title + all
-	-- controls. It stands out from the dock surface (esp. with the backdrop
-	-- hidden via the filter) and IS the drag handle — so the separate grip is
-	-- gone (Florian 2026-07-05).
-	-- INLINE: the whole band is ONE card — header row on top, hairline, stage
-	-- below. A separate header card floating over a separate stage read as two
-	-- unrelated things sitting next to each other (Florian 2026-07-29).
-	if o.inline then
-		UI.RoundFill(f, Surface.Card, nil, nil, RAD.lg)
-		UI.RoundBorder(f, Border.default, "OVERLAY", nil, RAD.lg)
-	end
+	-- ONE card: header row on top, stage below. (A separate header card floating
+	-- over a separate stage read as two unrelated things — Florian 2026-07-29.)
+	UI.RoundFill(f, Surface.Card, nil, nil, RAD.lg)
+	UI.RoundBorder(f, Border.default, "OVERLAY", nil, RAD.lg)
 
+	-- Header row INSIDE the card: no fill, no border, no divider — a hairline
+	-- right under the title read as cramped and the stage is its own surface.
 	local head = CreateFrame("Frame", nil, f)
 	head:SetPoint("TOPLEFT", f, "TOPLEFT", M.pvDockPad, -M.pvDockPad)
 	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", -M.pvDockPad, -M.pvDockPad)
-	head:SetHeight(o.inline and M.pvInlineHeadH or M.sectionHeaderH)
-	if o.inline then
-		-- Header row INSIDE the card: no fill, no border and NO divider either —
-		-- a hairline right under the title read as cramped, and the stage below
-		-- is already its own surface (Florian 2026-07-29).
-		local _ = head
-	else
-		-- The head is a REAL card matching the settings cards EXACTLY: same fill
-		-- (Surface.Card) and border (Border.default). With the page-colored stage below (no black
-		-- box) this reads as page + card — like the settings page itself, not a
-		-- nested "double frame" (Florian 2026-07-05).
-		UI.RoundFill(head, Surface.Card, nil, nil, RAD.lg)
-		UI.RoundBorder(head, Border.default, "OVERLAY", nil, RAD.lg)
-	end
-	local lbl = UI.FS(head, "sectionHead", Text.Primary)
-	-- Inline: the title slot names what the switch next to it DOES ("Editing"),
-	-- because that switch picks the context whose values you are editing — not
-	-- merely what the preview shows. Dock: it is just a preview window.
-	-- Sentence case, like every other title in the shell — the shouted version was
-	-- from the dock, which was its own window (Florian 2026-07-30).
-	lbl:SetText((o.inline and o.ctx and o.ctx.caption) and o.ctx.caption or T("Preview"))
+	head:SetHeight(M.pvInlineHeadH)
 
-	-- Inline: a collapse chevron leads the row, sitting on the left edge the
-	-- content blocks below use, with the title right beside it (Florian
-	-- 2026-07-29). Folding the preview away is worth having when it is in the
-	-- way — it is anchored, so it cannot simply be pushed aside.
+	-- The title names what the switch beside it DOES: on the Auras tab that switch
+	-- picks the context whose VALUES you edit ("Editing"); elsewhere the band
+	-- really is only a preview.
+	local lbl = UI.FS(head, "sectionHead", Text.Primary)
+	lbl:SetText((o.ctx and o.ctx.caption) or T("Preview"))
+
+	-- A collapse chevron leads the row, on the left edge the content blocks below
+	-- use, title right beside it. Folding is worth having when the preview is in
+	-- the way — anchored, it cannot simply be pushed aside (Florian 2026-07-29).
 	local foldBtn
-	if o.inline and o.fold then
+	if o.fold then
 		foldBtn = CreateFrame("Button", nil, head)
 		-- Same footprint as a card's eye button: the title then starts at the
 		-- exact x a card title does.
@@ -3591,62 +3562,13 @@ function W.PreviewBand(parent, o)
 		foldBtn:SetScript("OnLeave", function() paintFold() end)
 		foldBtn:SetScript("OnClick", function() o.fold.set(not o.fold.get()) end)
 		lbl:SetPoint("LEFT", foldBtn, "RIGHT", S.s3, 0)
-	elseif o.inline then
-		lbl:SetPoint("LEFT", head, "LEFT", M.pvInlineTitleX, 0)
 	else
-		lbl:SetPoint("LEFT", head, "LEFT", M.sectionTitleX, 0)
+		lbl:SetPoint("LEFT", head, "LEFT", M.pvInlineTitleX, 0)
 	end
 
-	-- Icon order (right to left): collapse chevron — then the chip groups chain
-	-- further left. The old funnel filter popover is GONE (Florian 2026-07-16):
-	-- per-layer visibility now lives as an eye on each setting card, so the
-	-- preview stays clean and the control lives with the setting it toggles.
-
-	-- Collapse chevron (aura-section pattern): folds the dock away. Direction
-	-- follows the dock side (right dock folds LEFT onto the panel edge,
-	-- bottom dock folds UP); state lives in o.open.
-	local cbtn = CreateFrame("Button", nil, head)
-	cbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-	cbtn:SetPoint("RIGHT", head, "RIGHT", -M.pvDockPad, 0)
-	-- Inline bands sit IN the page and are always visible — nothing to fold away.
-	if o.inline then cbtn:Hide() end
-	UI.RoundFill(cbtn, Surface.Input, nil, nil, R_CTRL) -- lighter than the card, like a dropdown on a settings card
-	UI.RoundBorder(cbtn, Border.hover, "OVERLAY", nil, R_CTRL)
-	local cGlyph = cbtn:CreateTexture(nil, "OVERLAY")
-	cGlyph:SetSize(M.pvGlyph, M.pvGlyph)
-	cGlyph:SetPoint("CENTER", cbtn, "CENTER", 0, 0)
-	cGlyph:SetSnapToPixelGrid(false); cGlyph:SetTexelSnappingBias(0)
-	cGlyph:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
-	local CHEV_TEX = { up = "icon-chevron-up", down = "icon-chevron-down", left = "icon-chevron-left" }
-	local function chevDir(dir)
-		cGlyph:SetTexture(TEX .. (CHEV_TEX[dir] or "icon-chevron-down"))
-	end
-	local function isOpen() return not o.open or o.open.get() end
-
-	-- Header chip groups (right-aligned, left of the collapse button): the Base tab's
-	-- Raid/Group context switch (o.ctx) and the sample-size chips (o.sizes).
-	-- They live in the STATIONARY header bar on purpose — in a row below it
-	-- they moved/jumped whenever a switch resized or re-docked the window,
-	-- away from under the cursor. Chain builds right-to-left.
-	-- Reset-position button (rotate-ccw glyph), left of the collapse chevron:
-	-- snaps a dragged-away dock back onto its panel edge. Direct header action
-	-- (Florian 2026-07-06) — you often nudge the dock and just want it home.
-	local resetAnchor = cbtn
-	if o.onResetPos then
-		local rbtn = CreateFrame("Button", nil, head)
-		rbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-		rbtn:SetPoint("RIGHT", cbtn, "LEFT", -S.s4, 0)
-		UI.RoundFill(rbtn, Surface.Input, nil, nil, R_CTRL)
-		UI.RoundBorder(rbtn, Border.hover, "OVERLAY", nil, R_CTRL)
-		local rGlyph = rbtn:CreateTexture(nil, "OVERLAY")
-		rGlyph:SetSize(M.pvGlyph, M.pvGlyph)
-		rGlyph:SetPoint("CENTER", rbtn, "CENTER", 0, 0)
-		rGlyph:SetTexture(TEX .. "icon-reset")
-		rGlyph:SetSnapToPixelGrid(false); rGlyph:SetTexelSnappingBias(0)
-		rGlyph:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
-		rbtn:SetScript("OnClick", function() o.onResetPos() end) -- no hover (matches the collapse icon)
-		resetAnchor = rbtn
-	end
+	-- Header controls chain in from the RIGHT: layer eye, then the chip groups
+	-- (context switch / sample size) further left. Per-layer visibility also
+	-- lives as an eye on each setting card; this is the collection point.
 
 	-- Central eye popover (Florian 2026-07-17): ONE overview of all preview
 	-- layers, left of the reset button — the eyes stay on their cards as the
@@ -3680,10 +3602,7 @@ function W.PreviewBand(parent, o)
 	if o.eyeDefs then
 		ebtn = CreateFrame("Button", nil, head)
 		ebtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-		-- Inline: the collapse button is hidden, so anchoring off it would leave
-		-- the eye floating short of the right edge.
-		if o.inline then ebtn:SetPoint("RIGHT", head, "RIGHT", 0, 0)
-		else ebtn:SetPoint("RIGHT", resetAnchor, "LEFT", -S.s4, 0) end
+		ebtn:SetPoint("RIGHT", head, "RIGHT", 0, 0)
 		UI.RoundFill(ebtn, Surface.Input, nil, nil, R_CTRL)
 		eEdges = UI.RoundBorder(ebtn, Border.hover, "OVERLAY", nil, R_CTRL)
 		eGlyph = ebtn:CreateTexture(nil, "ARTWORK")
@@ -3767,18 +3686,16 @@ function W.PreviewBand(parent, o)
 			if eyePop:IsShown() then eyePop:Hide() return end
 			for _, rp in ipairs(eyeRepaints) do rp() end
 			paintEyeBtn()
-			-- Inline: open BESIDE the panel, not over the preview. Anchored under
-			-- the button it covered the button itself and jumped around as the
-			-- screen clamped it (Florian 2026-07-29). The panel edge is a fixed,
-			-- roomy spot — the same place the Edit Mode flyout uses.
-			if o.inline then
-				eyePop:ClearAllPoints()
-				local panel = ns.Shell and ns.Shell:Frame()
-				if panel then
-					eyePop:SetPoint("TOPLEFT", panel, "TOPRIGHT", M.pvDockGap, -M.pvDockPad)
-				else
-					eyePop:SetPoint("TOPRIGHT", ebtn, "BOTTOMRIGHT", 0, -S.s3)
-				end
+			-- Opens BESIDE the panel, not over the preview: anchored under its own
+			-- button it covered that button and jumped around as the screen
+			-- clamped it (Florian 2026-07-29). The panel edge is a fixed, roomy
+			-- spot — the same place the Edit Mode flyout uses.
+			eyePop:ClearAllPoints()
+			local panel = ns.Shell and ns.Shell:Frame()
+			if panel then
+				eyePop:SetPoint("TOPLEFT", panel, "TOPRIGHT", M.pvDockGap, -M.pvDockPad)
+			else
+				eyePop:SetPoint("TOPRIGHT", ebtn, "BOTTOMRIGHT", 0, -S.s3)
 			end
 			eyePop:Show()
 			eyePop:Raise()
@@ -3788,7 +3705,6 @@ function W.PreviewBand(parent, o)
 		-- otherwise it hangs around over an unrelated screen.
 		f:HookScript("OnHide", function() eyePop:Hide() end)
 		paintEyeBtn()
-		resetAnchor = ebtn
 	end
 	-- Card-eye clicks funnel through here (Screens' previewRefresh) so both
 	-- access points stay in sync while the popover is open.
@@ -3796,11 +3712,8 @@ function W.PreviewBand(parent, o)
 		paintEyeBtn()
 		-- The "Background" eye toggles the stage backdrop live (RepaintEyes runs on
 		-- every eye click via previewRefresh; SetExtent only fires on a re-layout).
-		-- Hide the dock fill too, else the identical-coloured dock shows through.
 		if stageFill and o.eyes then
-			local show = o.eyes().background ~= false
-			stageFill:SetShown(show)
-			if dockFrame and dockFrame._fill then dockFrame._fill:SetShown(show) end
+			stageFill:SetShown(o.eyes().background ~= false)
 		end
 		if eyePop and eyePop:IsShown() then
 			for _, rp in ipairs(eyeRepaints) do rp() end
@@ -3810,18 +3723,13 @@ function W.PreviewBand(parent, o)
 
 	local repaints = {}
 	local chipsW = 0
-	-- Dock: chips chain RIGHT-to-left from the collapse button. Inline: they sit
-	-- directly after the title, so "Editing [Group|Raid]" reads as one phrase.
-	local leftChain = o.inline and true or false
-	local chainAnchor, chainGap = leftChain and lbl or resetAnchor, M.pvChipGroupGap
+	-- Chips sit directly after the title, so "Editing [Group|Raid]" reads as one
+	-- phrase; the size chips continue the same chain.
+	local chainAnchor, chainGap = lbl, M.pvChipGroupGap
 	-- items = { { v =, label = }, ... }; paints selection from get(), sets via set(v).
 	local function chipGroup(items, get, set)
 		local chips = {}
-		local order = {}
-		if leftChain then for i = 1, #items do order[#order + 1] = i end
-		else for i = #items, 1, -1 do order[#order + 1] = i end end
-		for _, i in ipairs(order) do
-			local item = items[i]
+		for _, item in ipairs(items) do
 			local chip = CreateFrame("Button", nil, head)
 			chip:SetHeight(M.pvEyeH)
 			UI.RoundFill(chip, Surface.Scrim, nil, nil, RAD.sm)
@@ -3830,8 +3738,7 @@ function W.PreviewBand(parent, o)
 			txt:SetPoint("CENTER", chip, "CENTER", 0, 0)
 			txt:SetText(item.label)
 			chip:SetWidth(math.max(M.pvEyeH, math.ceil(txt:GetStringWidth()) + M.pvEyePadX * 2))
-			if leftChain then chip:SetPoint("LEFT", chainAnchor, "RIGHT", chainGap, 0)
-			else chip:SetPoint("RIGHT", chainAnchor, "LEFT", -chainGap, 0) end
+			chip:SetPoint("LEFT", chainAnchor, "RIGHT", chainGap, 0)
 			chipsW = chipsW + chip:GetWidth() + chainGap
 			chainAnchor, chainGap = chip, M.pvEyeGap
 			chips[#chips + 1] = { v = item.v, paint = function(on)
@@ -3854,22 +3761,21 @@ function W.PreviewBand(parent, o)
 		for _, v in ipairs(o.sizes.values) do items[#items + 1] = { v = v, label = tostring(v) } end
 		chipGroup(items, o.sizes.get, o.sizes.set)
 	end
-	if o.ctx and o.inline then
-		-- Inline: a real W.Segment, the same control the settings use for every
-		-- other either/or choice — the little bordered chips were their own
-		-- language and read dated next to it (Florian 2026-07-29).
+	if o.ctx then
+		-- A real W.Segment, the same control the settings use for every other
+		-- either/or choice — the small bordered chips were their own language and
+		-- read dated beside it (Florian 2026-07-29). The SIZE chips above stay
+		-- chips: they are a set of values, not a two-way switch.
 		local opts2 = {}
 		for _, it in ipairs(o.ctx.values) do opts2[#opts2 + 1] = { value = it.v, label = it.label } end
 		local seg = W.Segment(head, { options = opts2, get = o.ctx.get, set = o.ctx.set,
 			width = M.pvCtxSegW, cellH = M.segCompactH })
 		seg:SetPoint("LEFT", lbl, "RIGHT", M.pvChipGroupGap, 0)
 		f._ctxSeg = seg
-	elseif o.ctx then
-		chipGroup(o.ctx.values, o.ctx.get, o.ctx.set)
 	end
-	-- Inline: a quiet right-aligned hint that the stage is clickable (the
-	-- click-to-configure affordance is otherwise only discoverable by hovering).
-	if o.inline and o.hint then
+	-- Quiet right-aligned hint that the stage is clickable (click-to-configure is
+	-- otherwise only discoverable by hovering).
+	if o.hint then
 		local hint = UI.FS(head, "caption", Text.Disabled)
 		hint:SetPoint("RIGHT", head, "RIGHT", 0, 0)
 		hint:SetText(o.hint)
@@ -3878,13 +3784,7 @@ function W.PreviewBand(parent, o)
 		for _, rp in ipairs(repaints) do rp() end
 	end
 
-	-- Minimum dock width so the header row never collapses onto itself.
-	local headMinW = M.sectionTitleX + math.ceil(lbl:GetStringWidth()) + S.s7
-		+ chipsW + M.pvIconBtn + S.s4 + M.pvIconBtn + M.pvDockPad * 2
-		+ (ebtn and (S.s4 + M.pvIconBtn) or 0)
-
-	-- Body below the header card (aligned to it — the card is already inset):
-	-- the stage.
+	-- Body below the header row: the stage.
 	local body = CreateFrame("Frame", nil, f)
 	body:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -M.pvDockPad)
 	body:SetPoint("TOPRIGHT", head, "BOTTOMRIGHT", 0, -M.pvDockPad)
@@ -3902,7 +3802,6 @@ function W.PreviewBand(parent, o)
 	stage:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
 	stage:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
 	stageFill = UI.RoundFill(stage, Surface.Window, nil, nil, R_CTRL) -- assigns the forward-declared upvalue
-	local stageEdges = {} -- no stage border (merges with the page-colored dock body)
 	-- Unscaled positioning pivot: anchor offsets are interpreted in the ANCHORED
 	-- frame's own (scaled) units — the pivot stays at scale 1, so the module's
 	-- scaled holder can be placed with plain stage-pixel offsets.
@@ -3919,64 +3818,18 @@ function W.PreviewBand(parent, o)
 	f.holder = holder
 	f.GetEyes = o.eyes
 	f.stage = stage
-	f.inline = o.inline and true or false
-
-	-- Collapse wiring: the header's collapse button closes the dock via the
-	-- Shell (closed = the dock is fully hidden by _UpdateDock — the old
-	-- collapsed vertical face is gone, Florian 2026-07-05).
-	local function setOpen(v)
-		if o.open then o.open.set(v) end
-		if o.onEye then o.onEye() end
-	end
-	cbtn:SetScript("OnClick", function() setOpen(not isOpen()) end)
 	body:SetShown(true)
-	chevDir("up")
 
-	-- Layout pass: w/h = VISUAL extent of the holder content (already scale-
-	-- corrected by the module). Computes the dock OUTER size (content-driven on
-	-- both axes) and hands it to o.onLayout. Only ever runs while the dock is
-	-- shown (open); closed = the Shell hides the whole dock.
-	function f:SetExtent(side, w, h, cap)
+	-- Called by the module after it filled the holder: w/h = the VISUAL extent of
+	-- that content (already scale-corrected). The band does NOT resize itself —
+	-- the screen reserved its height up front (Raidframes:PreviewExtent) — so
+	-- this only refreshes the caption and the header state.
+	function f:SetExtent(w, h, cap)
 		caption:SetText(cap or "")
 		self:PaintChips()
-		-- Chevron mirrors the fold-away direction: right dock folds LEFT onto
-		-- the panel edge, bottom dock folds UP.
-		chevDir(side == "right" and "left" or "up")
-		-- Eye popover opens away from the stage (old grouped-filter rule):
-		-- right dock -> outward right, bottom dock -> upward above the header.
-		-- NOT for inline bands: they anchor it once when it opens, and toggling a
-		-- row refreshes the preview — which ran through here and moved the popover
-		-- out from under the cursor mid-click (Florian 2026-07-29).
-		if eyePop and not o.inline then
-			eyePop:ClearAllPoints()
-			if side == "right" then
-				eyePop:SetPoint("TOPLEFT", head, "TOPRIGHT", S.s3, 0)
-			else
-				eyePop:SetPoint("BOTTOMRIGHT", head, "TOPRIGHT", 0, S.s3)
-			end
-		end
-		-- Stage backdrop is togglable again via the eye popover's "Background" row
-		-- (Florian 2026-07-22): hidden -> stage + dock fills off, shell dots show through.
-		local bgShow = not o.eyes or o.eyes().background ~= false
-		stageFill:SetShown(bgShow)
-		if dockFrame and dockFrame._fill then dockFrame._fill:SetShown(bgShow) end
-		for _, e in ipairs(stageEdges) do e:SetShown(true) end
+		-- "Background" eye: hidden -> the shell's dotted content shows through.
+		stageFill:SetShown(not o.eyes or o.eyes().background ~= false)
 		caption:SetShown(true)
-		if o.onChrome then o.onChrome(true) end
-		-- Inline (anchored in the content area, Auras tab): the band's height is
-		-- FIXED by the screen, so there is no dock to resize — the module scales
-		-- its holder to fit the stage instead. Reporting a layout here would
-		-- fight the stack that placed us.
-		if o.inline then return end
-		local innerW = math.max(w + M.pvStagePad * 2, M.pvStageMinW,
-			headMinW - M.pvDockPad * 2)
-		local innerH = math.max(h + M.pvStagePad * 2 + M.pvCaptionH, M.pvMinStageH)
-		local dockW = innerW + M.pvDockPad * 2
-		-- Header card is inset top+bottom now -> one extra pvDockPad vs. the old
-		-- flush header bar (pad | head | pad | stage | pad).
-		local dockH = M.sectionHeaderH + M.pvDockPad * 3 + innerH
-		if side == "right" then o.onLayout("right", dockW, dockH)
-		else o.onLayout("bottom", nil, dockH) end
 	end
 
 	-- Folded: only the header row remains (the screen shrinks the sticky area to
@@ -3986,12 +3839,8 @@ function W.PreviewBand(parent, o)
 		if foldBtn then foldBtn:GetScript("OnLeave")(foldBtn) end -- repaint the chevron
 	end
 
-	-- Usable stage size for an inline band (module fit-scaling); caption row and
-	-- stage padding are already deducted.
-	function f:GetStageSpace()
-		local sw, sh = stage:GetWidth() or 0, stage:GetHeight() or 0
-		return math.max(1, sw - M.pvStagePad * 2), math.max(1, sh - M.pvStagePad * 2 - M.pvCaptionH)
-	end
+	-- (GetStageSpace retired with the fit-scaling: anchored bands render at true
+	-- on-screen size and the screen grows to fit them instead.)
 
 	return f
 end

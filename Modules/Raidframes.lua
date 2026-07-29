@@ -2407,7 +2407,7 @@ function Raidframes:RefreshShellPreview()
 
 	local d = db()
 	local eyes = band.GetEyes and band:GetEyes() or {}
-	local used, cw, ch, caption, side = 0, 1, 1, "", "bottom"
+	local used, cw, ch, caption = 0, 1, 1, ""
 
 	-- Guarded fill: previewCtx MUST never leak into the real render paths.
 	local ok, err = pcall(function()
@@ -2442,10 +2442,6 @@ function Raidframes:RefreshShellPreview()
 		caption = ("%s  ·  %d  ·  %s"):format(
 			ctx == "raid" and ns.T("Raid") or ns.T("Group"), n,
 			horizontal and ns.T("horizontal") or ns.T("vertical"))
-		-- Dock side (Florian's rule): the Raid TAB always docks right (below
-		-- the panel it collides with the screen bottom); otherwise right when
-		-- vertical, below when horizontal.
-		if ctx == "raid" or not horizontal then side = "right" end
 	end)
 	previewCtx = nil
 	if not ok then
@@ -2455,11 +2451,11 @@ function Raidframes:RefreshShellPreview()
 
 	for i = used + 1, #pvFrames do pvFrames[i]:Hide() end
 	holder:SetSize(cw, ch)
-	-- Report side + VISUAL extent (stage units): holder units render at scale s.
-	-- Anchored bands always render at TRUE on-screen size and the screen grew to
-	-- fit them (PreviewExtent) — no fit-scaling, so 20 raid frames simply make
-	-- the preview taller and the cards scroll further down (Florian 2026-07-29).
-	band:SetExtent(side, cw * s, ch * s, caption)
+	-- Report the VISUAL extent (stage units): holder units render at scale s.
+	-- The band never resizes itself — the screen reserved its height up front via
+	-- PreviewExtent, so 20 raid frames simply make the preview taller and push
+	-- the cards further down (Florian 2026-07-29). Always TRUE on-screen size.
+	band:SetExtent(cw * s, ch * s, caption)
 end
 
 -- ===========================================================================

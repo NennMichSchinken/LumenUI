@@ -603,11 +603,11 @@ UI.WIDGET = {
 	tipNameGap = 10,  -- icon -> name
 	tipGap     = 10,  -- header (icon/name) -> description
 
-	-- Preview dock (W.PreviewBand inside the Shell's satellite dock window —
-	-- right of the panel for vertical layouts, below it for horizontal ones;
-	-- used by the Raidframes screens, later by Unit Frames/Nameplates too).
-	pvDockGap    = 8,   -- gap panel -> dock window (reads as its own window)
-	pvDockPad    = 12,  -- inner padding of the dock body
+	-- Anchored preview band (W.PreviewBand at the top of a settings tab; used by
+	-- the Raidframes screens, later by Unit Frames/Nameplates too). The "dock"
+	-- names are kept: they are the band's own paddings, not the removed window.
+	pvDockGap    = 8,   -- gap panel -> the band's floating eye popover
+	pvDockPad    = 12,  -- inner padding of the band
 	pvChipGroupGap = 14, -- gap between header chip groups / chips -> icons
 	pvCtxSegW    = 200, -- context switch in an INLINE band header (Group | Raid) — a real W.Segment, like the settings use
 	-- Left edge of an inline band's header row, measured from the head frame
@@ -616,20 +616,17 @@ UI.WIDGET = {
 	-- line down the page (Florian 2026-07-29).
 	pvInlineTitleX = 18, -- = sectionPad 30 - pvDockPad 12
 	pvInlineHeadH  = 56, -- header row of an inline band (taller than a card's collapsed header: it carries a segment)
-	pvIconBtn    = 26,  -- filter/collapse icon button edge length
-	pvGlyph      = 16,  -- Lucide glyph inside the pvIconBtn (collapse chevron / reset)
+	pvIconBtn    = 26,  -- layer-eye icon button edge length
+	pvGlyph      = 16,  -- Lucide glyph inside the pvIconBtn
 	pvFilterW    = 210, -- filter popover width
 	pvFilterRowH = 32,  -- filter popover row height
 	pvFilterPad  = 12,  -- filter popover inner padding
 	pvFilterCheck = 18, -- filter checkbox edge length
 	pvStagePad   = 24,  -- stage inner padding around the preview content
 	pvCaptionH   = 18,  -- caption line at the stage bottom
-	pvMinStageH  = 110, -- stage never collapses below this (empty-ish previews)
-	pvStageMinW  = 240, -- right dock never narrower than this
-	pvEyeH       = 28,  -- chip height (eye + size chips)
+	pvEyeH       = 28,  -- chip height (sample-size chips)
 	pvEyePadX    = 12,  -- inner L/R padding of a chip
 	pvEyeGap     = 6,   -- gap between chips
-	pvSnap       = 60,  -- drop within this distance of the docked spot -> snap back on
 }
 
 -- ---------------------------------------------------------------------------
