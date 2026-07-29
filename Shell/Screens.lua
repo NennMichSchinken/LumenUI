@@ -1399,8 +1399,11 @@ local function innerBlock(parent, title, desc)
 	t:SetText(title)
 	local hH = M.sectionHeaderH - M.subgroupPad
 	if desc then
-		local dfs = UI.FS(head, "caption", Text.Description)
-		dfs:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -2)
+		-- "label" (14) rather than "caption" (12), and a touch more air under the
+		-- title: at caption size the line read as fine print rather than as the
+		-- block's own subtitle (Florian 2026-07-29).
+		local dfs = UI.FS(head, "label", Text.Description)
+		dfs:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -4)
 		dfs:SetPoint("RIGHT", head, "RIGHT", 0, 0)
 		dfs:SetJustifyH("LEFT"); dfs:SetWordWrap(false)
 		dfs:SetText(desc)

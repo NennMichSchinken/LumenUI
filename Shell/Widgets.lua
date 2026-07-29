@@ -1074,12 +1074,9 @@ local function buildConfirm()
 	card:EnableMouse(true) -- don't treat clicks on the card as "outside"
 	UI.RoundFill(card, Surface.Input, nil, nil, RAD.xl) -- modal dialog = XL
 	UI.RoundBorder(card, Border.hover, "OVERLAY", nil, RAD.xl) -- v2: neutral popover border
-	local accent = card:CreateTexture(nil, "OVERLAY") -- gold accent on top (signature)
-	accent:SetHeight(3)
-	-- Inset by the corner radius: the straight bar stops where the curve starts.
-	accent:SetPoint("TOPLEFT", card, "TOPLEFT", RAD.xl, 0)
-	accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", -RAD.xl, 0)
-	UI.SetColor(accent, Text.Primary) -- v2: signature accent = brand gold (C1)
+	-- (The bright bar across the top is gone, 2026-07-29: a leftover from the
+	-- gold-signature era. On the monochrome palette it was simply a white stripe,
+	-- and the card's own border already separates the dialog from the dim.)
 
 	local title = UI.FS(card, "sectionHead", Text.Primary)
 	title:SetPoint("TOPLEFT", card, "TOPLEFT", M.confirmPad, -M.confirmPad)
