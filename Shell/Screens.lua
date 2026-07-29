@@ -1354,10 +1354,16 @@ local function innerBlock(parent, title, desc)
 	return box, st, content
 end
 
+-- Content height of a stack used INSIDE a card. NOT stack:height() — that adds
+-- the panel gutter, which is meant for a whole scrolling page and here just
+-- padded every box with ~30 extra pixels at the bottom (Florian 2026-07-29: the
+-- cards had more air below than beside them).
+local function stackContentH(st) return -st:y() end
+
 -- Finish an inner block: content height -> box height. `minH` stretches it to a
 -- shared height (two blocks side by side share the taller one's bottom edge).
 local function blockClose(box, st, content, minH)
-	local h = st:height()
+	local h = stackContentH(st)
 	content:SetHeight(h)
 	box:SetHeight(math.max(h + M.subgroupPad * 2, minH or 0))
 	return h + M.subgroupPad * 2
@@ -1596,15 +1602,14 @@ local function buildAuras(d, stack)
 		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
 		get = function() return auraTabPane end,
 		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
-		-- NO cellH override: the pill assets exist only at the standard heights
-		-- (S.tabH and tabH - 2*tabStripPad). A custom height leaves the sliding
-		-- pill without a margin entry and the whole screen errors out.
 		width = L.raidframes.auras.paneSegW,
+		cellH = M.segCompactH,   -- same compact height as the preview's context switch
 	})
 
 	local copyBtn = W.CopyPopover(d, {
-		text  = T("Copy"),
-		title = T("Copy settings"),
+		text   = T("Copy"),
+		title  = T("Copy settings"),
+		height = M.segCompactH,   -- matches the pane switch beside it
 		groups = {
 			{ key = "place", label = T("Placement"),  hint = T("Position · Offsets") },
 			{ key = "look",  label = T("Appearance"), hint = T("Count · Size") },
@@ -1649,7 +1654,10 @@ local function buildAuras(d, stack)
 	-- already-built controls (they chain leftwards from the master switch).
 	local editor = stack:section(("%s  ·  %s"):format(cat.label,
 			ctx == "raid" and T("Raid") or T("Group")), {
-		subtitle = cat.desc,
+		-- No description line: the chip bar right above already names the
+		-- category, so it only added a second, quieter line of the same thing
+		-- (Florian 2026-07-29). The wording still lives in AURA_CATS for the
+		-- copy dialog and the search index.
 		eye = eyeToggle(cat.key, T("Show in preview")),
 		toggle = {
 			get = aget(cat.key, "enabled" .. sfx),
@@ -1658,6 +1666,7 @@ local function buildAuras(d, stack)
 				ns.Shell:RenderContent(true)  -- chip dot/badge + greyed body follow
 			end,
 		},
+		toggleInline = true, toggleLabel = T("Show"),
 		headerControls = { copyBtn, paneSeg },
 	})
 
@@ -1675,7 +1684,7 @@ local function buildAuras(d, stack)
 		auraDisplayPane(body, bstack, cat, ctx, d)
 	end
 	ns.ShellIndexScope = nil
-	editor:place(body, bstack:height(), 0)
+	editor:place(body, stackContentH(bstack), 0)
 	editor:close()
 	regJump("aura-" .. cat.key, editor)
 	-- Category off -> its options are dimmed + locked (same gate as the module

@@ -409,6 +409,10 @@ UI.WIDGET = {
 	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
 	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
 	segHugPad   = 20, -- horizontal padding per cell for a content-width (hug) segment (tab-like, not stretched)
+	-- Compact segment/button height for HEADER rows (card heads, the preview
+	-- band). Free-standing since segments and buttons became rounded rectangles
+	-- (Florian 2026-07-29) — the old capsules only existed at pill-asset heights.
+	segCompactH = 38,
 	menuItemPadX = 6, -- horizontal inset of a dropdown item's rounded hover pill (nav-item language)
 	menuItemPadY = 3, -- vertical inset of the pill (also the gap between stacked pills)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
@@ -602,6 +606,7 @@ UI.WIDGET = {
 	pvDockGap    = 8,   -- gap panel -> dock window (reads as its own window)
 	pvDockPad    = 12,  -- inner padding of the dock body
 	pvChipGroupGap = 14, -- gap between header chip groups / chips -> icons
+	pvCtxSegW    = 200, -- context switch in an INLINE band header (Group | Raid) — a real W.Segment, like the settings use
 	pvIconBtn    = 26,  -- filter/collapse icon button edge length
 	pvGlyph      = 16,  -- Lucide glyph inside the pvIconBtn (collapse chevron / reset)
 	pvFilterW    = 210, -- filter popover width

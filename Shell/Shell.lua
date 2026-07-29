@@ -1432,7 +1432,20 @@ local function newStack(holder)
 			-- (both anchor to the same header spot).
 			if o.toggle then
 				local sw = ns.W.Switch(panel, { small = true, get = o.toggle.get, set = o.toggle.set })
-				sw:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
+				-- o.toggleInline: the switch belongs right AFTER the title instead
+				-- of at the far right edge — "HoTs · Raid (o==) Show" reads as one
+				-- statement, while the right edge divorced it from what it toggles
+				-- (Florian 2026-07-29).
+				if o.toggleInline then
+					sw:SetPoint("LEFT", titleFS, "RIGHT", M.sectionCountGap * 2, 0)
+					if o.toggleLabel then
+						local tl = FS(panel, "checkLabel", Text.Secondary)
+						tl:SetPoint("LEFT", sw, "RIGHT", S.s4, 0)
+						tl:SetText(o.toggleLabel)
+					end
+				else
+					sw:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
+				end
 				panel._switch = sw
 			end
 			-- Header controls slot: extra widgets that belong to the card as a
@@ -1594,6 +1607,8 @@ local function newStack(holder)
 			count = opts and opts.count, action = opts and opts.action,
 			toggle = opts and opts.toggle, eye = opts and opts.eye,
 			headerControls = opts and opts.headerControls,
+			toggleInline = opts and opts.toggleInline,
+			toggleLabel = opts and opts.toggleLabel,
 			subtitle = opts and opts.subtitle,
 			-- Cards are rounded by default; opts.round = "bottom" for bodies
 			-- flush-attached under a collapsible header (seam edge square).

@@ -1510,18 +1510,21 @@ function W.Segment(parent, o)
 	bar:SetHeight(cellH)
 	bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	if not hug then bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY) end -- hug sets its own width
-	UI.PillFill(bar, Surface.Input, "BACKGROUND", cellH) -- fully-round capsule strip (1:1 with the tab bar)
-	UI.PillBorder(bar, Border.default, "OVERLAY", cellH)
+	-- Rounded RECTANGLE, not a capsule (Florian 2026-07-29): the capsule pulled a
+	-- lot of attention and sat apart from the dropdowns / inputs / cards, which
+	-- are all softly-rounded rectangles. Same radius as a control face.
+	UI.RoundFill(bar, Surface.Input, "BACKGROUND", nil, R_CTRL)
+	UI.RoundBorder(bar, Border.default, "OVERLAY", nil, R_CTRL)
 	f._control = bar
 
-	-- Sliding pill = the tab pill: white/10 capsule inset by tabStripPad so its
-	-- height = tabH - 2*pad = 38 (reuses pill-h38). NO glow — the tabs' underglow
-	-- read too heavy on the smaller inline segments (Florian 2026-07-22).
+	-- Sliding indicator: inset by tabStripPad, rounded a step tighter than the
+	-- strip so the two curves nest instead of fighting. NO glow — the tabs'
+	-- underglow read too heavy on the smaller inline segments (Florian 2026-07-22).
 	local pad = S.tabStripPad
 	local slider = CreateFrame("Frame", nil, bar)
 	slider:SetFrameLevel(bar:GetFrameLevel() + 1) -- above the strip, below the cell text
 	slider._ref = bar
-	UI.PillFill(slider, Accent.wash, "ARTWORK", cellH - pad * 2) -- accent-wash pill (tints if a colour accent is set)
+	UI.RoundFill(slider, Accent.wash, "ARTWORK", nil, UI.RADIUS.sm)
 	slider:Hide()
 
 	-- Not `(get() or value)` — get() may legitimately return `false` (e.g. inside/
@@ -2561,11 +2564,14 @@ function W.Button(parent, o)
 	local variant = o.variant or "primary"
 	local v = BTN_VARIANTS[variant]
 	local b = CreateFrame("Button", nil, parent)
-	b:SetHeight(M.buttonH)
+	-- o.height: free now that the face is a rounded rectangle (the old capsule
+	-- only existed at the heights that had pill assets).
+	b:SetHeight(o.height or M.buttonH)
 
-	-- Fully-round PILL (Florian 2026-07-22: mockup buttons are pills). h48 assets
-	-- exist; the cap radius = h/2 so any button width stays a clean capsule.
-	local bg = UI.PillFill(b, CLEAR, "BACKGROUND", M.buttonH)
+	-- Rounded RECTANGLE (Florian 2026-07-29, replacing the 2026-07-22 pill): the
+	-- capsules read as their own form language next to the rounded-rectangle
+	-- dropdowns, inputs and cards. Same control-face radius as those.
+	local bg = UI.RoundFill(b, CLEAR, "BACKGROUND", nil, R_CTRL)
 
 	-- v2: FLAT fills only (the old primary gold gradient is gone — flat design line).
 	local function paintBg(hover)
@@ -2577,7 +2583,7 @@ function W.Button(parent, o)
 	end
 	paintBg(false)
 
-	local edges = UI.PillBorder(b, v.line, "OVERLAY", M.buttonH)
+	local edges = UI.RoundBorder(b, v.line, "OVERLAY", nil, R_CTRL)
 	local txt = UI.FS(b, "btn", v.txt)
 	local okFont = txt:SetFont(v.font, BTN_SIZE, "") -- weight per variant (see BTN_VARIANTS)
 	txt:SetText(o.text or "")
@@ -3217,7 +3223,7 @@ end
 function W.CopyPopover(parent, o)
 	-- Text-only trigger: the Lucide set has no copy glyph yet (Textures/icons/).
 	local btn = W.Button(parent, { text = o.text or T("Copy"), variant = "secondary",
-		width = o.width })
+		width = o.width, height = o.height })
 
 	local host = W._menuHost or parent
 	local closer = CreateFrame("Button", nil, host)
@@ -3546,7 +3552,12 @@ function W.PreviewBand(parent, o)
 	-- because that switch picks the context whose values you are editing — not
 	-- merely what the preview shows. Dock: it is just a preview window.
 	lbl:SetText((o.inline and o.ctx and o.ctx.caption) and o.ctx.caption or T("PREVIEW"))
-	lbl:SetPoint("LEFT", head, "LEFT", o.inline and 0 or M.sectionTitleX, 0)
+	-- Inline titles line up with the SETTINGS CARD titles below, so the page has
+	-- one left edge instead of two (Florian 2026-07-29). Those cards carry an eye
+	-- button before the title, so the same offset is reproduced here — the head
+	-- itself already starts pvDockPad in from the card edge.
+	local inlineTitleX = M.sectionPad + M.cardEyeBtn + S.s3 - M.pvDockPad
+	lbl:SetPoint("LEFT", head, "LEFT", o.inline and inlineTitleX or M.sectionTitleX, 0)
 
 	-- Icon order (right to left): collapse chevron — then the chip groups chain
 	-- further left. The old funnel filter popover is GONE (Florian 2026-07-16):
@@ -3794,7 +3805,19 @@ function W.PreviewBand(parent, o)
 		for _, v in ipairs(o.sizes.values) do items[#items + 1] = { v = v, label = tostring(v) } end
 		chipGroup(items, o.sizes.get, o.sizes.set)
 	end
-	if o.ctx then chipGroup(o.ctx.values, o.ctx.get, o.ctx.set) end
+	if o.ctx and o.inline then
+		-- Inline: a real W.Segment, the same control the settings use for every
+		-- other either/or choice — the little bordered chips were their own
+		-- language and read dated next to it (Florian 2026-07-29).
+		local opts2 = {}
+		for _, it in ipairs(o.ctx.values) do opts2[#opts2 + 1] = { value = it.v, label = it.label } end
+		local seg = W.Segment(head, { options = opts2, get = o.ctx.get, set = o.ctx.set,
+			width = M.pvCtxSegW, cellH = M.segCompactH })
+		seg:SetPoint("LEFT", lbl, "RIGHT", M.pvChipGroupGap, 0)
+		f._ctxSeg = seg
+	elseif o.ctx then
+		chipGroup(o.ctx.values, o.ctx.get, o.ctx.set)
+	end
 	-- Inline: a quiet right-aligned hint that the stage is clickable (the
 	-- click-to-configure affordance is otherwise only discoverable by hovering).
 	if o.inline and o.hint then
