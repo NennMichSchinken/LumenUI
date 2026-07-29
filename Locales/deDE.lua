@@ -219,6 +219,8 @@ ns.RegisterLocale("deDE", {
 	["Spells"] = "Zauber",
 	["Tracked spells"] = "Erfasste Zauber",
 	["Which debuffs"] = "Welche Debuffs",
+	-- ("Search spell …" already exists further down, with the spell picker.)
+	["No spell matches your search."] = "Kein Zauber passt zu deiner Suche.",
 	["off"] = "aus",
 	["Where the icon row sits on the frame"] = "Wo die Icon-Reihe am Frame sitzt",
 	["Appearance"] = "Aussehen",

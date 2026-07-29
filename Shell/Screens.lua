@@ -1272,8 +1272,9 @@ local function auraTabCat()
 end
 local function setAuraTabCat(v) rf().auraTabCat = v end
 -- "Display" | "Spells" pane of the inline editor (session-only: the pane is a
--- view, not a setting).
+-- view, not a setting). Same for the spell list's search term.
 local auraTabPane = "display"
+local auraSpellFilter = ""
 
 -- Suffix of the per-context profile fields ("sizeRaid" / "sizeParty").
 local function ctxSfx(ctx) return (ctx == "raid") and "Raid" or "Party" end
@@ -1420,25 +1421,12 @@ local function auraSpellsPane(d, host, cat, page)
 		("%s  ·  %s %s"):format(T("Applies to Raid and Group"),
 			T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))
 
-	if #entries == 0 then
-		st:place(W.EmptyState(content, { text = T("No spells tracked yet — add the first one.") }),
-			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
-	else
-		local rowH = L.raidframes.tracking.rowH
-		for i, e in ipairs(entries) do
-			local tr = makeTrackRow(content, e, function()
-				if RFm then RFm:RemoveWhitelist(spec, e.id) end
-				ns.Shell:RenderContent(true)
-			end)
-			st:place(tr, rowH, (i == #entries) and L.raidframes.tracking.afterList
-				or L.raidframes.tracking.betweenRows)
-		end
-	end
-
-	-- Action row: add a spell + restore this category's curated defaults.
-	local actionRow = CreateFrame("Frame", nil, content)
-	actionRow:SetHeight(M.buttonH)
-	local picker = W.SpellPicker(actionRow, {
+	-- Search + add on ONE row above the list (mockup layout): the field is always
+	-- there rather than hidden behind a button, because filtering a spec's list is
+	-- the frequent action and adding is the rare one (Florian 2026-07-29).
+	local filterRow = CreateFrame("Frame", nil, content)
+	filterRow:SetHeight(M.controlH)
+	local picker = W.SpellPicker(filterRow, {
 		text = T("+ Add spell"), width = M.spBtnW,
 		fetch = function()
 			local out = {}
@@ -1455,8 +1443,47 @@ local function auraSpellsPane(d, host, cat, page)
 			ns.Shell:RenderContent(true)
 		end,
 	})
-	picker:SetPoint("LEFT", actionRow, "LEFT", 0, 0)
-	local reset = W.Button(actionRow, { text = T("Restore defaults"), variant = "secondary",
+	picker:SetPoint("RIGHT", filterRow, "RIGHT", 0, 0)
+	local search = W.TextInput(filterRow, {
+		placeholder = T("Search spell …"),
+		get = function() return auraSpellFilter end,
+		onChange = function(v) auraSpellFilter = v end,
+	})
+	search:SetPoint("LEFT", filterRow, "LEFT", 0, 0)
+	search:SetPoint("RIGHT", picker, "LEFT", -L.general.sideGap, 0)
+	st:place(filterRow, M.controlH, R.row)
+
+	-- Filtered view of the tracked list. An empty result is NOT the empty state:
+	-- the list has entries, they just do not match.
+	local needle = (auraSpellFilter or ""):lower()
+	local shown = {}
+	for _, e in ipairs(entries) do
+		if needle == "" or (e.name or ""):lower():find(needle, 1, true) then
+			shown[#shown + 1] = e
+		end
+	end
+
+	if #entries == 0 then
+		st:place(W.EmptyState(content, { text = T("No spells tracked yet — add the first one.") }),
+			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
+	elseif #shown == 0 then
+		st:place(W.EmptyState(content, { text = T("No spell matches your search.") }),
+			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
+	else
+		local rowH = L.raidframes.tracking.rowH
+		for i, e in ipairs(shown) do
+			local tr = makeTrackRow(content, e, function()
+				if RFm then RFm:RemoveWhitelist(spec, e.id) end
+				ns.Shell:RenderContent(true)
+			end)
+			st:place(tr, rowH, (i == #shown) and 0 or L.raidframes.tracking.betweenRows)
+		end
+	end
+
+	-- Restore defaults sits at the bottom: a rarely-used, destructive action does
+	-- not belong next to the everyday search field.
+	local reset = W.Button(content, { text = T("Restore defaults"), variant = "secondary",
+		height = M.segCompactH,
 		onClick = function()
 			W.Confirm({
 				title       = T("Restore defaults?"),
@@ -1469,8 +1496,11 @@ local function auraSpellsPane(d, host, cat, page)
 				end,
 			})
 		end })
-	reset:SetPoint("LEFT", picker, "RIGHT", L.general.sideGap, 0)
-	st:place(actionRow, M.buttonH, 0)
+	local resetRow = CreateFrame("Frame", nil, content)
+	resetRow:SetHeight(M.segCompactH)
+	reset:SetPoint("LEFT", resetRow, "LEFT", 0, 0)
+	st:place(resetRow, M.segCompactH, R.row)
+
 	host:place(box, blockClose(box, st, content), 0)
 end
 

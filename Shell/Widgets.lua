@@ -2531,7 +2531,11 @@ local BTN_VARIANTS = {
 	secondary = {
 		bg = nil, bgHover = UI.accentA(0.08),
 		txt = Accent.color, txtHover = Accent.hover,
-		line = UI.accentA(0.55), lineHover = Accent.hover, pad = 22, font = UI.FONT.semibold,
+		-- Outline alpha lowered from .55 (Florian 2026-07-29: the ring read as a
+		-- heavy border once the buttons stopped being capsules). The ring asset
+		-- has a fixed 2px stroke, so ALPHA is the way to make an edge thinner —
+		-- the same lever UI.Border uses.
+		line = UI.accentA(0.30), lineHover = UI.accentA(0.65), pad = 22, font = UI.FONT.semibold,
 	},
 	neutral = {
 		bg = Surface.Input, bgHover = Surface.Hover,
@@ -2541,7 +2545,7 @@ local BTN_VARIANTS = {
 	danger = {
 		bg = nil, bgHover = UI.dangerA(0.10),
 		txt = Status.danger, txtHover = Status.dangerHover,
-		line = UI.dangerA(0.55), lineHover = Status.dangerHover, pad = 22, font = UI.FONT.semibold,
+		line = UI.dangerA(0.30), lineHover = UI.dangerA(0.65), pad = 22, font = UI.FONT.semibold,
 	},
 }
 BTN_VARIANTS.ghost = BTN_VARIANTS.neutral
@@ -3362,6 +3366,9 @@ function W.CopyPopover(parent, o)
 			else dot:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 1) end
 			local rfs = UI.FS(rb, "checkLabel", Text.Secondary)
 			rfs:SetPoint("LEFT", dot, "RIGHT", 8, 0)
+			-- Bound to the row's own width so a long category name is clipped
+			-- instead of running under the first tick cell.
+			rfs:SetPoint("RIGHT", rb, "RIGHT", 0, 0)
 			rfs:SetJustifyH("LEFT"); rfs:SetWordWrap(false)
 			rfs:SetText(r.label)
 			rb:SetScript("OnEnter", function() rfs:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end)
@@ -3531,14 +3538,10 @@ function W.PreviewBand(parent, o)
 	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", -M.pvDockPad, -M.pvDockPad)
 	head:SetHeight(o.inline and M.pvInlineHeadH or M.sectionHeaderH)
 	if o.inline then
-		-- Header row INSIDE the card: no own fill/border, just a hairline to the
-		-- stage (same separator language as the stacked option rows).
-		local hl = head:CreateTexture(nil, "OVERLAY")
-		hl:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", 0, 0)
-		hl:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", 0, 0)
-		UI.SetColor(hl, Border.faint)
-		local function snapHL() PixelUtil.SetHeight(hl, 1) end
-		snapHL(); C_Timer.After(0, snapHL)
+		-- Header row INSIDE the card: no fill, no border and NO divider either —
+		-- a hairline right under the title read as cramped, and the stage below
+		-- is already its own surface (Florian 2026-07-29).
+		local _ = head
 	else
 		-- The head is a REAL card matching the settings cards EXACTLY: same fill
 		-- (Surface.Card) and border (Border.default). With the page-colored stage below (no black
@@ -3560,7 +3563,9 @@ function W.PreviewBand(parent, o)
 	local foldBtn
 	if o.inline and o.fold then
 		foldBtn = CreateFrame("Button", nil, head)
-		foldBtn:SetSize(M.chevGlyph + S.s4, M.chevGlyph + S.s4)
+		-- Same footprint as a card's eye button: the title then starts at the
+		-- exact x a card title does.
+		foldBtn:SetSize(M.cardEyeBtn, M.cardEyeBtn)
 		foldBtn:SetPoint("LEFT", head, "LEFT", M.pvInlineTitleX, 0)
 		local fg = foldBtn:CreateTexture(nil, "OVERLAY")
 		fg:SetSize(M.chevGlyph, M.chevGlyph)

@@ -520,7 +520,7 @@ UI.WIDGET = {
 	-- TARGET GRID. Every possible destination is a visible cell, so "where to" is
 	-- never inferred (Florian 2026-07-29: a flat list mixed two axes and the
 	-- combination of two picks had no guessable meaning).
-	copyPopW     = 430, -- popover width (label column + 2 context columns)
+	copyPopW     = 520, -- popover width (label column + 2 context columns; the label column has to hold "Defensives & External")
 	copyPopPad   = 20,  -- inner padding
 	copyRowH     = 40,  -- one "what" row
 	copyGridGap  = 6,   -- gap between grid cells
@@ -608,9 +608,10 @@ UI.WIDGET = {
 	pvChipGroupGap = 14, -- gap between header chip groups / chips -> icons
 	pvCtxSegW    = 200, -- context switch in an INLINE band header (Group | Raid) — a real W.Segment, like the settings use
 	-- Left edge of an inline band's header row, measured from the head frame
-	-- (which already starts pvDockPad in). Lines the chevron/title up with the
-	-- inner blocks of the settings cards below: sectionPad + subgroupPad.
-	pvInlineTitleX = 34, -- = sectionPad 30 + subgroupPad 16 - pvDockPad 12
+	-- (which already starts pvDockPad in). Puts the fold chevron exactly where a
+	-- settings card's EYE sits, so chevron/title and eye/title share one flight
+	-- line down the page (Florian 2026-07-29).
+	pvInlineTitleX = 18, -- = sectionPad 30 - pvDockPad 12
 	pvInlineHeadH  = 56, -- header row of an inline band (taller than a card's collapsed header: it carries a segment)
 	pvIconBtn    = 26,  -- filter/collapse icon button edge length
 	pvGlyph      = 16,  -- Lucide glyph inside the pvIconBtn (collapse chevron / reset)

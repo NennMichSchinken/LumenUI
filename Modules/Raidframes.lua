@@ -2243,6 +2243,15 @@ local function pvFrame(i, holder)
 		pvFrames[i] = f
 	end
 	f:SetParent(holder)
+	-- Re-home the pooled frame on EVERY call: there is one pool but one anchored
+	-- band per raidframe tab now, so a frame built for the first band would stay
+	-- there and the other tabs would render an empty stage (Florian 2026-07-29:
+	-- switching context on Base left Raid/Group blank). With the single dock
+	-- band this could never happen.
+	if f:GetParent() ~= holder then
+		f:SetParent(holder)
+		f:ClearAllPoints()
+	end
 	return f
 end
 
