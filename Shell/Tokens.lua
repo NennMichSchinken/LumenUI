@@ -413,6 +413,9 @@ UI.WIDGET = {
 	-- band). Free-standing since segments and buttons became rounded rectangles
 	-- (Florian 2026-07-29) — the old capsules only existed at pill-asset heights.
 	segCompactH = 44,
+	-- Info bar (scope strip above a list: "applies to Raid and Group …").
+	infoBarH    = 44,
+	infoBarPadX = 14,
 	menuItemPadX = 6, -- horizontal inset of a dropdown item's rounded hover pill (nav-item language)
 	menuItemPadY = 3, -- vertical inset of the pill (also the gap between stacked pills)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)

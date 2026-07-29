@@ -1399,10 +1399,10 @@ local function innerBlock(parent, title, desc)
 	t:SetText(title)
 	local hH = M.sectionHeaderH - M.subgroupPad
 	if desc then
-		-- "label" (14) rather than "caption" (12), and a touch more air under the
-		-- title: at caption size the line read as fine print rather than as the
-		-- block's own subtitle (Florian 2026-07-29).
-		local dfs = UI.FS(head, "label", Text.Description)
+		-- "body" (regular 14) rather than "caption" (regular 12) or "label"
+		-- (MEDIUM 14): at caption size the line read as fine print, at label
+		-- weight it read heavy. Same size, thinner stroke (Florian 2026-07-29).
+		local dfs = UI.FS(head, "body", Text.Description)
 		dfs:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -4)
 		dfs:SetPoint("RIGHT", head, "RIGHT", 0, 0)
 		dfs:SetJustifyH("LEFT"); dfs:SetWordWrap(false)
@@ -1411,6 +1411,30 @@ local function innerBlock(parent, title, desc)
 	end
 	st:place(head, hH, L.rhythm.row)
 	return box, st, content
+end
+
+-- Colour a fragment inline (WoW escape sequence). For sentences where only the
+-- VALUES should lead — the label text around them stays muted.
+local function hi(text, col)
+	col = col or Text.Primary
+	return ("|cff%02x%02x%02x%s|r"):format(col.r * 255, col.g * 255, col.b * 255, text)
+end
+
+-- Info bar: a quiet strip stating the SCOPE of what is below it. Its own
+-- surface, not a subtitle line — "these settings apply elsewhere too" is a
+-- fact about the block, and a plain grey line under the title was read as
+-- decoration (Florian 2026-07-29, mockup layout).
+local function infoBar(parent, text)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(M.infoBarH)
+	UI.RoundFill(f, Surface.Card, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(f, UI.Border.faint, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local fs = UI.FS(f, "body", Text.Description)
+	fs:SetPoint("LEFT", f, "LEFT", M.infoBarPadX, 0)
+	fs:SetPoint("RIGHT", f, "RIGHT", -M.infoBarPadX, 0)
+	fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
+	fs:SetText(text)
+	return f
 end
 
 -- Content height of a stack used INSIDE a card. NOT stack:height() — that adds
@@ -1459,9 +1483,15 @@ local function auraSpellsPane(d, host, cat, page)
 	end
 
 	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
-	local box, st, content = innerBlock(d, T("Tracked spells"),
-		("%s  ·  %s %s"):format(T("Applies to Raid and Group"),
-			T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))
+	local box, st, content = innerBlock(d, T("Tracked spells"))
+
+	-- Scope strip: everything else on this tab is per context, so the list has to
+	-- say out loud that it is not. Only the VALUES lead; the words around them
+	-- stay muted.
+	st:place(infoBar(content, ("%s %s  ·  %s %s"):format(
+		T("Applies to"), hi(T("Raid and Group")),
+		T("Active spec:"), hi((ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))),
+		M.infoBarH, L.rhythm.row)
 
 	-- The search field IS the add control (Florian 2026-07-29): typing lists the
 	-- spells of your spec that are NOT tracked yet, click adds one.

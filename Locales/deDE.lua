@@ -227,7 +227,9 @@ ns.RegisterLocale("deDE", {
 	["Inside / outside"] = "Innen / außen",
 	["How many icons and how large"] = "Wie viele Icons und wie groß",
 	["Size from frame height"] = "Größe aus Frame-Höhe",
-	["Applies to Raid and Group"] = "Gilt für Raid und Gruppe",
+	-- Split so the VALUE can be highlighted separately in the info bar.
+	["Applies to"] = "Gilt für",
+	["Raid and Group"] = "Raid und Gruppe",
 	["Harmful effects on your group. Picked by filter, not one by one."] = "Schädliche Effekte auf deiner Gruppe. Per Filter gewählt, nicht einzeln.",
 	["Debuffs are chosen by filter, not one by one — WoW does not allow picking individual harmful effects on other players."] = "Debuffs werden per Filter gewählt, nicht einzeln — WoW erlaubt es nicht, einzelne schädliche Effekte auf anderen Spielern auszuwählen.",
 
