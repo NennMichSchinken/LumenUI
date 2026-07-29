@@ -493,7 +493,7 @@ ns.RegisterLocale("deDE", {
 	["%s is new — |cffE9BB69/lumen|r shows what changed."] = "%s ist neu — |cffE9BB69/lumen|r zeigt, was sich geändert hat.",
 
 	-- Release notes (Shell/News.lua) — translate every new entry here as well.
-	["The frames can use Lumen's own font now, aura icons stay clear of the resource bar, and imported profiles are checked before they apply."] = "Die Frames können jetzt Lumens eigene Schrift nutzen, Aura-Symbole bleiben vom Ressourcenbalken weg, und importierte Profile werden vor dem Anwenden geprüft.",
+	["Lumen's own font on the frames, and aura icons that stay off the resource bar."] = "Lumens eigene Schrift auf den Frames, und Aura-Symbole, die vom Ressourcenbalken wegbleiben.",
 	["The frames can use Lumen's own font instead of WoW's — it reads better at the small sizes the frame texts run at."] = "Die Frames können Lumens eigene Schrift statt WoWs nutzen — sie liest sich in den kleinen Größen der Frame-Texte besser.",
 	["Aura icons covered the resource bar: a bottom row now sits on the health bar, and auto-fit shrinks the icons instead of letting them overflow."] = "Aura-Symbole verdeckten den Ressourcenbalken: Eine untere Reihe sitzt jetzt auf dem Lebensbalken, und Auto-Fit verkleinert die Symbole, statt sie überstehen zu lassen.",
 	["Both Delves windows could never be moved — the window list carried a wrong addon name all along."] = "Beide Tiefen-Fenster ließen sich nie verschieben — in der Fensterliste stand von Anfang an ein falscher Addon-Name.",

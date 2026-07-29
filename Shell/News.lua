@@ -11,7 +11,9 @@ local ADDON, ns = ...
 --  Rules that keep the screen honest:
 --   * NEWEST version first. `version` matches the released tag (without -beta).
 --   * `summary` = the two lines the sidebar card shows for that release. Keep
---     it to two lines; the card truncates rather than growing.
+--     it to two lines; the card truncates rather than growing. Roughly 80
+--     characters fit — past that the line ends mid-word, which reads like a
+--     defect even though it is the intended cap.
 --   * `text` = ONE plain sentence per entry. No marketing.
 --   * `kind` = "new" | "fixed" | "changed".
 --   * A jump target is OPTIONAL: set `section`/`tab` (and `card`, only for a
@@ -41,7 +43,7 @@ ns.News = {
 	{
 		version = "0.9.290",
 		date = "2026-07-28",
-		summary = "The frames can use Lumen's own font now, aura icons stay clear of the resource bar, and imported profiles are checked before they apply.",
+		summary = "Lumen's own font on the frames, and aura icons that stay off the resource bar.",
 		entries = {
 			{ kind = "new",
 			  text = "The frames can use Lumen's own font instead of WoW's — it reads better at the small sizes the frame texts run at.",
