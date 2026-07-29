@@ -3537,6 +3537,8 @@ function W.PreviewBand(parent, o)
 	local cbtn = CreateFrame("Button", nil, head)
 	cbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
 	cbtn:SetPoint("RIGHT", head, "RIGHT", -M.pvDockPad, 0)
+	-- Inline bands sit IN the page and are always visible — nothing to fold away.
+	if o.inline then cbtn:Hide() end
 	UI.RoundFill(cbtn, Surface.Input, nil, nil, R_CTRL) -- lighter than the card, like a dropdown on a settings card
 	UI.RoundBorder(cbtn, Border.hover, "OVERLAY", nil, R_CTRL)
 	local cGlyph = cbtn:CreateTexture(nil, "OVERLAY")
@@ -3803,6 +3805,8 @@ function W.PreviewBand(parent, o)
 
 	f.holder = holder
 	f.GetEyes = o.eyes
+	f.stage = stage
+	f.inline = o.inline and true or false
 
 	-- Collapse wiring: the header's collapse button closes the dock via the
 	-- Shell (closed = the dock is fully hidden by _UpdateDock — the old
@@ -3843,6 +3847,11 @@ function W.PreviewBand(parent, o)
 		for _, e in ipairs(stageEdges) do e:SetShown(true) end
 		caption:SetShown(true)
 		if o.onChrome then o.onChrome(true) end
+		-- Inline (anchored in the content area, Auras tab): the band's height is
+		-- FIXED by the screen, so there is no dock to resize — the module scales
+		-- its holder to fit the stage instead. Reporting a layout here would
+		-- fight the stack that placed us.
+		if o.inline then return end
 		local innerW = math.max(w + M.pvStagePad * 2, M.pvStageMinW,
 			headMinW - M.pvDockPad * 2)
 		local innerH = math.max(h + M.pvStagePad * 2 + M.pvCaptionH, M.pvMinStageH)
@@ -3852,6 +3861,13 @@ function W.PreviewBand(parent, o)
 		local dockH = M.sectionHeaderH + M.pvDockPad * 3 + innerH
 		if side == "right" then o.onLayout("right", dockW, dockH)
 		else o.onLayout("bottom", nil, dockH) end
+	end
+
+	-- Usable stage size for an inline band (module fit-scaling); caption row and
+	-- stage padding are already deducted.
+	function f:GetStageSpace()
+		local sw, sh = stage:GetWidth() or 0, stage:GetHeight() or 0
+		return math.max(1, sw - M.pvStagePad * 2), math.max(1, sh - M.pvStagePad * 2 - M.pvCaptionH)
 	end
 
 	return f

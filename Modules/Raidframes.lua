@@ -2402,6 +2402,17 @@ function Raidframes:RefreshShellPreview()
 
 	for i = used + 1, #pvFrames do pvFrames[i]:Hide() end
 	holder:SetSize(cw, ch)
+	-- Inline band (anchored in the content area): its height is fixed by the
+	-- screen, so a vertical group of five frames would overflow the stage. Scale
+	-- DOWN to fit — never up, true on-screen size stays the ceiling.
+	if band.inline and band.GetStageSpace then
+		local availW, availH = band:GetStageSpace()
+		local visW, visH = cw * s, ch * s
+		if visW > 0 and visH > 0 then
+			local fit = min(1, availW / visW, availH / visH)
+			if fit < 1 then s = s * fit; holder:SetScale(s) end
+		end
+	end
 	-- Report side + VISUAL extent (stage units): holder units render at scale s.
 	band:SetExtent(side, cw * s, ch * s, caption)
 end

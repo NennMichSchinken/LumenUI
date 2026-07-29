@@ -224,23 +224,16 @@ local function previewDock(spec)
 				get = function() return ns.Shell:IsPreviewOpen() end,
 				set = function(v) ns.Shell:SetPreviewOpen(v) end,
 			},
-			-- Raid/Group switch in the dock header. Base tab: Base settings
-			-- (aggro, dispel, colors) are judged on the context layout of choice.
-			-- Auras tab: the SAME state the editor's context chip writes — one
-			-- switch shown in two places, never two states (the dock can be
-			-- collapsed, so the editor needs its own access to it).
-			ctx = (spec.baseSwitch or spec.ctxState) and {
+			-- Base tab: Raid/Group switch — Base settings (aggro, dispel,
+			-- colors) are judged on the real context layout of choice. (The
+			-- Auras tab has its own anchored band, see auraPreview below.)
+			ctx = spec.baseSwitch and {
 				values = {
 					{ v = "party", label = T("Group") },
 					{ v = "raid",  label = T("Raid") },
 				},
-				get = spec.ctxState and spec.ctxState.get
-					or function() return rf().previewBaseCtx or "party" end,
-				set = spec.ctxState and spec.ctxState.set
-					or function(v) rf().previewBaseCtx = v; previewRefresh() end,
-				-- Only where the switch really drives the EDITED values (Auras);
-				-- on Base it genuinely only changes what the preview shows.
-				caption = spec.ctxState and T("Editing") or nil,
+				get = function() return rf().previewBaseCtx or "party" end,
+				set = function(v) rf().previewBaseCtx = v; previewRefresh() end,
 			} or nil,
 			sizes = spec.sizes and {
 				values = { 5, 10, 20, 25 },
@@ -257,22 +250,55 @@ end
 ns.ScreenPreviews["Raidframes/Base"]  = previewDock({ kind = "ctx", baseSwitch = true })
 ns.ScreenPreviews["Raidframes/Raid"]  = previewDock({ kind = "ctx", ctx = "raid", sizes = true })
 ns.ScreenPreviews["Raidframes/Group"] = previewDock({ kind = "ctx", ctx = "party" })
--- Auras tab: the dock header shows the Raid/Group switch labelled as what it is
--- ("Edit"), and it writes the SAME field the editor's context chip does — one
--- switch drives preview AND values (Florian 2026-07-29). The editor keeps its
--- own chip because the dock can be closed.
-ns.ScreenPreviews["Raidframes/Auras"] = previewDock({
-	kind = "ctx", raidN = 10,
-	ctxGet = function() return (rf().auraTabCtx == "raid") and "raid" or "party" end,
-	ctxState = {
-		get = function() return (rf().auraTabCtx == "raid") and "raid" or "party" end,
-		set = function(v)
-			rf().auraTabCtx = (v == "raid") and "raid" or "party"
-			previewRefresh()
-			if ns.Shell then ns.Shell:RenderContent(true) end -- values follow the preview
-		end,
-	},
-})
+-- Which context the Auras tab edits. PERSISTED in the profile (like
+-- previewBaseCtx / previewSize): you come back to the tab to keep working on the
+-- same thing. Declared HERE because both the anchored preview's switch (below)
+-- and the editor (further down) read/write it — one definition, one behaviour.
+local function auraTabCtx()
+	return (rf().auraTabCtx == "raid") and "raid" or "party"
+end
+local function setAuraTabCtx(v)
+	rf().auraTabCtx = (v == "raid") and "raid" or "party"
+end
+
+-- Auras tab: the preview is ANCHORED IN THE PAGE (top of the tab), not in the
+-- satellite dock the other raidframe tabs use — you are editing one category
+-- against it constantly, so it must not be foldable or float away (Florian
+-- 2026-07-29). Its header carries the Raid/Group switch captioned "Editing":
+-- that switch drives the edited VALUES, not just what the preview shows.
+-- Built ONCE and re-parented into each rebuild's container, so repeated screen
+-- renders don't pile up dead bands in the module's band registry.
+local auraBand
+local function auraPreview(container)
+	if auraBand then
+		auraBand:SetParent(container)
+		auraBand:ClearAllPoints()
+		auraBand:SetAllPoints(container)
+		auraBand:Show()
+		return auraBand
+	end
+	local spec = { kind = "ctx", raidN = 10, inline = true, ctxGet = auraTabCtx }
+	auraBand = W.PreviewBand(container, {
+		inline  = true,
+		eyes    = previewEyes,
+		eyeDefs = previewEyeDefs(),
+		onEye   = previewRefresh,
+		onLayout = function() end, -- fixed height; the module fit-scales instead
+		ctx = {
+			values  = { { v = "party", label = T("Group") }, { v = "raid", label = T("Raid") } },
+			caption = T("Editing"),
+			get = auraTabCtx,
+			set = function(v)
+				setAuraTabCtx(v)
+				previewRefresh()
+				if ns.Shell then ns.Shell:RenderContent(true) end -- values follow the preview
+			end,
+		},
+	})
+	if ns.Raidframes then ns.Raidframes:AttachShellPreview(auraBand, spec) end
+	pvBands[auraBand] = true
+	return auraBand
+end
 
 -- Expand state of the icon section per context — SESSION-ONLY and auto-collapsed
 -- on navigation (Florian 2026-07-04: a section left open made the page long and
@@ -1177,15 +1203,6 @@ local function auraCatDef(key)
 	return AURA_CATS and AURA_CATS[1] or nil
 end
 
--- Which category / context the Auras tab is editing. PERSISTED in the profile
--- (like previewBaseCtx / previewSize): you come back to the tab to keep working
--- on the same thing — unlike the session-only disclosure states above.
-local function auraTabCtx()
-	return (rf().auraTabCtx == "raid") and "raid" or "party"
-end
-local function setAuraTabCtx(v)
-	rf().auraTabCtx = (v == "raid") and "raid" or "party"
-end
 local function auraTabCat()
 	local k = rf().auraTabCat
 	if k and auraCatDef(k) and auraCatDef(k).key == k then return k end
@@ -1449,6 +1466,18 @@ local function buildAuras(d, stack)
 
 	stack:gap(L.general.tabTop)
 
+	-- Anchored preview: first thing on the tab, fixed height, cards scroll under it.
+	local pvHost = CreateFrame("Frame", nil, d)
+	auraPreview(pvHost)
+	stack:place(pvHost, L.raidframes.auras.previewH, L.raidframes.auras.afterPv)
+	-- Fill it once the frame has real dimensions (a screen built while hidden has
+	-- none, and the fit-scaling needs the stage size). OnShow covers the cached
+	-- screen coming back, where the builder does not run again.
+	C_Timer.After(0, function()
+		if pvHost:IsVisible() then previewRefresh() end
+	end)
+	pvHost:HookScript("OnShow", function() C_Timer.After(0, previewRefresh) end)
+
 	-- Chip bar: pick the category. The dot shows whether it renders at all in
 	-- THIS context, the badge its icon count (or "off").
 	local defs = {}
@@ -1487,17 +1516,13 @@ local function buildAuras(d, stack)
 	-- the answer is next to the values too) | pane switch | copy.
 	local head = CreateFrame("Frame", nil, d)
 	head:SetHeight(M.buttonH)
-	local ctxChip = W.Segment(head, {
-		options = { { value = "party", label = T("Group") }, { value = "raid", label = T("Raid") } },
-		get = auraTabCtx,
-		set = function(v)
-			setAuraTabCtx(v)
-			previewRefresh()          -- preview follows the values (one switch, both)
-			ns.Shell:RenderContent(true)
-		end,
-		width = L.raidframes.auras.ctxSegW,
-	})
-	ctxChip:SetPoint("LEFT", head, "LEFT", 0, 0)
+	-- Which context these values belong to. Deliberately a LABEL, not a second
+	-- switch: the anchored preview above carries the one switch, and two controls
+	-- for one state is exactly the confusion this tab exists to remove. It repeats
+	-- the answer next to the values, where you are looking while editing.
+	local ctxLbl = UI.FS(head, "caption", Text.Description)
+	ctxLbl:SetPoint("LEFT", head, "LEFT", 0, 0)
+	ctxLbl:SetText(("%s  ·  %s"):format(T("Editing"), ctx == "raid" and T("Raid") or T("Group")))
 
 	local paneSeg = W.Segment(head, {
 		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
