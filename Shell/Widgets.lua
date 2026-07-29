@@ -3529,7 +3529,7 @@ function W.PreviewBand(parent, o)
 	local head = CreateFrame("Frame", nil, f)
 	head:SetPoint("TOPLEFT", f, "TOPLEFT", M.pvDockPad, -M.pvDockPad)
 	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", -M.pvDockPad, -M.pvDockPad)
-	head:SetHeight(M.sectionHeaderH)
+	head:SetHeight(o.inline and M.pvInlineHeadH or M.sectionHeaderH)
 	if o.inline then
 		-- Header row INSIDE the card: no own fill/border, just a hairline to the
 		-- stage (same separator language as the stacked option rows).
@@ -3552,12 +3552,35 @@ function W.PreviewBand(parent, o)
 	-- because that switch picks the context whose values you are editing — not
 	-- merely what the preview shows. Dock: it is just a preview window.
 	lbl:SetText((o.inline and o.ctx and o.ctx.caption) and o.ctx.caption or T("PREVIEW"))
-	-- Inline titles line up with the SETTINGS CARD titles below, so the page has
-	-- one left edge instead of two (Florian 2026-07-29). Those cards carry an eye
-	-- button before the title, so the same offset is reproduced here — the head
-	-- itself already starts pvDockPad in from the card edge.
-	local inlineTitleX = M.sectionPad + M.cardEyeBtn + S.s3 - M.pvDockPad
-	lbl:SetPoint("LEFT", head, "LEFT", o.inline and inlineTitleX or M.sectionTitleX, 0)
+
+	-- Inline: a collapse chevron leads the row, sitting on the left edge the
+	-- content blocks below use, with the title right beside it (Florian
+	-- 2026-07-29). Folding the preview away is worth having when it is in the
+	-- way — it is anchored, so it cannot simply be pushed aside.
+	local foldBtn
+	if o.inline and o.fold then
+		foldBtn = CreateFrame("Button", nil, head)
+		foldBtn:SetSize(M.chevGlyph + S.s4, M.chevGlyph + S.s4)
+		foldBtn:SetPoint("LEFT", head, "LEFT", M.pvInlineTitleX, 0)
+		local fg = foldBtn:CreateTexture(nil, "OVERLAY")
+		fg:SetSize(M.chevGlyph, M.chevGlyph)
+		fg:SetPoint("CENTER", foldBtn, "CENTER", 0, 0)
+		fg:SetSnapToPixelGrid(false); fg:SetTexelSnappingBias(0)
+		local function paintFold()
+			fg:SetTexture(TEX .. (o.fold.get() and "icon-chevron-right" or "icon-chevron-down"))
+			local c = Text.Description
+			fg:SetVertexColor(c.r, c.g, c.b)
+		end
+		paintFold()
+		foldBtn:SetScript("OnEnter", function() fg:SetVertexColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end)
+		foldBtn:SetScript("OnLeave", function() paintFold() end)
+		foldBtn:SetScript("OnClick", function() o.fold.set(not o.fold.get()) end)
+		lbl:SetPoint("LEFT", foldBtn, "RIGHT", S.s3, 0)
+	elseif o.inline then
+		lbl:SetPoint("LEFT", head, "LEFT", M.pvInlineTitleX, 0)
+	else
+		lbl:SetPoint("LEFT", head, "LEFT", M.sectionTitleX, 0)
+	end
 
 	-- Icon order (right to left): collapse chevron — then the chip groups chain
 	-- further left. The old funnel filter popover is GONE (Florian 2026-07-16):
@@ -3925,6 +3948,13 @@ function W.PreviewBand(parent, o)
 		local dockH = M.sectionHeaderH + M.pvDockPad * 3 + innerH
 		if side == "right" then o.onLayout("right", dockW, dockH)
 		else o.onLayout("bottom", nil, dockH) end
+	end
+
+	-- Folded: only the header row remains (the screen shrinks the sticky area to
+	-- match). The frames stay built — unfolding must not have to rebuild them.
+	function f:SetFolded(on)
+		body:SetShown(not on)
+		if foldBtn then foldBtn:GetScript("OnLeave")(foldBtn) end -- repaint the chevron
 	end
 
 	-- Usable stage size for an inline band (module fit-scaling); caption row and

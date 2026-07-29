@@ -412,7 +412,7 @@ UI.WIDGET = {
 	-- Compact segment/button height for HEADER rows (card heads, the preview
 	-- band). Free-standing since segments and buttons became rounded rectangles
 	-- (Florian 2026-07-29) — the old capsules only existed at pill-asset heights.
-	segCompactH = 38,
+	segCompactH = 44,
 	menuItemPadX = 6, -- horizontal inset of a dropdown item's rounded hover pill (nav-item language)
 	menuItemPadY = 3, -- vertical inset of the pill (also the gap between stacked pills)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
@@ -607,6 +607,11 @@ UI.WIDGET = {
 	pvDockPad    = 12,  -- inner padding of the dock body
 	pvChipGroupGap = 14, -- gap between header chip groups / chips -> icons
 	pvCtxSegW    = 200, -- context switch in an INLINE band header (Group | Raid) — a real W.Segment, like the settings use
+	-- Left edge of an inline band's header row, measured from the head frame
+	-- (which already starts pvDockPad in). Lines the chevron/title up with the
+	-- inner blocks of the settings cards below: sectionPad + subgroupPad.
+	pvInlineTitleX = 34, -- = sectionPad 30 + subgroupPad 16 - pvDockPad 12
+	pvInlineHeadH  = 56, -- header row of an inline band (taller than a card's collapsed header: it carries a segment)
 	pvIconBtn    = 26,  -- filter/collapse icon button edge length
 	pvGlyph      = 16,  -- Lucide glyph inside the pvIconBtn (collapse chevron / reset)
 	pvFilterW    = 210, -- filter popover width
@@ -729,6 +734,7 @@ UI.LAYOUT = {
 			-- cold band from collapsing to a sliver.
 			chromeH = 130,
 			minH    = 180,
+			foldedH = 80,     -- collapsed: header row + the card's own padding
 			after   = 20,     -- preview -> first settings row
 		},
 		auras = {               -- Auras tab (category chips + inline editor)

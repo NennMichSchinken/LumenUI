@@ -1454,7 +1454,11 @@ local function newStack(holder)
 			-- head reads as one row instead of a second row under the title
 			-- (Florian 2026-07-29).
 			if o.headerControls then
-				local anchorTo, gap = panel._switch, S.s5
+				-- Chain leftwards from the RIGHT EDGE — not from the master switch:
+				-- with o.toggleInline the switch sits right after the title, so
+				-- anchoring off it stacked every control on top of the others
+				-- (Florian 2026-07-29).
+				local anchorTo, gap = (not o.toggleInline) and panel._switch or nil, S.s5
 				for _, w in ipairs(o.headerControls) do
 					w:SetParent(panel)
 					w:ClearAllPoints()

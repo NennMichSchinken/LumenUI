@@ -248,6 +248,15 @@ local function previewBandFor(key, container, spec, opts)
 		hint     = T("Click an icon to edit"),
 		ctx      = opts and opts.ctx or nil,
 		sizes    = opts and opts.sizes or nil,
+		-- Folding it away: it is anchored, so it cannot be pushed aside when it
+		-- is in the way. Kept in the profile — a preference, not a view state.
+		fold = {
+			get = function() return rf().previewFolded and true or false end,
+			set = function(v)
+				rf().previewFolded = v and true or nil
+				if ns.Shell then ns.Shell:RenderContent(true) end
+			end,
+		},
 	})
 	if ns.Raidframes then ns.Raidframes:AttachShellPreview(band, spec) end
 	pvBands[band] = true   -- eye-sync repaint target (previewRefresh)
@@ -268,12 +277,19 @@ local function previewRow(d, key, spec, opts)
 		host = CreateFrame("Frame", nil, ns.Shell:Frame() or d)
 		pvHostFrames[key] = host
 	end
-	previewBandFor(key, host, spec, opts)
-	local h = L.raidframes.preview.minH
-	if ns.Raidframes and ns.Raidframes.PreviewExtent then
-		local _, ch = ns.Raidframes:PreviewExtent(spec, ns.Shell:Frame() or d)
-		h = math.max(h, math.ceil(ch) + L.raidframes.preview.chromeH)
+	local band = previewBandFor(key, host, spec, opts)
+	local folded = rf().previewFolded and true or false
+	local h
+	if folded then
+		h = L.raidframes.preview.foldedH
+	else
+		h = L.raidframes.preview.minH
+		if ns.Raidframes and ns.Raidframes.PreviewExtent then
+			local _, ch = ns.Raidframes:PreviewExtent(spec, ns.Shell:Frame() or d)
+			h = math.max(h, math.ceil(ch) + L.raidframes.preview.chromeH)
+		end
 	end
+	if band.SetFolded then band:SetFolded(folded) end
 	ns.Shell:SetSticky(host, h)
 	-- Fill once the frame has real dimensions (a screen built while the panel is
 	-- hidden has none).
