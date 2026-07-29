@@ -224,15 +224,23 @@ local function previewDock(spec)
 				get = function() return ns.Shell:IsPreviewOpen() end,
 				set = function(v) ns.Shell:SetPreviewOpen(v) end,
 			},
-			-- Base tab: Raid/Group switch — Base settings (aggro, dispel,
-			-- colors) are judged on the real context layout of choice.
-			ctx = spec.baseSwitch and {
+			-- Raid/Group switch in the dock header. Base tab: Base settings
+			-- (aggro, dispel, colors) are judged on the context layout of choice.
+			-- Auras tab: the SAME state the editor's context chip writes — one
+			-- switch shown in two places, never two states (the dock can be
+			-- collapsed, so the editor needs its own access to it).
+			ctx = (spec.baseSwitch or spec.ctxState) and {
 				values = {
 					{ v = "party", label = T("Group") },
 					{ v = "raid",  label = T("Raid") },
 				},
-				get = function() return rf().previewBaseCtx or "party" end,
-				set = function(v) rf().previewBaseCtx = v; previewRefresh() end,
+				get = spec.ctxState and spec.ctxState.get
+					or function() return rf().previewBaseCtx or "party" end,
+				set = spec.ctxState and spec.ctxState.set
+					or function(v) rf().previewBaseCtx = v; previewRefresh() end,
+				-- Only where the switch really drives the EDITED values (Auras);
+				-- on Base it genuinely only changes what the preview shows.
+				caption = spec.ctxState and T("Editing") or nil,
 			} or nil,
 			sizes = spec.sizes and {
 				values = { 5, 10, 20, 25 },
@@ -249,17 +257,29 @@ end
 ns.ScreenPreviews["Raidframes/Base"]  = previewDock({ kind = "ctx", baseSwitch = true })
 ns.ScreenPreviews["Raidframes/Raid"]  = previewDock({ kind = "ctx", ctx = "raid", sizes = true })
 ns.ScreenPreviews["Raidframes/Group"] = previewDock({ kind = "ctx", ctx = "party" })
+-- Auras tab: the dock header shows the Raid/Group switch labelled as what it is
+-- ("Edit"), and it writes the SAME field the editor's context chip does — one
+-- switch drives preview AND values (Florian 2026-07-29). The editor keeps its
+-- own chip because the dock can be closed.
+ns.ScreenPreviews["Raidframes/Auras"] = previewDock({
+	kind = "ctx", raidN = 10,
+	ctxGet = function() return (rf().auraTabCtx == "raid") and "raid" or "party" end,
+	ctxState = {
+		get = function() return (rf().auraTabCtx == "raid") and "raid" or "party" end,
+		set = function(v)
+			rf().auraTabCtx = (v == "raid") and "raid" or "party"
+			previewRefresh()
+			if ns.Shell then ns.Shell:RenderContent(true) end -- values follow the preview
+		end,
+	},
+})
 
--- Expand state of the aura/icon sections per context — SESSION-ONLY and
--- auto-collapsed on navigation (Florian 2026-07-04: a section left open made
--- the page long and buried the ones below on the next visit; pages now always
--- start short and predictable). ctx = "raid" | "party".
-local auraOpenState, iconOpenState = {}, {}
--- ns.ShellIndexing: while the search index is being built every collapsible
--- counts as OPEN, otherwise its rows are never created and the options inside
--- (aura categories, icon settings) would be invisible to the search.
-local function auraOpen(ctx) return ns.ShellIndexing or auraOpenState[ctx] or false end
-local function setAuraOpen(ctx, v) auraOpenState[ctx] = v end
+-- Expand state of the icon section per context — SESSION-ONLY and auto-collapsed
+-- on navigation (Florian 2026-07-04: a section left open made the page long and
+-- buried the ones below on the next visit; pages now always start short and
+-- predictable). ctx = "raid" | "party". (The aura sections are gone — they live
+-- on their own tab since 2026-07-29 and need no collapse state.)
+local iconOpenState = {}
 
 -- Register a jumpable card's panel frame with the Shell (no-op outside a build).
 local function regJump(key, cardBox)
@@ -278,46 +298,48 @@ ns.ShellJumpPrep = function(section, tab, cardKey)
 	if section ~= "Raidframes" or not cardKey then return end
 	local ctx = (tab == "Raid") and "raid" or "party"
 	if cardKey:find("^aura%-") then
-		setAuraOpen(ctx, true)
+		-- Aura jumps land on the Auras tab: preselect the clicked CATEGORY so the
+		-- editor already shows it. (The CONTEXT is set by the caller before the
+		-- jump — the tab name can't carry it, see c2cJump in Raidframes.lua.)
+		rf().auraTabCat = cardKey:gsub("^aura%-", "")
 	elseif cardKey:find("^icon%-") then
 		setIconOpen(ctx, true)
 	end
 end
--- "More options" disclosure per aura category card ([ctx][cat] = true) —
--- same session-only rule as the collapsibles above.
-local auraAdvState = {}
 
+-- Settings search: a hit on the Auras tab carries the category it was indexed
+-- under (ns.ShellIndexScope) — select it before the screen rebuilds, otherwise
+-- the row belongs to a category that isn't on screen.
+ns.ShellPrepOption = function(entry)
+	if entry and entry.section == "Raidframes" and entry.tab == "Auras" and entry.scope then
+		rf().auraTabCat = entry.scope
+	end
+end
 -- Base tab (card grid): "Advanced" disclosures per card (text/dispel/aggro +
--- the Sorting card's role-priority list) — same session-only rule as the aura
--- sections above: navigating away resets to the calm default state.
+-- the Sorting card's role-priority list) — same session-only rule as the icon
+-- section above: navigating away resets to the calm default state.
 local baseAdvState = {}
 
 -- Called by the Shell when the MAIN SECTION changes (NOT on tab switches within
 -- a section). Open disclosures therefore persist while you move between a
--- module's tabs (e.g. check Tracking, jump back to Auras) and only reset to the
--- calm collapsed default once you leave the module entirely (Florian 2026-07-15).
+-- module's tabs and only reset to the calm collapsed default once you leave the
+-- module entirely (Florian 2026-07-15).
 -- Returns true if any state was cleared (so the Shell rebuilds the screens).
 -- Search jump target may sit inside a collapsed section -> open them, so the
 -- row actually exists on the rebuilt screen (the Shell drops the cache first).
 function ns.ShellOpenAllSections()
 	for _, ctx in ipairs({ "raid", "party" }) do
-		auraOpenState[ctx] = true
 		iconOpenState[ctx] = true
 	end
 end
 
 function ns.SectionLeft(section)
 	if section ~= "Raidframes" then return false end
-	local had = next(baseAdvState) or next(auraAdvState)
-		or next(auraOpenState) or next(iconOpenState)
+	local had = next(baseAdvState) or next(iconOpenState)
 	baseAdvState = {}
-	auraAdvState, auraOpenState, iconOpenState = {}, {}, {}
+	iconOpenState = {}
 	return had ~= nil
 end
-
--- Defined further below (needs PLACE_OPTS); forward-declared because buildRaid
--- (Raid/Group tabs) builds the per-context aura cards with it.
-local auraCat
 
 -- Display labels for Lumen's own texture keys: the VALUE stays the German key
 -- (texture/pattern matching in Raidframes.lua relies on it), only the shown label
@@ -627,53 +649,10 @@ local function buildRaid(d, stack, ctx)
 		refreshRole(); refreshLead()
 	end
 
-	-- ===== Aura indicators (Feature 1: per context, collapsible at the bottom) =====
-	-- The standalone "Auras" tab is gone — its display settings live here, separated
-	-- per context. sfx maps the tab context to the aura field suffix ("Raid"/"Party").
-	-- Collapsed by default; the choice is remembered. Toggling re-renders the screen.
-	local sfx  = (ctx == "raid") and "Raid" or "Party"
-	local open = auraOpen(ctx)
-	local auraHead = W.Collapsible(d, { title = T("Aura indicators"), open = open,
-		onToggle = function(v) setAuraOpen(ctx, v); ns.Shell:RenderContent(true) end })
-	stack:place(auraHead, M.sectionHeaderH, open and R.afterCheck or M.headerStackGap)
-	if open then
-		local intro = W.Hint(d, T("Aura icons on the frame — set separately for this context. "
-			.. "Which spells are tracked is shared and set in the \"Tracking\" tab. "
-			.. "Shown in the live preview."), L.raidframes.tracking.introH)
-		stack:place(intro, L.raidframes.tracking.introH, R.row)
-		-- Two 6+6 bands (aura compaction 2026-07-05). The header toggles are
-		-- wired at band creation; each card's refresh lands in auraRefresh via
-		-- auraCat, so toggling greys the card without a rebuild.
-		local auraRefresh = {}
-		local function catToggle(cat)
-			return {
-				get = aget(cat, "enabled" .. sfx),
-				set = function(v)
-					aset(cat, "enabled" .. sfx)(v)
-					if auraRefresh[cat] then auraRefresh[cat]() end
-				end,
-			}
-		end
-		local eyeTip = T("Show in preview")
-		local ab1 = stack:band({
-			{ span = 6, title = T("HoTs"),                  toggle = catToggle("hotsOwn"),    eye = eyeToggle("hotsOwn", eyeTip) },
-			{ span = 6, title = T("Defensives & External"), toggle = catToggle("defensives"), eye = eyeToggle("defensives", eyeTip) },
-		})
-		auraCat(d, ab1.cards[1], "hotsOwn",    false, ctx, sfx, auraRefresh)
-		auraCat(d, ab1.cards[2], "defensives", false, ctx, sfx, auraRefresh)
-		regJump("aura-hotsOwn",    ab1.cards[1])
-		regJump("aura-defensives", ab1.cards[2])
-		ab1.close()
-		local ab2 = stack:band({
-			{ span = 6, title = T("Major CDs"), toggle = catToggle("major"),   eye = eyeToggle("major", eyeTip) },
-			{ span = 6, title = T("Debuffs"),   toggle = catToggle("debuffs"), eye = eyeToggle("debuffs", eyeTip) },
-		})
-		auraCat(d, ab2.cards[1], "major",   false, ctx, sfx, auraRefresh)
-		auraCat(d, ab2.cards[2], "debuffs", true,  ctx, sfx, auraRefresh)
-		regJump("aura-major",   ab2.cards[1])
-		regJump("aura-debuffs", ab2.cards[2])
-		ab2.close()
-	end
+	-- (Aura indicators moved OUT of Raid/Group into their own "Auras" tab, 2026-07-29:
+	-- the settings lived in three places — here per context plus the Tracking tab —
+	-- which read as one long unsorted list. The Auras tab carries the context switch
+	-- itself, so nothing is lost; see buildAuras below.)
 
 	applyModuleGate(d, rf().enabled) -- module off -> whole Raid/Group screen greyed + locked
 end
@@ -1170,109 +1149,71 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	PLACE_OPTS = { { value = false, label = T("Inside") }, { value = true, label = T("Outside") } }
 end
 
--- One aura category as a compact 6-span band card (aura compaction 2026-07-05:
--- four full-width cards were too tall). The context is FIXED by the host tab
--- (sfx = "Raid" on the Raid tab, "Party" on the Group tab); ALL display knobs
--- read/write the per-context key (<base> .. sfx). Visible = what you touch when
--- setting a category up: count + size, then where the row lives (anchor +
--- growth; Florian: "wo + wohin" belong together). Set-once fine-tuning
--- (spacing, inside/outside, offsets, auto-fit, swipe) lives in "More options".
--- `s` = the band card's inner stacker; the "Show" master toggle is wired at
--- band creation and reaches this card's refresh via `refreshReg[cat]`.
-function auraCat(d, s, cat, isDebuff, ctx, sfx, refreshReg)
-	local fieldH = M.controlH + M.fieldGap
-	local R = L.rhythm
-
-	local function cget(base) return aget(cat, base .. sfx) end
-	local function cset(base) return aset(cat, base .. sfx) end
-
-	local deps = {}   -- coupled to "Show" (all controls except the master + size)
-	local sizeW       -- size slider (additionally coupled to "Auto-Fit")
-	local function refresh()
-		local on = cget("enabled")() and true or false
-		for _, w in ipairs(deps) do w:SetWidgetEnabled(on) end
-		if sizeW then sizeW:SetWidgetEnabled(on and not cget("autoFit")()) end
-	end
-	refreshReg[cat] = refresh
-
-	-- Count + size (boxed sliders).
-	local a1, ac = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-	local maxW = sliderBox(ac[1], { label = T("Max. icons"), min = 1, max = 8, get = cget("maxIcons"), set = cset("maxIcons") })
-	sizeW = sliderBox(ac[2], { label = T("Size"), min = 8, max = 80, unit = " px", get = cget("size"), set = cset("size") })
-	deps[#deps + 1] = maxW
-	s:place(a1, M.sliderBoxH, R.row)
-
-	-- Where the icon row lives: anchor + growth direction.
-	local b1, bc = W.FieldRow(d, d, 2, { height = fieldH })
-	local anchorW = W.Select(bc[1], { label = T("Position (anchor)"), options = POINT_OPTS, get = cget("anchor"), set = cset("anchor") }); anchorW:SetAllPoints(bc[1])
-	local growW   = W.Select(bc[2], { label = T("Growth direction"), options = GROW_OPTS, get = cget("grow"), set = cset("grow") }); growW:SetAllPoints(bc[2])
-	deps[#deps + 1] = anchorW; deps[#deps + 1] = growW
-	s:place(b1, fieldH, R.row)
-
-	-- Debuffs only: which debuffs are shown (important enough to stay visible).
-	if isDebuff then
-		local f1, fc = W.FieldRow(d, d, 1, { height = fieldH })
-		local filterW = W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
-			tooltip = T("Which debuffs are shown. Raid-relevant = Blizzard's default selection."),
-			get = cget("filterMode"), set = cset("filterMode") })
-		filterW:SetAllPoints(fc[1])
-		deps[#deps + 1] = filterW
-		s:place(f1, fieldH, R.row)
-	end
-
-	-- More options: auto-fit + swipe (stacked rows first, §8), then spacing +
-	-- inside/outside and the offsets as unit-width field rows.
-	if (auraAdvState[ctx] or {})[cat] then
-		local cbFit = checkRow(d, T("Auto-fit (size from frame height)"), { get = cget("autoFit"),
-			set = function(v) cset("autoFit")(v); refresh() end })
-		s:place(cbFit, M.optionRowH, 0)
-		local cbSwipe = checkRow(d, T("Cooldown swipe"), { get = cget("showSwipe"), set = cset("showSwipe") })
-		s:place(cbSwipe, M.optionRowH, R.row)
-		deps[#deps + 1] = cbFit; deps[#deps + 1] = cbSwipe
-
-		local e1, ec = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-		local spaceW = sliderBox(ec[1], { label = T("Spacing"), min = 0, max = 20, unit = " px", get = cget("spacing"), set = cset("spacing") })
-		local outW = W.Segment(ec[2], { label = T("Placement"), options = PLACE_OPTS, get = cget("outside"), set = cset("outside") })
-		outW:SetAllPoints(ec[2])
-		deps[#deps + 1] = spaceW; deps[#deps + 1] = outW
-		s:place(e1, M.sliderBoxH, R.row)
-
-		local e2, ec2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-		local offXW = sliderBox(ec2[1], { label = T("Offset X"), min = -80, max = 80, unit = " px", get = cget("offX"), set = cset("offX") })
-		local offYW = sliderBox(ec2[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px", get = cget("offY"), set = cset("offY") })
-		deps[#deps + 1] = offXW; deps[#deps + 1] = offYW
-		s:place(e2, M.sliderBoxH, R.row)
-	end
-	local advOpen = (auraAdvState[ctx] or {})[cat]
-	s:place(W.Disclosure(d, { open = advOpen,
-		label = advOpen and T("Less") or T("More options"),
-		hint = T("Spacing") .. " · " .. T("Placement") .. " · " .. T("Offsets") .. " · " .. T("Cooldown swipe"),
-		onToggle = function(v)
-			auraAdvState[ctx] = auraAdvState[ctx] or {}
-			auraAdvState[ctx][cat] = v
-			ns.Shell:RenderContent(true)
-		end }), M.disclosureH, R.tight)
-
-	s:close()
-	refresh()
-end
-
--- ---------------------------------------------------------------------------
---  TrackingScreen — whitelist editor (B4): which spells are tracked as aura icons
---  (HoTs + own defensives). Mirrors the AceConfig "Tracking" tab.
---  ALWAYS bound to the ACTIVE spec (talents/spellbook only readable for it;
---  defaults cover other specs). Spell source = ns.ClickCast:GetAuraSpells()
---  (spellbook + chosen talents). Core piece: W.SpellPicker (searchable + scrollable).
--- ---------------------------------------------------------------------------
-local TRACK_CATS
+-- ===========================================================================
+--  AURA CATEGORY REGISTRY — the one list the Auras tab, the chip bar, the copy
+--  grid and the preview eyes all read. `key` is the profile key under
+--  rf().auras, `typ` the whitelist type (nil = the category has no spell list
+--  of its own), `color` the identity colour of its icon row.
+-- ===========================================================================
+local AURA_CATS
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
-	TRACK_CATS = {
-		{ typ = "hot", label = T("HoTs"),                desc = T("Your own heal-over-time effects as an icon on the frame.") },
-		{ typ = "def", label = T("Defensives & External"), desc = T("Your own defensives. External protection from others is shown automatically anyway.") },
-		{ typ = "major", label = T("Major CDs"), desc = T("Your class's big damage and resource cooldowns.") },
+	AURA_CATS = {
+		{ key = "hotsOwn",    typ = "hot",   label = T("HoTs"),
+		  color = { r = 0.31, g = 0.75, b = 0.48 },
+		  desc  = T("Your own heal-over-time effects as an icon on the frame.") },
+		{ key = "defensives", typ = "def",   label = T("Defensives & External"),
+		  color = { r = 0.36, g = 0.61, b = 0.84 },
+		  desc  = T("Your own defensives. External protection from others is shown automatically anyway.") },
+		{ key = "major",      typ = "major", label = T("Major CDs"),
+		  color = { r = 0.85, g = 0.70, b = 0.35 },
+		  desc  = T("Your class's big damage and resource cooldowns.") },
+		{ key = "debuffs",    typ = nil,     label = T("Debuffs"),
+		  color = { r = 0.69, g = 0.45, b = 0.85 },
+		  desc  = T("Harmful effects on your group. Picked by filter, not one by one.") },
 	}
 end
+local function auraCatDef(key)
+	for _, c in ipairs(AURA_CATS or {}) do if c.key == key then return c end end
+	return AURA_CATS and AURA_CATS[1] or nil
+end
 
+-- Which category / context the Auras tab is editing. PERSISTED in the profile
+-- (like previewBaseCtx / previewSize): you come back to the tab to keep working
+-- on the same thing — unlike the session-only disclosure states above.
+local function auraTabCtx()
+	return (rf().auraTabCtx == "raid") and "raid" or "party"
+end
+local function setAuraTabCtx(v)
+	rf().auraTabCtx = (v == "raid") and "raid" or "party"
+end
+local function auraTabCat()
+	local k = rf().auraTabCat
+	if k and auraCatDef(k) and auraCatDef(k).key == k then return k end
+	return "hotsOwn"
+end
+local function setAuraTabCat(v) rf().auraTabCat = v end
+-- "Display" | "Spells" pane of the inline editor (session-only: the pane is a
+-- view, not a setting).
+local auraTabPane = "display"
+
+-- Suffix of the per-context profile fields ("sizeRaid" / "sizeParty").
+local function ctxSfx(ctx) return (ctx == "raid") and "Raid" or "Party" end
+
+-- The editor's cards ARE the copy groups (what you see is what you copy). The
+-- field lists are per-context BASE names; the suffix is added when copying.
+local AURA_COPY_GROUPS = {
+	place = { "anchor", "grow", "spacing", "outside", "offX", "offY" },
+	look  = { "maxIcons", "size", "autoFit", "showSwipe" },
+}
+
+-- ---------------------------------------------------------------------------
+--  Whitelist editing (former standalone "Tracking" tab, now the Auras tab's
+--  "Spells" pane): which spells are tracked as aura icons. ALWAYS bound to the
+--  ACTIVE spec (talents/spellbook only readable for it; curated defaults cover
+--  the others). Spell source = ns.ClickCast:GetAuraSpells() (spellbook + chosen
+--  talents). Core piece: W.SpellPicker (searchable + scrollable). The category
+--  labels/descriptions come from AURA_CATS — one list, no second catalog.
+-- ---------------------------------------------------------------------------
 local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) or 0 end
 
 -- One tracked-spell row (v2 refinement no. 3): icon + name + quiet trash button
@@ -1314,98 +1255,324 @@ local function makeTrackRow(parent, e, onRemove)
 	return row
 end
 
-local function buildTracking(d, stack)
+-- ---------------------------------------------------------------------------
+--  SPELLS pane — the tracked-spell list of ONE category (this is the former
+--  standalone "Tracking" tab, folded into the Auras editor 2026-07-29 so a
+--  category is set up in ONE place). ALWAYS bound to the ACTIVE spec (WoW only
+--  exposes talents/spellbook for it; curated defaults cover the others) and
+--  SHARED by Raid + Group — the hint above the list says so, because everything
+--  else on this tab is per context.
+-- ---------------------------------------------------------------------------
+local function auraSpellsPane(d, s, cat)
 	local RFm  = ns.Raidframes
 	local spec = trkSpec()
 
-	stack:gap(L.general.tabTop)
-	local intro = W.Hint(d, T("Which spells are tracked as aura icons — display & position are set per context in the \"Raid\" and \"Group\" tabs. "
-		.. "Your active spec is edited automatically (WoW cannot read talents of other specs; their defaults apply automatically once you play them)."))
-	stack:place(intro, L.raidframes.tracking.introH, L.raidframes.tracking.afterIntro)
-
-	-- v2 refinement no. 4: active spec as a badge in the tab strip (chrome)
-	-- instead of an inline text row in the content.
-	ns.Shell:SetTabBadge(T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?")
-
-	-- Band def for one category card: header shows the count (v2 refinement
-	-- no. 1) + "Restore defaults" as a quiet header action (no. 2); the
-	-- category description is the muted subtitle line.
-	local function catDef(cat, entries)
-		local catTyp = cat.typ
-		return { span = 6, title = cat.label, subtitle = cat.desc, count = #entries,
-			action = { text = T("Restore defaults"), onClick = function()
-				W.Confirm({
-					title       = T("Restore defaults?"),
-					body        = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
-					confirmText = T("Reset"),
-					cancelText  = T("Cancel"),
-					onConfirm   = function()
-						if RFm then RFm:ResetWhitelist(spec, catTyp) end
-						ns.Shell:RenderContent(true)
-					end,
-				})
-			end } }
-	end
-
-	-- Card body: tracked spells ONE per row (in a 6-card a full row is about
-	-- the old 2-up cell width), or an empty state; picker action row last.
-	local function fillCat(s, cat, entries)
-		local catTyp = cat.typ
-		if #entries == 0 then
-			s:place(W.EmptyState(d, { text = T("No spells tracked yet — add the first one.") }),
-				L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
-		else
-			local rowH = L.raidframes.tracking.rowH
-			for i, e in ipairs(entries) do
-				local tr = makeTrackRow(d, e, function()
-					if RFm then RFm:RemoveWhitelist(spec, e.id) end
-					ns.Shell:RenderContent(true)
-				end)
-				s:place(tr, rowH, (i == #entries) and L.raidframes.tracking.afterList or L.raidframes.tracking.betweenRows)
-			end
-		end
-
-		-- Action row: only the spell picker ("Restore defaults" lives in the header).
-		local actionRow = CreateFrame("Frame", nil, d)
-		actionRow:SetHeight(M.buttonH)
-		local picker = W.SpellPicker(actionRow, {
-			text = T("+ Add spell"), width = M.spBtnW,
-			fetch = function()
-				local out = {}
-				local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
-				for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
-					-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
-					local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
-					if not tracked[rid] then out[#out + 1] = sp end
-				end
-				return out
-			end,
-			onPick = function(id)
-				if RFm then RFm:AddWhitelist(spec, id, catTyp) end
-				ns.Shell:RenderContent(true)
-			end,
-		})
-		picker:SetPoint("LEFT", actionRow, "LEFT", 0, 0)
-		s:place(actionRow, M.buttonH, 0)
+	if not cat.typ then
+		-- Debuffs: per-spellId whitelisting is not permitted for harmful auras
+		-- (12.1 API constraint), so this category is filter-based by design.
+		local sfx = ctxSfx(auraTabCtx())
+		local f1, fc = W.FieldRow(d, d, 1, { height = M.controlH + M.fieldGap })
+		local filterW = W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
+			tooltip = T("Which debuffs are shown. Raid-relevant = Blizzard's default selection."),
+			get = aget(cat.key, "filterMode" .. sfx), set = aset(cat.key, "filterMode" .. sfx) })
+		filterW:SetAllPoints(fc[1])
+		s:place(f1, M.controlH + M.fieldGap, L.rhythm.row)
+		s:place(W.Hint(d, T("Debuffs are chosen by filter, not one by one — WoW does not allow "
+			.. "picking individual harmful effects on other players."), M.hintH), M.hintH, 0)
 		s:close()
+		return
 	end
 
-	-- 6-card layout (no full-width cards, Florian 2026-07-11): HoTs |
-	-- Defensives as a band, Major CDs below it.
-	local entries = {}
-	for i, cat in ipairs(TRACK_CATS) do
-		entries[i] = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
+	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
+	local shared = W.Hint(d, ("%s  ·  %s %s"):format(
+		T("Applies to Raid and Group"),
+		T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"), M.hintH)
+	s:place(shared, M.hintH, L.rhythm.row)
+
+	if #entries == 0 then
+		s:place(W.EmptyState(d, { text = T("No spells tracked yet — add the first one.") }),
+			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
+	else
+		local rowH = L.raidframes.tracking.rowH
+		for i, e in ipairs(entries) do
+			local tr = makeTrackRow(d, e, function()
+				if RFm then RFm:RemoveWhitelist(spec, e.id) end
+				ns.Shell:RenderContent(true)
+			end)
+			s:place(tr, rowH, (i == #entries) and L.raidframes.tracking.afterList
+				or L.raidframes.tracking.betweenRows)
+		end
 	end
-	local tb1 = stack:band({ catDef(TRACK_CATS[1], entries[1]), catDef(TRACK_CATS[2], entries[2]) })
-	fillCat(tb1.cards[1], TRACK_CATS[1], entries[1])
-	fillCat(tb1.cards[2], TRACK_CATS[2], entries[2])
-	regJump("track-hot", tb1.cards[1])
-	regJump("track-def", tb1.cards[2])
-	tb1.close()
-	local tb2 = stack:band({ catDef(TRACK_CATS[3], entries[3]) })
-	fillCat(tb2.cards[1], TRACK_CATS[3], entries[3])
-	regJump("track-major", tb2.cards[1])
-	tb2.close()
+
+	-- Action row: add a spell + restore this category's curated defaults.
+	local actionRow = CreateFrame("Frame", nil, d)
+	actionRow:SetHeight(M.buttonH)
+	local picker = W.SpellPicker(actionRow, {
+		text = T("+ Add spell"), width = M.spBtnW,
+		fetch = function()
+			local out = {}
+			local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
+			for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
+				-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
+				local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
+				if not tracked[rid] then out[#out + 1] = sp end
+			end
+			return out
+		end,
+		onPick = function(id)
+			if RFm then RFm:AddWhitelist(spec, id, cat.typ) end
+			ns.Shell:RenderContent(true)
+		end,
+	})
+	picker:SetPoint("LEFT", actionRow, "LEFT", 0, 0)
+	local reset = W.Button(actionRow, { text = T("Restore defaults"), variant = "secondary",
+		onClick = function()
+			W.Confirm({
+				title       = T("Restore defaults?"),
+				body        = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
+				confirmText = T("Reset"),
+				cancelText  = T("Cancel"),
+				onConfirm   = function()
+					if RFm then RFm:ResetWhitelist(spec, cat.typ) end
+					ns.Shell:RenderContent(true)
+				end,
+			})
+		end })
+	reset:SetPoint("LEFT", picker, "RIGHT", L.general.sideGap, 0)
+	s:place(actionRow, M.buttonH, 0)
+	s:close()
+end
+
+-- ---------------------------------------------------------------------------
+--  DISPLAY pane — placement + look of ONE category in ONE context, as two
+--  equal-height band cards. No "More options" disclosure: the chip bar carries
+--  the category split, so everything of a single category fits on screen
+--  (Florian 2026-07-29 — the old collapsed rows meant too much clicking).
+--  Band 2 ("Restzeit"/duration text) arrives with the 12.1 aura rework, which
+--  owns those profile fields.
+-- ---------------------------------------------------------------------------
+local function auraDisplayPane(d, stack, cat, ctx)
+	local sfx = ctxSfx(ctx)
+	local R   = L.rhythm
+	local fieldH = M.controlH + M.fieldGap
+	local function cget(base) return aget(cat.key, base .. sfx) end
+	local function cset(base) return aset(cat.key, base .. sfx) end
+
+	local sizeW, autoFitOn
+	local function refreshSize()
+		if sizeW then sizeW:SetWidgetEnabled(not cget("autoFit")()) end
+	end
+
+	local b = stack:band({
+		{ span = 6, title = T("Placement"), subtitle = T("Where the icon row sits on the frame") },
+		{ span = 6, title = T("Appearance"), subtitle = T("How many icons and how large") },
+	})
+
+	-- --- Placement -----------------------------------------------------------
+	local sPlace = b.cards[1]
+	local p1, pc = W.FieldRow(d, d, 2, { height = fieldH })
+	local anchorW = W.Select(pc[1], { label = T("Position (anchor)"), options = POINT_OPTS,
+		get = cget("anchor"), set = cset("anchor") })
+	anchorW:SetAllPoints(pc[1])
+	local growW = W.Select(pc[2], { label = T("Growth direction"), options = GROW_OPTS,
+		get = cget("grow"), set = cset("grow") })
+	growW:SetAllPoints(pc[2])
+	sPlace:place(p1, fieldH, R.row)
+
+	local p2, pc2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	sliderBox(pc2[1], { label = T("Spacing"), min = 0, max = 20, unit = " px",
+		get = cget("spacing"), set = cset("spacing") })
+	-- Label is NOT "Placement" — that is the card's own title right above it.
+	local outW = W.Segment(pc2[2], { label = T("Inside / outside"), options = PLACE_OPTS,
+		get = cget("outside"), set = cset("outside") })
+	outW:SetAllPoints(pc2[2])
+	sPlace:place(p2, M.sliderBoxH, R.row)
+
+	local p3, pc3 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	sliderBox(pc3[1], { label = T("Offset X"), min = -80, max = 80, unit = " px",
+		get = cget("offX"), set = cset("offX") })
+	sliderBox(pc3[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px",
+		get = cget("offY"), set = cset("offY") })
+	sPlace:place(p3, M.sliderBoxH, R.tight)
+	sPlace:close()
+
+	-- --- Appearance ----------------------------------------------------------
+	local sLook = b.cards[2]
+	local a1, ac = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
+	sliderBox(ac[1], { label = T("Max. icons"), min = 1, max = 8,
+		get = cget("maxIcons"), set = cset("maxIcons") })
+	sizeW = sliderBox(ac[2], { label = T("Size"), min = 8, max = 80, unit = " px",
+		get = cget("size"), set = cset("size") })
+	sLook:place(a1, M.sliderBoxH, R.row)
+
+	autoFitOn = checkRow(d, T("Size from frame height"), {
+		get = cget("autoFit"),
+		set = function(v) cset("autoFit")(v); refreshSize() end })
+	sLook:place(autoFitOn, M.optionRowH, 0)
+	local swipe = checkRow(d, T("Cooldown swipe"), { get = cget("showSwipe"), set = cset("showSwipe") })
+	sLook:place(swipe, M.optionRowH, R.tight)
+	sLook:close()
+
+	b.close()
+	regJump("aura-" .. cat.key, b.cards[1])
+	refreshSize()
+end
+
+-- ===========================================================================
+--  AURAS screen — the module's aura editor. Anchored preview above (the dock
+--  band, carrying the context switch labelled "Edit"), a category CHIP BAR,
+--  then the inline editor for the picked category. Replaces both the per-context
+--  "Aura indicators" blocks in Raid/Group AND the standalone Tracking tab
+--  (Florian 2026-07-29: one place per category instead of three).
+-- ===========================================================================
+local function buildAuras(d, stack)
+	local ctx = auraTabCtx()
+	local cat = auraCatDef(auraTabCat())
+	if not cat then return end -- locale not applied yet (AURA_CATS still empty)
+	local sfx = ctxSfx(ctx)
+
+	-- Search index: the tab renders ONE category, so indexing only the visible
+	-- one would drop three quarters of the aura options out of the search (they
+	-- were all indexed while they lived on the Raid/Group tabs). During the
+	-- warm-up pass build every category instead, each under its own index scope
+	-- so the keys stay identical to the single-category render.
+	if ns.ShellIndexing then
+		for _, c in ipairs(AURA_CATS) do
+			ns.ShellIndexScope = c.key
+			local sec = stack:section(c.label, { subtitle = c.desc })
+			auraSpellsPane(d, sec, c)
+			auraDisplayPane(d, stack, c, ctx)
+		end
+		ns.ShellIndexScope = nil
+		return
+	end
+
+	stack:gap(L.general.tabTop)
+
+	-- Chip bar: pick the category. The dot shows whether it renders at all in
+	-- THIS context, the badge its icon count (or "off").
+	local defs = {}
+	for _, c in ipairs(AURA_CATS) do
+		defs[#defs + 1] = {
+			key = c.key, label = c.label, color = c.color,
+			on = function() return aget(c.key, "enabled" .. sfx)() and true or false end,
+			badge = function()
+				if not aget(c.key, "enabled" .. sfx)() then return T("off") end
+				return tostring(aget(c.key, "maxIcons" .. sfx)() or 0)
+			end,
+		}
+	end
+	local chips = W.ChipBar(d, {
+		defs = defs,
+		get = auraTabCat,
+		set = function(k) setAuraTabCat(k); ns.Shell:RenderContent(true) end,
+	})
+	stack:place(chips, M.chipH, L.raidframes.auras.afterChips)
+
+	-- Editor card: master switch + Display/Spells panes + the copy popover.
+	local paneSpells = (auraTabPane == "spells")
+	local editor = stack:section(cat.label, {
+		subtitle = cat.desc,
+		eye = eyeToggle(cat.key, T("Show in preview")),
+		toggle = {
+			get = aget(cat.key, "enabled" .. sfx),
+			set = function(v)
+				aset(cat.key, "enabled" .. sfx)(v)
+				ns.Shell:RenderContent(true)  -- chip dot/badge + greyed body follow
+			end,
+		},
+	})
+
+	-- Head row: which context is edited (repeated from the preview switch, so
+	-- the answer is next to the values too) | pane switch | copy.
+	local head = CreateFrame("Frame", nil, d)
+	head:SetHeight(M.buttonH)
+	local ctxChip = W.Segment(head, {
+		options = { { value = "party", label = T("Group") }, { value = "raid", label = T("Raid") } },
+		get = auraTabCtx,
+		set = function(v)
+			setAuraTabCtx(v)
+			previewRefresh()          -- preview follows the values (one switch, both)
+			ns.Shell:RenderContent(true)
+		end,
+		hug = true,
+	})
+	ctxChip:SetPoint("LEFT", head, "LEFT", 0, 0)
+
+	local paneSeg = W.Segment(head, {
+		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
+		get = function() return auraTabPane end,
+		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
+		hug = true,
+	})
+	paneSeg:SetPoint("CENTER", head, "CENTER", 0, 0)
+
+	local copyBtn = W.CopyPopover(head, {
+		text  = T("Copy"),
+		title = T("Copy settings"),
+		groups = {
+			{ key = "place", label = T("Placement"),  hint = T("Position · Offsets") },
+			{ key = "look",  label = T("Appearance"), hint = T("Count · Size") },
+		},
+		-- Placement is deliberately OFF by default: copying it onto another
+		-- category stacks both icon rows in the same corner.
+		defaults = { look = true },
+		rows = (function()
+			local out = {}
+			for _, c in ipairs(AURA_CATS) do
+				out[#out + 1] = { key = c.key, label = c.label, color = c.color }
+			end
+			return out
+		end)(),
+		cols = { { key = "raid", label = T("Raid") }, { key = "party", label = T("Group") } },
+		source = function() return auraTabCat(), auraTabCtx() end,
+		warn = function(sel, picked)
+			if not sel.place then return nil end
+			for _, t in ipairs(picked) do
+				if t.row ~= auraTabCat() then
+					return T("Copying placement onto another category stacks its icons in the same corner.")
+				end
+			end
+			return nil
+		end,
+		onCopy = function(keys, picked)
+			local srcCat, srcCtx = auraTabCat(), auraTabCtx()
+			local srcSfx = ctxSfx(srcCtx)
+			for _, t in ipairs(picked) do
+				local dstSfx = ctxSfx(t.col)
+				for _, gk in ipairs(keys) do
+					for _, field in ipairs(AURA_COPY_GROUPS[gk] or {}) do
+						local v = aget(srcCat, field .. srcSfx)()
+						if v ~= nil then aset(t.row, field .. dstSfx)(v) end
+					end
+				end
+			end
+			ns.Shell:RenderContent(true)
+		end,
+	})
+	copyBtn:SetPoint("RIGHT", head, "RIGHT", 0, 0)
+	editor:place(head, M.buttonH, L.rhythm.row)
+	editor:close()
+
+	-- Body of the picked pane. Built into its own stack so the master switch can
+	-- grey it out without touching the head row. The index scope matches the
+	-- warm-up pass above, so a search hit resolves to the row on this screen.
+	local body = CreateFrame("Frame", nil, d)
+	local bstack = ns.Shell.NewStack(body)
+	ns.ShellIndexScope = cat.key
+	if paneSpells then
+		local sp = bstack:section(T("Tracked spells"))
+		auraSpellsPane(body, sp, cat)
+	else
+		auraDisplayPane(body, bstack, cat, ctx)
+	end
+	ns.ShellIndexScope = nil
+	stack:place(body, bstack:height(), 0)
+	-- Category off -> its options are dimmed + locked (same gate as the module
+	-- master); the spell list stays operable, it is shared and context-free.
+	if not paneSpells then
+		applyModuleGate(body, aget(cat.key, "enabled" .. sfx)() and true or false)
+	end
 
 	applyModuleGate(d, rf().enabled) -- module off -> whole screen greyed + locked
 end
@@ -2327,4 +2494,4 @@ ns.Screens["Click-Cast/Bindings"] = buildClickCast
 ns.Screens["Raidframes/Base"]     = buildBase
 ns.Screens["Raidframes/Raid"]     = function(d, stack) buildRaid(d, stack, "raid") end
 ns.Screens["Raidframes/Group"]    = function(d, stack) buildRaid(d, stack, "party") end
-ns.Screens["Raidframes/Tracking"] = buildTracking
+ns.Screens["Raidframes/Auras"]    = buildAuras

@@ -2141,7 +2141,19 @@ end
 local function c2cJump(host, cardKey)
 	if not (ns.Shell and ns.Shell.JumpTo) then return end
 	Raidframes:_C2CLeave()
-	ns.Shell:JumpTo("Raidframes", (host._pvCtx == "raid") and "Raid" or "Group", cardKey)
+	-- Aura icons live on their own tab now; everything else stays on the
+	-- context tab the clicked frame belongs to.
+	local tab
+	if cardKey:find("^aura%-") then
+		tab = "Auras"
+		-- The Auras tab carries its own context; the target tab name can no longer
+		-- express it, so hand it over through the profile before the jump.
+		local d = db()
+		if d then d.auraTabCtx = (host._pvCtx == "raid") and "raid" or "party" end
+	else
+		tab = (host._pvCtx == "raid") and "Raid" or "Group"
+	end
+	ns.Shell:JumpTo("Raidframes", tab, cardKey)
 end
 function Raidframes:_C2CLeave()
 	if c2cRing then c2cRing:Hide() end
@@ -2337,12 +2349,21 @@ function Raidframes:RefreshShellPreview()
 		-- judged on the real group layout).
 		local ctx = spec.ctx
 		if spec.baseSwitch then ctx = (d.previewBaseCtx == "raid") and "raid" or "party" end
+		-- Auras tab: the context lives on the TAB (its editor chip), so the spec
+		-- resolves it on every refresh instead of holding a fixed value.
+		if spec.ctxGet then ctx = spec.ctxGet() end
 		local L = d[ctx]
 		local w, h, sp = L.width, L.height, L.spacing
 		local horizontal = (L.orientation == "horizontal")
 		-- Sample size: the Raid tab has 5/10/20/25 chips; Base/Group show one
 		-- group. Clamp legacy values (the first chip set went up to 40).
-		local n = min((spec.ctx == "raid" and d.previewSize) or GROUP_SIZE, 25)
+		-- Sample size: the Raid tab has 5/10/20/25 chips; the Auras tab shows a
+		-- fixed 10 in raid context (Florian: enough to judge at true size, and
+		-- the tab has no size chips of its own); everything else = one group.
+		local n = GROUP_SIZE
+		if spec.ctx == "raid" then n = d.previewSize or GROUP_SIZE
+		elseif spec.raidN and ctx == "raid" then n = spec.raidN end
+		n = min(n, 25)
 		-- 5 = the curated showcase roster; bigger samples use the test-mode
 		-- roster incl. its role-sort preview (honest sorting picture).
 		local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
@@ -2371,7 +2392,7 @@ function Raidframes:RefreshShellPreview()
 		-- Dock side (Florian's rule): the Raid TAB always docks right (below
 		-- the panel it collides with the screen bottom); otherwise right when
 		-- vertical, below when horizontal.
-		if spec.ctx == "raid" or not horizontal then side = "right" end
+		if ctx == "raid" or not horizontal then side = "right" end
 	end)
 	previewCtx = nil
 	if not ok then

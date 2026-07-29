@@ -269,7 +269,7 @@ end
 local SECTIONS = {
 	{ "Global",      { "Base", "Profile" }, icon = "icon-nav-global" },
 	{ "Click-Cast",  { "Bindings" }, icon = "icon-nav-clickcast" },
-	{ "Raidframes",  { "Base", "Raid", "Group", "Tracking" }, sep = true, icon = "icon-nav-raidframes" },
+	{ "Raidframes",  { "Base", "Raid", "Group", "Auras" }, sep = true, icon = "icon-nav-raidframes" },
 	{ "Unitframes",  {}, soon = true, icon = "icon-nav-unitframes" },
 	{ "Nameplates",  {}, soon = true, icon = "icon-nav-nameplates" },
 	{ "QoL",         { "Base" }, sep = true, icon = "icon-nav-qol" },
@@ -1915,10 +1915,20 @@ function Shell:IndexOption(label, frame, kind, tip)
 	-- The card name is only known at place() time, so disambiguate by counting
 	-- occurrences — builders run deterministically, so a rebuild yields the
 	-- same keys and the row map stays valid.
+	-- ns.ShellIndexScope: a screen that shows only ONE of several equivalent
+	-- sub-editors (Auras tab: one category at a time) sets a scope around each
+	-- sub-editor's options. Without it the label counter below would number the
+	-- rows differently when indexing (all categories built) than when rendering
+	-- (one category built), and a jump would resolve to nothing. With it the key
+	-- is stable in both passes, and entry.scope tells the screen which sub-editor
+	-- to open before the jump (see ns.ShellPrepOption).
+	local scope = ns.ShellIndexScope
+	local seenKey = label .. (scope and ("@" .. scope) or "")
 	indexCtx.seen = indexCtx.seen or {}
-	local nth = (indexCtx.seen[label] or 0) + 1
-	indexCtx.seen[label] = nth
+	local nth = (indexCtx.seen[seenKey] or 0) + 1
+	indexCtx.seen[seenKey] = nth
 	local key = indexCtx.section .. "/" .. indexCtx.tab .. "/" .. label
+	if scope then key = key .. "@" .. scope end
 	if nth > 1 then key = key .. "#" .. nth end
 	local scr = self._screen
 	if scr then
@@ -1928,7 +1938,7 @@ function Shell:IndexOption(label, frame, kind, tip)
 	local entry = indexByKey[key]
 	if not entry then
 		entry = {
-			label = label, tip = tip, kind = kind,
+			label = label, tip = tip, kind = kind, scope = scope,
 			section = indexCtx.section, tab = indexCtx.tab, key = key,
 			-- Tooltips are indexed too: searching "instanz" should find the aggro
 			-- and invite options even though neither label contains the word.
@@ -2145,6 +2155,9 @@ function Shell:JumpToOption(entry)
 	-- The target row may live in a collapsed section, which does not build its
 	-- contents at all — open them and drop the cache so the row exists.
 	if ns.ShellOpenAllSections then ns.ShellOpenAllSections() end
+	-- Scoped screens (one sub-editor visible at a time) need the right one
+	-- selected before the rebuild, or the row is simply not there.
+	if ns.ShellPrepOption then ns.ShellPrepOption(entry) end
 	self:InvalidateScreenCache()
 	self:OpenTo(entry.section, entry.tab)
 	local tries = 0
