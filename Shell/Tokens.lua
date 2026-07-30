@@ -642,6 +642,12 @@ UI.WIDGET = {
 	pvFilterCheck = 18, -- filter checkbox edge length
 	pvStagePad   = 24,  -- stage inner padding around the preview content
 	pvCaptionH   = 18,  -- caption line at the stage bottom
+	-- Breathing room above the frames and BETWEEN the frames and the caption line.
+	-- Without it the content sat right on the caption (the band reserved 130 of
+	-- chrome where the caption line alone needs 26, so it overlapped by ~16px --
+	-- visible as soon as the caption gained the "scroll" hint, Florian 2026-07-30).
+	pvContentGap = 12,
+	pvScrollBarW = 4,   -- scrollbar shown at the stage's right edge while it scrolls
 	-- (pvEyeH / pvEyePadX / pvEyeGap retired 2026-07-30 with the sample-size chips:
 	-- the header switch is a W.Segment now and sizes itself from segCompactH.)
 }
@@ -750,6 +756,9 @@ UI.LAYOUT = {
 			-- The band is as tall as its frames need: chromeH = everything around
 			-- them (header row + paddings + caption line), minH keeps an empty or
 			-- cold band from collapsing to a sliver.
+			-- Fallback only: the real chrome comes from the band itself (W.PreviewBand
+			-- f:ChromeH), so header height, paddings and caption zone are owned in ONE
+			-- place and cannot drift from what the screen reserves.
 			chromeH = 130,
 			minH    = 180,
 			foldedH = 80,     -- collapsed: header row + the card's own padding

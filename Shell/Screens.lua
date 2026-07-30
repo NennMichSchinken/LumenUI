@@ -273,17 +273,22 @@ end
 -- renders (Raidframes:PreviewExtent), because the height must be known when the
 -- area is reserved.
 local pvHostFrames = {}   -- tab key -> the sticky host (reused across renders)
-local pvParked = {}       -- the band currently parked: { spec =, host =, h = }
+local pvParked = {}       -- the band currently parked: { spec =, host =, band =, h = }
 -- The height the sticky area has to reserve for `spec`. Shared by the builder and
 -- by ns.ShellPreviewResize below, so the reserved height and the rendered content
 -- can never be computed two different ways.
-local function pvStickyH(spec, ref)
+local function pvStickyH(spec, ref, band)
 	local P = L.raidframes.preview
 	if rf().previewFolded then return P.foldedH end
 	local h = P.minH
 	if ns.Raidframes and ns.Raidframes.PreviewExtent then
 		local _, ch = ns.Raidframes:PreviewExtent(spec, ref)
-		h = math.max(h, math.ceil(ch) + P.chromeH)
+		-- Chrome comes FROM THE BAND (f:ChromeH), not from a constant here: the band
+		-- owns its header height, paddings and caption zone, and when this was a
+		-- hand-tuned token the two drifted apart -- the frames overlapped the caption
+		-- line and the band saw an overflow that did not exist (Florian 2026-07-30).
+		local chrome = (band and band.ChromeH and band:ChromeH()) or P.chromeH
+		h = math.max(h, math.ceil(ch) + chrome)
 	end
 	-- Cap: the band may claim at most maxShare of the room it shares with the
 	-- settings. Beyond that the stage clips and scrolls (W.PreviewBand) instead of
@@ -314,7 +319,7 @@ end
 function ns.ShellPreviewResize()
 	local p = pvParked
 	if not (p.host and p.spec and ns.Shell and p.host:IsShown()) then return end
-	local h = pvStickyH(p.spec, ns.Shell:Frame())
+	local h = pvStickyH(p.spec, ns.Shell:Frame(), p.band)
 	if h == p.h then return end   -- unchanged: no SetSticky churn per slider tick
 	p.h = h
 	ns.Shell:SetSticky(p.host, h)
@@ -329,9 +334,9 @@ local function previewRow(d, key, spec, opts)
 	end
 	local band = previewBandFor(key, host, spec, opts)
 	local folded = rf().previewFolded and true or false
-	local h = pvStickyH(spec, ns.Shell:Frame() or d)
+	local h = pvStickyH(spec, ns.Shell:Frame() or d, band)
 	if band.SetFolded then band:SetFolded(folded) end
-	pvParked.spec, pvParked.host, pvParked.h = spec, host, h
+	pvParked.spec, pvParked.host, pvParked.band, pvParked.h = spec, host, band, h
 	ns.Shell:SetSticky(host, h)
 	-- Fill once the frame has real dimensions. One deferred pass is not enough:
 	-- opening the tab from cold (or arriving via a jump) leaves the host without

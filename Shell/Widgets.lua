@@ -3822,17 +3822,55 @@ function W.PreviewBand(parent, o)
 	-- 0 means "fits", and then the content stays CENTERED as before. While it does
 	-- not fit, the pivot moves to the TOP edge so scrolling starts at the first
 	-- frame instead of the middle of the block.
+	-- The two zones INSIDE the stage that the frames must not enter: a gap at the
+	-- top, and the caption line plus its own offset plus the same gap at the bottom.
+	local CAP_ZONE   = S.s2 + 2 + M.pvCaptionH + M.pvContentGap
+	-- Everything the band consumes on top of the content's own height. The SCREEN
+	-- reserves exactly this (f:ChromeH) instead of a hand-tuned constant — when the
+	-- two drifted apart, the frames overlapped the caption line and the band
+	-- reported an overflow that was not there.
+	local STAGE_CHROME = M.pvContentGap + CAP_ZONE
+	function f:ChromeH() return M.pvDockPad * 3 + M.pvInlineHeadH + STAGE_CHROME end
+
+	-- Scrollbar at the right edge, only while there is something to scroll.
+	local sbTrack = CreateFrame("Frame", nil, stage)
+	sbTrack:SetWidth(M.pvScrollBarW)
+	sbTrack:SetPoint("TOPRIGHT", stage, "TOPRIGHT", -S.s2, -M.pvContentGap)
+	sbTrack:SetPoint("BOTTOMRIGHT", stage, "BOTTOMRIGHT", -S.s2, CAP_ZONE)
+	UI.RoundFill(sbTrack, Surface.Input, nil, nil, M.pvScrollBarW / 2)
+	local sbThumb = CreateFrame("Frame", nil, sbTrack)
+	sbThumb:SetWidth(M.pvScrollBarW)
+	sbThumb:SetPoint("TOP", sbTrack, "TOP", 0, 0)
+	local sbThumbTex = UI.RoundFill(sbThumb, Accent.color, nil, nil, M.pvScrollBarW / 2)
+	sbTrack:Hide()
+
 	local scrollY, over, blockH = 0, 0, 0
 	local function placePivot()
 		pos:ClearAllPoints()
 		if over > 0 then
-			-- The holder hangs by its CENTER, so aligning the block's TOP with the
-			-- stage's top edge means offsetting by half the block. Growing scrollY
-			-- moves the block further up, revealing what is below.
-			pos:SetPoint("CENTER", stage, "TOP", 0, -(M.pvStagePad + blockH / 2) - scrollY)
+			-- The holder hangs by its CENTER, so putting the block's TOP at the stage's
+			-- top gap means offsetting by half the block. A GROWING scrollY has to move
+			-- the block UP to reveal what is below it, so it ADDS to the (negative)
+			-- offset — subtracting pushed the content down and left a hole above
+			-- (Florian 2026-07-30).
+			pos:SetPoint("CENTER", stage, "TOP", 0, -(M.pvContentGap + blockH / 2) + scrollY)
 		else
-			pos:SetPoint("CENTER", stage, "CENTER", 0, M.pvCaptionH / 2)
+			-- Centred in the free area between the two zones, not in the raw stage.
+			pos:SetPoint("CENTER", stage, "CENTER", 0, CAP_ZONE / 2 - M.pvContentGap / 2)
 		end
+	end
+	local function paintScrollbar()
+		if over <= 0 then sbTrack:Hide(); return end
+		local trackH = sbTrack:GetHeight() or 0
+		if trackH <= 0 then sbTrack:Hide(); return end
+		sbTrack:Show()
+		local visible = blockH - over            -- how much of the block is on screen
+		local frac = (blockH > 0) and (visible / blockH) or 1
+		local thumbH = math.max(M.pvScrollBarW * 3, math.floor(trackH * frac))
+		sbThumb:SetHeight(thumbH)
+		sbThumb:ClearAllPoints()
+		sbThumb:SetPoint("TOP", sbTrack, "TOP", 0, -math.floor((trackH - thumbH) * (scrollY / over)))
+		UI.SetColor(sbThumbTex, Accent.color) -- follows a live accent change
 	end
 	placePivot()
 	-- `contentH` = visual height of what the module just rendered, in stage units.
@@ -3840,20 +3878,21 @@ function W.PreviewBand(parent, o)
 		local sh = stage:GetHeight() or 0
 		if sh <= 0 then return over end -- rect not resolved yet; a retry pass corrects it
 		blockH = contentH or 0
-		local usable = sh - M.pvCaptionH - M.pvStagePad * 2
-		over = math.max(0, math.ceil(blockH - usable))
+		over = math.max(0, math.ceil(blockH - (sh - STAGE_CHROME)))
 		if scrollY > over then scrollY = over end
 		stage:EnableMouseWheel(over > 0)
 		placePivot()
+		paintScrollbar()
 		return over
 	end
 	stage:SetScript("OnMouseWheel", function(_, delta)
 		if over <= 0 then return end
 		-- One notch ~= a third of the visible height: enough to move, small enough
 		-- to land on a frame boundary by feel.
-		local step = math.max(20, ((stage:GetHeight() or 0) - M.pvCaptionH) / 3)
+		local step = math.max(20, ((stage:GetHeight() or 0) - STAGE_CHROME) / 3)
 		scrollY = math.min(over, math.max(0, scrollY - delta * step))
 		placePivot()
+		paintScrollbar()
 	end)
 
 	local caption = UI.FS(stage, "caption", Text.Description)
@@ -3869,11 +3908,10 @@ function W.PreviewBand(parent, o)
 	-- the screen reserved its height up front (Raidframes:PreviewExtent) — so
 	-- this only refreshes the caption and the header state.
 	function f:SetExtent(w, h, cap)
-		-- Clip/scroll state first: the caption tells the user when there is more
-		-- below, which is the only affordance for the wheel (a scrollbar over the
-		-- frames would sit in the way of the very thing being previewed).
-		local hidden = self:SetScrollExtent(h)
-		if hidden > 0 then cap = (cap or "") .. "  ·  " .. T("scroll") end
+		-- Clip/scroll state first; the scrollbar it shows is the affordance, so the
+		-- caption stays a plain description (a text hint next to a visible scrollbar
+		-- would say the same thing twice, and it was the part getting covered).
+		self:SetScrollExtent(h)
 		caption:SetText(cap or "")
 		self:PaintChips()
 		-- "Background" eye: hidden -> the shell's dotted content shows through.
