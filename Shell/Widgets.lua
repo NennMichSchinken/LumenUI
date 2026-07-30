@@ -543,7 +543,7 @@ function W.Select(parent, o)
 		search:SetHeight(M.spSearchH)
 		search:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad)
 		search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -pad)
-		UI.RoundFill(search, Surface.Input, nil, nil, R_CTRL)
+		UI.RoundFill(search, Surface.Field, nil, nil, R_CTRL) -- typable surface: has to lift off the open menu it sits in
 		UI.RoundBorder(search, Border.default, "OVERLAY", nil, R_CTRL)
 		UI:SetFont(search, "value", Text.Primary) -- role, not an ad-hoc size
 		search:SetTextInsets(10, 10, 0, 0)
@@ -863,7 +863,7 @@ function W.SpellPicker(parent, o)
 	search:SetHeight(M.spSearchH)
 	search:SetPoint("TOPLEFT", menu, "TOPLEFT", M.spPad, -M.spPad)
 	search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -M.spPad, -M.spPad)
-	UI.RoundFill(search, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(search, Surface.Field, nil, nil, R_CTRL) -- typable surface: has to lift off the open menu it sits in
 	UI.RoundBorder(search, Border.default, "OVERLAY", nil, R_CTRL)
 	UI:SetFont(search, "value", Text.Primary) -- role, not an ad-hoc size
 	search:SetTextInsets(10, 10, 0, 0)
@@ -1074,12 +1074,9 @@ local function buildConfirm()
 	card:EnableMouse(true) -- don't treat clicks on the card as "outside"
 	UI.RoundFill(card, Surface.Input, nil, nil, RAD.xl) -- modal dialog = XL
 	UI.RoundBorder(card, Border.hover, "OVERLAY", nil, RAD.xl) -- v2: neutral popover border
-	local accent = card:CreateTexture(nil, "OVERLAY") -- gold accent on top (signature)
-	accent:SetHeight(3)
-	-- Inset by the corner radius: the straight bar stops where the curve starts.
-	accent:SetPoint("TOPLEFT", card, "TOPLEFT", RAD.xl, 0)
-	accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", -RAD.xl, 0)
-	UI.SetColor(accent, Text.Primary) -- v2: signature accent = brand gold (C1)
+	-- (The bright bar across the top is gone, 2026-07-29: a leftover from the
+	-- gold-signature era. On the monochrome palette it was simply a white stripe,
+	-- and the card's own border already separates the dialog from the dim.)
 
 	local title = UI.FS(card, "sectionHead", Text.Primary)
 	title:SetPoint("TOPLEFT", card, "TOPLEFT", M.confirmPad, -M.confirmPad)
@@ -1310,6 +1307,17 @@ local function applyTip(owner, icon, titleText, bodyText, anchor)
 		-- Open ABOVE the owner (grows upward), so it never covers the row it
 		-- belongs to — used by the card-header eye (Florian 2026-07-16).
 		t.tip:SetPoint("BOTTOMLEFT", owner, "TOPLEFT", 0, M.tipGap)
+	elseif anchor == "CURSOR" then
+		-- At the pointer. For FULL-WIDTH rows: anchoring off the owner's right
+		-- edge threw the tip to the far side of the panel, miles from what you
+		-- were pointing at (Florian 2026-07-29).
+		local cx, cy = GetCursorPosition()
+		local sc = t.tip:GetEffectiveScale()
+		if cx and cy and sc and sc > 0 then
+			t.tip:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cx / sc + M.tipGap, cy / sc - M.tipGap)
+		else
+			t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
+		end
 	else
 		t.tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0)
 	end
@@ -1323,12 +1331,12 @@ local function applyTip(owner, icon, titleText, bodyText, anchor)
 	t.tip:Show()
 end
 
-function W.ShowSpellTip(owner, spellID)
+function W.ShowSpellTip(owner, spellID, anchor)
 	if not spellID then return end
 	local nm = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)
 	local tx = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
 	local ds = C_Spell and C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(spellID)
-	applyTip(owner, tx or 136243, nm or ("Spell " .. tostring(spellID)), ds)
+	applyTip(owner, tx or 136243, nm or ("Spell " .. tostring(spellID)), ds, anchor)
 end
 
 function W.ShowTextTip(owner, title, body, anchor)
@@ -1510,18 +1518,21 @@ function W.Segment(parent, o)
 	bar:SetHeight(cellH)
 	bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	if not hug then bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY) end -- hug sets its own width
-	UI.PillFill(bar, Surface.Input, "BACKGROUND", cellH) -- fully-round capsule strip (1:1 with the tab bar)
-	UI.PillBorder(bar, Border.default, "OVERLAY", cellH)
+	-- Rounded RECTANGLE, not a capsule (Florian 2026-07-29): the capsule pulled a
+	-- lot of attention and sat apart from the dropdowns / inputs / cards, which
+	-- are all softly-rounded rectangles. Same radius as a control face.
+	UI.RoundFill(bar, Surface.Input, "BACKGROUND", nil, R_CTRL)
+	UI.RoundBorder(bar, Border.default, "OVERLAY", nil, R_CTRL)
 	f._control = bar
 
-	-- Sliding pill = the tab pill: white/10 capsule inset by tabStripPad so its
-	-- height = tabH - 2*pad = 38 (reuses pill-h38). NO glow — the tabs' underglow
-	-- read too heavy on the smaller inline segments (Florian 2026-07-22).
+	-- Sliding indicator: inset by tabStripPad, rounded a step tighter than the
+	-- strip so the two curves nest instead of fighting. NO glow — the tabs'
+	-- underglow read too heavy on the smaller inline segments (Florian 2026-07-22).
 	local pad = S.tabStripPad
 	local slider = CreateFrame("Frame", nil, bar)
 	slider:SetFrameLevel(bar:GetFrameLevel() + 1) -- above the strip, below the cell text
 	slider._ref = bar
-	UI.PillFill(slider, Accent.wash, "ARTWORK", cellH - pad * 2) -- accent-wash pill (tints if a colour accent is set)
+	UI.RoundFill(slider, Accent.wash, "ARTWORK", nil, UI.RADIUS.sm)
 	slider:Hide()
 
 	-- Not `(get() or value)` — get() may legitimately return `false` (e.g. inside/
@@ -1539,6 +1550,16 @@ function W.Segment(parent, o)
 		local ox, oy, w, h = UI.itemRectIn(active, bar)
 		if not ox then return end
 		UI.slideTo(slider, ox + pad, oy - pad, w - pad * 2, h - pad * 2, animate)
+	end
+	-- Re-layout / re-show must not SNAP a pill that is mid-glide: it re-targets the
+	-- running tween instead. The preview header's switches call Shell:RenderContent,
+	-- which does SetSticky(nil) -> sticky:Hide() and re-shows it in the SAME frame as
+	-- the click — so OnShow fired straight into the fresh tween and killed it, and
+	-- only those two segments jumped while every in-card one glided (Florian
+	-- 2026-07-30). A cold show has no tween running and still snaps (as does
+	-- UI.slideTo itself while _cx is nil).
+	local function reposition()
+		positionSlider(slider:GetScript("OnUpdate") ~= nil)
 	end
 	local function paint(animate)
 		for _, c in ipairs(cells) do
@@ -1591,7 +1612,7 @@ function W.Segment(parent, o)
 				x = x + cw
 			end
 			bar:SetWidth(x)
-			positionSlider(false)
+			reposition()
 		end
 		fitHug()
 		for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do C_Timer.After(dl, fitHug) end
@@ -1608,9 +1629,9 @@ function W.Segment(parent, o)
 				c:SetPoint("LEFT", bar, "LEFT", (i - 1) * cw, 0)
 				c:SetWidth(cw)
 			end
-			positionSlider(false)
+			reposition()
 		end)
-		bar:HookScript("OnShow", function() positionSlider(false) end) -- build-time rects were nil
+		bar:HookScript("OnShow", reposition) -- build-time rects were nil
 	end
 	paint(false)
 
@@ -2102,7 +2123,7 @@ local function buildColorPicker()
 	local hexBox = CreateFrame("EditBox", nil, cp)
 	hexBox:SetSize(110, M.cpPrevH)
 	hexBox:SetPoint("LEFT", preview, "RIGHT", M.cpGap, 0)
-	UI.RoundFill(hexBox, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(hexBox, Surface.Input, nil, nil, R_CTRL) -- Input: the picker sits on Surface.Window (#0C0C0C), so inset already lifts this by +13 (step rule at P.field)
 	UI.RoundBorder(hexBox, Border.default, "OVERLAY", nil, R_CTRL)
 	UI:SetFont(hexBox, "value", Text.Primary)
 	hexBox:SetJustifyH("CENTER"); hexBox:SetAutoFocus(false); hexBox:SetMaxLetters(6)
@@ -2402,7 +2423,7 @@ function W.TextInput(parent, o)
 	box:SetHeight(CONTROL_H)
 	box:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
-	UI.RoundFill(box, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(box, Surface.Field, nil, nil, R_CTRL) -- Field, not Input: a box you type into has to lift off the card it sits on
 	UI.RoundBorder(box, Border.default, "OVERLAY", nil, R_CTRL) -- subtle edge, matches the dropdown (Florian 2026-07-22: Border.hover read too strong)
 	-- Same text role as the dropdown headers (selectText): inputs and selects
 	-- sit side by side in rows (Profile tab) and must read as one control family.
@@ -2447,7 +2468,7 @@ function W.Textarea(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(o.height or 120)
 	if o.width then f:SetWidth(o.width) end
-	UI.RoundFill(f, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(f, Surface.Field, nil, nil, R_CTRL) -- typable surface, same step as W.TextInput
 	UI.RoundBorder(f, Border.hover, "OVERLAY", nil, R_CTRL)
 
 	local sf = CreateFrame("ScrollFrame", nil, f)
@@ -2528,7 +2549,11 @@ local BTN_VARIANTS = {
 	secondary = {
 		bg = nil, bgHover = UI.accentA(0.08),
 		txt = Accent.color, txtHover = Accent.hover,
-		line = UI.accentA(0.55), lineHover = Accent.hover, pad = 22, font = UI.FONT.semibold,
+		-- Outline alpha lowered from .55 (Florian 2026-07-29: the ring read as a
+		-- heavy border once the buttons stopped being capsules). The ring asset
+		-- has a fixed 2px stroke, so ALPHA is the way to make an edge thinner —
+		-- the same lever UI.Border uses.
+		line = UI.accentA(0.30), lineHover = UI.accentA(0.65), pad = 22, font = UI.FONT.semibold,
 	},
 	neutral = {
 		bg = Surface.Input, bgHover = Surface.Hover,
@@ -2538,7 +2563,7 @@ local BTN_VARIANTS = {
 	danger = {
 		bg = nil, bgHover = UI.dangerA(0.10),
 		txt = Status.danger, txtHover = Status.dangerHover,
-		line = UI.dangerA(0.55), lineHover = Status.dangerHover, pad = 22, font = UI.FONT.semibold,
+		line = UI.dangerA(0.30), lineHover = UI.dangerA(0.65), pad = 22, font = UI.FONT.semibold,
 	},
 }
 BTN_VARIANTS.ghost = BTN_VARIANTS.neutral
@@ -2561,11 +2586,14 @@ function W.Button(parent, o)
 	local variant = o.variant or "primary"
 	local v = BTN_VARIANTS[variant]
 	local b = CreateFrame("Button", nil, parent)
-	b:SetHeight(M.buttonH)
+	-- o.height: free now that the face is a rounded rectangle (the old capsule
+	-- only existed at the heights that had pill assets).
+	b:SetHeight(o.height or M.buttonH)
 
-	-- Fully-round PILL (Florian 2026-07-22: mockup buttons are pills). h48 assets
-	-- exist; the cap radius = h/2 so any button width stays a clean capsule.
-	local bg = UI.PillFill(b, CLEAR, "BACKGROUND", M.buttonH)
+	-- Rounded RECTANGLE (Florian 2026-07-29, replacing the 2026-07-22 pill): the
+	-- capsules read as their own form language next to the rounded-rectangle
+	-- dropdowns, inputs and cards. Same control-face radius as those.
+	local bg = UI.RoundFill(b, CLEAR, "BACKGROUND", nil, R_CTRL)
 
 	-- v2: FLAT fills only (the old primary gold gradient is gone — flat design line).
 	local function paintBg(hover)
@@ -2577,7 +2605,7 @@ function W.Button(parent, o)
 	end
 	paintBg(false)
 
-	local edges = UI.PillBorder(b, v.line, "OVERLAY", M.buttonH)
+	local edges = UI.RoundBorder(b, v.line, "OVERLAY", nil, R_CTRL)
 	local txt = UI.FS(b, "btn", v.txt)
 	local okFont = txt:SetFont(v.font, BTN_SIZE, "") -- weight per variant (see BTN_VARIANTS)
 	txt:SetText(o.text or "")
@@ -2827,7 +2855,10 @@ function W.Collapsible(parent, o)
 	-- Subtitle: muted description right of the title, truncates against the
 	-- right cluster.
 	if o.subtitle then
-		local sub = UI.FS(f, "caption", Text.Description)
+		-- "body" (14) like the card and inner-block subtitles, so the same anatomy
+		-- (title + its describing line) answers the same everywhere. Currently no
+		-- call site passes a subtitle — kept in sync so it can't drift back.
+		local sub = UI.FS(f, "body", Text.Description)
 		sub:SetPoint("LEFT", title, "RIGHT", M.collapsibleSummaryGap, 0)
 		sub:SetPoint("RIGHT", sumLeft, "LEFT", -M.collapsibleSummaryGap, 0)
 		sub:SetJustifyH("LEFT")
@@ -3096,101 +3127,461 @@ function W.OptionRow(parent, label)
 end
 
 -- ---------------------------------------------------------------------------
---  PreviewBand — content of the Shell's preview DOCK (the satellite window
---  right of / below the panel, see Shell:SetDockLayout). Chrome: a v3 header
---  CARD (PREVIEW title left, right-aligned: context/size chip groups + collapse
---  chevron; the card is the drag handle) and the inset stage with a caption
---  line. Per-layer visibility lives as an eye on each SETTING CARD now (the old
---  funnel filter popover was removed, Florian 2026-07-16); o.eyes() is still the
---  profile table the render reads to hide/restore layers.
---  The owning MODULE fills band.holder with its preview frames (true
---  on-screen size via SetScale on the holder) and reports the VISUAL extent
---  + dock side via band:SetExtent(side, w, h, caption).
---  o = { eyes = fn -> tbl, onEye = fn(),
---        ctx = optional { values = { { v =, label = }, .. }, get, set } —
---              context switch chips (Base tab: Raid/Group),
+--  ChipBar — the category selector above an inline editor (Auras tab; Unit
+--  Frames inherits it). One chip per category: a state DOT (category colour
+--  when the category is on, muted when off), the label, and a badge showing
+--  either the icon count or "off". The selected chip carries the hover surface
+--  + a brighter label, so "what am I editing" reads at a glance.
+--  o = { defs = { { key, label, color = {r,g,b}, on = fn -> bool,
+--                   badge = fn -> string }, .. },
+--        get = fn -> key, set = fn(key) }
+--  :Repaint() re-reads on/badge without a rebuild (a master toggle in the
+--  editor must show up on its chip immediately).
+-- ---------------------------------------------------------------------------
+function W.ChipBar(parent, o)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(M.chipH)
+	local chips = {}
+
+	local function paintOne(c)
+		local sel = (o.get() == c._key)
+		local on  = c._def.on and c._def.on() or false
+		UI.SetColor(c._fill, sel and Surface.Hover or Surface.Input)
+		-- RoundBorder returns a TABLE of edge textures (one 9-slice ring here).
+		UI.SetColor(c._ring[1], sel and Border.hover or Border.faint)
+		c._label:SetTextColor(sel and Text.Primary.r or Text.Description.r,
+			sel and Text.Primary.g or Text.Description.g,
+			sel and Text.Primary.b or Text.Description.b)
+		-- Dot: the category's own colour while it renders, muted while it's off —
+		-- the one place semantic colour is allowed in the chrome (it mirrors the
+		-- preview, where the same colour identifies the icon row).
+		if on and c._def.color then
+			c._dot:SetVertexColor(c._def.color.r, c._def.color.g, c._def.color.b, 1)
+		else
+			c._dot:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 1)
+		end
+		local badge = c._def.badge and c._def.badge() or ""
+		c._badgeText:SetText(badge)
+		c._badgeText:SetTextColor(sel and Text.Description.r or Text.Disabled.r,
+			sel and Text.Description.g or Text.Disabled.g,
+			sel and Text.Description.b or Text.Disabled.b)
+		local bw = math.ceil(c._badgeText:GetStringWidth()) + M.chipCountPad * 2
+		c._badge:SetWidth(math.max(bw, M.chipCountH))
+		-- Width follows the content (dot + label + badge + padding).
+		local w = M.chipPadX * 2 + M.chipDot + M.chipDotGap
+			+ math.ceil(c._label:GetStringWidth()) + M.chipCountGap + math.max(bw, M.chipCountH)
+		c:SetWidth(w)
+	end
+
+	local function relayoutChips()
+		local x = 0
+		for _, c in ipairs(chips) do
+			c:ClearAllPoints()
+			c:SetPoint("TOPLEFT", f, "TOPLEFT", x, 0)
+			x = x + (c:GetWidth() or 0) + M.chipGap
+		end
+	end
+
+	for _, def in ipairs(o.defs) do
+		local c = CreateFrame("Button", nil, f)
+		c:SetHeight(M.chipH)
+		c._key, c._def = def.key, def
+		c._fill = UI.RoundFill(c, Surface.Input, nil, nil, R_CTRL)
+		c._ring = UI.RoundBorder(c, Border.faint, "OVERLAY", nil, R_CTRL)
+		-- Disc assets exist at 12/16/20/24 only -> chipDot must stay one of those.
+		c._dot = UI.Circle(c, Text.Disabled, "OVERLAY", M.chipDot)
+		c._dot:SetPoint("LEFT", c, "LEFT", M.chipPadX, 0)
+		c._label = UI.FS(c, "checkLabel", Text.Description)
+		c._label:SetPoint("LEFT", c._dot, "RIGHT", M.chipDotGap, 0)
+		c._label:SetText(def.label)
+		c._badge = CreateFrame("Frame", nil, c)
+		c._badge:SetHeight(M.chipCountH)
+		c._badge:SetPoint("LEFT", c._label, "RIGHT", M.chipCountGap, 0)
+		UI.RoundFill(c._badge, Border.faint, nil, nil, UI.RADIUS.xs)
+		c._badgeText = UI.FS(c._badge, "caption", Text.Disabled)
+		c._badgeText:SetPoint("CENTER", c._badge, "CENTER", 0, 0)
+		c:SetScript("OnEnter", function()
+			if o.get() ~= c._key then UI.SetColor(c._fill, Surface.Hover) end
+		end)
+		c:SetScript("OnLeave", function()
+			if o.get() ~= c._key then UI.SetColor(c._fill, Surface.Input) end
+		end)
+		c:SetScript("OnClick", function()
+			if o.get() == c._key then return end
+			o.set(c._key)
+		end)
+		chips[#chips + 1] = c
+	end
+
+	function f:Repaint()
+		for _, c in ipairs(chips) do paintOne(c) end
+		relayoutChips()
+	end
+	f:Repaint()
+	-- Font glyphs may still be cold at build time -> widths measure short. One
+	-- deferred repaint settles the layout (same cure as the button text heal).
+	C_Timer.After(0, function() if f:IsShown() then f:Repaint() end end)
+	f:HookScript("OnShow", function() f:Repaint() end)
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+--  CopyPopover — "copy these settings somewhere else", opened from an editor
+--  header. TWO questions, in this order:
+--    WHAT  — one checkbox per settings GROUP (the groups are the editor's own
+--            cards, so what you see is what you copy; no second taxonomy).
+--    WHERE — a GRID of every possible destination (rows = categories, columns =
+--            contexts). The source cell is marked and not selectable.
+--  Why a grid and not a list: destinations have TWO dimensions. A flat list
+--  ("Group", "Debuffs", ..) mixes them, and picking two entries has no
+--  guessable meaning (Florian 2026-07-29). Column headers select a whole
+--  context, row labels a whole category.
+--  o = { groups = { { key, label, hint }, .. }, defaults = { [key] = bool },
+--        rows = { { key, label, color }, .. },      -- categories
+--        cols = { { key, label }, .. },             -- contexts
+--        source = fn -> rowKey, colKey,
+--        warn = optional fn(groupSel, targets) -> string or nil,
+--        onCopy = fn(groupKeys, targets)  -- targets = { {row=, col=}, .. }
+--      }
+--  Returns the trigger BUTTON (label + copy glyph).
+-- ---------------------------------------------------------------------------
+function W.CopyPopover(parent, o)
+	-- Text-only trigger: the Lucide set has no copy glyph yet (Textures/icons/).
+	local btn = W.Button(parent, { text = o.text or T("Copy"), variant = "secondary",
+		width = o.width, height = o.height })
+
+	local host = W._menuHost or parent
+	local closer = CreateFrame("Button", nil, host)
+	closer:SetAllPoints(UIParent)
+	closer:SetFrameStrata("FULLSCREEN_DIALOG")
+	closer:Hide()
+	local pop = CreateFrame("Frame", nil, host)
+	pop:SetFrameStrata("FULLSCREEN_DIALOG")
+	pop:SetFrameLevel(closer:GetFrameLevel() + 10)
+	pop:SetWidth(M.copyPopW)
+	pop:Hide()
+	UI.RoundFill(pop, Surface.Card)
+	UI.RoundBorder(pop, Border.hover, "OVERLAY")
+	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = pop end
+
+	local groupSel, targets = {}, {}   -- what / where, both reset on every open
+	local rebuild                       -- forward: repaint after each click
+	local function closePop() pop:Hide(); closer:Hide() end
+	closer:SetScript("OnClick", closePop)
+
+	local function targetList()
+		local out = {}
+		for key in pairs(targets) do
+			local r, c = key:match("^(.-)|(.+)$")
+			if r then out[#out + 1] = { row = r, col = c } end
+		end
+		return out
+	end
+	local function anyGroup()
+		for _, g in ipairs(o.groups) do if groupSel[g.key] then return true end end
+		return false
+	end
+
+	-- Children are rebuilt on every repaint (the popover is small and only
+	-- redraws on a click — no hot path). Kept in a pool-free list so the old
+	-- widgets are released with the popover, not leaked per click.
+	local kids = {}
+	local function clearKids()
+		for _, k in ipairs(kids) do k:Hide(); k:SetParent(nil) end
+		wipe(kids)
+	end
+
+	function rebuild()
+		clearKids()
+		local pad = M.copyPopPad
+		local y = -pad
+		local srcRow, srcCol = o.source()
+
+		local function add(frame) kids[#kids + 1] = frame; return frame end
+		-- FontStrings can't be re-parented away like frames, so each rebuild parks
+		-- them on a throwaway holder frame that IS in `kids`.
+		local textHost = add(CreateFrame("Frame", nil, pop))
+		textHost:SetAllPoints(pop)
+		local function label(text, role, col, x, yy)
+			local fs = UI.FS(textHost, role, col)
+			fs:SetPoint("TOPLEFT", pop, "TOPLEFT", x, yy)
+			fs:SetText(text)
+			return fs
+		end
+
+		-- Title + source line
+		local title = label(o.title or T("Copy settings"), "sectionHead", Text.Primary, pad, y)
+		y = y - math.ceil(title:GetStringHeight()) - 4
+		local fromRow, fromCol
+		for _, r in ipairs(o.rows) do if r.key == srcRow then fromRow = r.label end end
+		for _, c in ipairs(o.cols) do if c.key == srcCol then fromCol = c.label end end
+		local sub = label(("%s %s · %s"):format(T("From"), fromRow or "?", fromCol or "?"),
+			"caption", Text.Description, pad, y)
+		y = y - math.ceil(sub:GetStringHeight()) - M.copyGroupGap
+
+		-- WHAT
+		local wh = label(T("What"), "caption", Text.Disabled, pad, y)
+		y = y - math.ceil(wh:GetStringHeight()) - 6
+		for _, g in ipairs(o.groups) do
+			local row = add(CreateFrame("Frame", nil, pop))
+			row:SetHeight(M.copyRowH)
+			row:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+			row:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y)
+			local cb = W.Checkbox(row, {
+				label = g.label, tooltipTitle = g.label,
+				get = function() return groupSel[g.key] end,
+				set = function(v) groupSel[g.key] = v or nil; rebuild() end,
+			})
+			cb:SetPoint("LEFT", row, "LEFT", 0, 0)
+			if g.hint then
+				local h = UI.FS(row, "caption", Text.Disabled)
+				h:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+				h:SetText(g.hint)
+			end
+			y = y - M.copyRowH
+		end
+		y = y - M.copyGroupGap
+
+		-- WHERE (grid)
+		local wt = label(T("Where to"), "caption", Text.Disabled, pad, y)
+		y = y - math.ceil(wt:GetStringHeight()) - 6
+
+		local labelColW = M.copyPopW - pad * 2 - (#o.cols * (M.copyCellW + M.copyGridGap))
+		-- Column headers double as "select this whole context".
+		for ci, c in ipairs(o.cols) do
+			local hb = add(CreateFrame("Button", nil, pop))
+			hb:SetSize(M.copyCellW, M.copyHeadH)
+			hb:SetPoint("TOPLEFT", pop, "TOPLEFT",
+				pad + labelColW + (ci - 1) * (M.copyCellW + M.copyGridGap), y)
+			local fs = UI.FS(hb, "caption", Text.Disabled)
+			fs:SetPoint("CENTER", hb, "CENTER", 0, 0)
+			fs:SetText(c.label)
+			hb:SetScript("OnEnter", function() fs:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b) end)
+			hb:SetScript("OnLeave", function() fs:SetTextColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b) end)
+			hb:SetScript("OnClick", function()
+				local all = true
+				for _, r in ipairs(o.rows) do
+					if not (r.key == srcRow and c.key == srcCol) and not targets[r.key .. "|" .. c.key] then all = false end
+				end
+				for _, r in ipairs(o.rows) do
+					if not (r.key == srcRow and c.key == srcCol) then
+						targets[r.key .. "|" .. c.key] = (not all) or nil
+					end
+				end
+				rebuild()
+			end)
+		end
+		y = y - M.copyHeadH - 2
+
+		for _, r in ipairs(o.rows) do
+			-- Row label = "select this category in every context".
+			local rb = add(CreateFrame("Button", nil, pop))
+			rb:SetSize(labelColW - M.copyGridGap, M.copyCellH)
+			rb:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+			local dot = rb:CreateTexture(nil, "OVERLAY")
+			dot:SetTexture(TEX .. "circle-20")
+			dot:SetSize(M.chipDot - 3, M.chipDot - 3)
+			dot:SetPoint("LEFT", rb, "LEFT", 0, 0)
+			dot:SetSnapToPixelGrid(false); dot:SetTexelSnappingBias(0)
+			if r.color then dot:SetVertexColor(r.color.r, r.color.g, r.color.b, 1)
+			else dot:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 1) end
+			local rfs = UI.FS(rb, "checkLabel", Text.Secondary)
+			rfs:SetPoint("LEFT", dot, "RIGHT", 8, 0)
+			-- Bound to the row's own width so a long category name is clipped
+			-- instead of running under the first tick cell.
+			rfs:SetPoint("RIGHT", rb, "RIGHT", 0, 0)
+			rfs:SetJustifyH("LEFT"); rfs:SetWordWrap(false)
+			rfs:SetText(r.label)
+			rb:SetScript("OnEnter", function() rfs:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end)
+			rb:SetScript("OnLeave", function() rfs:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b) end)
+			rb:SetScript("OnClick", function()
+				local all = true
+				for _, c in ipairs(o.cols) do
+					if not (r.key == srcRow and c.key == srcCol) and not targets[r.key .. "|" .. c.key] then all = false end
+				end
+				for _, c in ipairs(o.cols) do
+					if not (r.key == srcRow and c.key == srcCol) then
+						targets[r.key .. "|" .. c.key] = (not all) or nil
+					end
+				end
+				rebuild()
+			end)
+
+			for ci, c in ipairs(o.cols) do
+				local key = r.key .. "|" .. c.key
+				local cx = pad + labelColW + (ci - 1) * (M.copyCellW + M.copyGridGap)
+				if r.key == srcRow and c.key == srcCol then
+					-- The source: dashed, inert, labelled — never a destination.
+					local src = add(CreateFrame("Frame", nil, pop))
+					src:SetSize(M.copyCellW, M.copyCellH)
+					src:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
+					UI.RoundBorder(src, Border.default, "OVERLAY", nil, R_CTRL)
+					local sfs = UI.FS(src, "caption", Text.Disabled)
+					sfs:SetPoint("CENTER", src, "CENTER", 0, 0)
+					sfs:SetText(T("Source"))
+				else
+					local cell = add(CreateFrame("Button", nil, pop))
+					cell:SetSize(M.copyCellW, M.copyCellH)
+					cell:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
+					local on = targets[key] and true or false
+					local cf = UI.RoundFill(cell, on and Accent.selection or Surface.Input, nil, nil, R_CTRL)
+					UI.RoundBorder(cell, on and Border.hover or Border.faint, "OVERLAY", nil, R_CTRL)
+					local tick = cell:CreateTexture(nil, "OVERLAY")
+					tick:SetSize(M.copyTick, M.copyTick)
+					tick:SetPoint("CENTER", cell, "CENTER", 0, 0)
+					if on then
+						tick:SetTexture(TEX .. "icon-check")
+						tick:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, 1)
+					else
+						tick:SetTexture(TEX .. "icon-check")
+						tick:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 0.28)
+					end
+					tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
+					cell:SetScript("OnEnter", function() if not targets[key] then UI.SetColor(cf, Surface.Hover) end end)
+					cell:SetScript("OnLeave", function() if not targets[key] then UI.SetColor(cf, Surface.Input) end end)
+					cell:SetScript("OnClick", function()
+						targets[key] = (not targets[key]) or nil
+						rebuild()
+					end)
+				end
+			end
+			y = y - M.copyCellH - M.copyGridGap
+		end
+		y = y - 4
+
+		-- Optional warning (e.g. copying placement across categories).
+		local picked = targetList()
+		local warnText = o.warn and o.warn(groupSel, picked) or nil
+		if warnText then
+			local wf = add(CreateFrame("Frame", nil, pop))
+			wf:SetHeight(M.copyWarnH)
+			wf:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+			wf:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y)
+			UI.RoundFill(wf, Border.faint, nil, nil, R_CTRL)
+			local wfs = UI.FS(wf, "caption", Text.Description)
+			wfs:SetPoint("TOPLEFT", wf, "TOPLEFT", 10, -8)
+			wfs:SetPoint("BOTTOMRIGHT", wf, "BOTTOMRIGHT", -10, 8)
+			wfs:SetJustifyH("LEFT"); wfs:SetJustifyV("TOP")
+			wfs:SetText(warnText)
+			y = y - M.copyWarnH - 8
+		end
+
+		-- Footer: cancel + the counting confirm button.
+		local foot = add(CreateFrame("Frame", nil, pop))
+		foot:SetHeight(M.buttonH)
+		foot:SetPoint("TOPLEFT", pop, "TOPLEFT", pad, y)
+		foot:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -pad, y)
+		local cancel = W.Button(foot, { text = T("Cancel"), variant = "secondary",
+			width = (M.copyPopW - pad * 2 - 10) / 2, onClick = closePop })
+		cancel:SetPoint("LEFT", foot, "LEFT", 0, 0)
+		local n = #picked
+		local go = W.Button(foot, {
+			text = (n > 0) and (T("Copy") .. " (" .. n .. ")") or T("Copy"),
+			variant = "primary", width = (M.copyPopW - pad * 2 - 10) / 2,
+			onClick = function()
+				if not (anyGroup() and n > 0) then return end
+				local keys = {}
+				for _, g in ipairs(o.groups) do if groupSel[g.key] then keys[#keys + 1] = g.key end end
+				closePop()
+				o.onCopy(keys, picked)
+			end,
+		})
+		go:SetPoint("RIGHT", foot, "RIGHT", 0, 0)
+		-- W.Button has no SetWidgetEnabled — same dim+deafen pattern the other
+		-- widgets use for their disabled state.
+		local usable = anyGroup() and n > 0
+		go:SetAlpha(usable and 1 or 0.35)
+		go:EnableMouse(usable)
+		y = y - M.buttonH
+
+		pop:SetHeight(-y + pad)
+	end
+
+	btn:SetScript("OnClick", function()
+		if pop:IsShown() then closePop(); return end
+		wipe(targets)
+		for _, g in ipairs(o.groups) do
+			groupSel[g.key] = (o.defaults and o.defaults[g.key]) or nil
+		end
+		rebuild()
+		pop:ClearAllPoints()
+		pop:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -6)
+		pop:SetClampedToScreen(true)
+		closer:Show(); pop:Show(); pop:Raise()
+	end)
+	return btn
+end
+
+-- ---------------------------------------------------------------------------
+--  PreviewBand — the live preview ANCHORED at the top of a settings tab. ONE
+--  card: header row (fold chevron, title, context/size switch, layer eye) over
+--  the stage the owning module fills with frames. The screen reserves its height
+--  and parks it in the Shell's sticky area (Shell:SetSticky), so it stays put
+--  while the settings scroll under it.
+--  (Until 2026-07-29 this was the content of a draggable satellite DOCK window;
+--  that mode is gone entirely — see the raidframe tabs in Screens.lua.)
+--  The module fills band.holder at TRUE on-screen size (SetScale on the holder)
+--  and reports the visual extent via band:SetExtent(w, h, caption).
+--  o = { eyes = fn -> tbl, eyeDefs = list, onEye = fn(),
+--        ctx = optional { values = { { v =, label = }, .. }, get, set, caption },
 --        sizes = optional { values = { .. }, get = fn, set = fn(v) },
---        open = optional { get = fn, set = fn(v) } — collapse state,
---        onLayout = fn(side, dockW or nil, dockH),
---        onChrome = optional fn(on) — dock window chrome (now always on),
---        onResetPos = optional fn() — header action (re-dock the window) }
+--        fold = optional { get = fn, set = fn(v) } — collapse state,
+--        hint = optional right-aligned caption }
 -- ---------------------------------------------------------------------------
 function W.PreviewBand(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetAllPoints(parent)
 	local stageFill -- forward-declared: the eye popover's "Background" row toggles it via RepaintEyes (created below with the stage)
-	-- The stage fill AND the dock's own fill are BOTH Surface.Window, so hiding just the
-	-- stage reveals an identical colour = no visible change. The "Background" eye
-	-- hides both, so the shell's dotted content shows through (frames "float").
-	local dockFrame = parent:GetParent() -- the Shell dock (carries ._fill)
 
-	-- Header CARD (v3 top-card style, like the Base "enable" card): a rounded
-	-- fill+border card inset from the dock edges, holding the title + all
-	-- controls. It stands out from the dock surface (esp. with the backdrop
-	-- hidden via the filter) and IS the drag handle — so the separate grip is
-	-- gone (Florian 2026-07-05).
+	-- ONE card: header row on top, stage below. (A separate header card floating
+	-- over a separate stage read as two unrelated things — Florian 2026-07-29.)
+	UI.RoundFill(f, Surface.Card, nil, nil, RAD.lg)
+	UI.RoundBorder(f, Border.default, "OVERLAY", nil, RAD.lg)
+
+	-- Header row INSIDE the card: no fill, no border, no divider — a hairline
+	-- right under the title read as cramped and the stage is its own surface.
 	local head = CreateFrame("Frame", nil, f)
 	head:SetPoint("TOPLEFT", f, "TOPLEFT", M.pvDockPad, -M.pvDockPad)
 	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", -M.pvDockPad, -M.pvDockPad)
-	head:SetHeight(M.sectionHeaderH)
-	-- The head is a REAL card matching the settings cards EXACTLY: same fill
-	-- (Surface.Card) and border (Border.default). With the page-colored stage below (no black
-	-- box) this reads as page + card — like the settings page itself, not a
-	-- nested "double frame" (Florian 2026-07-05).
-	UI.RoundFill(head, Surface.Card, nil, nil, RAD.lg)
-	UI.RoundBorder(head, Border.default, "OVERLAY", nil, RAD.lg)
+	head:SetHeight(M.pvInlineHeadH)
+
+	-- The title names what the switch beside it DOES: on the Auras tab that switch
+	-- picks the context whose VALUES you edit ("Editing"); elsewhere the band
+	-- really is only a preview.
 	local lbl = UI.FS(head, "sectionHead", Text.Primary)
-	lbl:SetText(T("PREVIEW"))
-	lbl:SetPoint("LEFT", head, "LEFT", M.sectionTitleX, 0)
+	lbl:SetText((o.ctx and o.ctx.caption) or T("Preview"))
 
-	-- Icon order (right to left): collapse chevron — then the chip groups chain
-	-- further left. The old funnel filter popover is GONE (Florian 2026-07-16):
-	-- per-layer visibility now lives as an eye on each setting card, so the
-	-- preview stays clean and the control lives with the setting it toggles.
-
-	-- Collapse chevron (aura-section pattern): folds the dock away. Direction
-	-- follows the dock side (right dock folds LEFT onto the panel edge,
-	-- bottom dock folds UP); state lives in o.open.
-	local cbtn = CreateFrame("Button", nil, head)
-	cbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-	cbtn:SetPoint("RIGHT", head, "RIGHT", -M.pvDockPad, 0)
-	UI.RoundFill(cbtn, Surface.Input, nil, nil, R_CTRL) -- lighter than the card, like a dropdown on a settings card
-	UI.RoundBorder(cbtn, Border.hover, "OVERLAY", nil, R_CTRL)
-	local cGlyph = cbtn:CreateTexture(nil, "OVERLAY")
-	cGlyph:SetSize(M.pvGlyph, M.pvGlyph)
-	cGlyph:SetPoint("CENTER", cbtn, "CENTER", 0, 0)
-	cGlyph:SetSnapToPixelGrid(false); cGlyph:SetTexelSnappingBias(0)
-	cGlyph:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
-	local CHEV_TEX = { up = "icon-chevron-up", down = "icon-chevron-down", left = "icon-chevron-left" }
-	local function chevDir(dir)
-		cGlyph:SetTexture(TEX .. (CHEV_TEX[dir] or "icon-chevron-down"))
+	-- A collapse chevron leads the row, on the left edge the content blocks below
+	-- use, title right beside it. Folding is worth having when the preview is in
+	-- the way — anchored, it cannot simply be pushed aside (Florian 2026-07-29).
+	local foldBtn
+	if o.fold then
+		foldBtn = CreateFrame("Button", nil, head)
+		-- Same footprint as a card's eye button: the title then starts at the
+		-- exact x a card title does.
+		foldBtn:SetSize(M.cardEyeBtn, M.cardEyeBtn)
+		foldBtn:SetPoint("LEFT", head, "LEFT", M.pvInlineTitleX, 0)
+		local fg = foldBtn:CreateTexture(nil, "OVERLAY")
+		fg:SetSize(M.chevGlyph, M.chevGlyph)
+		fg:SetPoint("CENTER", foldBtn, "CENTER", 0, 0)
+		fg:SetSnapToPixelGrid(false); fg:SetTexelSnappingBias(0)
+		local function paintFold()
+			fg:SetTexture(TEX .. (o.fold.get() and "icon-chevron-right" or "icon-chevron-down"))
+			local c = Text.Description
+			fg:SetVertexColor(c.r, c.g, c.b)
+		end
+		paintFold()
+		foldBtn:SetScript("OnEnter", function() fg:SetVertexColor(Text.Primary.r, Text.Primary.g, Text.Primary.b) end)
+		foldBtn:SetScript("OnLeave", function() paintFold() end)
+		foldBtn:SetScript("OnClick", function() o.fold.set(not o.fold.get()) end)
+		lbl:SetPoint("LEFT", foldBtn, "RIGHT", S.s3, 0)
+	else
+		lbl:SetPoint("LEFT", head, "LEFT", M.pvInlineTitleX, 0)
 	end
-	local function isOpen() return not o.open or o.open.get() end
 
-	-- Header chip groups (right-aligned, left of the collapse button): the Base tab's
-	-- Raid/Group context switch (o.ctx) and the sample-size chips (o.sizes).
-	-- They live in the STATIONARY header bar on purpose — in a row below it
-	-- they moved/jumped whenever a switch resized or re-docked the window,
-	-- away from under the cursor. Chain builds right-to-left.
-	-- Reset-position button (rotate-ccw glyph), left of the collapse chevron:
-	-- snaps a dragged-away dock back onto its panel edge. Direct header action
-	-- (Florian 2026-07-06) — you often nudge the dock and just want it home.
-	local resetAnchor = cbtn
-	if o.onResetPos then
-		local rbtn = CreateFrame("Button", nil, head)
-		rbtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-		rbtn:SetPoint("RIGHT", cbtn, "LEFT", -S.s4, 0)
-		UI.RoundFill(rbtn, Surface.Input, nil, nil, R_CTRL)
-		UI.RoundBorder(rbtn, Border.hover, "OVERLAY", nil, R_CTRL)
-		local rGlyph = rbtn:CreateTexture(nil, "OVERLAY")
-		rGlyph:SetSize(M.pvGlyph, M.pvGlyph)
-		rGlyph:SetPoint("CENTER", rbtn, "CENTER", 0, 0)
-		rGlyph:SetTexture(TEX .. "icon-reset")
-		rGlyph:SetSnapToPixelGrid(false); rGlyph:SetTexelSnappingBias(0)
-		rGlyph:SetVertexColor(Text.Description.r, Text.Description.g, Text.Description.b)
-		rbtn:SetScript("OnClick", function() o.onResetPos() end) -- no hover (matches the collapse icon)
-		resetAnchor = rbtn
-	end
+	-- Header controls chain in from the RIGHT: layer eye, then the chip groups
+	-- (context switch / sample size) further left. Per-layer visibility also
+	-- lives as an eye on each setting card; this is the collection point.
 
 	-- Central eye popover (Florian 2026-07-17): ONE overview of all preview
 	-- layers, left of the reset button — the eyes stay on their cards as the
@@ -3224,7 +3615,7 @@ function W.PreviewBand(parent, o)
 	if o.eyeDefs then
 		ebtn = CreateFrame("Button", nil, head)
 		ebtn:SetSize(M.pvIconBtn, M.pvIconBtn)
-		ebtn:SetPoint("RIGHT", resetAnchor, "LEFT", -S.s4, 0)
+		ebtn:SetPoint("RIGHT", head, "RIGHT", 0, 0)
 		UI.RoundFill(ebtn, Surface.Input, nil, nil, R_CTRL)
 		eEdges = UI.RoundBorder(ebtn, Border.hover, "OVERLAY", nil, R_CTRL)
 		eGlyph = ebtn:CreateTexture(nil, "ARTWORK")
@@ -3232,8 +3623,15 @@ function W.PreviewBand(parent, o)
 		eGlyph:SetPoint("CENTER", ebtn, "CENTER", 0, 0)
 		eGlyph:SetSnapToPixelGrid(false); eGlyph:SetTexelSnappingBias(0)
 
-		eyePop = CreateFrame("Frame", nil, f)
-		eyePop:SetFrameLevel(f:GetFrameLevel() + 40)
+		-- The popover floats on the menu HOST, not inside the band: an inline band
+		-- lives in the panel's content area, where a plain child would open
+		-- BEHIND the surrounding shell chrome (Florian 2026-07-29). Same host and
+		-- strata the dropdowns use. Deliberately NOT registered in W._popovers —
+		-- that list is wiped per screen, and the band outlives a screen.
+		local popHost = W._menuHost or f
+		eyePop = CreateFrame("Frame", nil, popHost)
+		eyePop:SetFrameStrata("FULLSCREEN_DIALOG")
+		eyePop:SetFrameLevel(popHost:GetFrameLevel() + 60)
 		eyePop:SetClampedToScreen(true)
 		UI.RoundFill(eyePop, Surface.Input, nil, nil, RAD.lg)
 		UI.RoundBorder(eyePop, Border.default, "OVERLAY", nil, RAD.lg) -- subtle, matches the new dropdown (Florian 2026-07-22: Accent.color read as a hard white outline)
@@ -3301,10 +3699,25 @@ function W.PreviewBand(parent, o)
 			if eyePop:IsShown() then eyePop:Hide() return end
 			for _, rp in ipairs(eyeRepaints) do rp() end
 			paintEyeBtn()
+			-- Opens BESIDE the panel, not over the preview: anchored under its own
+			-- button it covered that button and jumped around as the screen
+			-- clamped it (Florian 2026-07-29). The panel edge is a fixed, roomy
+			-- spot — the same place the Edit Mode flyout uses.
+			eyePop:ClearAllPoints()
+			local panel = ns.Shell and ns.Shell:Frame()
+			if panel then
+				eyePop:SetPoint("TOPLEFT", panel, "TOPRIGHT", M.pvDockGap, -M.pvDockPad)
+			else
+				eyePop:SetPoint("TOPRIGHT", ebtn, "BOTTOMRIGHT", 0, -S.s3)
+			end
 			eyePop:Show()
+			eyePop:Raise()
 		end)
+		-- The popover lives on the menu host, so it does NOT disappear with the
+		-- band: close it when the band goes away (tab switch, panel closed),
+		-- otherwise it hangs around over an unrelated screen.
+		f:HookScript("OnHide", function() eyePop:Hide() end)
 		paintEyeBtn()
-		resetAnchor = ebtn
 	end
 	-- Card-eye clicks funnel through here (Screens' previewRefresh) so both
 	-- access points stay in sync while the popover is open.
@@ -3312,11 +3725,8 @@ function W.PreviewBand(parent, o)
 		paintEyeBtn()
 		-- The "Background" eye toggles the stage backdrop live (RepaintEyes runs on
 		-- every eye click via previewRefresh; SetExtent only fires on a re-layout).
-		-- Hide the dock fill too, else the identical-coloured dock shows through.
 		if stageFill and o.eyes then
-			local show = o.eyes().background ~= false
-			stageFill:SetShown(show)
-			if dockFrame and dockFrame._fill then dockFrame._fill:SetShown(show) end
+			stageFill:SetShown(o.eyes().background ~= false)
 		end
 		if eyePop and eyePop:IsShown() then
 			for _, rp in ipairs(eyeRepaints) do rp() end
@@ -3325,56 +3735,53 @@ function W.PreviewBand(parent, o)
 	f._eyePop = eyePop
 
 	local repaints = {}
-	local chipsW = 0
-	local chainAnchor, chainGap = resetAnchor, M.pvChipGroupGap
-	-- items = { { v =, label = }, ... }; paints selection from get(), sets via set(v).
-	local function chipGroup(items, get, set)
-		local chips = {}
-		for i = #items, 1, -1 do
-			local item = items[i]
-			local chip = CreateFrame("Button", nil, head)
-			chip:SetHeight(M.pvEyeH)
-			UI.RoundFill(chip, Surface.Scrim, nil, nil, RAD.sm)
-			local edges = UI.RoundBorder(chip, Border.hover, "OVERLAY", nil, RAD.sm)
-			local txt = UI.FS(chip, "value", Text.Description)
-			txt:SetPoint("CENTER", chip, "CENTER", 0, 0)
-			txt:SetText(item.label)
-			chip:SetWidth(math.max(M.pvEyeH, math.ceil(txt:GetStringWidth()) + M.pvEyePadX * 2))
-			chip:SetPoint("RIGHT", chainAnchor, "LEFT", -chainGap, 0)
-			chipsW = chipsW + chip:GetWidth() + chainGap
-			chainAnchor, chainGap = chip, M.pvEyeGap
-			chips[#chips + 1] = { v = item.v, paint = function(on)
-				for _, e in ipairs(edges) do UI.SetColor(e, on and Accent.color or Border.hover) end
-				local tc = on and Text.Primary or Text.Description
-				txt:SetTextColor(tc.r, tc.g, tc.b)
-			end }
-			local v = item.v
-			chip:SetScript("OnClick", function() set(v) end)
-		end
-		chainGap = M.pvChipGroupGap
+	-- ONE control language for both header choices: a real W.Segment, right after
+	-- the title, so "Editing [Group|Raid]" and "Preview [5|10|20|25]" read as one
+	-- phrase. The sample sizes used to be a row of small bordered chips, kept apart
+	-- on the reasoning "a set of values, not a two-way switch" — that distinction
+	-- did not survive contact with the rest of the shell, where a three-option
+	-- segment (outline, HP display) is the normal way to pick one value out of
+	-- several. Two languages for the same job in one header read dated next to the
+	-- Base and Auras tabs (Florian 2026-07-30).
+	local function headerSeg(items, get, set, width)
+		local opts2 = {}
+		for _, it in ipairs(items) do opts2[#opts2 + 1] = { value = it.v, label = it.label } end
+		local shown = get()
+		local seg
+		seg = W.Segment(head, { options = opts2, get = get,
+			set = function(v) shown = v; set(v) end,
+			width = width, cellH = M.segCompactH })
+		seg:SetPoint("LEFT", lbl, "RIGHT", M.pvChipGroupGap, 0)
+		-- Follow the value when it changes from OUTSIDE (profile import, a
+		-- click-to-configure jump): PaintChips runs on every band refresh. Only on a
+		-- real change — SetValueExternal animates the pill, and re-running that on
+		-- every refresh would make it twitch.
 		repaints[#repaints + 1] = function()
-			local cur = get()
-			for _, c in ipairs(chips) do c.paint(c.v == cur) end
+			local v = get()
+			if v ~= shown then shown = v; seg:SetValueExternal(v) end
 		end
-		repaints[#repaints]()
+		return seg
 	end
 	if o.sizes then
 		local items = {}
 		for _, v in ipairs(o.sizes.values) do items[#items + 1] = { v = v, label = tostring(v) } end
-		chipGroup(items, o.sizes.get, o.sizes.set)
+		f._sizeSeg = headerSeg(items, o.sizes.get, o.sizes.set, M.pvSizeSegW)
 	end
-	if o.ctx then chipGroup(o.ctx.values, o.ctx.get, o.ctx.set) end
+	if o.ctx then
+		f._ctxSeg = headerSeg(o.ctx.values, o.ctx.get, o.ctx.set, M.pvCtxSegW)
+	end
+	-- Quiet right-aligned hint that the stage is clickable (click-to-configure is
+	-- otherwise only discoverable by hovering).
+	if o.hint then
+		local hint = UI.FS(head, "caption", Text.Disabled)
+		hint:SetPoint("RIGHT", head, "RIGHT", 0, 0)
+		hint:SetText(o.hint)
+	end
 	function f:PaintChips()
 		for _, rp in ipairs(repaints) do rp() end
 	end
 
-	-- Minimum dock width so the header row never collapses onto itself.
-	local headMinW = M.sectionTitleX + math.ceil(lbl:GetStringWidth()) + S.s7
-		+ chipsW + M.pvIconBtn + S.s4 + M.pvIconBtn + M.pvDockPad * 2
-		+ (ebtn and (S.s4 + M.pvIconBtn) or 0)
-
-	-- Body below the header card (aligned to it — the card is already inset):
-	-- the stage.
+	-- Body below the header row: the stage.
 	local body = CreateFrame("Frame", nil, f)
 	body:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -M.pvDockPad)
 	body:SetPoint("TOPRIGHT", head, "BOTTOMRIGHT", 0, -M.pvDockPad)
@@ -3392,7 +3799,6 @@ function W.PreviewBand(parent, o)
 	stage:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
 	stage:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
 	stageFill = UI.RoundFill(stage, Surface.Window, nil, nil, R_CTRL) -- assigns the forward-declared upvalue
-	local stageEdges = {} -- no stage border (merges with the page-colored dock body)
 	-- Unscaled positioning pivot: anchor offsets are interpreted in the ANCHORED
 	-- frame's own (scaled) units — the pivot stays at scale 1, so the module's
 	-- scaled holder can be placed with plain stage-pixel offsets.
@@ -3408,56 +3814,30 @@ function W.PreviewBand(parent, o)
 
 	f.holder = holder
 	f.GetEyes = o.eyes
-
-	-- Collapse wiring: the header's collapse button closes the dock via the
-	-- Shell (closed = the dock is fully hidden by _UpdateDock — the old
-	-- collapsed vertical face is gone, Florian 2026-07-05).
-	local function setOpen(v)
-		if o.open then o.open.set(v) end
-		if o.onEye then o.onEye() end
-	end
-	cbtn:SetScript("OnClick", function() setOpen(not isOpen()) end)
+	f.stage = stage
 	body:SetShown(true)
-	chevDir("up")
 
-	-- Layout pass: w/h = VISUAL extent of the holder content (already scale-
-	-- corrected by the module). Computes the dock OUTER size (content-driven on
-	-- both axes) and hands it to o.onLayout. Only ever runs while the dock is
-	-- shown (open); closed = the Shell hides the whole dock.
-	function f:SetExtent(side, w, h, cap)
+	-- Called by the module after it filled the holder: w/h = the VISUAL extent of
+	-- that content (already scale-corrected). The band does NOT resize itself —
+	-- the screen reserved its height up front (Raidframes:PreviewExtent) — so
+	-- this only refreshes the caption and the header state.
+	function f:SetExtent(w, h, cap)
 		caption:SetText(cap or "")
 		self:PaintChips()
-		-- Chevron mirrors the fold-away direction: right dock folds LEFT onto
-		-- the panel edge, bottom dock folds UP.
-		chevDir(side == "right" and "left" or "up")
-		-- Eye popover opens away from the stage (old grouped-filter rule):
-		-- right dock -> outward right, bottom dock -> upward above the header.
-		if eyePop then
-			eyePop:ClearAllPoints()
-			if side == "right" then
-				eyePop:SetPoint("TOPLEFT", head, "TOPRIGHT", S.s3, 0)
-			else
-				eyePop:SetPoint("BOTTOMRIGHT", head, "TOPRIGHT", 0, S.s3)
-			end
-		end
-		-- Stage backdrop is togglable again via the eye popover's "Background" row
-		-- (Florian 2026-07-22): hidden -> stage + dock fills off, shell dots show through.
-		local bgShow = not o.eyes or o.eyes().background ~= false
-		stageFill:SetShown(bgShow)
-		if dockFrame and dockFrame._fill then dockFrame._fill:SetShown(bgShow) end
-		for _, e in ipairs(stageEdges) do e:SetShown(true) end
+		-- "Background" eye: hidden -> the shell's dotted content shows through.
+		stageFill:SetShown(not o.eyes or o.eyes().background ~= false)
 		caption:SetShown(true)
-		if o.onChrome then o.onChrome(true) end
-		local innerW = math.max(w + M.pvStagePad * 2, M.pvStageMinW,
-			headMinW - M.pvDockPad * 2)
-		local innerH = math.max(h + M.pvStagePad * 2 + M.pvCaptionH, M.pvMinStageH)
-		local dockW = innerW + M.pvDockPad * 2
-		-- Header card is inset top+bottom now -> one extra pvDockPad vs. the old
-		-- flush header bar (pad | head | pad | stage | pad).
-		local dockH = M.sectionHeaderH + M.pvDockPad * 3 + innerH
-		if side == "right" then o.onLayout("right", dockW, dockH)
-		else o.onLayout("bottom", nil, dockH) end
 	end
+
+	-- Folded: only the header row remains (the screen shrinks the sticky area to
+	-- match). The frames stay built — unfolding must not have to rebuild them.
+	function f:SetFolded(on)
+		body:SetShown(not on)
+		if foldBtn then foldBtn:GetScript("OnLeave")(foldBtn) end -- repaint the chevron
+	end
+
+	-- (GetStageSpace retired with the fit-scaling: anchored bands render at true
+	-- on-screen size and the screen grows to fit them instead.)
 
 	return f
 end

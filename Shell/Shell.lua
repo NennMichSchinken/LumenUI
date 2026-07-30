@@ -269,7 +269,7 @@ end
 local SECTIONS = {
 	{ "Global",      { "Base", "Profile" }, icon = "icon-nav-global" },
 	{ "Click-Cast",  { "Bindings" }, icon = "icon-nav-clickcast" },
-	{ "Raidframes",  { "Base", "Raid", "Group", "Tracking" }, sep = true, icon = "icon-nav-raidframes" },
+	{ "Raidframes",  { "Base", "Raid", "Group", "Auras" }, sep = true, icon = "icon-nav-raidframes" },
 	{ "Unitframes",  {}, soon = true, icon = "icon-nav-unitframes" },
 	{ "Nameplates",  {}, soon = true, icon = "icon-nav-nameplates" },
 	{ "QoL",         { "Base" }, sep = true, icon = "icon-nav-qol" },
@@ -503,6 +503,9 @@ function Shell:Build()
 	sfield:SetPoint("TOP", tag, "BOTTOM", 0, -S.s9)
 	sfield:SetPoint("LEFT", nav, "LEFT", S.navPillPadX, 0)
 	sfield:SetPoint("RIGHT", nav, "RIGHT", -S.navPillPadX, 0)
+	-- Input, NOT Field: the nav column is #111111, so `inset` already lifts this box
+	-- by +8 -- the same step a field gets on a card. Raising it further only made it
+	-- glare (Florian 2026-07-30). See the step rule at P.field in Tokens.
 	UI.RoundFill(sfield, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
 	-- RoundBorder returns a TABLE of edge textures (a shape can need several),
 	-- so recolouring goes through all of them.
@@ -648,14 +651,9 @@ function Shell:Build()
 		function() if ns.EditMode then ns.EditMode:OpenSession() end end, emY)
 	self._editRow = emRow
 
-	-- Preview toggle: ONE central point to open/close the preview window. Stacks
-	-- ABOVE the Edit Mode row. Hidden on screens without a registered preview;
-	-- the label follows the open state (_UpdateDock keeps it current, the eye
-	-- glyph stays put — the LABEL names the action).
-	local pvRow = makeActionRow("", "icon-eye", function() Shell:TogglePreview() end,
-		emY + S.navItemH + S.navItemGap)
-	pvRow:Hide()
-	self._previewRow = pvRow
+	-- (The "Open preview" action is GONE, 2026-07-29: the preview is anchored at
+	-- the top of every raidframe tab now, so there is no window to open — see
+	-- placePreview in Screens.lua.)
 
 	-- Faint separator between the module list and the actions (mockup): flat rows
 	-- would otherwise read as two more modules. Inset to the nav gutter; sits
@@ -729,6 +727,12 @@ function Shell:Build()
 	local ctaBorder = UI.PillBorder(cta, Border.hover, "OVERLAY", S.newsCtaH)
 	local ctaFS = FS(cta, "label", Text.Secondary)
 	ctaFS:SetPoint("CENTER", cta, "CENTER", 0, 0)
+
+	-- The summary's FLOOR (set here because it needs the CTA to exist). Anchored
+	-- top-only, a two-line summary grew down into the CTA and the pill overlapped
+	-- the second line (Florian, 0.9.290). With a bottom edge the region can only
+	-- truncate, never collide — which is what SetMaxLines was meant to guarantee.
+	newsBody:SetPoint("BOTTOMLEFT", cta, "TOPLEFT", 0, S.s3)
 
 	local function paintNews(hovered)
 		local line = hovered and Accent.selection or Border.hover
@@ -843,36 +847,21 @@ function Shell:Build()
 	-- Content area: scrollable (screens are taller than the fixed content height).
 	-- ScrollFrame + scroll child; the screens build into the child. Slim gold
 	-- scrollbar on the right in the gutter (mouse wheel + draggable thumb).
-	-- Preview dock: satellite window attached to the panel (right of it for
-	-- vertical previews, below it for horizontal ones, UI.WIDGET.pvDockGap
-	-- apart so it reads as its own window). Screens register a content builder
-	-- in ns.ScreenPreviews[key]; the module sizes it via Shell:SetDockLayout.
-	-- Grab it anywhere free to drag it off; dropping it near its docked spot
-	-- snaps it back on (float position persists in db.profile.global).
-	local MW = UI.WIDGET
-	local dock = CreateFrame("Frame", nil, f)
-	dock:SetSize(MW.pvStageMinW, MW.pvMinStageH)
-	-- Fill/border kept as handles: Shell:SetDockChrome strips them for the
-	-- preview's "Backdrop" filter (frames float freely on the screen).
-	dock._fill = UI.RoundFill(dock, Surface.Window, nil, nil, UI.ROUND_R_CHROME)
-	dock._edges = UI.RoundBorder(dock, Border.hover, nil, nil, UI.ROUND_R_CHROME)
-	-- (The former gold accent bar on the panel-facing edge was removed with the
-	-- rounded chrome — Florian 2026-07-05.)
-	dock:EnableMouse(true)
-	dock:SetMovable(true)
-	dock:SetClampedToScreen(true)
-	-- Well above the panel content: as a plain child (level panel+1) the dock
-	-- rendered UNDERNEATH main's nested children whenever it overlapped the
-	-- panel (floating/clamped) — content shone through its background.
-	dock:SetFrameLevel(f:GetFrameLevel() + 80)
-	dock:RegisterForDrag("LeftButton")
-	dock:SetScript("OnDragStart", function(d) d:StartMoving() end)
-	dock:SetScript("OnDragStop", function(d)
-		d:StopMovingOrSizing()
-		Shell:_DockDropCheck()
-	end)
-	dock:Hide()
-	self._dock = dock
+	-- (The preview DOCK — a draggable satellite window beside the panel — was
+	-- removed 2026-07-29: every raidframe tab carries the preview anchored at the
+	-- top of its own page instead, so there is nothing to open, drag or lose.)
+	-- Sticky area between the tab strip and the scroll frame. A screen can park
+	-- ONE frame here (Shell:SetSticky) — the raidframe preview does: it must stay
+	-- put while the settings scroll under it, which is the entire point of an
+	-- anchored preview (Florian 2026-07-29). Empty = zero height, scroll starts
+	-- right under the tabs as before.
+	self._main = main
+	local sticky = CreateFrame("Frame", nil, main)
+	sticky:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -S.contentTopGap)
+	sticky:SetPoint("TOPRIGHT", main, "TOPRIGHT", -S.panelGutter, -S.contentTopGap)
+	sticky:SetHeight(1)
+	sticky:Hide()
+	self._sticky = sticky
 
 	local scroll = CreateFrame("ScrollFrame", nil, main)
 	scroll:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, -S.contentTopGap)
@@ -1211,12 +1200,42 @@ local function flashRow(row)
 end
 
 function Shell:JumpTo(sectionName, tabName, cardKey)
-	if ns.ShellJumpPrep then ns.ShellJumpPrep(sectionName, tabName, cardKey) end
+	-- Are we already exactly where the jump wants to go, with the target card
+	-- present? Then rebuilding the screen only makes it flicker — flash and be
+	-- done (Florian 2026-07-29: clicking a preview icon made the page twitch,
+	-- because every jump dropped the cache and re-rendered).
+	local scr = self._screen
+	local here = scr and scr._jumpCards and cardKey and scr._jumpCards[cardKey]
+	local prepared = true
+	if ns.ShellJumpPrep then
+		-- The prep reports whether it CHANGED anything (selected another
+		-- category, opened a collapsed section); unchanged = nothing to rebuild.
+		prepared = ns.ShellJumpPrep(sectionName, tabName, cardKey) ~= false
+	end
+	if here and not prepared then
+		-- Nothing changed and the card is on screen: do nothing at all. Flashing
+		-- a card you are already looking at is noise, and on the Auras tab the
+		-- card is the whole editor.
+		if self:_CardInView(here) then return end
+		self:_ResolveJump(cardKey)
+		return
+	end
 	-- The prep may have opened a disclosure a cached screen doesn't show yet —
 	-- drop the cache so the target screen rebuilds in the prepared state.
 	self:InvalidateScreenCache()
 	self:OpenTo(sectionName, tabName)
 	self:_ResolveJump(cardKey)
+end
+
+-- Is the frame fully inside the scroll viewport? Used to suppress pointless
+-- scrolling on a jump (see _ResolveJump / JumpToOption).
+function Shell:_CardInView(frame)
+	local sc = self._scroll
+	if not (sc and frame) then return false end
+	local top, bottom = frame:GetTop(), frame:GetBottom()
+	local vTop, vBottom = sc:GetTop(), sc:GetBottom()
+	if not (top and bottom and vTop and vBottom) then return false end
+	return top <= vTop and bottom >= vBottom
 end
 
 -- Scroll + flash once the target card has a resolved rect. The cold-open path
@@ -1235,7 +1254,11 @@ function Shell:_ResolveJump(cardKey)
 			if tries < 8 then C_Timer.After(0, attempt) end
 			return
 		end
-		if self._scroll then
+		-- Only scroll when the card is NOT already fully in view. Scrolling to a
+		-- card you can see reads as the page twitching — very visible on the Auras
+		-- tab, where a preview click lands on a card that never left the screen
+		-- (Florian 2026-07-29).
+		if self._scroll and not self:_CardInView(card) then
 			local viewH = self._scroll:GetHeight() or 0
 			local maxScroll = math.max(0, (self._scrollChild:GetHeight() or 0) - viewH)
 			local off = childTop - card:GetTop()
@@ -1375,7 +1398,11 @@ local function newStack(holder)
 			if not titleH or titleH <= 0 then titleH = 20 end -- cold font fallback (= sectionHead size)
 			local titleMidY = -M.cardHeadTop - titleH / 2
 			if o.subtitle then
-				local subFS = FS(panel, "caption", Text.Description)
+				-- "body" (regular 14) rather than "caption" (regular 12), matching the
+				-- inner-block subtitles (Florian 2026-07-30). At caption size the line
+				-- describing the WHOLE card was smaller than the "hint" text (16)
+				-- explaining a single control inside it — hierarchy upside down.
+				local subFS = FS(panel, "body", Text.Description)
 				subFS:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.cardSubY)
 				subFS:SetPoint("RIGHT", panel, "RIGHT", -pad, 0)
 				subFS:SetJustifyH("LEFT")
@@ -1412,8 +1439,40 @@ local function newStack(holder)
 			-- (both anchor to the same header spot).
 			if o.toggle then
 				local sw = ns.W.Switch(panel, { small = true, get = o.toggle.get, set = o.toggle.set })
-				sw:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
+				-- o.toggleInline: the switch belongs right AFTER the title instead
+				-- of at the far right edge — "HoTs · Raid (o==) Show" reads as one
+				-- statement, while the right edge divorced it from what it toggles
+				-- (Florian 2026-07-29).
+				if o.toggleInline then
+					sw:SetPoint("LEFT", titleFS, "RIGHT", M.sectionCountGap * 2, 0)
+					if o.toggleLabel then
+						local tl = FS(panel, "checkLabel", Text.Secondary)
+						tl:SetPoint("LEFT", sw, "RIGHT", S.s4, 0)
+						tl:SetText(o.toggleLabel)
+					end
+				else
+					sw:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY)
+				end
 				panel._switch = sw
+			end
+			-- Header controls slot: extra widgets that belong to the card as a
+			-- WHOLE (the Auras editor puts its Display/Spells switch and the copy
+			-- button here). They chain leftwards from the master switch, so the
+			-- head reads as one row instead of a second row under the title
+			-- (Florian 2026-07-29).
+			if o.headerControls then
+				-- Chain leftwards from the RIGHT EDGE — not from the master switch:
+				-- with o.toggleInline the switch sits right after the title, so
+				-- anchoring off it stacked every control on top of the others
+				-- (Florian 2026-07-29).
+				local anchorTo, gap = (not o.toggleInline) and panel._switch or nil, S.s5
+				for _, w in ipairs(o.headerControls) do
+					w:SetParent(panel)
+					w:ClearAllPoints()
+					if anchorTo then w:SetPoint("RIGHT", anchorTo, "LEFT", -gap, 0)
+					else w:SetPoint("RIGHT", panel, "TOPRIGHT", -pad, titleMidY) end
+					anchorTo, gap = w, S.s4
+				end
 			end
 			-- Header EYE toggle (card-eye system): shows/hides THIS card's layer in
 			-- the live preview (and, from the selected frame, in Edit Mode). Sits
@@ -1558,6 +1617,9 @@ local function newStack(holder)
 			title = title, afterHeader = M.sectionAfterHeader,
 			count = opts and opts.count, action = opts and opts.action,
 			toggle = opts and opts.toggle, eye = opts and opts.eye,
+			headerControls = opts and opts.headerControls,
+			toggleInline = opts and opts.toggleInline,
+			toggleLabel = opts and opts.toggleLabel,
 			subtitle = opts and opts.subtitle,
 			-- Cards are rounded by default; opts.round = "bottom" for bodies
 			-- flush-attached under a collapsible header (seam edge square).
@@ -1716,163 +1778,55 @@ function Shell:RefreshAccent(col, chromeOnly)
 	if ns.EditMode and ns.EditMode.OnAccentChanged then ns.EditMode:OnAccentChanged() end
 end
 
--- ---------------------------------------------------------------------------
---  Preview dock: the satellite window next to the panel that hosts a screen's
---  live preview (Raidframes tabs today). Content builders live in
---  ns.ScreenPreviews[key]; content is built ONCE per key and re-shown on
---  navigation (it refreshes via fr._onShow). The module drives size/side via
---  Shell:SetDockLayout. Dragging is free-floating; dropping the dock within
---  UI.WIDGET.pvSnap of its docked spot snaps it back on. The float position
---  persists ACCOUNT-WIDE in db.global.previewDock (nil = docked) — NOTE:
---  AceDB's account section is db.global, NOT db.profile.global.
--- ---------------------------------------------------------------------------
-local function dockStore()
-	local db = ns.Lumen and ns.Lumen.db
-	return db and db.global
-end
+-- The panel frame (nil before the first Build). Screens use it as the scale
+-- reference when they need to size something in on-screen units.
+function Shell:Frame() return self._frame end
 
--- Preview open state (session-only; the shell always starts with the preview
--- closed). The sidebar button is THE toggle; the band's own collapse chevron
--- also routes here and simply closes the window.
-function Shell:IsPreviewOpen() return self._previewOpen == true end
-function Shell:SetPreviewOpen(v)
-	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
-	self._previewOpen = v and true or false
-	self:_UpdateDock(self._previewKey)
-end
-function Shell:TogglePreview() self:SetPreviewOpen(not self._previewOpen) end
-
--- Sidebar separator above the action rows: re-anchored whenever the preview row
--- shows/hides, so the line always hugs the topmost VISIBLE action (a line left
--- floating over a gap reads as a stray rule). Thickness is pixel-snapped, the
--- position stays plain SetPoint (border pixel-snap rule).
-function Shell:_UpdateNavSep()
-	local sep = self._navSep
-	if not sep then return end
-	local top = (self._previewRow and self._previewRow:IsShown()) and self._previewRow or self._editRow
-	if not top then return end
-	sep:ClearAllPoints()
-	sep:SetPoint("BOTTOMLEFT", top, "TOPLEFT", S.navGutter, S.s5)
-	sep:SetPoint("BOTTOMRIGHT", top, "TOPRIGHT", -S.navGutter, S.s5)
-	local function snap() PixelUtil.SetHeight(sep, 1) end
-	snap(); C_Timer.After(0, snap)
-end
-
-function Shell:_UpdateDock(key)
-	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
-	local dock = self._dock
-	if not dock then return end
-	self._previewKey = key
-	local frames = self._dockFrames
-	if not frames then frames = {}; self._dockFrames = frames end
-	local builder = ns.ScreenPreviews and ns.ScreenPreviews[key]
-	-- Sidebar toggle: only screens with a preview get the button.
-	if self._previewRow then
-		self._previewRow:SetShown(builder ~= nil)
-		if builder then
-			self._previewRow._txt:SetText(self._previewOpen and T("Close preview") or T("Open preview"))
-		end
-		self:_UpdateNavSep() -- the separator hugs the topmost visible action row
+-- Park a frame in the STICKY area above the scroll region (or clear it with
+-- nil). The scroll frame starts below it, so the parked frame stays put while
+-- the settings scroll. Called by a screen builder BEFORE it fills its stack;
+-- the Shell resets it on every render, so a screen without a sticky frame gets
+-- the full content area back automatically.
+function Shell:SetSticky(frame, height)
+	local sticky, scroll = self._sticky, self._scroll
+	if not (sticky and scroll) then return end
+	-- Recorded so a cached screen can restore it without re-running its builder.
+	self._stickySpec = frame and { frame = frame, height = height } or nil
+	if self._stickyChild and self._stickyChild ~= frame then
+		self._stickyChild:Hide()
+		self._stickyChild:SetParent(nil)
 	end
-	for k, fr in pairs(frames) do fr:SetShown(builder ~= nil and k == key) end
-	if not builder or not self._previewOpen then
-		dock:Hide()
+	self._stickyChild = frame
+	scroll:ClearAllPoints()
+	scroll:SetPoint("BOTTOMRIGHT", self._main or scroll:GetParent(), "BOTTOMRIGHT", -S.panelGutter, S.panelGutter)
+	if not frame then
+		sticky:Hide()
+		sticky:SetHeight(1)
+		scroll:SetPoint("TOPLEFT", self._tabStrip, "BOTTOMLEFT", 0, -S.contentTopGap)
 		return
 	end
-	local fr = frames[key]
-	if not fr then
-		fr = CreateFrame("Frame", nil, dock)
-		fr:SetAllPoints(dock)
-		local ok, err = pcall(builder, fr)
-		if not ok and ns.Lumen then
-			ns.Lumen:Print("|cffD66A5C" .. T("Shell error in") .. " " .. key .. ":|r " .. tostring(err))
-		end
-		frames[key] = fr
-	end
-	fr:Show()
-	dock:Show()
-	-- Refresh the preview (fills the frames + sizes the dock via SetDockLayout).
-	if fr._onShow then pcall(fr._onShow) end
+	frame:SetParent(sticky)
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", sticky, "TOPLEFT", 0, 0)
+	frame:SetPoint("TOPRIGHT", sticky, "TOPRIGHT", 0, 0)
+	frame:SetHeight(height)
+	frame:Show()
+	sticky:SetHeight(height)
+	sticky:Show()
+	scroll:SetPoint("TOPLEFT", sticky, "BOTTOMLEFT", 0, -S.contentTopGap)
 end
 
--- (Re-)anchor the dock: docked = glued to the panel edge for its side;
--- floating = wherever the user dropped it (position in dock units).
-function Shell:_DockAnchor()
-	local dock, panel = self._dock, self._frame
-	if not (dock and panel) then return end
-	local st = dockStore()
-	local float = st and st.previewDock
-	local gap = UI.WIDGET.pvDockGap
-	dock:ClearAllPoints()
-	if float then
-		dock:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", float.x, float.y)
-	elseif dock._side == "right" then
-		dock:SetPoint("TOPLEFT", panel, "TOPRIGHT", gap, 0)
-	else
-		dock:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", 0, -gap)
-		dock:SetPoint("TOPRIGHT", panel, "BOTTOMRIGHT", 0, -gap)
-	end
-end
-
--- Called by the active preview band: side = "right"|"bottom". The dock is
--- content-sized on both axes; only the docked bottom variant keeps the
--- panel's width (w = nil there).
-function Shell:SetDockLayout(side, w, h)
-	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
-	local dock, panel = self._dock, self._frame
-	if not (dock and panel) then return end
-	dock._side = side
-	local st = dockStore()
-	local float = st and st.previewDock
-	if side == "right" then
-		dock:SetSize(w, h)
-	else
-		dock:SetHeight(h)
-		if float then dock:SetWidth(PANEL.w) end
-	end
-	self:_DockAnchor()
-end
-
--- Dock window chrome (fill, border) — stripped by the preview's "Backdrop"
--- filter so only the frames + header strip remain visible.
-function Shell:SetDockChrome(on)
-	if self._warming then return end -- index warm-up: collect labels only, touch no live chrome
-	local dock = self._dock
-	if not dock then return end
-	dock._fill:SetShown(on)
-	for _, e in ipairs(dock._edges) do e:SetShown(on) end
-end
-
--- Forget the float position and glue the dock back onto its panel edge
--- (popover action row — for docks dragged somewhere unfortunate).
-function Shell:ResetDockPosition()
-	local st = dockStore()
-	if st then st.previewDock = nil end
-	self:_DockAnchor()
-end
-
--- Drop check after a drag: near the docked spot -> snap back on (and forget
--- the float position), otherwise remember where it floats now.
-function Shell:_DockDropCheck()
-	local dock, panel = self._dock, self._frame
-	if not (dock and panel) then return end
-	local st = dockStore()
-	local tx, ty   -- docked TOPLEFT target for the current side (panel units)
-	local gap = UI.WIDGET.pvDockGap
-	if dock._side == "right" then
-		tx, ty = (panel:GetRight() or 0) + gap, panel:GetTop() or 0
-	else
-		tx, ty = panel:GetLeft() or 0, (panel:GetBottom() or 0) - gap
-	end
-	local dx, dy = dock:GetLeft() or 0, dock:GetTop() or 0
-	local near = math.max(math.abs(dx - tx), math.abs(dy - ty)) <= UI.WIDGET.pvSnap
-	if st then
-		if near then st.previewDock = nil
-		else st.previewDock = { x = dock:GetLeft() or 0, y = dock:GetBottom() or 0 } end
-	end
-	-- Re-apply size rules for the new state (floating gets explicit both axes).
-	if dock._side == "right" then self:SetDockLayout("right", dock:GetWidth(), dock:GetHeight())
-	else self:SetDockLayout("bottom", nil, dock:GetHeight()) end
+-- Sidebar separator above the action rows: hugs the topmost visible action.
+-- Thickness is pixel-snapped, the position stays plain SetPoint (border
+-- pixel-snap rule).
+function Shell:_UpdateNavSep()
+	local sep = self._navSep
+	if not (sep and self._editRow) then return end
+	sep:ClearAllPoints()
+	sep:SetPoint("BOTTOMLEFT", self._editRow, "TOPLEFT", S.navGutter, S.s5)
+	sep:SetPoint("BOTTOMRIGHT", self._editRow, "TOPRIGHT", -S.navGutter, S.s5)
+	local function snap() PixelUtil.SetHeight(sep, 1) end
+	snap(); C_Timer.After(0, snap)
 end
 
 -- Render content for the current section/tab: real screen (Shell/Screens.lua)
@@ -1909,10 +1863,20 @@ function Shell:IndexOption(label, frame, kind, tip)
 	-- The card name is only known at place() time, so disambiguate by counting
 	-- occurrences — builders run deterministically, so a rebuild yields the
 	-- same keys and the row map stays valid.
+	-- ns.ShellIndexScope: a screen that shows only ONE of several equivalent
+	-- sub-editors (Auras tab: one category at a time) sets a scope around each
+	-- sub-editor's options. Without it the label counter below would number the
+	-- rows differently when indexing (all categories built) than when rendering
+	-- (one category built), and a jump would resolve to nothing. With it the key
+	-- is stable in both passes, and entry.scope tells the screen which sub-editor
+	-- to open before the jump (see ns.ShellPrepOption).
+	local scope = ns.ShellIndexScope
+	local seenKey = label .. (scope and ("@" .. scope) or "")
 	indexCtx.seen = indexCtx.seen or {}
-	local nth = (indexCtx.seen[label] or 0) + 1
-	indexCtx.seen[label] = nth
+	local nth = (indexCtx.seen[seenKey] or 0) + 1
+	indexCtx.seen[seenKey] = nth
 	local key = indexCtx.section .. "/" .. indexCtx.tab .. "/" .. label
+	if scope then key = key .. "@" .. scope end
 	if nth > 1 then key = key .. "#" .. nth end
 	local scr = self._screen
 	if scr then
@@ -1922,7 +1886,7 @@ function Shell:IndexOption(label, frame, kind, tip)
 	local entry = indexByKey[key]
 	if not entry then
 		entry = {
-			label = label, tip = tip, kind = kind,
+			label = label, tip = tip, kind = kind, scope = scope,
 			section = indexCtx.section, tab = indexCtx.tab, key = key,
 			-- Tooltips are indexed too: searching "instanz" should find the aggro
 			-- and invite options even though neither label contains the word.
@@ -2139,6 +2103,9 @@ function Shell:JumpToOption(entry)
 	-- The target row may live in a collapsed section, which does not build its
 	-- contents at all — open them and drop the cache so the row exists.
 	if ns.ShellOpenAllSections then ns.ShellOpenAllSections() end
+	-- Scoped screens (one sub-editor visible at a time) need the right one
+	-- selected before the rebuild, or the row is simply not there.
+	if ns.ShellPrepOption then ns.ShellPrepOption(entry) end
 	self:InvalidateScreenCache()
 	self:OpenTo(entry.section, entry.tab)
 	local tries = 0
@@ -2152,7 +2119,7 @@ function Shell:JumpToOption(entry)
 			if tries < 8 then C_Timer.After(0, attempt) end
 			return
 		end
-		if self._scroll then
+		if self._scroll and not self:_CardInView(row) then
 			local viewH = self._scroll:GetHeight() or 0
 			local maxScroll = math.max(0, (self._scrollChild:GetHeight() or 0) - viewH)
 			local off = childTop - row:GetTop()
@@ -2549,14 +2516,16 @@ function Shell:RenderContent(changed)
 		self._screen, self._popovers = nil, nil
 	end
 
-	-- Preview dock (satellite window): show/build the preview of THIS key,
-	-- hide the others. Its refresh also sizes/anchors the dock.
-	self:_UpdateDock(key)
+	-- Sticky area belongs to the screen being shown: clear it first, so a screen
+	-- without one (Global, QoL) gets the full content height back. A cache hit
+	-- does not run its builder, so it restores what its build recorded.
+	self:SetSticky(nil)
 
 	-- Cache hit: re-show as-is — values are guaranteed current because every
 	-- change since the build would have dropped the cache.
 	local hit = not pseudo and cache[key]
 	if hit then
+		if hit.sticky then self:SetSticky(hit.sticky.frame, hit.sticky.height) end
 		self._screen, self._popovers = hit.frame, hit.popovers
 		-- New (lazily created) popovers of reused widgets must land in THIS
 		-- screen's list again, not in the last-built screen's.
@@ -2626,7 +2595,8 @@ function Shell:RenderContent(changed)
 	-- Pseudo screens are never cached: the results change with every keystroke,
 	-- the notes with the read state.
 	if not d._builtHidden and not pseudo then
-		cache[key] = { frame = d, popovers = self._popovers, height = h, badge = self._lastBadge }
+		cache[key] = { frame = d, popovers = self._popovers, height = h, badge = self._lastBadge,
+			sticky = self._stickySpec }
 	end
 	if self._scroll then
 		-- On a forced rebuild (e.g. role reordering, collapsing the aura section) keep

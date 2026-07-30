@@ -59,8 +59,24 @@ local P = {
 	panel        = hex("0C0C0C"), -- A3: main window surface (doc: Window)
 	sidebar      = hex("111111"), -- A2: nav column (a real step lighter than the panel)
 	card         = hex("151515"), -- A4: section cards (doc: Cards)
-	inset        = hex("191919"), -- A1: edit boxes, open dropdown lists, slider value box, troughs (doc: Inputs)
+	inset        = hex("191919"), -- A1: open dropdown lists, slider value box, troughs, inner blocks, info bars (doc: Inputs)
 	element      = hex("191919"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs (= Inputs layer)
+	-- A7: surfaces you can TYPE into. `inset` did double duty for passive containers
+	-- AND real inputs, which only breaks down on the LIGHTEST backgrounds.
+	--
+	-- RULE (Florian 2026-07-30): what stays constant is the STEP over a field's own
+	-- background, not the colour. Perceived lift is relative, so one absolute value
+	-- cannot be uniform when the backgrounds themselves span #0C0C0C..#191919. Aim
+	-- for roughly +8..+11, and never above `field` -- it is the CEILING for neutral
+	-- surfaces (only elementHover goes higher), otherwise the stack grows a layer
+	-- nobody can name.
+	--   on a card (#151515)   -> field   (+11): W.TextInput, W.Textarea
+	--   inside a menu (#191919) -> field (+7):  the typeahead search boxes -- their
+	--                             parent menu is the SAME value, so at `inset` the
+	--                             box had ZERO contrast against it
+	--   on the sidebar (#111111) -> inset (+8): already the right step, leave it
+	--   on the window (#0C0C0C)  -> inset (+13): the colour picker's hex box, ditto
+	field        = hex("202020"),
 	elementHover = hex("222222"), -- A6: hover step (doc: Hover)
 
 	-- B: lines — pure white; UI.Border applies the (low) alpha. THE tuning spot.
@@ -180,7 +196,8 @@ UI.Surface = {
 	Window  = P.panel,        -- main window surface
 	Sidebar = P.sidebar,      -- nav column
 	Card    = P.card,         -- section cards
-	Input   = P.inset,        -- edit boxes, dropdowns (closed & open), rows, neutral buttons, inactive tabs
+	Input   = P.inset,        -- dropdowns (closed & open), rows, neutral buttons, inactive tabs, inner blocks
+	Field   = P.field,        -- typable surfaces ON A CARD or INSIDE A MENU (see the step rule at P.field); on darker backgrounds Input already has the right step
 	Hover   = P.elementHover, -- hover step; also the unfilled slider track channel
 	Scrim   = P.page,         -- dim behind the panel + soft icon shadow
 }
@@ -381,7 +398,7 @@ UI.S = {
 	navIconGap  = 16, -- gap: nav icon -> label (what's-new mockup, 2026-07-26: icon sits ON the nav gutter, label shifts right)
 	navGroupGap = 18, -- "MODULES" caption -> first nav item (mockup ratio: 14px @ 1x -> ~18 design-px)
 	-- Sidebar news card ("what's new" after an update, 2026-07-27 mockup).
-	newsCardH   = 190, -- total height: badge + title + two summary lines + CTA
+	newsCardH   = 200, -- total height: badge + title + two summary lines + gap + CTA
 	newsCardPad = 18, -- inner padding
 	newsCardGap = 16, -- news card -> the separator above the sidebar actions
 	newsPillH   = 28, -- the "New" badge (pill assets exist at 28/32/48/52 only)
@@ -409,6 +426,13 @@ UI.WIDGET = {
 	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
 	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
 	segHugPad   = 20, -- horizontal padding per cell for a content-width (hug) segment (tab-like, not stretched)
+	-- Compact segment/button height for HEADER rows (card heads, the preview
+	-- band). Free-standing since segments and buttons became rounded rectangles
+	-- (Florian 2026-07-29) — the old capsules only existed at pill-asset heights.
+	segCompactH = 44,
+	-- Info bar (scope strip above a list: "applies to Raid and Group …").
+	infoBarH    = 44,
+	infoBarPadX = 14,
 	menuItemPadX = 6, -- horizontal inset of a dropdown item's rounded hover pill (nav-item language)
 	menuItemPadY = 3, -- vertical inset of the pill (also the gap between stacked pills)
 	chevGlyph      = 14, -- collapsible / disclosure chevron glyph (Lucide)
@@ -501,6 +525,32 @@ UI.WIDGET = {
 	hintH       = 40, -- default height of a hint block (1–2 lines)
 	subHeadH    = 26, -- left-aligned sub-heading (e.g. aggro-stage blocks)
 
+	-- Category chip bar (W.ChipBar) — the selector above an inline editor. Shared
+	-- component: the Auras tab uses it today, Unit Frames inherits it later.
+	chipH        = 50, -- chip height (mockup 40 CSS-px x1.25)
+	chipPadX     = 18, -- inner L/R padding
+	chipGap      = 10, -- gap between two chips
+	chipDot      = 12, -- state dot (category color when on, muted when off) — MUST be an existing circle-<n> asset (12/16/20/24)
+	chipDotGap   = 11, -- gap dot -> label
+	chipCountGap = 10, -- gap label -> count/off badge
+	chipCountH   = 22, -- count badge height (width grows with the number)
+	chipCountPad = 8,  -- inner L/R padding of the count badge
+
+	-- Copy popover (W.CopyPopover) — "what" checkboxes + a category x context
+	-- TARGET GRID. Every possible destination is a visible cell, so "where to" is
+	-- never inferred (Florian 2026-07-29: a flat list mixed two axes and the
+	-- combination of two picks had no guessable meaning).
+	copyPopW     = 520, -- popover width (label column + 2 context columns; the label column has to hold "Defensives & External")
+	copyPopPad   = 20,  -- inner padding
+	copyRowH     = 40,  -- one "what" row
+	copyGridGap  = 6,   -- gap between grid cells
+	copyCellW    = 96,  -- target cell width (one context column)
+	copyCellH    = 40,  -- target cell height (= one grid row)
+	copyHeadH    = 24,  -- column header row above the grid
+	copyTick     = 20,  -- tick box inside a target cell
+	copyGroupGap = 18,  -- gap between the "what" block and the target grid
+	copyWarnH    = 52,  -- placement-clash warning line
+
 	-- (SCREEN-SPECIFIC measures live in UI.LAYOUT below, mirroring the nav tree —
 	-- here in UI.WIDGET only dimensions of SHARED components. Rule: visible in
 	-- more than one screen -> UI.WIDGET; only in one screen -> UI.LAYOUT.<screen>.)
@@ -570,26 +620,30 @@ UI.WIDGET = {
 	tipNameGap = 10,  -- icon -> name
 	tipGap     = 10,  -- header (icon/name) -> description
 
-	-- Preview dock (W.PreviewBand inside the Shell's satellite dock window —
-	-- right of the panel for vertical layouts, below it for horizontal ones;
-	-- used by the Raidframes screens, later by Unit Frames/Nameplates too).
-	pvDockGap    = 8,   -- gap panel -> dock window (reads as its own window)
-	pvDockPad    = 12,  -- inner padding of the dock body
-	pvChipGroupGap = 14, -- gap between header chip groups / chips -> icons
-	pvIconBtn    = 26,  -- filter/collapse icon button edge length
-	pvGlyph      = 16,  -- Lucide glyph inside the pvIconBtn (collapse chevron / reset)
+	-- Anchored preview band (W.PreviewBand at the top of a settings tab; used by
+	-- the Raidframes screens, later by Unit Frames/Nameplates too). The "dock"
+	-- names are kept: they are the band's own paddings, not the removed window.
+	pvDockGap    = 8,   -- gap panel -> the band's floating eye popover
+	pvDockPad    = 12,  -- inner padding of the band
+	pvChipGroupGap = 14, -- gap title -> the header's segment
+	pvCtxSegW    = 200, -- context switch in an INLINE band header (Group | Raid) — a real W.Segment, like the settings use
+	pvSizeSegW   = 184, -- sample-size switch in the same header (5 | 10 | 20 | 25): four narrow numeric cells, so a touch tighter than the two-word context switch
+	-- Left edge of an inline band's header row, measured from the head frame
+	-- (which already starts pvDockPad in). Puts the fold chevron exactly where a
+	-- settings card's EYE sits, so chevron/title and eye/title share one flight
+	-- line down the page (Florian 2026-07-29).
+	pvInlineTitleX = 18, -- = sectionPad 30 - pvDockPad 12
+	pvInlineHeadH  = 56, -- header row of an inline band (taller than a card's collapsed header: it carries a segment)
+	pvIconBtn    = 26,  -- layer-eye icon button edge length
+	pvGlyph      = 16,  -- Lucide glyph inside the pvIconBtn
 	pvFilterW    = 210, -- filter popover width
 	pvFilterRowH = 32,  -- filter popover row height
 	pvFilterPad  = 12,  -- filter popover inner padding
 	pvFilterCheck = 18, -- filter checkbox edge length
 	pvStagePad   = 24,  -- stage inner padding around the preview content
 	pvCaptionH   = 18,  -- caption line at the stage bottom
-	pvMinStageH  = 110, -- stage never collapses below this (empty-ish previews)
-	pvStageMinW  = 240, -- right dock never narrower than this
-	pvEyeH       = 28,  -- chip height (eye + size chips)
-	pvEyePadX    = 12,  -- inner L/R padding of a chip
-	pvEyeGap     = 6,   -- gap between chips
-	pvSnap       = 60,  -- drop within this distance of the docked spot -> snap back on
+	-- (pvEyeH / pvEyePadX / pvEyeGap retired 2026-07-30 with the sample-size chips:
+	-- the header switch is a W.Segment now and sizes itself from segCompactH.)
 }
 
 -- ---------------------------------------------------------------------------
@@ -692,11 +746,28 @@ UI.LAYOUT = {
 		},
 		-- (sizeArrange spacings retired with the Raid/Group card-grid migration —
 		-- those rows now use the shared rhythm tokens like every other card.)
-		tracking = {            -- Tracking tab (whitelist editor)
-			introH      = 58,  -- height of the multi-line intro hint
-			afterIntro  = 22,  -- intro -> first category card (spec moved to the tab-strip badge)
-			-- (afterDesc retired: the category description is the card subtitle now)
+		preview = {             -- anchored preview band (top of EVERY raidframe tab)
+			-- The band is as tall as its frames need: chromeH = everything around
+			-- them (header row + paddings + caption line), minH keeps an empty or
+			-- cold band from collapsing to a sliver.
+			chromeH = 130,
+			minH    = 180,
+			foldedH = 80,     -- collapsed: header row + the card's own padding
+			after   = 20,     -- preview -> first settings row
+		},
+		auras = {               -- Auras tab (category chips + inline editor)
+			afterChips = 20,  -- chip bar -> editor card
+			-- Editor head: the pane switch carries an EXPLICIT width. A "hug"
+			-- segment sizes its inner bar from the measured text and leaves the
+			-- outer frame at 0 — it then renders nothing in a hand-anchored row
+			-- (hug only works inside a cell that stretches it).
+			paneSegW = 230,   -- Display | Spells
+		},
+		tracking = {            -- spell lists (folded into the Auras tab's "Spells" pane)
+			-- (introH/afterIntro retired with the standalone Tracking tab — the
+			-- shared-list hint is a normal W.Hint row inside the Spells pane now.)
 			betweenRows = 8,   -- between two tracked spell rows (v2: more air)
+			maxHits     = 8,   -- search results shown at once (the field narrows further, a long list would push the tracked list off screen)
 			emptyH      = 52,  -- height of the empty-state box when the list is empty
 			afterList   = 18,  -- list -> action buttons (picker)
 			rowH        = 44,  -- height of a tracked-spell row (v2: roomier)
@@ -880,6 +951,19 @@ local PILL_MARGIN = { [52] = 27, [48] = 25, [38] = 20, [32] = 17, [28] = 15, [4]
 
 local function pillTexture(parent, file, col, layer, h)
 	local m = PILL_MARGIN[h]
+	if not m then
+		-- No asset at this height. Fall back to the nearest one we have instead
+		-- of handing nil to SetTextureSliceMargins, which errors and takes the
+		-- whole screen down with it (Florian 2026-07-29: a custom segment height
+		-- made the Auras tab fail to build at all). The cap curve is then a hair
+		-- off — visible only if someone invents a new height, which this warns
+		-- about in the only way the client offers.
+		local best
+		for known in pairs(PILL_MARGIN) do
+			if not best or math.abs(known - h) < math.abs(best - h) then best = known end
+		end
+		h, m = best, PILL_MARGIN[best]
+	end
 	local t = markRound(parent:CreateTexture(nil, layer or "BACKGROUND"))
 	t:SetTexture(PILL_TEX .. file .. "-h" .. h)
 	t:SetTextureSliceMargins(m, 0, m, 0)
