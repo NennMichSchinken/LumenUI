@@ -47,10 +47,8 @@ ns.RegisterLocale("deDE", {
 	["Inside"] = "Innen",
 	["Outside"] = "Außen",
 
-	-- ── Outline / HP-Text ────────────────────────────────────────────────
+	-- ── HP text modes / shared "None" ───────────────────────────────────
 	["None"] = "Keine",
-	["Outline"] = "Outline",
-	["Thick outline"] = "Dicker Outline",
 	["Current"] = "Aktuell",
 	["Percent"] = "Prozent",
 
@@ -102,13 +100,12 @@ ns.RegisterLocale("deDE", {
 	["Horizontal — members side by side"] = "Horizontal — Mitglieder nebeneinander",
 	["Position: move via the Edit Mode button (sidebar) or WoW's Edit Mode. Raid and Group have separate positions."] = "Position: über den Edit-Modus-Button (Seitenleiste) oder WoWs Edit-Modus verschieben. Raid und Group haben getrennte Positionen.",
 	["Text — name"] = "Text — Name",
-	["Show name"] = "Name anzeigen",
 	["Name position"] = "Namensposition",
 	["Name size"] = "Namensgröße",
 	["Name X offset"] = "Name X-Versatz",
 	["Name Y offset"] = "Name Y-Versatz",
 	["Text — HP display"] = "Text — HP-Anzeige",
-	["HP text"] = "HP-Text",
+	["HP display"] = "HP-Anzeige",
 	["Live, WoW 12.0 shows current HP due to secret values; exact percent in the preview."] = "Live zeigt WoW (12.0) secret-bedingt die aktuelle HP; exaktes Prozent in der Vorschau.",
 	["HP text position"] = "HP-Textposition",
 	["HP text size"] = "HP-Textgröße",
@@ -132,7 +129,6 @@ ns.RegisterLocale("deDE", {
 	["Fill color"] = "Füllfarbe",
 	["Background"] = "Hintergrund",
 	["Background color"] = "Hintergrundfarbe",
-	["Transparency"] = "Transparenz",
 	["Background opacity"] = "Hintergrund-Deckkraft",
 	["Health bar opacity"] = "Lebensbalken-Deckkraft",
 	["Shield opacity"] = "Schild-Deckkraft",
@@ -163,23 +159,15 @@ ns.RegisterLocale("deDE", {
 
 	-- ── Base: Dispel ─────────────────────────────────────────────────────
 	["Dispel display"] = "Dispel-Anzeige",
-	["Highlight dispellable debuffs (also in combat)"] = "Dispellbare Debuffs hervorheben (auch im Kampf)",
 	["Show all dispellable (not just yours)"] = "Alle dispellbaren zeigen (nicht nur eigene)",
-	["Recolor health bar"] = "Lebensbalken einfärben",
-	["Border + overlay (keeps class color)"] = "Rand + Overlay (Klassenfarbe bleibt)",
 	["Overlay opacity"] = "Overlay-Deckkraft",
 
 	-- ── Base: Aggro ──────────────────────────────────────────────────────
 	["Aggro warning"] = "Aggro-Warnung",
-	["Show aggro warning (tanks excluded)"] = "Aggro-Warnung anzeigen (Tanks ausgenommen)",
 	["Dungeon/raid only"] = "Nur in Dungeon/Raid",
 	["Shows the aggro warning only inside instances (dungeon/raid). Off = everywhere, including solo/open world."] = "Zeigt die Aggro-Warnung nur in Instanzen (Dungeon/Raid). Aus = überall, auch solo/Open World.",
-	["Border only"] = "Nur Rand",
-	["Border + overlay"] = "Rand + Overlay",
-	["Border + overlay + text"] = "Rand + Overlay + Text",
 	["Has aggro (red)"] = "Hat Aggro (rot)",
 	["Aggro incoming (yellow)"] = "Aggro droht (gelb)",
-	["Text (both stages)"] = "Text (beide Stufen)",
 	["Text position"] = "Textposition",
 	["Text outline"] = "Text-Umrandung",
 	["Text size"] = "Textgröße",
@@ -239,7 +227,6 @@ ns.RegisterLocale("deDE", {
 
 	-- ── Tracking ─────────────────────────────────────────────────────────
 	["Active spec:"] = "Aktive Spec:",
-	["(no spells)"] = "(keine Spells)",
 	["No spells tracked yet — add the first one."] = "Noch keine Zauber erfasst — füge den ersten hinzu.",
 	["+ Add spell"] = "+ Spell hinzufügen",
 	["Restore defaults"] = "Standard wiederherstellen",
@@ -256,8 +243,6 @@ ns.RegisterLocale("deDE", {
 	["Spec (edit)"] = "Spec (bearbeiten)",
 	["No spec"] = "Keine Spec",
 	["Which spec you edit here. In game, the bindings of your active spec apply automatically."] = "Welche Spec du hier bearbeitest. Im Spiel gelten automatisch die Bindings deiner aktiven Spec.",
-	["Active spec in game:"] = "Aktive Spec im Spiel:",
-	["the bindings of your active spec apply automatically."] = "es gelten automatisch die Bindings deiner aktiven Spec.",
 	["Show only helpful spells for selection"] = "Nur hilfreiche Zauber zur Auswahl anzeigen",
 	["Limits the spell list to spells you can cast on yourself/allies. Off = all spells."] = "Beschränkt die Spell-Liste auf Zauber, die du auf dich/Verbündete wirken kannst. Aus = alle Zauber.",
 	["(no bindings)"] = "(keine Bindings)",
@@ -270,7 +255,6 @@ ns.RegisterLocale("deDE", {
 	["Mouse button = cast on click, keyboard key = cast on hover (routed automatically). Hold Shift, Ctrl or Alt while setting a key to add a modifier."] = "Maustaste = Wirken per Klick, Tastatur-Taste = Wirken per Hover (automatisch geroutet). Halte beim Setzen Shift, Strg oder Alt, um einen Modifier hinzuzufügen.",
 	["Choose spell …"] = "Spell wählen …",
 	["Choose action …"] = "Aktion wählen …",
-	["Remove binding"] = "Binding entfernen",
 	["Friendly only"] = "Nur Freundlich",
 	["Enemy only"] = "Nur Feindlich",
 	["Only act on friendly units."] = "Nur auf freundliche Units wirken.",
@@ -406,21 +390,12 @@ ns.RegisterLocale("deDE", {
 	["Set key …"] = "Taste setzen …",
 	["Shell error in"] = "Shell-Fehler in",
 
-	-- ── Live preview dock (satellite window next to the shell panel) ──────
-	["Auras"] = "Auren",
-	["Shields"] = "Schilde",
-	["Defensives"] = "Defensives",
-	["Backdrop"] = "Rahmen",
-	["Icons"] = "Icons",
-
 	-- ── Indicator icons (role / leader; Raid + Group tab section) ─────────
 	["Role & leader icons"] = "Rollen- & Leader-Icons",
 	["Role icon"] = "Rollen-Icon",
-	["Show role icon"] = "Rollen-Icon anzeigen",
 	["Hide DPS icon"] = "DPS-Icon ausblenden",
 	["Role icon position"] = "Rollen-Icon-Position",
 	["Leader icon"] = "Leader-Icon",
-	["Show leader icon"] = "Leader-Icon anzeigen",
 	["Leader icon position"] = "Leader-Icon-Position",
 	["X offset"] = "X-Versatz",
 	["Y offset"] = "Y-Versatz",
@@ -477,8 +452,6 @@ ns.RegisterLocale("deDE", {
 	["Shared battle-res pool as an icon (charges + recharge timer) — visible during Mythic+ runs and raid bosses, greyed while no charge is up. Place it via Edit Mode."] = "Geteilter Kampfrez-Pool als Icon (Ladungen + Aufladezeit) — sichtbar während M+-Läufen und Raid-Bossen, ausgegraut ohne verfügbare Ladung. Platzieren über den Edit-Modus.",
 	["Bloodlust tracker"] = "Bloodlust-Tracker",
 	["Shows whether Bloodlust is available: normal icon when ready, greyed with a timer while you are Sated. Visible in dungeons and raids. Place it via Edit Mode."] = "Zeigt, ob Bloodlust verfügbar ist: normales Icon wenn bereit, ausgegraut mit Timer solange du übersättigt (Sated) bist. Sichtbar in Dungeons und Raids. Platzieren über den Edit-Modus.",
-	["Combat res size"] = "Combat-Res-Größe",
-	["Bloodlust size"] = "Bloodlust-Größe",
 	["Combat res"] = "Kampfrez",
 	["Suppress profession outfits"] = "Berufs-Outfits unterdrücken",
 	["Removes the cosmetic profession-gear buffs (chef's hat etc.) that WoW re-applies on every login — they break your transmog."] = "Entfernt die kosmetischen Berufs-Ausrüstungs-Buffs (Kochmütze usw.), die WoW bei jedem Einloggen neu anlegt — sie zerstören dein Transmog.",
