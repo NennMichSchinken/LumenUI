@@ -307,7 +307,7 @@ UI.ROLE = {
 	-- 4px grid (12/16/20). Change here centrally -> propagates everywhere.
 	fieldLabel = { UI.FONT.medium,  16, "" }, -- MUTED label above a control (slider/dropdown/segment); coloured Text.Description, not bright (mockup .flabel)
 	sectionHead= { UI.FONT.semibold, 20, "" }, -- card/section titles + tab heading
-	groupTitle = { UI.FONT.semibold, 16, "" }, -- GroupPanel title / IconTile letter
+	groupTitle = { UI.FONT.semibold, 16, "" }, -- Edit-Mode toolbar/panel title, nav group heading
 	sliderCap  = { UI.FONT.semibold, 16, "" }, -- slider caption
 	value      = { UI.FONT.semibold, 14, "" }, -- value box (mockup ratio: 12px@580w -> nearest cut SemiBold)
 	ends       = { UI.FONT.medium,  14, "" }, -- slider min/max numbers
@@ -482,10 +482,8 @@ UI.WIDGET = {
 	-- "box" itself is gone).
 	sliderBoxH = 72, -- row height for slider rows (matches sliderCompactH=71)
 
-	-- GroupPanel
-	groupTitleY = -16, -- yOffset of the title from the top edge
-	groupContentY = -48, -- yOffset of the content area
-
+	-- (groupTitleY/groupContentY retired with W.GroupPanel — the stacked-row
+	--  layout replaced it; see the design bible §8.)
 	-- (dividerH/dividerGap retired with SectionDivider/SectionLabel.)
 
 	-- Section panel (concept A: each section = own card with header). Centrally
@@ -641,7 +639,8 @@ UI.WIDGET = {
 	pvFilterRowH = 32,  -- filter popover row height
 	pvFilterPad  = 12,  -- filter popover inner padding
 	pvFilterCheck = 18, -- filter checkbox edge length
-	pvStagePad   = 24,  -- stage inner padding around the preview content
+	-- (pvStagePad retired: the stage's insets are spelled out by pvContentGap +
+	--  the caption zone below, so a second padding token was never read.)
 	pvCaptionH   = 18,  -- caption line at the stage bottom
 	-- Breathing room above the frames and BETWEEN the frames and the caption line.
 	-- Without it the content sat right on the caption (the band reserved 130 of

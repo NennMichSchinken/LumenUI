@@ -225,18 +225,6 @@ function CC:FormatKey(keyStr)
 	return concat(parts, " + ")
 end
 
--- Split a mouse-click key into (modifier token, mouse button) resp. reassemble it.
--- Modifier is ONE token ("SHIFT"|"CTRL"|"ALT"|""); on multiple (legacy data) the first.
-function CC:KeyParts(keyStr)
-	local p = parseKey(keyStr)
-	local mod = (p.modifiers:gsub("%-$", "")):match("^[^-]+") or ""
-	return mod, p.key
-end
-function CC:BuildKey(mod, btn)
-	if mod and mod ~= "" then return mod .. "-" .. btn end
-	return btn
-end
-
 -- ---------------------------------------------------------------------------
 --  Spell resolution / macrotext
 -- ---------------------------------------------------------------------------
@@ -718,9 +706,6 @@ function CC:ApplyBindings()
 	for button in pairs(buttons) do applyToButton(button) end
 	applyHover()
 end
-
--- Options calls this after every change.
-function ns.CC_Apply() CC:ApplyBindings() end
 
 -- Spell list (class/spec spells, not passive) for the options dropdown.
 function CC:GetClassSpells()
