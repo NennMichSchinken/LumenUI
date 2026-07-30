@@ -540,11 +540,11 @@ UI.WIDGET = {
 	-- TARGET GRID. Every possible destination is a visible cell, so "where to" is
 	-- never inferred (Florian 2026-07-29: a flat list mixed two axes and the
 	-- combination of two picks had no guessable meaning).
-	copyPopW     = 520, -- popover width (label column + 2 context columns; the label column has to hold "Defensives & External")
+	copyPopW     = 456, -- popover width (label column + 2 context columns; the label column has to hold "Defensives & External"). Narrowed by exactly 2x the cell shrink below, so the label column keeps its width.
 	copyPopPad   = 20,  -- inner padding
 	copyRowH     = 40,  -- one "what" row
 	copyGridGap  = 6,   -- gap between grid cells
-	copyCellW    = 96,  -- target cell width (one context column)
+	copyCellW    = 64,  -- target cell width (one context column). Was 96 to fit the word "Source"; the cell holds nothing but a checkbox now, and 64 still clears the "Gruppe" column header.
 	copyCellH    = 40,  -- target cell height (= one grid row)
 	copyHeadH    = 24,  -- column header row above the grid
 	-- (copyTick retired 2026-07-30: a target cell now carries a real checkbox at

@@ -3411,14 +3411,15 @@ function W.CopyPopover(parent, o)
 				local key = r.key .. "|" .. c.key
 				local cx = pad + labelColW + (ci - 1) * (M.copyCellW + M.copyGridGap)
 				if r.key == srcRow and c.key == srcCol then
-					-- The source: dashed, inert, labelled — never a destination.
+					-- The source: an EMPTY inert outline, never a destination. No "Source"
+					-- caption any more (Florian 2026-07-30): the word forced every column
+					-- to be wide enough to hold it, and the dialog's own subtitle already
+					-- names the source ("From HoTs · Raid"). An outline with no checkbox in
+					-- it reads as "not available here", which is exactly right.
 					local src = add(CreateFrame("Frame", nil, pop))
 					src:SetSize(M.copyCellW, M.copyCellH)
 					src:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
-					UI.RoundBorder(src, Border.default, "OVERLAY", nil, R_CTRL)
-					local sfs = UI.FS(src, "caption", Text.Disabled)
-					sfs:SetPoint("CENTER", src, "CENTER", 0, 0)
-					sfs:SetText(T("Source"))
+					UI.RoundBorder(src, Border.faint, "OVERLAY", nil, R_CTRL)
 				else
 					local cell = add(CreateFrame("Button", nil, pop))
 					cell:SetSize(M.copyCellW, M.copyCellH)
@@ -3432,13 +3433,18 @@ function W.CopyPopover(parent, o)
 					-- the one shape that says "not ticked, tick me", and reusing it means the
 					-- dialog speaks one language top to bottom instead of inventing a second.
 					-- The cell itself stays the (larger) hit area and only lights up on hover.
-					local cf = UI.RoundFill(cell, on and Accent.selection or CLEAR, nil, nil, R_CTRL)
+					-- No fill or border on the CELL: it is only the hit area. State and
+					-- hover live on the checkbox, exactly as in the "What" rows, whose
+					-- rows carry no fill either. A cell-wide highlight read as a big pill
+					-- next to the small box (Florian 2026-07-30).
 					local BOX = M.checkBox
 					local box = CreateFrame("Frame", nil, cell)
 					box:SetSize(BOX, BOX)
 					box:SetPoint("CENTER", cell, "CENTER", 0, 0)
-					local boxbg = UI.RoundFill(box, on and Accent.color or CLEAR, "BACKGROUND", nil, RAD.xs)
-					UI.RoundBorder(box, Border.hover, "OVERLAY", nil, RAD.xs)
+					-- Fill is set once here; only the BORDER changes on hover, so this needs
+					-- no handle (the popover rebuilds itself on every toggle).
+					UI.RoundFill(box, on and Accent.color or CLEAR, "BACKGROUND", nil, RAD.xs)
+					local boxEdges = UI.RoundBorder(box, on and Accent.color or Border.hover, "OVERLAY", nil, RAD.xs)
 					if on then
 						local tick = box:CreateTexture(nil, "OVERLAY")
 						tick:SetSize(BOX - 4, BOX - 4)
@@ -3448,11 +3454,17 @@ function W.CopyPopover(parent, o)
 						tick:SetVertexColor(Text.OnAccent.r, Text.OnAccent.g, Text.OnAccent.b, 1)
 						tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
 					end
+					-- Hover = the checkbox's own border goes accent, the same feedback
+					-- W.Checkbox gives. Nothing else moves.
 					cell:SetScript("OnEnter", function()
-						if not targets[key] then UI.SetColor(cf, Surface.Hover); UI.SetColor(boxbg, Surface.Hover) end
+						if not targets[key] then
+							for _, e in ipairs(boxEdges) do UI.SetColor(e, Accent.color) end
+						end
 					end)
 					cell:SetScript("OnLeave", function()
-						if not targets[key] then UI.SetColor(cf, CLEAR); UI.SetColor(boxbg, CLEAR) end
+						if not targets[key] then
+							for _, e in ipairs(boxEdges) do UI.SetColor(e, Border.hover) end
+						end
 					end)
 					cell:SetScript("OnClick", function()
 						targets[key] = (not targets[key]) or nil

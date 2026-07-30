@@ -220,7 +220,6 @@ ns.RegisterLocale("deDE", {
 	["From"] = "Von",
 	["What"] = "Was",
 	["Where to"] = "Wohin",
-	["Source"] = "Quelle",
 	["Position · Offsets"] = "Position · Versatz",
 	["Count · Size"] = "Anzahl · Größe",
 	["Copying placement onto another category stacks its icons in the same corner."] = "Die Platzierung auf eine andere Kategorie zu kopieren stapelt deren Icons in dieselbe Ecke.",
