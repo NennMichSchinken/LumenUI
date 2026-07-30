@@ -252,11 +252,20 @@ local FAKE_MAJOR = {
 -- Stage A (v0.9.11): the "RAID" filter = only raid-relevant helpful auras
 -- (HoTs/shields) -> food/flask/general buffs drop out. Secret-safe and also usable for
 -- foreign auras (stage B = exact signature whitelist only for OWN HoTs).
+-- `lvl` = frame level ABOVE f.overlay for this category's icon holder. Categories
+-- normally sit in different corners, so the order only decides who wins where two
+-- rows overlap -- but then it has to be DETERMINISTIC: as children created lazily
+-- at the same level, whichever category happened to be enabled first used to draw
+-- on top. Order by urgency, most urgent on top (Florian 2026-07-30):
+--   debuffs > defensives > major CDs > HoTs > role/leader icons (f.iconLayer, +1).
+-- Stride 4 leaves each holder room for its own children (icon +1, cooldown +2).
+-- Matches the EllesmereUI benchmark, where the text band (name/health text, role
+-- icon, leader crown) sits BELOW the aura band on purpose so auras always win.
 local AURA_CATS = {
-	{ key = "hotsOwn",    filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
-	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
-	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_MAJOR },
-	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
+	{ key = "hotsOwn",    lvl = 4,  filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
+	{ key = "defensives", lvl = 12, filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
+	{ key = "major",      lvl = 8,  filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_MAJOR },
+	{ key = "debuffs",    lvl = 16, filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
 -- Debuff filter modes (Blizzard standard): "raid" = Blizzard's curated raid-relevant
 -- debuffs (HARMFUL|RAID resp. RAID_IN_COMBAT), "dispellable" = only self-dispellable,
@@ -1023,7 +1032,7 @@ end
 -- Layout a category block: position holder + icon pool at anchor/size/growth direction.
 -- Filling (texture/swipe/show) happens only at render time. Call ONLY in the layout path
 -- (may create frames -> out of combat).
-local function layoutAuraCat(f, key, cat, size)
+local function layoutAuraCat(f, key, cat, size, lvl)
 	local holder = f.auraHolders[key]
 	-- All display knobs are per context (raid/party) since Feature 1.
 	local K = auraKeys()
@@ -1033,6 +1042,11 @@ local function layoutAuraCat(f, key, cat, size)
 	end
 	if not holder then
 		holder = CreateFrame("Frame", nil, f.overlay)
+		-- Explicit level per category (AURA_CATS.lvl): a lazily created child would
+		-- otherwise land on the parent's level +1 like every other category, and ties
+		-- render in CREATION order -- i.e. whichever category was enabled first. Set
+		-- once at creation (§9.5/§9.8: no SetFrameLevel churn on a live unit frame).
+		holder:SetFrameLevel(f.overlay:GetFrameLevel() + (lvl or 4))
 		holder.icons = {}
 		holder._host, holder._cat = f, key   -- click-to-configure needs owner + category
 		f.auraHolders[key] = holder
@@ -1251,12 +1265,16 @@ local function Decorate(f)
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 
 	-- Indicator icons: role (Blizzard LFG atlases) + leader/assistant crown.
-	-- Own layer ABOVE the aura band — the icons stay readable even while
-	-- the aggro overlay/border is up. Anchored/sized per context in
-	-- ApplyConfig, filled in the render pass.
+	-- Own layer just above the overlay: ABOVE the dispel/aggro fill + border (so the
+	-- icons stay readable while those are up) but BELOW the aura band (Florian
+	-- 2026-07-30) — an aura icon carries which effect and how long, the role icon is
+	-- static information you can also read from the frame's position, so it must not
+	-- occlude auras. Same call as the EllesmereUI benchmark, whose "text band"
+	-- (name/health text, role icon, leader crown) sits below the aura band too.
+	-- Anchored/sized per context in ApplyConfig, filled in the render pass.
 	f.iconLayer = CreateFrame("Frame", nil, f)
 	f.iconLayer:SetAllPoints(f)
-	f.iconLayer:SetFrameLevel(base + 11)
+	f.iconLayer:SetFrameLevel(base + 7) -- = f.overlay + 1; aura holders start at +4
 	f.roleIcon = f.iconLayer:CreateTexture(nil, "OVERLAY")
 	f.roleIcon:Hide()
 	f.leadIcon = f.iconLayer:CreateTexture(nil, "OVERLAY")
@@ -1546,7 +1564,7 @@ function Raidframes:ApplyConfig(f)
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
 			local size = (cat and auraIconSize(cat, L, healthH)) or 16
-			layoutAuraCat(f, c.key, cat, size)
+			layoutAuraCat(f, c.key, cat, size, c.lvl)
 		end
 	end
 end
@@ -2187,7 +2205,10 @@ function Raidframes:_C2CIconEnter(holder)
 	if not minL then return end
 	local r = c2cGetRing()
 	r:SetParent(holder)
-	r:SetFrameLevel(holder:GetFrameLevel() + 10)
+	-- Hover ring: above the WHOLE aura band (top holder +16 plus its children), not
+	-- just above this holder — otherwise hovering the HoT row draws its ring under
+	-- the debuff icons. Measured from the overlay so it is the same for all four.
+	r:SetFrameLevel(holder._host.overlay:GetFrameLevel() + 24)
 	r:ClearAllPoints()
 	local hl, hb = holder:GetLeft() or 0, holder:GetBottom() or 0
 	r:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", minL - hl - C2C_PAD, minB - hb - C2C_PAD)
@@ -2217,13 +2238,17 @@ local function pvFrame(i, holder)
 		local function hotspot(region, label, cardKey, pad)
 			pad = pad or 3
 			local b = CreateFrame("Button", nil, f.overlay)
-			b:SetFrameLevel(f.overlay:GetFrameLevel() + 12)
+			-- Above the texts + the role/leader layer (+1), but BELOW every aura
+			-- holder (+4 and up): where an aura icon overlaps another element's
+			-- hotspot the click has to open the AURA card — that is what is drawn on
+			-- top there, and the icons carry their own scripts (makeAuraIcon).
+			b:SetFrameLevel(f.overlay:GetFrameLevel() + 2)
 			b:SetPoint("TOPLEFT", region, "TOPLEFT", -pad, pad)
 			b:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", pad, -pad)
 			b:SetScript("OnEnter", function()
 				local r = c2cGetRing()
 				r:SetParent(b)
-				r:SetFrameLevel(b:GetFrameLevel() + 1)
+				r:SetFrameLevel(f.overlay:GetFrameLevel() + 24) -- above the aura band, as for the aura rings
 				r:ClearAllPoints()
 				r:SetAllPoints(b)
 				r:Show()
@@ -2820,7 +2845,7 @@ function Raidframes:RefreshAuras()
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
 			local size = (cat and auraIconSize(cat, L, healthH)) or 16
-			layoutAuraCat(f, c.key, cat, size)
+			layoutAuraCat(f, c.key, cat, size, c.lvl)
 		end
 	end
 	if header then
