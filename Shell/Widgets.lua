@@ -3262,6 +3262,14 @@ function W.CopyPopover(parent, o)
 	pop:Hide()
 	UI.RoundFill(pop, Surface.Card)
 	UI.RoundBorder(pop, Border.hover, "OVERLAY")
+	-- Swallow clicks so they never reach the click-outside closer beneath. Without
+	-- this, every part of the dialog that is not itself a widget — the "What" and
+	-- "Where to" captions, the gaps, and the inert source cell — closed the whole
+	-- thing (Florian 2026-07-30 hit it on the source cell's X, which carries no
+	-- script at all; the click was simply falling through). Same reason the colour
+	-- picker and the confirm dialog do it. The dropdown MENUS deliberately do not:
+	-- there, a click on the list background closing it is the expected behaviour.
+	pop:EnableMouse(true)
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = pop end
 
 	local groupSel, targets = {}, {}   -- what / where, both reset on every open
