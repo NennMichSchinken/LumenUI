@@ -3411,15 +3411,26 @@ function W.CopyPopover(parent, o)
 				local key = r.key .. "|" .. c.key
 				local cx = pad + labelColW + (ci - 1) * (M.copyCellW + M.copyGridGap)
 				if r.key == srcRow and c.key == srcCol then
-					-- The source: an EMPTY inert outline, never a destination. No "Source"
-					-- caption any more (Florian 2026-07-30): the word forced every column
-					-- to be wide enough to hold it, and the dialog's own subtitle already
-					-- names the source ("From HoTs · Raid"). An outline with no checkbox in
-					-- it reads as "not available here", which is exactly right.
+					-- The source: the SAME checkbox as every other cell, greyed out with an
+					-- X in it (Florian 2026-07-30). A cell-wide outline was the odd one out
+					-- once the destinations shrank to a box — it read as a pill behind
+					-- nothing. Identical shape keeps the grid uniform, the X says "not this
+					-- one" without needing a word; the dialog's subtitle already names the
+					-- source ("From HoTs · Raid"), which is why the old caption could go.
 					local src = add(CreateFrame("Frame", nil, pop))
 					src:SetSize(M.copyCellW, M.copyCellH)
 					src:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
-					UI.RoundBorder(src, Border.faint, "OVERLAY", nil, R_CTRL)
+					local BOX = M.checkBox
+					local sbox = CreateFrame("Frame", nil, src)
+					sbox:SetSize(BOX, BOX)
+					sbox:SetPoint("CENTER", src, "CENTER", 0, 0)
+					UI.RoundBorder(sbox, Border.faint, "OVERLAY", nil, RAD.xs)
+					local sx = sbox:CreateTexture(nil, "OVERLAY")
+					sx:SetSize(BOX - 6, BOX - 6)
+					sx:SetPoint("CENTER", sbox, "CENTER", 0, 0)
+					sx:SetTexture(TEX .. "icon-x")
+					sx:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 1)
+					sx:SetSnapToPixelGrid(false); sx:SetTexelSnappingBias(0)
 				else
 					local cell = add(CreateFrame("Button", nil, pop))
 					cell:SetSize(M.copyCellW, M.copyCellH)
