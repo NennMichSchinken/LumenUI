@@ -1356,6 +1356,37 @@ function Raidframes._setBarHeight(bar, h)
 	if bar._lumenH ~= h then bar._lumenH = h; bar:SetHeight(h) end
 end
 
+-- ---- Resource events, registered per unit on demand ------------------------
+-- The three power events are the highest-frequency traffic after UNIT_HEALTH
+-- (energy/rage/rune ticks never stop in combat), but the RAID default shows
+-- healers only -> in a 20-man roughly 16 of 20 members used to wake Lua on
+-- every tick purely to be dropped by the role gate in RenderPower.
+-- RegisterUnitEvent filters C-side, so unregistering keeps those events out of
+-- Lua entirely rather than merely bailing early. Same idea as the benchmark
+-- suite, which drops UNIT_POWER_UPDATE for units whose role shows no bar.
+--
+-- The trackers themselves stay STATIC (one frame per token, created once in
+-- Setup) — only these three events move. `unitTrackers` is filled there; on a
+-- client without RegisterUnitEvent it stays empty and this is a no-op.
+local unitTrackers   = {}   -- unit token -> its tracker frame
+local powerRegistered = {}  -- unit token -> true while its power events are on
+local POWER_EVENTS = { "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER" }
+local POWER_EVENT_SET = {}  -- same list as a lookup, for the registration loop
+for i = 1, #POWER_EVENTS do POWER_EVENT_SET[POWER_EVENTS[i]] = true end
+local function setPowerEvents(unit, on)
+	on = on or nil                                  -- false and nil are one state
+	if not unit or powerRegistered[unit] == on then return end
+	local t = unitTrackers[unit]
+	if not t then return end
+	for i = 1, #POWER_EVENTS do
+		local ev = POWER_EVENTS[i]
+		-- One tracker serves exactly one token, so a plain UnregisterEvent is
+		-- the exact inverse of its RegisterUnitEvent.
+		if on then t:RegisterUnitEvent(ev, unit) else t:UnregisterEvent(ev) end
+	end
+	powerRegistered[unit] = on
+end
+
 -- Whose resource is shown: the three per-context role switches. Units with role
 -- NONE/unknown follow the DPS switch.
 function Raidframes._powerRoleShown(L, role)
@@ -1419,15 +1450,24 @@ function Raidframes:RenderPower(f)
 	local u = f.unit
 	if not u or not UnitExists(u) then return end
 	local d, L = db(), layoutCtx()
-	if not d.powerEnabled then self._setPowerShown(f, false, L); return end
+
+	-- The settings + role gate is the whole answer to "can this unit ever show a
+	-- bar right now", and neither input comes from power data. That makes it the
+	-- one safe place to also decide whether the unit needs the three resource
+	-- events at all — see setPowerEvents. Evaluating it FIRST also saves the two
+	-- power API calls below for every gated unit.
+	local roleShown = d.powerEnabled and self._powerRoleShown(L, self._unitRole(u)) or false
+	setPowerEvents(u, roleShown)
+	if not roleShown then self._setPowerShown(f, false, L); return end
 
 	local pType, token = UnitPowerType(u)
 	pType = pType or 0
 	-- maxPower may be SECRET -> never compare it. Only a CLEAN zero max means the
-	-- unit genuinely has no resource to show.
+	-- unit genuinely has no resource to show. NOT folded into the gate above: it
+	-- is derived from power state, so a unit that loses its resource must keep
+	-- its events to hear UNIT_DISPLAYPOWER when it gets one back.
 	local pmx = UnitPowerMax and UnitPowerMax(u, pType)
-	local cleanNoPower = (not issecretvalue(pmx)) and (not pmx or pmx == 0)
-	if cleanNoPower or not self._powerRoleShown(L, self._unitRole(u)) then
+	if (not issecretvalue(pmx)) and (not pmx or pmx == 0) then
 		self._setPowerShown(f, false, L)
 		return
 	end
@@ -1848,6 +1888,22 @@ function Raidframes:RefreshIndicators()
 			setIndicators(b, Raidframes._unitRole(b.unit),
 				UnitIsGroupLeader and UnitIsGroupLeader(b.unit),
 				UnitIsGroupAssistant and UnitIsGroupAssistant(b.unit))
+		end
+	end
+end
+
+-- Re-run the resource pass on every live button. Needed wherever the ROLE gate's
+-- answer can change without a full RenderLive: once power events are registered
+-- per unit (setPowerEvents), a unit that was gated out has none left to correct
+-- itself with — a DPS promoted to healer would keep a hidden bar until the next
+-- roster or layout pass. RenderPower is idempotent (the bar height is behind a
+-- dirty check), so calling it for all of them is cheap.
+function Raidframes:RefreshPower()
+	if not header then return end
+	for i = 1, 40 do
+		local b = header[i]
+		if b and b._lumenSecured and b.unit and UnitExists(b.unit) then
+			self:RenderPower(b)
 		end
 	end
 end
@@ -2362,6 +2418,11 @@ function Raidframes:UpdateLayout()
 	dispelCurve = nil   -- dispel colors may have changed -> have the curve rebuilt
 	wlInvalidate()      -- profile may have switched -> re-resolve the whitelist table
 	self:LayoutLive()
+	-- LayoutLive aborts in combat (the secure header), but the resource role
+	-- switches must still take effect: with power events registered per unit, a
+	-- unit gated out earlier cannot hear the setting change on its own. Our
+	-- StatusBars are non-protected children, so this stays combat-legal.
+	self:RefreshPower()
 	self:RefreshShellPreview()   -- settings changes route through here -> keep the band live
 	-- If the raidframes are a coupled child, LayoutLive just reset the container
 	-- to its absolute position -> re-anchor it onto its Edit Mode link anchor.
@@ -2631,14 +2692,20 @@ function Raidframes:Setup()
 		if f and f:IsVisible() then Raidframes[UNIT_EVENT_METHOD[event]](Raidframes, f) end
 	end
 	if container.RegisterUnitEvent then
-		-- No table keeping the trackers: a created frame is owned by the C side and
-		-- never collected, and nothing re-registers them afterwards.
+		-- The trackers are kept in `unitTrackers` because the three resource
+		-- events are registered on demand (setPowerEvents): the raid default
+		-- shows healers only, so most members must not pay for every energy or
+		-- rune tick. Everything else here is registered once and never touched.
 		local function track(unit)
 			local t = CreateFrame("Frame")
 			for ev in pairs(UNIT_EVENT_METHOD) do
-				if ev:sub(1, 5) == "UNIT_" then t:RegisterUnitEvent(ev, unit) end
+				-- Power events are added later, by the role gate in RenderPower.
+				if ev:sub(1, 5) == "UNIT_" and not POWER_EVENT_SET[ev] then
+					t:RegisterUnitEvent(ev, unit)
+				end
 			end
 			t:SetScript("OnEvent", onUnitEvent)
+			unitTrackers[unit] = t
 		end
 		track("player")
 		for i = 1, 4 do track("party" .. i) end
@@ -2683,6 +2750,9 @@ function Raidframes:Setup()
 		end
 		if event == "PARTY_LEADER_CHANGED" or event == "PLAYER_ROLES_ASSIGNED" then
 			Raidframes:RefreshIndicators()
+			-- A reassigned role also moves the resource bar's role gate, and a
+			-- gated-out unit has no power events left to notice on its own.
+			if event == "PLAYER_ROLES_ASSIGNED" then Raidframes:RefreshPower() end
 			return
 		end
 		if event == "PLAYER_SPECIALIZATION_CHANGED" then
