@@ -3424,26 +3424,36 @@ function W.CopyPopover(parent, o)
 					cell:SetSize(M.copyCellW, M.copyCellH)
 					cell:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
 					local on = targets[key] and true or false
-					-- An UNPICKED cell shows NO check mark and sits on the Field step
-					-- (Florian 2026-07-30: the whole grid read as disabled). Two causes,
-					-- both fixed here: a faint grey check in an empty cell says "ticked
-					-- but locked" -- a check mark IS the symbol for chosen, so an empty
-					-- cell must not carry one. And Surface.Input on this Surface.Card
-					-- popover is a step of 4 out of 255, so the cells barely existed;
-					-- Field (+11) makes them read as the buttons they are. See the
-					-- surface step rule in Tokens (P.field).
-					local cf = UI.RoundFill(cell, on and Accent.selection or Surface.Field, nil, nil, R_CTRL)
-					UI.RoundBorder(cell, on and Border.hover or Border.default, "OVERLAY", nil, R_CTRL)
+					-- The cell carries a real CHECKBOX, the same one the "What" rows above
+					-- use (Florian 2026-07-30, two rounds). First the unpicked cell drew a
+					-- faded check -- which says "ticked but locked", because a check mark IS
+					-- the symbol for chosen. Removing it left a blank rounded rectangle that
+					-- read as a field which had not loaded yet. An empty BOX WITH A BORDER is
+					-- the one shape that says "not ticked, tick me", and reusing it means the
+					-- dialog speaks one language top to bottom instead of inventing a second.
+					-- The cell itself stays the (larger) hit area and only lights up on hover.
+					local cf = UI.RoundFill(cell, on and Accent.selection or CLEAR, nil, nil, R_CTRL)
+					local BOX = M.checkBox
+					local box = CreateFrame("Frame", nil, cell)
+					box:SetSize(BOX, BOX)
+					box:SetPoint("CENTER", cell, "CENTER", 0, 0)
+					local boxbg = UI.RoundFill(box, on and Accent.color or CLEAR, "BACKGROUND", nil, RAD.xs)
+					UI.RoundBorder(box, Border.hover, "OVERLAY", nil, RAD.xs)
 					if on then
-						local tick = cell:CreateTexture(nil, "OVERLAY")
-						tick:SetSize(M.copyTick, M.copyTick)
-						tick:SetPoint("CENTER", cell, "CENTER", 0, 0)
+						local tick = box:CreateTexture(nil, "OVERLAY")
+						tick:SetSize(BOX - 4, BOX - 4)
+						tick:SetPoint("CENTER", box, "CENTER", 0, 0)
 						tick:SetTexture(TEX .. "icon-check")
-						tick:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, 1)
+						-- Dark on the light accent box, exactly like W.Checkbox.
+						tick:SetVertexColor(Text.OnAccent.r, Text.OnAccent.g, Text.OnAccent.b, 1)
 						tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
 					end
-					cell:SetScript("OnEnter", function() if not targets[key] then UI.SetColor(cf, Surface.Hover) end end)
-					cell:SetScript("OnLeave", function() if not targets[key] then UI.SetColor(cf, Surface.Field) end end)
+					cell:SetScript("OnEnter", function()
+						if not targets[key] then UI.SetColor(cf, Surface.Hover); UI.SetColor(boxbg, Surface.Hover) end
+					end)
+					cell:SetScript("OnLeave", function()
+						if not targets[key] then UI.SetColor(cf, CLEAR); UI.SetColor(boxbg, CLEAR) end
+					end)
 					cell:SetScript("OnClick", function()
 						targets[key] = (not targets[key]) or nil
 						rebuild()

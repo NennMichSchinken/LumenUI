@@ -547,7 +547,8 @@ UI.WIDGET = {
 	copyCellW    = 96,  -- target cell width (one context column)
 	copyCellH    = 40,  -- target cell height (= one grid row)
 	copyHeadH    = 24,  -- column header row above the grid
-	copyTick     = 20,  -- tick box inside a target cell
+	-- (copyTick retired 2026-07-30: a target cell now carries a real checkbox at
+	-- M.checkBox, the same one the dialog's "What" rows use.)
 	copyGroupGap = 18,  -- gap between the "what" block and the target grid
 	copyWarnH    = 52,  -- placement-clash warning line
 
