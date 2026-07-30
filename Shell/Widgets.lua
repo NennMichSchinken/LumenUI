@@ -3424,21 +3424,26 @@ function W.CopyPopover(parent, o)
 					cell:SetSize(M.copyCellW, M.copyCellH)
 					cell:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
 					local on = targets[key] and true or false
-					local cf = UI.RoundFill(cell, on and Accent.selection or Surface.Input, nil, nil, R_CTRL)
-					UI.RoundBorder(cell, on and Border.hover or Border.faint, "OVERLAY", nil, R_CTRL)
-					local tick = cell:CreateTexture(nil, "OVERLAY")
-					tick:SetSize(M.copyTick, M.copyTick)
-					tick:SetPoint("CENTER", cell, "CENTER", 0, 0)
+					-- An UNPICKED cell shows NO check mark and sits on the Field step
+					-- (Florian 2026-07-30: the whole grid read as disabled). Two causes,
+					-- both fixed here: a faint grey check in an empty cell says "ticked
+					-- but locked" -- a check mark IS the symbol for chosen, so an empty
+					-- cell must not carry one. And Surface.Input on this Surface.Card
+					-- popover is a step of 4 out of 255, so the cells barely existed;
+					-- Field (+11) makes them read as the buttons they are. See the
+					-- surface step rule in Tokens (P.field).
+					local cf = UI.RoundFill(cell, on and Accent.selection or Surface.Field, nil, nil, R_CTRL)
+					UI.RoundBorder(cell, on and Border.hover or Border.default, "OVERLAY", nil, R_CTRL)
 					if on then
+						local tick = cell:CreateTexture(nil, "OVERLAY")
+						tick:SetSize(M.copyTick, M.copyTick)
+						tick:SetPoint("CENTER", cell, "CENTER", 0, 0)
 						tick:SetTexture(TEX .. "icon-check")
 						tick:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, 1)
-					else
-						tick:SetTexture(TEX .. "icon-check")
-						tick:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 0.28)
+						tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
 					end
-					tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
 					cell:SetScript("OnEnter", function() if not targets[key] then UI.SetColor(cf, Surface.Hover) end end)
-					cell:SetScript("OnLeave", function() if not targets[key] then UI.SetColor(cf, Surface.Input) end end)
+					cell:SetScript("OnLeave", function() if not targets[key] then UI.SetColor(cf, Surface.Field) end end)
 					cell:SetScript("OnClick", function()
 						targets[key] = (not targets[key]) or nil
 						rebuild()
