@@ -42,7 +42,7 @@ local ADDON, ns = ...
 ns.News = {
 	{
 		version = "0.9.291",
-		date = "2026-07-29",
+		date = "2026-07-30",
 		summary = "Aura settings now live on their own tab, with a preview and a copy dialog.",
 		entries = {
 			{ kind = "new",
