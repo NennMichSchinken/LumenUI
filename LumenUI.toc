@@ -21,6 +21,7 @@ Shell\News.lua
 Shell\Screens.lua
 Shell\Shell.lua
 Modules\Raidframes.lua
+Modules\RaidframesPreview.lua
 Modules\ClickCast.lua
 Modules\Share.lua
 Modules\MiniCC.lua
