@@ -54,7 +54,9 @@ ns.News = {
 			{ kind = "fixed",
 			  text = "The dialog for copying aura settings opened with \"Appearance\" already ticked; nothing is preselected now." },
 			{ kind = "fixed",
-			  text = "The destination cells in that dialog looked switched off: an empty cell no longer carries a faded check mark, and the cells stand out from the dialog behind them." },
+			  text = "The destination cells in that dialog read as switched off; each carries a real checkbox now, and the source column shows a greyed one with an X." },
+			{ kind = "fixed",
+			  text = "Clicking a spot in that dialog that was not a control — a caption, a gap between rows, the source cell — closed the whole dialog." },
 		},
 	},
 	{
