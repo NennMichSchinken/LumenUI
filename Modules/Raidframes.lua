@@ -252,11 +252,20 @@ local FAKE_MAJOR = {
 -- Stage A (v0.9.11): the "RAID" filter = only raid-relevant helpful auras
 -- (HoTs/shields) -> food/flask/general buffs drop out. Secret-safe and also usable for
 -- foreign auras (stage B = exact signature whitelist only for OWN HoTs).
+-- `lvl` = frame level ABOVE f.overlay for this category's icon holder. Categories
+-- normally sit in different corners, so the order only decides who wins where two
+-- rows overlap -- but then it has to be DETERMINISTIC: as children created lazily
+-- at the same level, whichever category happened to be enabled first used to draw
+-- on top. Order by urgency, most urgent on top (Florian 2026-07-30):
+--   debuffs > defensives > major CDs > HoTs > role/leader icons (f.iconLayer, +1).
+-- Stride 4 leaves each holder room for its own children (icon +1, cooldown +2).
+-- Matches the EllesmereUI benchmark, where the text band (name/health text, role
+-- icon, leader crown) sits BELOW the aura band on purpose so auras always win.
 local AURA_CATS = {
-	{ key = "hotsOwn",    filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
-	{ key = "defensives", filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
-	{ key = "major",      filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_MAJOR },
-	{ key = "debuffs",    filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
+	{ key = "hotsOwn",    lvl = 4,  filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
+	{ key = "defensives", lvl = 12, filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
+	{ key = "major",      lvl = 8,  filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_MAJOR },
+	{ key = "debuffs",    lvl = 16, filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
 -- Debuff filter modes (Blizzard standard): "raid" = Blizzard's curated raid-relevant
 -- debuffs (HARMFUL|RAID resp. RAID_IN_COMBAT), "dispellable" = only self-dispellable,
@@ -1023,7 +1032,7 @@ end
 -- Layout a category block: position holder + icon pool at anchor/size/growth direction.
 -- Filling (texture/swipe/show) happens only at render time. Call ONLY in the layout path
 -- (may create frames -> out of combat).
-local function layoutAuraCat(f, key, cat, size)
+local function layoutAuraCat(f, key, cat, size, lvl)
 	local holder = f.auraHolders[key]
 	-- All display knobs are per context (raid/party) since Feature 1.
 	local K = auraKeys()
@@ -1033,6 +1042,11 @@ local function layoutAuraCat(f, key, cat, size)
 	end
 	if not holder then
 		holder = CreateFrame("Frame", nil, f.overlay)
+		-- Explicit level per category (AURA_CATS.lvl): a lazily created child would
+		-- otherwise land on the parent's level +1 like every other category, and ties
+		-- render in CREATION order -- i.e. whichever category was enabled first. Set
+		-- once at creation (§9.5/§9.8: no SetFrameLevel churn on a live unit frame).
+		holder:SetFrameLevel(f.overlay:GetFrameLevel() + (lvl or 4))
 		holder.icons = {}
 		holder._host, holder._cat = f, key   -- click-to-configure needs owner + category
 		f.auraHolders[key] = holder
@@ -1251,12 +1265,16 @@ local function Decorate(f)
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 
 	-- Indicator icons: role (Blizzard LFG atlases) + leader/assistant crown.
-	-- Own layer ABOVE the aura band — the icons stay readable even while
-	-- the aggro overlay/border is up. Anchored/sized per context in
-	-- ApplyConfig, filled in the render pass.
+	-- Own layer just above the overlay: ABOVE the dispel/aggro fill + border (so the
+	-- icons stay readable while those are up) but BELOW the aura band (Florian
+	-- 2026-07-30) — an aura icon carries which effect and how long, the role icon is
+	-- static information you can also read from the frame's position, so it must not
+	-- occlude auras. Same call as the EllesmereUI benchmark, whose "text band"
+	-- (name/health text, role icon, leader crown) sits below the aura band too.
+	-- Anchored/sized per context in ApplyConfig, filled in the render pass.
 	f.iconLayer = CreateFrame("Frame", nil, f)
 	f.iconLayer:SetAllPoints(f)
-	f.iconLayer:SetFrameLevel(base + 11)
+	f.iconLayer:SetFrameLevel(base + 7) -- = f.overlay + 1; aura holders start at +4
 	f.roleIcon = f.iconLayer:CreateTexture(nil, "OVERLAY")
 	f.roleIcon:Hide()
 	f.leadIcon = f.iconLayer:CreateTexture(nil, "OVERLAY")
@@ -1546,7 +1564,7 @@ function Raidframes:ApplyConfig(f)
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
 			local size = (cat and auraIconSize(cat, L, healthH)) or 16
-			layoutAuraCat(f, c.key, cat, size)
+			layoutAuraCat(f, c.key, cat, size, c.lvl)
 		end
 	end
 end
@@ -2141,7 +2159,27 @@ end
 local function c2cJump(host, cardKey)
 	if not (ns.Shell and ns.Shell.JumpTo) then return end
 	Raidframes:_C2CLeave()
-	ns.Shell:JumpTo("Raidframes", (host._pvCtx == "raid") and "Raid" or "Group", cardKey)
+	-- Aura icons live on their own tab now; everything else stays on the
+	-- context tab the clicked frame belongs to.
+	local tab
+	if cardKey:find("^aura%-") then
+		tab = "Auras"
+		-- The Auras tab carries its own context; the target tab name can no longer
+		-- express it, so hand it over through the profile before the jump. Flag a
+		-- real change so the Shell knows it must rebuild (an unchanged jump only
+		-- flashes the card instead of re-rendering the page).
+		local d = db()
+		if d then
+			local want = (host._pvCtx == "raid") and "raid" or "party"
+			if d.auraTabCtx ~= want then
+				d.auraTabCtx = want
+				ns.ShellJumpDirty = true
+			end
+		end
+	else
+		tab = (host._pvCtx == "raid") and "Raid" or "Group"
+	end
+	ns.Shell:JumpTo("Raidframes", tab, cardKey)
 end
 function Raidframes:_C2CLeave()
 	if c2cRing then c2cRing:Hide() end
@@ -2167,7 +2205,10 @@ function Raidframes:_C2CIconEnter(holder)
 	if not minL then return end
 	local r = c2cGetRing()
 	r:SetParent(holder)
-	r:SetFrameLevel(holder:GetFrameLevel() + 10)
+	-- Hover ring: above the WHOLE aura band (top holder +16 plus its children), not
+	-- just above this holder — otherwise hovering the HoT row draws its ring under
+	-- the debuff icons. Measured from the overlay so it is the same for all four.
+	r:SetFrameLevel(holder._host.overlay:GetFrameLevel() + 24)
 	r:ClearAllPoints()
 	local hl, hb = holder:GetLeft() or 0, holder:GetBottom() or 0
 	r:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", minL - hl - C2C_PAD, minB - hb - C2C_PAD)
@@ -2197,13 +2238,17 @@ local function pvFrame(i, holder)
 		local function hotspot(region, label, cardKey, pad)
 			pad = pad or 3
 			local b = CreateFrame("Button", nil, f.overlay)
-			b:SetFrameLevel(f.overlay:GetFrameLevel() + 12)
+			-- Above the texts + the role/leader layer (+1), but BELOW every aura
+			-- holder (+4 and up): where an aura icon overlaps another element's
+			-- hotspot the click has to open the AURA card — that is what is drawn on
+			-- top there, and the icons carry their own scripts (makeAuraIcon).
+			b:SetFrameLevel(f.overlay:GetFrameLevel() + 2)
 			b:SetPoint("TOPLEFT", region, "TOPLEFT", -pad, pad)
 			b:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", pad, -pad)
 			b:SetScript("OnEnter", function()
 				local r = c2cGetRing()
 				r:SetParent(b)
-				r:SetFrameLevel(b:GetFrameLevel() + 1)
+				r:SetFrameLevel(f.overlay:GetFrameLevel() + 24) -- above the aura band, as for the aura rings
 				r:ClearAllPoints()
 				r:SetAllPoints(b)
 				r:Show()
@@ -2223,6 +2268,15 @@ local function pvFrame(i, holder)
 		pvFrames[i] = f
 	end
 	f:SetParent(holder)
+	-- Re-home the pooled frame on EVERY call: there is one pool but one anchored
+	-- band per raidframe tab now, so a frame built for the first band would stay
+	-- there and the other tabs would render an empty stage (Florian 2026-07-29:
+	-- switching context on Base left Raid/Group blank). With the single dock
+	-- band this could never happen.
+	if f:GetParent() ~= holder then
+		f:SetParent(holder)
+		f:ClearAllPoints()
+	end
 	return f
 end
 
@@ -2302,6 +2356,56 @@ function Raidframes:AttachShellPreview(band, spec)
 	shellBands[band] = spec
 end
 
+-- Which context a preview spec is showing right now.
+local function pvSpecCtx(spec, d)
+	if spec.ctxGet then return spec.ctxGet() end
+	if spec.baseSwitch then return (d.previewBaseCtx == "raid") and "raid" or "party" end
+	return spec.ctx
+end
+
+-- Sample size for a spec: the Raid tab has its 5/10/20/25 chips, a spec may pin
+-- a raid-context count (Auras tab), everything else shows one group.
+local function pvSpecCount(spec, ctx, d)
+	local n = GROUP_SIZE
+	-- Raid default is 10, not one group: five frames say nothing about a raid
+	-- layout (Florian 2026-07-29, matching what the Auras tab pins).
+	if spec.ctx == "raid" then n = d.previewSize or 10
+	elseif spec.raidN and ctx == "raid" then n = spec.raidN end
+	return min(n, 25)
+end
+
+-- Grid extent of a preview in HOLDER units (before the true-size scale).
+local function pvExtent(spec, ctx, n, d)
+	local L = d[ctx]
+	local w, h, sp = L.width, L.height, L.spacing
+	local horizontal = (L.orientation == "horizontal")
+	local groups  = max(1, ceil(n / GROUP_SIZE))
+	local inGroup = max(1, min(n, GROUP_SIZE))
+	local cols, rows
+	if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
+	return cols * (w + sp) - sp, rows * (h + sp) - sp, horizontal
+end
+
+-- VISUAL height a preview needs, in the units of `ref` (the shell frame the
+-- stage lives in). The anchored bands are placed by the settings stack BEFORE
+-- anything renders, so the screen has to know the height up front — this is the
+-- same arithmetic RefreshShellPreview uses, just without touching frames.
+function Raidframes:PreviewExtent(spec, ref)
+	local d = db()
+	if not (d and ref) then return 1, 1 end
+	local sUI, sRef = UIParent:GetEffectiveScale(), ref:GetEffectiveScale()
+	if not (sUI and sRef) or sRef <= 0 then return 1, 1 end
+	local ok, cw, ch = pcall(function()
+		local ctx = pvSpecCtx(spec, d)
+		local n = pvSpecCount(spec, ctx, d)
+		local w, h = pvExtent(spec, ctx, n, d)
+		return w, h
+	end)
+	if not ok then return 1, 1 end
+	local s = sUI / sRef
+	return (cw or 1) * s, (ch or 1) * s
+end
+
 function Raidframes:RefreshShellPreview()
 	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
 	-- During an Edit Mode session the world previews mirror the same settings —
@@ -2328,21 +2432,20 @@ function Raidframes:RefreshShellPreview()
 
 	local d = db()
 	local eyes = band.GetEyes and band:GetEyes() or {}
-	local used, cw, ch, caption, side = 0, 1, 1, "", "bottom"
+	local used, cw, ch, caption = 0, 1, 1, ""
 
 	-- Guarded fill: previewCtx MUST never leak into the real render paths.
 	local ok, err = pcall(function()
 		-- Context: fixed per tab (Raid/Group) — the Base tab switches via its
 		-- Raid/Group chips instead (so Base settings like aggro/dispel are
 		-- judged on the real group layout).
-		local ctx = spec.ctx
-		if spec.baseSwitch then ctx = (d.previewBaseCtx == "raid") and "raid" or "party" end
+		-- Context / sample size / grid: shared with PreviewExtent above, so the
+		-- height a screen reserved and the height actually rendered can't drift.
+		local ctx = pvSpecCtx(spec, d)
+		local n = pvSpecCount(spec, ctx, d)
 		local L = d[ctx]
 		local w, h, sp = L.width, L.height, L.spacing
 		local horizontal = (L.orientation == "horizontal")
-		-- Sample size: the Raid tab has 5/10/20/25 chips; Base/Group show one
-		-- group. Clamp legacy values (the first chip set went up to 40).
-		local n = min((spec.ctx == "raid" and d.previewSize) or GROUP_SIZE, 25)
 		-- 5 = the curated showcase roster; bigger samples use the test-mode
 		-- roster incl. its role-sort preview (honest sorting picture).
 		local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
@@ -2360,18 +2463,10 @@ function Raidframes:RefreshShellPreview()
 			f:SetPoint("TOPLEFT", holder, "TOPLEFT", col * (w + sp), -row * (h + sp))
 		end
 		used = n
-		local groups  = max(1, ceil(n / GROUP_SIZE))
-		local inGroup = max(1, min(n, GROUP_SIZE))
-		local cols, rows
-		if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
-		cw, ch = cols * (w + sp) - sp, rows * (h + sp) - sp
+		cw, ch = pvExtent(spec, ctx, n, d)
 		caption = ("%s  ·  %d  ·  %s"):format(
 			ctx == "raid" and ns.T("Raid") or ns.T("Group"), n,
 			horizontal and ns.T("horizontal") or ns.T("vertical"))
-		-- Dock side (Florian's rule): the Raid TAB always docks right (below
-		-- the panel it collides with the screen bottom); otherwise right when
-		-- vertical, below when horizontal.
-		if spec.ctx == "raid" or not horizontal then side = "right" end
 	end)
 	previewCtx = nil
 	if not ok then
@@ -2381,8 +2476,11 @@ function Raidframes:RefreshShellPreview()
 
 	for i = used + 1, #pvFrames do pvFrames[i]:Hide() end
 	holder:SetSize(cw, ch)
-	-- Report side + VISUAL extent (stage units): holder units render at scale s.
-	band:SetExtent(side, cw * s, ch * s, caption)
+	-- Report the VISUAL extent (stage units): holder units render at scale s.
+	-- The band never resizes itself — the screen reserved its height up front via
+	-- PreviewExtent, so 20 raid frames simply make the preview taller and push
+	-- the cards further down (Florian 2026-07-29). Always TRUE on-screen size.
+	band:SetExtent(cw * s, ch * s, caption)
 end
 
 -- ===========================================================================
@@ -2747,7 +2845,7 @@ function Raidframes:RefreshAuras()
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
 			local size = (cat and auraIconSize(cat, L, healthH)) or 16
-			layoutAuraCat(f, c.key, cat, size)
+			layoutAuraCat(f, c.key, cat, size, c.lvl)
 		end
 	end
 	if header then
