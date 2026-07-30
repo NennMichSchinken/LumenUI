@@ -1787,6 +1787,21 @@ function Shell:Frame() return self._frame end
 -- the settings scroll. Called by a screen builder BEFORE it fills its stack;
 -- the Shell resets it on every render, so a screen without a sticky frame gets
 -- the full content area back automatically.
+-- Vertical room the sticky area and the scrolling settings SHARE, in panel units:
+-- from the tab strip's bottom edge down to the content area's bottom, minus the
+-- two gaps SetSticky itself applies. The anchored preview caps its reserved height
+-- at a share of this (L.raidframes.preview.maxShare) so it can never leave the
+-- settings a sliver. Returns 0 while the rects are unresolved — callers treat that
+-- as "no cap known yet" and a later pass corrects it.
+function Shell:StickyRoom()
+	local main, strip = self._main, self._tabStrip
+	if not (main and strip) then return 0 end
+	local top, bottom = strip:GetBottom(), main:GetBottom()
+	if not (top and bottom) then return 0 end
+	local room = (top - bottom) - S.contentTopGap - S.panelGutter
+	return (room > 0) and room or 0
+end
+
 function Shell:SetSticky(frame, height)
 	local sticky, scroll = self._sticky, self._scroll
 	if not (sticky and scroll) then return end

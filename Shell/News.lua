@@ -41,6 +41,23 @@ local ADDON, ns = ...
 
 ns.News = {
 	{
+		version = "0.9.292",
+		date = "2026-07-30",
+		summary = "The preview follows a layout change, keeps room for the settings, and scrolls.",
+		entries = {
+			{ kind = "fixed",
+			  text = "Switching a layout between vertical and horizontal — or moving the width, height and spacing sliders — left the preview area at its old height, so the frames spilled out of it until you changed the sample size." },
+			{ kind = "changed",
+			  text = "A tall preview no longer squeezes the settings underneath it: it takes at most half the room and scrolls with the mouse wheel, so the frames keep their true size." },
+			{ kind = "fixed",
+			  text = "The frames sat on the line naming the preview; there is a guard between them now, and the line stays readable." },
+			{ kind = "fixed",
+			  text = "The dialog for copying aura settings opened with \"Appearance\" already ticked; nothing is preselected now." },
+			{ kind = "fixed",
+			  text = "The destination cells in that dialog looked switched off: an empty cell no longer carries a faded check mark, and the cells stand out from the dialog behind them." },
+		},
+	},
+	{
 		version = "0.9.291",
 		date = "2026-07-30",
 		summary = "Aura settings now live on their own tab, with a preview and a copy dialog.",

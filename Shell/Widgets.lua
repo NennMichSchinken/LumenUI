@@ -3262,6 +3262,14 @@ function W.CopyPopover(parent, o)
 	pop:Hide()
 	UI.RoundFill(pop, Surface.Card)
 	UI.RoundBorder(pop, Border.hover, "OVERLAY")
+	-- Swallow clicks so they never reach the click-outside closer beneath. Without
+	-- this, every part of the dialog that is not itself a widget — the "What" and
+	-- "Where to" captions, the gaps, and the inert source cell — closed the whole
+	-- thing (Florian 2026-07-30 hit it on the source cell's X, which carries no
+	-- script at all; the click was simply falling through). Same reason the colour
+	-- picker and the confirm dialog do it. The dropdown MENUS deliberately do not:
+	-- there, a click on the list background closing it is the expected behaviour.
+	pop:EnableMouse(true)
 	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = pop end
 
 	local groupSel, targets = {}, {}   -- what / where, both reset on every open
@@ -3411,34 +3419,72 @@ function W.CopyPopover(parent, o)
 				local key = r.key .. "|" .. c.key
 				local cx = pad + labelColW + (ci - 1) * (M.copyCellW + M.copyGridGap)
 				if r.key == srcRow and c.key == srcCol then
-					-- The source: dashed, inert, labelled — never a destination.
+					-- The source: the SAME checkbox as every other cell, greyed out with an
+					-- X in it (Florian 2026-07-30). A cell-wide outline was the odd one out
+					-- once the destinations shrank to a box — it read as a pill behind
+					-- nothing. Identical shape keeps the grid uniform, the X says "not this
+					-- one" without needing a word; the dialog's subtitle already names the
+					-- source ("From HoTs · Raid"), which is why the old caption could go.
 					local src = add(CreateFrame("Frame", nil, pop))
 					src:SetSize(M.copyCellW, M.copyCellH)
 					src:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
-					UI.RoundBorder(src, Border.default, "OVERLAY", nil, R_CTRL)
-					local sfs = UI.FS(src, "caption", Text.Disabled)
-					sfs:SetPoint("CENTER", src, "CENTER", 0, 0)
-					sfs:SetText(T("Source"))
+					local BOX = M.checkBox
+					local sbox = CreateFrame("Frame", nil, src)
+					sbox:SetSize(BOX, BOX)
+					sbox:SetPoint("CENTER", src, "CENTER", 0, 0)
+					UI.RoundBorder(sbox, Border.faint, "OVERLAY", nil, RAD.xs)
+					local sx = sbox:CreateTexture(nil, "OVERLAY")
+					sx:SetSize(BOX - 6, BOX - 6)
+					sx:SetPoint("CENTER", sbox, "CENTER", 0, 0)
+					sx:SetTexture(TEX .. "icon-x")
+					sx:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 1)
+					sx:SetSnapToPixelGrid(false); sx:SetTexelSnappingBias(0)
 				else
 					local cell = add(CreateFrame("Button", nil, pop))
 					cell:SetSize(M.copyCellW, M.copyCellH)
 					cell:SetPoint("TOPLEFT", pop, "TOPLEFT", cx, y)
 					local on = targets[key] and true or false
-					local cf = UI.RoundFill(cell, on and Accent.selection or Surface.Input, nil, nil, R_CTRL)
-					UI.RoundBorder(cell, on and Border.hover or Border.faint, "OVERLAY", nil, R_CTRL)
-					local tick = cell:CreateTexture(nil, "OVERLAY")
-					tick:SetSize(M.copyTick, M.copyTick)
-					tick:SetPoint("CENTER", cell, "CENTER", 0, 0)
+					-- The cell carries a real CHECKBOX, the same one the "What" rows above
+					-- use (Florian 2026-07-30, two rounds). First the unpicked cell drew a
+					-- faded check -- which says "ticked but locked", because a check mark IS
+					-- the symbol for chosen. Removing it left a blank rounded rectangle that
+					-- read as a field which had not loaded yet. An empty BOX WITH A BORDER is
+					-- the one shape that says "not ticked, tick me", and reusing it means the
+					-- dialog speaks one language top to bottom instead of inventing a second.
+					-- The cell itself stays the (larger) hit area and only lights up on hover.
+					-- No fill or border on the CELL: it is only the hit area. State and
+					-- hover live on the checkbox, exactly as in the "What" rows, whose
+					-- rows carry no fill either. A cell-wide highlight read as a big pill
+					-- next to the small box (Florian 2026-07-30).
+					local BOX = M.checkBox
+					local box = CreateFrame("Frame", nil, cell)
+					box:SetSize(BOX, BOX)
+					box:SetPoint("CENTER", cell, "CENTER", 0, 0)
+					-- Fill is set once here; only the BORDER changes on hover, so this needs
+					-- no handle (the popover rebuilds itself on every toggle).
+					UI.RoundFill(box, on and Accent.color or CLEAR, "BACKGROUND", nil, RAD.xs)
+					local boxEdges = UI.RoundBorder(box, on and Accent.color or Border.hover, "OVERLAY", nil, RAD.xs)
 					if on then
+						local tick = box:CreateTexture(nil, "OVERLAY")
+						tick:SetSize(BOX - 4, BOX - 4)
+						tick:SetPoint("CENTER", box, "CENTER", 0, 0)
 						tick:SetTexture(TEX .. "icon-check")
-						tick:SetVertexColor(Accent.color.r, Accent.color.g, Accent.color.b, 1)
-					else
-						tick:SetTexture(TEX .. "icon-check")
-						tick:SetVertexColor(Text.Disabled.r, Text.Disabled.g, Text.Disabled.b, 0.28)
+						-- Dark on the light accent box, exactly like W.Checkbox.
+						tick:SetVertexColor(Text.OnAccent.r, Text.OnAccent.g, Text.OnAccent.b, 1)
+						tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
 					end
-					tick:SetSnapToPixelGrid(false); tick:SetTexelSnappingBias(0)
-					cell:SetScript("OnEnter", function() if not targets[key] then UI.SetColor(cf, Surface.Hover) end end)
-					cell:SetScript("OnLeave", function() if not targets[key] then UI.SetColor(cf, Surface.Input) end end)
+					-- Hover = the checkbox's own border goes accent, the same feedback
+					-- W.Checkbox gives. Nothing else moves.
+					cell:SetScript("OnEnter", function()
+						if not targets[key] then
+							for _, e in ipairs(boxEdges) do UI.SetColor(e, Accent.color) end
+						end
+					end)
+					cell:SetScript("OnLeave", function()
+						if not targets[key] then
+							for _, e in ipairs(boxEdges) do UI.SetColor(e, Border.hover) end
+						end
+					end)
 					cell:SetScript("OnClick", function()
 						targets[key] = (not targets[key]) or nil
 						rebuild()
@@ -3802,12 +3848,101 @@ function W.PreviewBand(parent, o)
 	-- Unscaled positioning pivot: anchor offsets are interpreted in the ANCHORED
 	-- frame's own (scaled) units — the pivot stays at scale 1, so the module's
 	-- scaled holder can be placed with plain stage-pixel offsets.
+	-- Taller content than the stage is CLIPPED and scrolled with the wheel, never
+	-- scaled down (Florian 2026-07-30): the frames must always show at their true
+	-- on-screen size, that is what the preview is for. The screen already caps the
+	-- band's height (preview.maxShare) so the settings keep their room.
+	stage:SetClipsChildren(true)
 	local pos = CreateFrame("Frame", nil, stage)
 	pos:SetSize(1, 1)
-	pos:SetPoint("CENTER", stage, "CENTER", 0, M.pvCaptionH / 2)
 	local holder = CreateFrame("Frame", nil, stage)
 	holder:SetPoint("CENTER", pos, "CENTER", 0, 0)
 	holder:SetSize(1, 1)
+
+	-- Scroll state. `over` = how much taller the content is than the usable stage;
+	-- 0 means "fits", and then the content stays CENTERED as before. While it does
+	-- not fit, the pivot moves to the TOP edge so scrolling starts at the first
+	-- frame instead of the middle of the block.
+	-- The two zones INSIDE the stage that the frames must not enter: a gap at the
+	-- top, and the caption line plus its own offset plus the same gap at the bottom.
+	local CAP_ZONE   = S.s2 + 2 + M.pvCaptionH + M.pvContentGap
+	-- Everything the band consumes on top of the content's own height. The SCREEN
+	-- reserves exactly this (f:ChromeH) instead of a hand-tuned constant — when the
+	-- two drifted apart, the frames overlapped the caption line and the band
+	-- reported an overflow that was not there.
+	local STAGE_CHROME = M.pvContentGap + CAP_ZONE
+	function f:ChromeH() return M.pvDockPad * 3 + M.pvInlineHeadH + STAGE_CHROME end
+
+	-- Scrollbar at the right edge, only while there is something to scroll.
+	local sbTrack = CreateFrame("Frame", nil, stage)
+	sbTrack:SetWidth(M.pvScrollBarW)
+	sbTrack:SetPoint("TOPRIGHT", stage, "TOPRIGHT", -S.s2, -M.pvContentGap)
+	sbTrack:SetPoint("BOTTOMRIGHT", stage, "BOTTOMRIGHT", -S.s2, CAP_ZONE)
+	-- PLAIN colour textures, deliberately not UI.RoundFill: the rounded fills are
+	-- sliced assets and ROUND_MARGIN only knows the baked radii (4/6/14/18/22). A
+	-- 4px bar wanted r2, which handed nil to SetTextureSliceMargins and took the
+	-- whole screen down with it. Same construction the Shell's own scrollbar uses.
+	local sbTrackTex = sbTrack:CreateTexture(nil, "ARTWORK")
+	sbTrackTex:SetAllPoints(sbTrack)
+	UI.SetColor(sbTrackTex, Surface.Input)
+	local sbThumb = CreateFrame("Frame", nil, sbTrack)
+	sbThumb:SetWidth(M.pvScrollBarW)
+	sbThumb:SetPoint("TOP", sbTrack, "TOP", 0, 0)
+	local sbThumbTex = sbThumb:CreateTexture(nil, "OVERLAY")
+	sbThumbTex:SetAllPoints(sbThumb)
+	UI.SetColor(sbThumbTex, Accent.color)
+	sbTrack:Hide()
+
+	local scrollY, over, blockH = 0, 0, 0
+	local function placePivot()
+		pos:ClearAllPoints()
+		if over > 0 then
+			-- The holder hangs by its CENTER, so putting the block's TOP at the stage's
+			-- top gap means offsetting by half the block. A GROWING scrollY has to move
+			-- the block UP to reveal what is below it, so it ADDS to the (negative)
+			-- offset — subtracting pushed the content down and left a hole above
+			-- (Florian 2026-07-30).
+			pos:SetPoint("CENTER", stage, "TOP", 0, -(M.pvContentGap + blockH / 2) + scrollY)
+		else
+			-- Centred in the free area between the two zones, not in the raw stage.
+			pos:SetPoint("CENTER", stage, "CENTER", 0, CAP_ZONE / 2 - M.pvContentGap / 2)
+		end
+	end
+	local function paintScrollbar()
+		if over <= 0 then sbTrack:Hide(); return end
+		local trackH = sbTrack:GetHeight() or 0
+		if trackH <= 0 then sbTrack:Hide(); return end
+		sbTrack:Show()
+		local visible = blockH - over            -- how much of the block is on screen
+		local frac = (blockH > 0) and (visible / blockH) or 1
+		local thumbH = math.max(M.pvScrollBarW * 3, math.floor(trackH * frac))
+		sbThumb:SetHeight(thumbH)
+		sbThumb:ClearAllPoints()
+		sbThumb:SetPoint("TOP", sbTrack, "TOP", 0, -math.floor((trackH - thumbH) * (scrollY / over)))
+		UI.SetColor(sbThumbTex, Accent.color) -- follows a live accent change
+	end
+	placePivot()
+	-- `contentH` = visual height of what the module just rendered, in stage units.
+	function f:SetScrollExtent(contentH)
+		local sh = stage:GetHeight() or 0
+		if sh <= 0 then return over end -- rect not resolved yet; a retry pass corrects it
+		blockH = contentH or 0
+		over = math.max(0, math.ceil(blockH - (sh - STAGE_CHROME)))
+		if scrollY > over then scrollY = over end
+		stage:EnableMouseWheel(over > 0)
+		placePivot()
+		paintScrollbar()
+		return over
+	end
+	stage:SetScript("OnMouseWheel", function(_, delta)
+		if over <= 0 then return end
+		-- One notch ~= a third of the visible height: enough to move, small enough
+		-- to land on a frame boundary by feel.
+		local step = math.max(20, ((stage:GetHeight() or 0) - STAGE_CHROME) / 3)
+		scrollY = math.min(over, math.max(0, scrollY - delta * step))
+		placePivot()
+		paintScrollbar()
+	end)
 
 	local caption = UI.FS(stage, "caption", Text.Description)
 	caption:SetPoint("BOTTOM", stage, "BOTTOM", 0, S.s2 + 2)
@@ -3822,6 +3957,10 @@ function W.PreviewBand(parent, o)
 	-- the screen reserved its height up front (Raidframes:PreviewExtent) — so
 	-- this only refreshes the caption and the header state.
 	function f:SetExtent(w, h, cap)
+		-- Clip/scroll state first; the scrollbar it shows is the affordance, so the
+		-- caption stays a plain description (a text hint next to a visible scrollbar
+		-- would say the same thing twice, and it was the part getting covered).
+		self:SetScrollExtent(h)
 		caption:SetText(cap or "")
 		self:PaintChips()
 		-- "Background" eye: hidden -> the shell's dotted content shows through.
