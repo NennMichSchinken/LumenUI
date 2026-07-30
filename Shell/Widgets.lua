@@ -3837,11 +3837,19 @@ function W.PreviewBand(parent, o)
 	sbTrack:SetWidth(M.pvScrollBarW)
 	sbTrack:SetPoint("TOPRIGHT", stage, "TOPRIGHT", -S.s2, -M.pvContentGap)
 	sbTrack:SetPoint("BOTTOMRIGHT", stage, "BOTTOMRIGHT", -S.s2, CAP_ZONE)
-	UI.RoundFill(sbTrack, Surface.Input, nil, nil, M.pvScrollBarW / 2)
+	-- PLAIN colour textures, deliberately not UI.RoundFill: the rounded fills are
+	-- sliced assets and ROUND_MARGIN only knows the baked radii (4/6/14/18/22). A
+	-- 4px bar wanted r2, which handed nil to SetTextureSliceMargins and took the
+	-- whole screen down with it. Same construction the Shell's own scrollbar uses.
+	local sbTrackTex = sbTrack:CreateTexture(nil, "ARTWORK")
+	sbTrackTex:SetAllPoints(sbTrack)
+	UI.SetColor(sbTrackTex, Surface.Input)
 	local sbThumb = CreateFrame("Frame", nil, sbTrack)
 	sbThumb:SetWidth(M.pvScrollBarW)
 	sbThumb:SetPoint("TOP", sbTrack, "TOP", 0, 0)
-	local sbThumbTex = UI.RoundFill(sbThumb, Accent.color, nil, nil, M.pvScrollBarW / 2)
+	local sbThumbTex = sbThumb:CreateTexture(nil, "OVERLAY")
+	sbThumbTex:SetAllPoints(sbThumb)
+	UI.SetColor(sbThumbTex, Accent.color)
 	sbTrack:Hide()
 
 	local scrollY, over, blockH = 0, 0, 0
