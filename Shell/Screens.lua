@@ -113,6 +113,10 @@ local function vget(ctx, key) return function() return (rf()[ctx] or {})[key] en
 local function vset(ctx, key)
 	return function(v)
 		local t = rf(); t[ctx] = t[ctx] or {}; t[ctx][key] = v; relayout()
+		-- Width/height/spacing/orientation change how much room the anchored preview
+		-- needs; the others (text position/size) do not, and the resize is a cheap
+		-- no-op when the height comes out the same. See ns.ShellPreviewResize.
+		if ns.ShellPreviewResize then ns.ShellPreviewResize() end
 	end
 end
 -- (Per-context color helpers removed: text colors now live SHARED in Base, see tcget/tcset.)
@@ -269,6 +273,45 @@ end
 -- renders (Raidframes:PreviewExtent), because the height must be known when the
 -- area is reserved.
 local pvHostFrames = {}   -- tab key -> the sticky host (reused across renders)
+local pvParked = {}       -- the band currently parked: { spec =, host =, h = }
+-- The height the sticky area has to reserve for `spec`. Shared by the builder and
+-- by ns.ShellPreviewResize below, so the reserved height and the rendered content
+-- can never be computed two different ways.
+local function pvStickyH(spec, ref)
+	if rf().previewFolded then return L.raidframes.preview.foldedH end
+	local h = L.raidframes.preview.minH
+	if ns.Raidframes and ns.Raidframes.PreviewExtent then
+		local _, ch = ns.Raidframes:PreviewExtent(spec, ref)
+		h = math.max(h, math.ceil(ch) + L.raidframes.preview.chromeH)
+	end
+	return h
+end
+
+-- Re-reserve the parked band's height after a setting changed the preview's
+-- EXTENT — width, height, spacing or orientation (Florian 2026-07-30: switching
+-- Vertical <-> Horizontal kept the old height, so the frames spilled out of the
+-- band until you touched the sample size, which was the only control that
+-- re-reserved it). Only those four feed Raidframes.PreviewExtent, so only they
+-- need this; aura settings never change the extent.
+--
+-- Deliberately NOT Shell:RenderContent(true), which is what the sample-size
+-- switch uses: three of the four are SLIDERS, and rebuilding the screen while a
+-- slider is being dragged destroys the very widget under the cursor (the same
+-- trap the spell search field hit). This touches nothing but the host's height.
+--
+-- Exposed on `ns` rather than as a file-local so the setters near the top of the
+-- file can reach it without a forward declaration (Screens.lua is large; see the
+-- Lua 200-local ceiling notes).
+function ns.ShellPreviewResize()
+	local p = pvParked
+	if not (p.host and p.spec and ns.Shell and p.host:IsShown()) then return end
+	local h = pvStickyH(p.spec, ns.Shell:Frame())
+	if h == p.h then return end   -- unchanged: no SetSticky churn per slider tick
+	p.h = h
+	ns.Shell:SetSticky(p.host, h)
+	previewRefresh()              -- the stage resized; the frames have to re-place
+end
+
 local function previewRow(d, key, spec, opts)
 	local host = pvHostFrames[key]
 	if not host then
@@ -277,17 +320,9 @@ local function previewRow(d, key, spec, opts)
 	end
 	local band = previewBandFor(key, host, spec, opts)
 	local folded = rf().previewFolded and true or false
-	local h
-	if folded then
-		h = L.raidframes.preview.foldedH
-	else
-		h = L.raidframes.preview.minH
-		if ns.Raidframes and ns.Raidframes.PreviewExtent then
-			local _, ch = ns.Raidframes:PreviewExtent(spec, ns.Shell:Frame() or d)
-			h = math.max(h, math.ceil(ch) + L.raidframes.preview.chromeH)
-		end
-	end
+	local h = pvStickyH(spec, ns.Shell:Frame() or d)
 	if band.SetFolded then band:SetFolded(folded) end
+	pvParked.spec, pvParked.host, pvParked.h = spec, host, h
 	ns.Shell:SetSticky(host, h)
 	-- Fill once the frame has real dimensions. One deferred pass is not enough:
 	-- opening the tab from cold (or arriving via a jump) leaves the host without
@@ -1775,9 +1810,12 @@ local function buildAuras(d, stack)
 			{ key = "place", label = T("Placement"),  hint = T("Position · Offsets") },
 			{ key = "look",  label = T("Appearance"), hint = T("Count · Size") },
 		},
-		-- Placement is deliberately OFF by default: copying it onto another
-		-- category stacks both icon rows in the same corner.
-		defaults = { look = true },
+		-- NOTHING preselected (Florian 2026-07-30): a copy dialog that arrives with a
+		-- box already ticked invites a copy you did not choose. "Appearance" used to
+		-- be on because placement is the risky one (it stacks both icon rows in the
+		-- same corner) -- but the honest answer to that is to preselect neither. The
+		-- Copy button stays dimmed and deafened until a What and a Where are picked.
+		defaults = {},
 		rows = (function()
 			local out = {}
 			for _, c in ipairs(AURA_CATS) do
