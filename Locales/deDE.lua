@@ -220,7 +220,6 @@ ns.RegisterLocale("deDE", {
 	["From"] = "Von",
 	["What"] = "Was",
 	["Where to"] = "Wohin",
-	["Source"] = "Quelle",
 	["Position · Offsets"] = "Position · Versatz",
 	["Count · Size"] = "Anzahl · Größe",
 	["Copying placement onto another category stacks its icons in the same corner."] = "Die Platzierung auf eine andere Kategorie zu kopieren stapelt deren Icons in dieselbe Ecke.",
@@ -488,6 +487,13 @@ ns.RegisterLocale("deDE", {
 	["%s is new — |cffE9BB69/lumen|r shows what changed."] = "%s ist neu — |cffE9BB69/lumen|r zeigt, was sich geändert hat.",
 
 	-- Release notes (Shell/News.lua) — translate every new entry here as well.
+	["The preview follows a layout change, keeps room for the settings, and scrolls."] = "Die Vorschau folgt einem Layout-Wechsel, lässt Platz für die Einstellungen und scrollt.",
+	["A tall preview no longer squeezes the settings underneath it: it takes at most half the room and scrolls with the mouse wheel, so the frames keep their true size."] = "Eine hohe Vorschau quetscht die Einstellungen darunter nicht mehr: Sie nimmt höchstens die Hälfte des Platzes und scrollt mit dem Mausrad, damit die Frames ihre echte Größe behalten.",
+	["The frames sat on the line naming the preview; there is a guard between them now, and the line stays readable."] = "Die Frames saßen auf der Zeile, die die Vorschau benennt; jetzt liegt ein Abstand dazwischen und die Zeile bleibt lesbar.",
+	["Switching a layout between vertical and horizontal — or moving the width, height and spacing sliders — left the preview area at its old height, so the frames spilled out of it until you changed the sample size."] = "Der Wechsel eines Layouts zwischen vertikal und horizontal — oder das Verschieben der Regler für Breite, Höhe und Abstand — ließ die Vorschau auf ihrer alten Höhe stehen, sodass die Frames darüber hinausragten, bis du die Beispielgröße geändert hast.",
+	["The dialog for copying aura settings opened with \"Appearance\" already ticked; nothing is preselected now."] = "Der Dialog zum Kopieren der Auren-Einstellungen war mit „Aussehen\" schon angehakt geöffnet; jetzt ist nichts vorausgewählt.",
+	["The destination cells in that dialog read as switched off; each carries a real checkbox now, and the source column shows a greyed one with an X."] = "Die Ziel-Felder in diesem Dialog lasen sich wie deaktiviert; jedes trägt jetzt ein echtes Kontrollkästchen, und die Quell-Spalte zeigt ein ausgegrautes mit einem X.",
+	["Clicking a spot in that dialog that was not a control — a caption, a gap between rows, the source cell — closed the whole dialog."] = "Ein Klick auf eine Stelle in diesem Dialog, die kein Bedienelement war — eine Überschrift, eine Lücke zwischen Zeilen, das Quell-Feld — schloss den ganzen Dialog.",
 	["Lumen's own font on the frames, and aura icons that stay off the resource bar."] = "Lumens eigene Schrift auf den Frames, und Aura-Symbole, die vom Ressourcenbalken wegbleiben.",
 	["The frames can use Lumen's own font instead of WoW's — it reads better at the small sizes the frame texts run at."] = "Die Frames können Lumens eigene Schrift statt WoWs nutzen — sie liest sich in den kleinen Größen der Frame-Texte besser.",
 	["Aura icons covered the resource bar: a bottom row now sits on the health bar, and auto-fit shrinks the icons instead of letting them overflow."] = "Aura-Symbole verdeckten den Ressourcenbalken: Eine untere Reihe sitzt jetzt auf dem Lebensbalken, und Auto-Fit verkleinert die Symbole, statt sie überstehen zu lassen.",

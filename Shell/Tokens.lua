@@ -540,14 +540,15 @@ UI.WIDGET = {
 	-- TARGET GRID. Every possible destination is a visible cell, so "where to" is
 	-- never inferred (Florian 2026-07-29: a flat list mixed two axes and the
 	-- combination of two picks had no guessable meaning).
-	copyPopW     = 520, -- popover width (label column + 2 context columns; the label column has to hold "Defensives & External")
+	copyPopW     = 456, -- popover width (label column + 2 context columns; the label column has to hold "Defensives & External"). Narrowed by exactly 2x the cell shrink below, so the label column keeps its width.
 	copyPopPad   = 20,  -- inner padding
 	copyRowH     = 40,  -- one "what" row
 	copyGridGap  = 6,   -- gap between grid cells
-	copyCellW    = 96,  -- target cell width (one context column)
+	copyCellW    = 64,  -- target cell width (one context column). Was 96 to fit the word "Source"; the cell holds nothing but a checkbox now, and 64 still clears the "Gruppe" column header.
 	copyCellH    = 40,  -- target cell height (= one grid row)
 	copyHeadH    = 24,  -- column header row above the grid
-	copyTick     = 20,  -- tick box inside a target cell
+	-- (copyTick retired 2026-07-30: a target cell now carries a real checkbox at
+	-- M.checkBox, the same one the dialog's "What" rows use.)
 	copyGroupGap = 18,  -- gap between the "what" block and the target grid
 	copyWarnH    = 52,  -- placement-clash warning line
 
@@ -642,6 +643,12 @@ UI.WIDGET = {
 	pvFilterCheck = 18, -- filter checkbox edge length
 	pvStagePad   = 24,  -- stage inner padding around the preview content
 	pvCaptionH   = 18,  -- caption line at the stage bottom
+	-- Breathing room above the frames and BETWEEN the frames and the caption line.
+	-- Without it the content sat right on the caption (the band reserved 130 of
+	-- chrome where the caption line alone needs 26, so it overlapped by ~16px --
+	-- visible as soon as the caption gained the "scroll" hint, Florian 2026-07-30).
+	pvContentGap = 12,
+	pvScrollBarW = 4,   -- scrollbar shown at the stage's right edge while it scrolls
 	-- (pvEyeH / pvEyePadX / pvEyeGap retired 2026-07-30 with the sample-size chips:
 	-- the header switch is a W.Segment now and sizes itself from segCompactH.)
 }
@@ -750,10 +757,22 @@ UI.LAYOUT = {
 			-- The band is as tall as its frames need: chromeH = everything around
 			-- them (header row + paddings + caption line), minH keeps an empty or
 			-- cold band from collapsing to a sliver.
+			-- Fallback only: the real chrome comes from the band itself (W.PreviewBand
+			-- f:ChromeH), so header height, paddings and caption zone are owned in ONE
+			-- place and cannot drift from what the screen reserves.
 			chromeH = 130,
 			minH    = 180,
 			foldedH = 80,     -- collapsed: header row + the card's own padding
 			after   = 20,     -- preview -> first settings row
+			-- ...but never more than this share of the room the sticky area and the
+			-- settings share (Florian 2026-07-30: a VERTICAL group ate the panel and
+			-- left a sliver for the settings underneath). Past the cap the stage
+			-- CLIPS and scrolls with the wheel — the frames keep their true on-screen
+			-- size, which is the whole point of the preview and must not be traded
+			-- away for fit. 0.5 rather than the 1/3 that was also considered: at 1/2
+			-- a 5-man vertical group still fits without scrolling at all, and that is
+			-- the common case; dial it here if it should be tighter.
+			maxShare = 0.5,
 		},
 		auras = {               -- Auras tab (category chips + inline editor)
 			afterChips = 20,  -- chip bar -> editor card
