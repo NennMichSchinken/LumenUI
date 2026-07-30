@@ -4,6 +4,18 @@ package-as: LumenUI
 # so no externals and no nolib stripping.
 enable-nolib-creation: no
 
+# Published changelog. WITHOUT this the packager generates one from the commit
+# messages between tags -- which is what shipped for 0.9.290 and 0.9.291, so their
+# GitHub release body and CurseForge changelog read as developer notes ("Merge pull
+# request #34 from ...") instead of release notes. The annotated tag message does
+# NOT feed the changelog; that assumption cost two releases.
+#
+# CHANGELOG.md is read from the REPO (release.sh checks $topdir/$changelog), so the
+# "*.md" ignore below still keeps it out of the shipped zip -- read here, not shipped.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
 # Dev/tooling files do not belong in the shipped zip.
 ignore:
   - .luacheckrc
