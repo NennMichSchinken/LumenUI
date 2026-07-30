@@ -8,6 +8,13 @@ local ADDON, ns = ...
 --  notes we write anyway. That is a permanent extra release step, not a
 --  one-off — plan for it when tagging.
 --
+--  TWO files carry a release's notes and BOTH need the new version:
+--   * this one   -> the in-game "What's new" screen (one sentence per entry)
+--   * CHANGELOG.md -> the PUBLISHED changelog (GitHub release body + CurseForge),
+--                     grouped by feature area; wired up via manual-changelog in
+--                     .pkgmeta. Miss it and the packager falls back to generating
+--                     one from the commit messages.
+--
 --  Rules that keep the screen honest:
 --   * NEWEST version first. `version` matches the released tag (without -beta).
 --   * `summary` = the two lines the sidebar card shows for that release. Keep
