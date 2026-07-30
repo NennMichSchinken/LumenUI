@@ -3807,12 +3807,54 @@ function W.PreviewBand(parent, o)
 	-- Unscaled positioning pivot: anchor offsets are interpreted in the ANCHORED
 	-- frame's own (scaled) units — the pivot stays at scale 1, so the module's
 	-- scaled holder can be placed with plain stage-pixel offsets.
+	-- Taller content than the stage is CLIPPED and scrolled with the wheel, never
+	-- scaled down (Florian 2026-07-30): the frames must always show at their true
+	-- on-screen size, that is what the preview is for. The screen already caps the
+	-- band's height (preview.maxShare) so the settings keep their room.
+	stage:SetClipsChildren(true)
 	local pos = CreateFrame("Frame", nil, stage)
 	pos:SetSize(1, 1)
-	pos:SetPoint("CENTER", stage, "CENTER", 0, M.pvCaptionH / 2)
 	local holder = CreateFrame("Frame", nil, stage)
 	holder:SetPoint("CENTER", pos, "CENTER", 0, 0)
 	holder:SetSize(1, 1)
+
+	-- Scroll state. `over` = how much taller the content is than the usable stage;
+	-- 0 means "fits", and then the content stays CENTERED as before. While it does
+	-- not fit, the pivot moves to the TOP edge so scrolling starts at the first
+	-- frame instead of the middle of the block.
+	local scrollY, over, blockH = 0, 0, 0
+	local function placePivot()
+		pos:ClearAllPoints()
+		if over > 0 then
+			-- The holder hangs by its CENTER, so aligning the block's TOP with the
+			-- stage's top edge means offsetting by half the block. Growing scrollY
+			-- moves the block further up, revealing what is below.
+			pos:SetPoint("CENTER", stage, "TOP", 0, -(M.pvStagePad + blockH / 2) - scrollY)
+		else
+			pos:SetPoint("CENTER", stage, "CENTER", 0, M.pvCaptionH / 2)
+		end
+	end
+	placePivot()
+	-- `contentH` = visual height of what the module just rendered, in stage units.
+	function f:SetScrollExtent(contentH)
+		local sh = stage:GetHeight() or 0
+		if sh <= 0 then return over end -- rect not resolved yet; a retry pass corrects it
+		blockH = contentH or 0
+		local usable = sh - M.pvCaptionH - M.pvStagePad * 2
+		over = math.max(0, math.ceil(blockH - usable))
+		if scrollY > over then scrollY = over end
+		stage:EnableMouseWheel(over > 0)
+		placePivot()
+		return over
+	end
+	stage:SetScript("OnMouseWheel", function(_, delta)
+		if over <= 0 then return end
+		-- One notch ~= a third of the visible height: enough to move, small enough
+		-- to land on a frame boundary by feel.
+		local step = math.max(20, ((stage:GetHeight() or 0) - M.pvCaptionH) / 3)
+		scrollY = math.min(over, math.max(0, scrollY - delta * step))
+		placePivot()
+	end)
 
 	local caption = UI.FS(stage, "caption", Text.Description)
 	caption:SetPoint("BOTTOM", stage, "BOTTOM", 0, S.s2 + 2)
@@ -3827,6 +3869,11 @@ function W.PreviewBand(parent, o)
 	-- the screen reserved its height up front (Raidframes:PreviewExtent) — so
 	-- this only refreshes the caption and the header state.
 	function f:SetExtent(w, h, cap)
+		-- Clip/scroll state first: the caption tells the user when there is more
+		-- below, which is the only affordance for the wheel (a scrollbar over the
+		-- frames would sit in the way of the very thing being previewed).
+		local hidden = self:SetScrollExtent(h)
+		if hidden > 0 then cap = (cap or "") .. "  ·  " .. T("scroll") end
 		caption:SetText(cap or "")
 		self:PaintChips()
 		-- "Background" eye: hidden -> the shell's dotted content shows through.

@@ -278,11 +278,20 @@ local pvParked = {}       -- the band currently parked: { spec =, host =, h = }
 -- by ns.ShellPreviewResize below, so the reserved height and the rendered content
 -- can never be computed two different ways.
 local function pvStickyH(spec, ref)
-	if rf().previewFolded then return L.raidframes.preview.foldedH end
-	local h = L.raidframes.preview.minH
+	local P = L.raidframes.preview
+	if rf().previewFolded then return P.foldedH end
+	local h = P.minH
 	if ns.Raidframes and ns.Raidframes.PreviewExtent then
 		local _, ch = ns.Raidframes:PreviewExtent(spec, ref)
-		h = math.max(h, math.ceil(ch) + L.raidframes.preview.chromeH)
+		h = math.max(h, math.ceil(ch) + P.chromeH)
+	end
+	-- Cap: the band may claim at most maxShare of the room it shares with the
+	-- settings. Beyond that the stage clips and scrolls (W.PreviewBand) instead of
+	-- shrinking the frames — a preview that lies about size is worthless.
+	local room = (ns.Shell.StickyRoom and ns.Shell:StickyRoom()) or 0
+	if room > 0 then
+		local cap = math.floor(room * P.maxShare)
+		if cap >= P.foldedH and h > cap then h = cap end
 	end
 	return h
 end

@@ -754,6 +754,15 @@ UI.LAYOUT = {
 			minH    = 180,
 			foldedH = 80,     -- collapsed: header row + the card's own padding
 			after   = 20,     -- preview -> first settings row
+			-- ...but never more than this share of the room the sticky area and the
+			-- settings share (Florian 2026-07-30: a VERTICAL group ate the panel and
+			-- left a sliver for the settings underneath). Past the cap the stage
+			-- CLIPS and scrolls with the wheel — the frames keep their true on-screen
+			-- size, which is the whole point of the preview and must not be traded
+			-- away for fit. 0.5 rather than the 1/3 that was also considered: at 1/2
+			-- a 5-man vertical group still fits without scrolling at all, and that is
+			-- the common case; dial it here if it should be tighter.
+			maxShare = 0.5,
 		},
 		auras = {               -- Auras tab (category chips + inline editor)
 			afterChips = 20,  -- chip bar -> editor card

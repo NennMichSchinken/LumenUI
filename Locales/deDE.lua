@@ -63,6 +63,7 @@ ns.RegisterLocale("deDE", {
 	["Less"] = "Weniger",
 	["Preview"] = "Vorschau",
 	["Click an icon to edit"] = "Klick ein Icon zum Bearbeiten",
+	["scroll"] = "scrollen",
 
 	-- ── Card subtitles / global switch descriptions (v3 card mockup) ────
 	["Health bar and texture settings"] = "Einstellungen für Lebensbalken und Texturen",
