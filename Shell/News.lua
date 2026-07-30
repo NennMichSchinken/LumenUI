@@ -42,7 +42,7 @@ local ADDON, ns = ...
 ns.News = {
 	{
 		version = "0.9.291",
-		date = "2026-07-29",
+		date = "2026-07-30",
 		summary = "Aura settings now live on their own tab, with a preview and a copy dialog.",
 		entries = {
 			{ kind = "new",
@@ -125,7 +125,10 @@ ns.News = {
 			  section = "Raidframes", tab = "Base", card = "health-bar" },
 			{ kind = "new",
 			  text = "Augmentation Evoker aura defaults — Prescience, Ebon Might, Shifting Sands and the rest of the kit.",
-			  section = "Raidframes", tab = "Tracking", card = "track-hot" },
+			  -- Retargeted in 0.9.291: the Tracking tab is gone and the spell lists
+			  -- live in the Auras editor now. OpenTo skips an unknown tab silently, so
+			  -- this row used to land on whatever tab was remembered and flash nothing.
+			  section = "Raidframes", tab = "Auras", card = "aura-hotsOwn" },
 			{ kind = "new",
 			  text = "Accept group invites from friends and guild members automatically, while you are alone and outside an instance.",
 			  section = "QoL", tab = "Base", card = "qol-invites" },
