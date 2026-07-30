@@ -503,6 +503,9 @@ function Shell:Build()
 	sfield:SetPoint("TOP", tag, "BOTTOM", 0, -S.s9)
 	sfield:SetPoint("LEFT", nav, "LEFT", S.navPillPadX, 0)
 	sfield:SetPoint("RIGHT", nav, "RIGHT", -S.navPillPadX, 0)
+	-- Input, NOT Field: the nav column is #111111, so `inset` already lifts this box
+	-- by +8 -- the same step a field gets on a card. Raising it further only made it
+	-- glare (Florian 2026-07-30). See the step rule at P.field in Tokens.
 	UI.RoundFill(sfield, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
 	-- RoundBorder returns a TABLE of edge textures (a shape can need several),
 	-- so recolouring goes through all of them.
@@ -1395,7 +1398,11 @@ local function newStack(holder)
 			if not titleH or titleH <= 0 then titleH = 20 end -- cold font fallback (= sectionHead size)
 			local titleMidY = -M.cardHeadTop - titleH / 2
 			if o.subtitle then
-				local subFS = FS(panel, "caption", Text.Description)
+				-- "body" (regular 14) rather than "caption" (regular 12), matching the
+				-- inner-block subtitles (Florian 2026-07-30). At caption size the line
+				-- describing the WHOLE card was smaller than the "hint" text (16)
+				-- explaining a single control inside it — hierarchy upside down.
+				local subFS = FS(panel, "body", Text.Description)
 				subFS:SetPoint("TOPLEFT", panel, "TOPLEFT", pad, -M.cardSubY)
 				subFS:SetPoint("RIGHT", panel, "RIGHT", -pad, 0)
 				subFS:SetJustifyH("LEFT")

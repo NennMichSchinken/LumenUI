@@ -59,8 +59,24 @@ local P = {
 	panel        = hex("0C0C0C"), -- A3: main window surface (doc: Window)
 	sidebar      = hex("111111"), -- A2: nav column (a real step lighter than the panel)
 	card         = hex("151515"), -- A4: section cards (doc: Cards)
-	inset        = hex("191919"), -- A1: edit boxes, open dropdown lists, slider value box, troughs (doc: Inputs)
+	inset        = hex("191919"), -- A1: open dropdown lists, slider value box, troughs, inner blocks, info bars (doc: Inputs)
 	element      = hex("191919"), -- A5: rows, neutral buttons, closed dropdowns, inactive tabs (= Inputs layer)
+	-- A7: surfaces you can TYPE into. `inset` did double duty for passive containers
+	-- AND real inputs, which only breaks down on the LIGHTEST backgrounds.
+	--
+	-- RULE (Florian 2026-07-30): what stays constant is the STEP over a field's own
+	-- background, not the colour. Perceived lift is relative, so one absolute value
+	-- cannot be uniform when the backgrounds themselves span #0C0C0C..#191919. Aim
+	-- for roughly +8..+11, and never above `field` -- it is the CEILING for neutral
+	-- surfaces (only elementHover goes higher), otherwise the stack grows a layer
+	-- nobody can name.
+	--   on a card (#151515)   -> field   (+11): W.TextInput, W.Textarea
+	--   inside a menu (#191919) -> field (+7):  the typeahead search boxes -- their
+	--                             parent menu is the SAME value, so at `inset` the
+	--                             box had ZERO contrast against it
+	--   on the sidebar (#111111) -> inset (+8): already the right step, leave it
+	--   on the window (#0C0C0C)  -> inset (+13): the colour picker's hex box, ditto
+	field        = hex("202020"),
 	elementHover = hex("222222"), -- A6: hover step (doc: Hover)
 
 	-- B: lines — pure white; UI.Border applies the (low) alpha. THE tuning spot.
@@ -180,7 +196,8 @@ UI.Surface = {
 	Window  = P.panel,        -- main window surface
 	Sidebar = P.sidebar,      -- nav column
 	Card    = P.card,         -- section cards
-	Input   = P.inset,        -- edit boxes, dropdowns (closed & open), rows, neutral buttons, inactive tabs
+	Input   = P.inset,        -- dropdowns (closed & open), rows, neutral buttons, inactive tabs, inner blocks
+	Field   = P.field,        -- typable surfaces ON A CARD or INSIDE A MENU (see the step rule at P.field); on darker backgrounds Input already has the right step
 	Hover   = P.elementHover, -- hover step; also the unfilled slider track channel
 	Scrim   = P.page,         -- dim behind the panel + soft icon shadow
 }
@@ -608,8 +625,9 @@ UI.WIDGET = {
 	-- names are kept: they are the band's own paddings, not the removed window.
 	pvDockGap    = 8,   -- gap panel -> the band's floating eye popover
 	pvDockPad    = 12,  -- inner padding of the band
-	pvChipGroupGap = 14, -- gap between header chip groups / chips -> icons
+	pvChipGroupGap = 14, -- gap title -> the header's segment
 	pvCtxSegW    = 200, -- context switch in an INLINE band header (Group | Raid) — a real W.Segment, like the settings use
+	pvSizeSegW   = 184, -- sample-size switch in the same header (5 | 10 | 20 | 25): four narrow numeric cells, so a touch tighter than the two-word context switch
 	-- Left edge of an inline band's header row, measured from the head frame
 	-- (which already starts pvDockPad in). Puts the fold chevron exactly where a
 	-- settings card's EYE sits, so chevron/title and eye/title share one flight
@@ -624,9 +642,8 @@ UI.WIDGET = {
 	pvFilterCheck = 18, -- filter checkbox edge length
 	pvStagePad   = 24,  -- stage inner padding around the preview content
 	pvCaptionH   = 18,  -- caption line at the stage bottom
-	pvEyeH       = 28,  -- chip height (sample-size chips)
-	pvEyePadX    = 12,  -- inner L/R padding of a chip
-	pvEyeGap     = 6,   -- gap between chips
+	-- (pvEyeH / pvEyePadX / pvEyeGap retired 2026-07-30 with the sample-size chips:
+	-- the header switch is a W.Segment now and sizes itself from segCompactH.)
 }
 
 -- ---------------------------------------------------------------------------

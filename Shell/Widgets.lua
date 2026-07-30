@@ -543,7 +543,7 @@ function W.Select(parent, o)
 		search:SetHeight(M.spSearchH)
 		search:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad)
 		search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -pad, -pad)
-		UI.RoundFill(search, Surface.Input, nil, nil, R_CTRL)
+		UI.RoundFill(search, Surface.Field, nil, nil, R_CTRL) -- typable surface: has to lift off the open menu it sits in
 		UI.RoundBorder(search, Border.default, "OVERLAY", nil, R_CTRL)
 		UI:SetFont(search, "value", Text.Primary) -- role, not an ad-hoc size
 		search:SetTextInsets(10, 10, 0, 0)
@@ -863,7 +863,7 @@ function W.SpellPicker(parent, o)
 	search:SetHeight(M.spSearchH)
 	search:SetPoint("TOPLEFT", menu, "TOPLEFT", M.spPad, -M.spPad)
 	search:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -M.spPad, -M.spPad)
-	UI.RoundFill(search, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(search, Surface.Field, nil, nil, R_CTRL) -- typable surface: has to lift off the open menu it sits in
 	UI.RoundBorder(search, Border.default, "OVERLAY", nil, R_CTRL)
 	UI:SetFont(search, "value", Text.Primary) -- role, not an ad-hoc size
 	search:SetTextInsets(10, 10, 0, 0)
@@ -1551,6 +1551,16 @@ function W.Segment(parent, o)
 		if not ox then return end
 		UI.slideTo(slider, ox + pad, oy - pad, w - pad * 2, h - pad * 2, animate)
 	end
+	-- Re-layout / re-show must not SNAP a pill that is mid-glide: it re-targets the
+	-- running tween instead. The preview header's switches call Shell:RenderContent,
+	-- which does SetSticky(nil) -> sticky:Hide() and re-shows it in the SAME frame as
+	-- the click — so OnShow fired straight into the fresh tween and killed it, and
+	-- only those two segments jumped while every in-card one glided (Florian
+	-- 2026-07-30). A cold show has no tween running and still snaps (as does
+	-- UI.slideTo itself while _cx is nil).
+	local function reposition()
+		positionSlider(slider:GetScript("OnUpdate") ~= nil)
+	end
 	local function paint(animate)
 		for _, c in ipairs(cells) do
 			local col = (c._val == cur) and Text.Primary or Text.Description
@@ -1602,7 +1612,7 @@ function W.Segment(parent, o)
 				x = x + cw
 			end
 			bar:SetWidth(x)
-			positionSlider(false)
+			reposition()
 		end
 		fitHug()
 		for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do C_Timer.After(dl, fitHug) end
@@ -1619,9 +1629,9 @@ function W.Segment(parent, o)
 				c:SetPoint("LEFT", bar, "LEFT", (i - 1) * cw, 0)
 				c:SetWidth(cw)
 			end
-			positionSlider(false)
+			reposition()
 		end)
-		bar:HookScript("OnShow", function() positionSlider(false) end) -- build-time rects were nil
+		bar:HookScript("OnShow", reposition) -- build-time rects were nil
 	end
 	paint(false)
 
@@ -2113,7 +2123,7 @@ local function buildColorPicker()
 	local hexBox = CreateFrame("EditBox", nil, cp)
 	hexBox:SetSize(110, M.cpPrevH)
 	hexBox:SetPoint("LEFT", preview, "RIGHT", M.cpGap, 0)
-	UI.RoundFill(hexBox, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(hexBox, Surface.Input, nil, nil, R_CTRL) -- Input: the picker sits on Surface.Window (#0C0C0C), so inset already lifts this by +13 (step rule at P.field)
 	UI.RoundBorder(hexBox, Border.default, "OVERLAY", nil, R_CTRL)
 	UI:SetFont(hexBox, "value", Text.Primary)
 	hexBox:SetJustifyH("CENTER"); hexBox:SetAutoFocus(false); hexBox:SetMaxLetters(6)
@@ -2413,7 +2423,7 @@ function W.TextInput(parent, o)
 	box:SetHeight(CONTROL_H)
 	box:SetPoint("TOPLEFT", f, "TOPLEFT", 0, topY)
 	box:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, topY)
-	UI.RoundFill(box, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(box, Surface.Field, nil, nil, R_CTRL) -- Field, not Input: a box you type into has to lift off the card it sits on
 	UI.RoundBorder(box, Border.default, "OVERLAY", nil, R_CTRL) -- subtle edge, matches the dropdown (Florian 2026-07-22: Border.hover read too strong)
 	-- Same text role as the dropdown headers (selectText): inputs and selects
 	-- sit side by side in rows (Profile tab) and must read as one control family.
@@ -2458,7 +2468,7 @@ function W.Textarea(parent, o)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetHeight(o.height or 120)
 	if o.width then f:SetWidth(o.width) end
-	UI.RoundFill(f, Surface.Input, nil, nil, R_CTRL)
+	UI.RoundFill(f, Surface.Field, nil, nil, R_CTRL) -- typable surface, same step as W.TextInput
 	UI.RoundBorder(f, Border.hover, "OVERLAY", nil, R_CTRL)
 
 	local sf = CreateFrame("ScrollFrame", nil, f)
@@ -2845,7 +2855,10 @@ function W.Collapsible(parent, o)
 	-- Subtitle: muted description right of the title, truncates against the
 	-- right cluster.
 	if o.subtitle then
-		local sub = UI.FS(f, "caption", Text.Description)
+		-- "body" (14) like the card and inner-block subtitles, so the same anatomy
+		-- (title + its describing line) answers the same everywhere. Currently no
+		-- call site passes a subtitle — kept in sync so it can't drift back.
+		local sub = UI.FS(f, "body", Text.Description)
 		sub:SetPoint("LEFT", title, "RIGHT", M.collapsibleSummaryGap, 0)
 		sub:SetPoint("RIGHT", sumLeft, "LEFT", -M.collapsibleSummaryGap, 0)
 		sub:SetJustifyH("LEFT")
@@ -3722,56 +3735,40 @@ function W.PreviewBand(parent, o)
 	f._eyePop = eyePop
 
 	local repaints = {}
-	local chipsW = 0
-	-- Chips sit directly after the title, so "Editing [Group|Raid]" reads as one
-	-- phrase; the size chips continue the same chain.
-	local chainAnchor, chainGap = lbl, M.pvChipGroupGap
-	-- items = { { v =, label = }, ... }; paints selection from get(), sets via set(v).
-	local function chipGroup(items, get, set)
-		local chips = {}
-		for _, item in ipairs(items) do
-			local chip = CreateFrame("Button", nil, head)
-			chip:SetHeight(M.pvEyeH)
-			UI.RoundFill(chip, Surface.Scrim, nil, nil, RAD.sm)
-			local edges = UI.RoundBorder(chip, Border.hover, "OVERLAY", nil, RAD.sm)
-			local txt = UI.FS(chip, "value", Text.Description)
-			txt:SetPoint("CENTER", chip, "CENTER", 0, 0)
-			txt:SetText(item.label)
-			chip:SetWidth(math.max(M.pvEyeH, math.ceil(txt:GetStringWidth()) + M.pvEyePadX * 2))
-			chip:SetPoint("LEFT", chainAnchor, "RIGHT", chainGap, 0)
-			chipsW = chipsW + chip:GetWidth() + chainGap
-			chainAnchor, chainGap = chip, M.pvEyeGap
-			chips[#chips + 1] = { v = item.v, paint = function(on)
-				for _, e in ipairs(edges) do UI.SetColor(e, on and Accent.color or Border.hover) end
-				local tc = on and Text.Primary or Text.Description
-				txt:SetTextColor(tc.r, tc.g, tc.b)
-			end }
-			local v = item.v
-			chip:SetScript("OnClick", function() set(v) end)
-		end
-		chainGap = M.pvChipGroupGap
+	-- ONE control language for both header choices: a real W.Segment, right after
+	-- the title, so "Editing [Group|Raid]" and "Preview [5|10|20|25]" read as one
+	-- phrase. The sample sizes used to be a row of small bordered chips, kept apart
+	-- on the reasoning "a set of values, not a two-way switch" — that distinction
+	-- did not survive contact with the rest of the shell, where a three-option
+	-- segment (outline, HP display) is the normal way to pick one value out of
+	-- several. Two languages for the same job in one header read dated next to the
+	-- Base and Auras tabs (Florian 2026-07-30).
+	local function headerSeg(items, get, set, width)
+		local opts2 = {}
+		for _, it in ipairs(items) do opts2[#opts2 + 1] = { value = it.v, label = it.label } end
+		local shown = get()
+		local seg
+		seg = W.Segment(head, { options = opts2, get = get,
+			set = function(v) shown = v; set(v) end,
+			width = width, cellH = M.segCompactH })
+		seg:SetPoint("LEFT", lbl, "RIGHT", M.pvChipGroupGap, 0)
+		-- Follow the value when it changes from OUTSIDE (profile import, a
+		-- click-to-configure jump): PaintChips runs on every band refresh. Only on a
+		-- real change — SetValueExternal animates the pill, and re-running that on
+		-- every refresh would make it twitch.
 		repaints[#repaints + 1] = function()
-			local cur = get()
-			for _, c in ipairs(chips) do c.paint(c.v == cur) end
+			local v = get()
+			if v ~= shown then shown = v; seg:SetValueExternal(v) end
 		end
-		repaints[#repaints]()
+		return seg
 	end
 	if o.sizes then
 		local items = {}
 		for _, v in ipairs(o.sizes.values) do items[#items + 1] = { v = v, label = tostring(v) } end
-		chipGroup(items, o.sizes.get, o.sizes.set)
+		f._sizeSeg = headerSeg(items, o.sizes.get, o.sizes.set, M.pvSizeSegW)
 	end
 	if o.ctx then
-		-- A real W.Segment, the same control the settings use for every other
-		-- either/or choice — the small bordered chips were their own language and
-		-- read dated beside it (Florian 2026-07-29). The SIZE chips above stay
-		-- chips: they are a set of values, not a two-way switch.
-		local opts2 = {}
-		for _, it in ipairs(o.ctx.values) do opts2[#opts2 + 1] = { value = it.v, label = it.label } end
-		local seg = W.Segment(head, { options = opts2, get = o.ctx.get, set = o.ctx.set,
-			width = M.pvCtxSegW, cellH = M.segCompactH })
-		seg:SetPoint("LEFT", lbl, "RIGHT", M.pvChipGroupGap, 0)
-		f._ctxSeg = seg
+		f._ctxSeg = headerSeg(o.ctx.values, o.ctx.get, o.ctx.set, M.pvCtxSegW)
 	end
 	-- Quiet right-aligned hint that the stage is clickable (click-to-configure is
 	-- otherwise only discoverable by hovering).
