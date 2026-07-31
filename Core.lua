@@ -452,6 +452,10 @@ function Lumen:OnInitialize()
 	migrateLayout(self.db.profile.raidframes)
 	if ns.ClickCast then ns.ClickCast:MigrateCatalog() end
 
+	-- Before OnEnable builds anything: an armed profiler has to be in place to
+	-- capture the login pass (see Modules/Profiler.lua). No-op while it is off.
+	if ns.Prof then ns.Prof:Init() end
+
 	self.db.RegisterCallback(self, "OnProfileChanged", "RefreshAll")
 	self.db.RegisterCallback(self, "OnProfileCopied",  "RefreshAll")
 	self.db.RegisterCallback(self, "OnProfileReset",   "RefreshAll")

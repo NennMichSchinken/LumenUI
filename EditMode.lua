@@ -1481,8 +1481,6 @@ function EditMode:SetBlizzard(on)       -- WoW Edit Mode (no Shell choreography)
 	self:_refresh()
 end
 
-function EditMode:IsActive() return self.session end
-
 -- Accent changed (from the Shell picker): the toolbar + selection panel are
 -- lazy, cached singletons whose accent-coloured chrome (the primary "Done"
 -- button, the panel's sliders/buttons) baked the accent at build time. Drop the

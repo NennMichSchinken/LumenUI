@@ -37,7 +37,7 @@ local C_IncomingSummon = C_IncomingSummon
 local CurveConstants = CurveConstants
 local IsInRaid = IsInRaid
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
-local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
+local floor, min, max = math.floor, math.min, math.max
 local strfind, format = string.find, string.format
 local pcall = pcall
 local GetTime = GetTime
@@ -1356,6 +1356,37 @@ function Raidframes._setBarHeight(bar, h)
 	if bar._lumenH ~= h then bar._lumenH = h; bar:SetHeight(h) end
 end
 
+-- ---- Resource events, registered per unit on demand ------------------------
+-- The three power events are the highest-frequency traffic after UNIT_HEALTH
+-- (energy/rage/rune ticks never stop in combat), but the RAID default shows
+-- healers only -> in a 20-man roughly 16 of 20 members used to wake Lua on
+-- every tick purely to be dropped by the role gate in RenderPower.
+-- RegisterUnitEvent filters C-side, so unregistering keeps those events out of
+-- Lua entirely rather than merely bailing early. Same idea as the benchmark
+-- suite, which drops UNIT_POWER_UPDATE for units whose role shows no bar.
+--
+-- The trackers themselves stay STATIC (one frame per token, created once in
+-- Setup) — only these three events move. `unitTrackers` is filled there; on a
+-- client without RegisterUnitEvent it stays empty and this is a no-op.
+local unitTrackers   = {}   -- unit token -> its tracker frame
+local powerRegistered = {}  -- unit token -> true while its power events are on
+local POWER_EVENTS = { "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER" }
+local POWER_EVENT_SET = {}  -- same list as a lookup, for the registration loop
+for i = 1, #POWER_EVENTS do POWER_EVENT_SET[POWER_EVENTS[i]] = true end
+local function setPowerEvents(unit, on)
+	on = on or nil                                  -- false and nil are one state
+	if not unit or powerRegistered[unit] == on then return end
+	local t = unitTrackers[unit]
+	if not t then return end
+	for i = 1, #POWER_EVENTS do
+		local ev = POWER_EVENTS[i]
+		-- One tracker serves exactly one token, so a plain UnregisterEvent is
+		-- the exact inverse of its RegisterUnitEvent.
+		if on then t:RegisterUnitEvent(ev, unit) else t:UnregisterEvent(ev) end
+	end
+	powerRegistered[unit] = on
+end
+
 -- Whose resource is shown: the three per-context role switches. Units with role
 -- NONE/unknown follow the DPS switch.
 function Raidframes._powerRoleShown(L, role)
@@ -1419,15 +1450,32 @@ function Raidframes:RenderPower(f)
 	local u = f.unit
 	if not u or not UnitExists(u) then return end
 	local d, L = db(), layoutCtx()
-	if not d.powerEnabled then self._setPowerShown(f, false, L); return end
+
+	-- The settings + role gate is the whole answer to "can this unit ever show a
+	-- bar right now", and neither input comes from power data. That makes it the
+	-- one safe place to also decide whether the unit needs the three resource
+	-- events at all — see setPowerEvents. Evaluating it FIRST also saves the two
+	-- power API calls below for every gated unit.
+	-- Cached per frame: the role only moves on PLAYER_ROLES_ASSIGNED (RefreshPower
+	-- clears this) and on a re-assignment (the full pass clears it), never on a
+	-- regen tick. That takes a UnitGroupRolesAssigned call off every single
+	-- energy/rage/rune tick.
+	local roleShown = f._pwShown
+	if roleShown == nil then
+		roleShown = (d.powerEnabled and self._powerRoleShown(L, self._unitRole(u))) and true or false
+		f._pwShown = roleShown
+		setPowerEvents(u, roleShown)
+	end
+	if not roleShown then self._setPowerShown(f, false, L); return end
 
 	local pType, token = UnitPowerType(u)
 	pType = pType or 0
 	-- maxPower may be SECRET -> never compare it. Only a CLEAN zero max means the
-	-- unit genuinely has no resource to show.
+	-- unit genuinely has no resource to show. NOT folded into the gate above: it
+	-- is derived from power state, so a unit that loses its resource must keep
+	-- its events to hear UNIT_DISPLAYPOWER when it gets one back.
 	local pmx = UnitPowerMax and UnitPowerMax(u, pType)
-	local cleanNoPower = (not issecretvalue(pmx)) and (not pmx or pmx == 0)
-	if cleanNoPower or not self._powerRoleShown(L, self._unitRole(u)) then
+	if (not issecretvalue(pmx)) and (not pmx or pmx == 0) then
 		self._setPowerShown(f, false, L)
 		return
 	end
@@ -1441,8 +1489,15 @@ function Raidframes:RenderPower(f)
 	end
 	setBarValue(f.power, p, (f._powerArmed and d.smoothBars and not smoothBroken) and SB_EASE or nil)
 	f._powerArmed = true
-	local _, class = UnitClass(u)
-	f.power:SetStatusBarColor(self._powerRGB(d, class, pType, token))
+	-- Colour follows the power TYPE; the class and the colour settings behind it
+	-- cannot change without a full pass (which clears this). A plain regen tick
+	-- keeps its type, so it keeps its colour -- measured, 581 of 581 pushes in a
+	-- two-minute fight were identical.
+	if f._pwType ~= pType then
+		f._pwType = pType
+		local _, class = UnitClass(u)
+		f.power:SetStatusBarColor(self._powerRGB(d, class, pType, token))
+	end
 end
 
 -- TEST/PREVIEW pass (fake roster, no real unit). `noPower` = the preview eye is
@@ -1612,7 +1667,19 @@ local function auroraDamp(r, g, b)
 	return k < 0.5 and 0.5 or k
 end
 
-local function applyHealthColor(f, d, u)
+-- The bar colour is a pure function of: the grey (dead/offline) flag, the dispel
+-- flag, and the unit's class plus the colour settings. The last two can only
+-- change on a FULL pass, which clears the memo -- so a health tick compares two
+-- booleans and does no C call at all. Measured before this gate: 477 of 477
+-- paints in a two-minute fight repeated an unchanged colour.
+-- `force` is for the dispel scan, which must always push: the dispel COLOUR can
+-- change while the flag stays on (magic -> curse) and its rgb is secret, so it
+-- is not comparable in the first place.
+local function applyHealthColor(f, d, u, force)
+	local grey = f._greyed and true or false
+	local dOn  = f._dOn and true or false
+	if not force and f._cGrey == grey and f._cDOn == dOn then return end
+	f._cGrey, f._cDOn = grey, dOn
 	local ha = d.healthAlpha or 1   -- dim only the health-bar fill (4th alpha arg)
 	if f._greyed then
 		-- Dead/offline: neutral grey bar + glow (the status layer owns this flag).
@@ -1691,7 +1758,7 @@ function Raidframes:RenderDispelAuras(f)
 	local hasDispel, dr, dg, dbb
 	if d.dispelEnabled then hasDispel, dr, dg, dbb = self:GetDispel(u, d) end
 	f._dOn, f._dR, f._dG, f._dB = hasDispel or false, dr, dg, dbb
-	applyHealthColor(f, d, u)
+	applyHealthColor(f, d, u, true)   -- always: the dispel rgb is secret, see the memo
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
 	self:RenderAurasLive(f)
@@ -1852,6 +1919,23 @@ function Raidframes:RefreshIndicators()
 	end
 end
 
+-- Re-run the resource pass on every live button. Needed wherever the ROLE gate's
+-- answer can change without a full RenderLive: once power events are registered
+-- per unit (setPowerEvents), a unit that was gated out has none left to correct
+-- itself with — a DPS promoted to healer would keep a hidden bar until the next
+-- roster or layout pass. RenderPower is idempotent (the bar height is behind a
+-- dirty check), so calling it for all of them is cheap.
+function Raidframes:RefreshPower()
+	if not header then return end
+	for i = 1, 40 do
+		local b = header[i]
+		if b and b._lumenSecured and b.unit and UnitExists(b.unit) then
+			b._pwShown = nil   -- the role gate is exactly what this call re-evaluates
+			self:RenderPower(b)
+		end
+	end
+end
+
 -- Full pass: name + all parts. Used on unit (re-)assignment, roster/layout
 -- changes and the initial paint — NOT per unit event.
 function Raidframes:RenderLive(f)
@@ -1862,6 +1946,9 @@ function Raidframes:RenderLive(f)
 	if not f._secure then f:Show() end
 	local d = db()
 	f._barsArmed = nil   -- full pass = (re-)assignment: bars snap, they don't slide
+	-- A full pass is the one place where class, role and every setting behind the
+	-- render memos can have changed -> drop them all and let this pass re-derive.
+	f._cGrey, f._cDOn, f._pwShown, f._pwType = nil, nil, nil, nil
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
@@ -2096,527 +2183,6 @@ function Raidframes:UpdateUnit(f)
 end
 
 -- ===========================================================================
---  SHELL PREVIEW (docked live-preview band in the settings shell)
---  A small OWN pool (separate from the test pool: test mode positions `frames`
---  on the real screen container) rendered into a W.PreviewBand's holder. Uses
---  the same Decorate/ApplyConfig/render path as test mode, with previewCtx
---  forcing the tab's context. No unit events — refreshes piggyback on
---  UpdateLayout/RefreshAuras (the paths every settings change already takes).
--- ===========================================================================
-
--- Curated preview roster: full bar, shield, incoming heal, dispellable debuff,
--- heal absorb, aggro (BOTH stages: yellow warn + red has-aggro) — every render
--- feature visible at a glance (each one can be filtered out via the eyes).
--- `auras` = curated per-category preview icon counts (see RenderAurasFake):
--- varied per frame like a real group; {} = deliberately clean (HP readable);
--- NO field = full-load frame (maxIcons everywhere, judges max/auto-fit).
-local PREVIEW_FAKE = {
-	{ name = "Owlday",      class = "DRUID",  hp = 1.00, power = 0.72, role = "HEALER", lead = true,
-		auras = { hotsOwn = 2, defensives = 1 } },
-	{ name = "Elyndra",     class = "MAGE",   hp = 0.82, power = 0.55, absorb = 0.14, role = "DAMAGER",
-		auras = {} },
-	{ name = "Kaelura",     class = "PRIEST", hp = 0.66, power = 0.38, predict = 0.20, role = "HEALER" },
-	{ name = "Nighthollow", class = "ROGUE",  hp = 0.45, power = 0.90, dispel = "Magic", aggro = 2, role = "DAMAGER",
-		auras = { hotsOwn = 1, debuffs = 1 } },
-	{ name = "Sylfaria",    class = "MONK",   hp = 0.88, power = 0.64, healAbsorb = 0.18, aggro = 3, role = "TANK",
-		auras = { defensives = 1, debuffs = 2 } },
-}
-local shellBands = {}   -- band -> spec: { kind = "base" } | { kind = "ctx", ctx = "raid"|"party" }
-local pvFrames = {}     -- shared preview pool (one band visible at a time)
-
--- ---------------------------------------------------------------------------
---  Click-to-configure (dock preview only): hovering a preview element shows a
---  gold ring + "click to edit" tooltip; clicking jumps to its settings card
---  (Shell:JumpTo). The mouse layer exists SOLELY on the non-secure dock pool
---  (f._c2c) — live secure frames and the world test pool stay untouched.
--- ---------------------------------------------------------------------------
-local C2C_LABELS = {
-	hotsOwn    = "HoTs",
-	defensives = "Defensives & External",
-	major      = "Major CDs",
-	debuffs    = "Debuffs",
-}
-local c2cRing
-local function c2cGetRing()
-	if c2cRing then return c2cRing end
-	local r = CreateFrame("Frame", nil, UIParent)
-	r:Hide()
-	r:EnableMouse(false)
-	local function redge()
-		local t = r:CreateTexture(nil, "OVERLAY")
-		-- brand gold (C1), same tone as the frame mouseover border (combat-path file, kept literal)
-		t:SetColorTexture(0.91, 0.73, 0.41, 1)
-		return t
-	end
-	local e1, e2, e3, e4 = redge(), redge(), redge(), redge()
-	e1:SetPoint("TOPLEFT"); e1:SetPoint("TOPRIGHT"); e1:SetHeight(2)
-	e2:SetPoint("BOTTOMLEFT"); e2:SetPoint("BOTTOMRIGHT"); e2:SetHeight(2)
-	e3:SetPoint("TOPLEFT"); e3:SetPoint("BOTTOMLEFT"); e3:SetWidth(2)
-	e4:SetPoint("TOPRIGHT"); e4:SetPoint("BOTTOMRIGHT"); e4:SetWidth(2)
-	c2cRing = r
-	return r
-end
-local function c2cJump(host, cardKey)
-	if not (ns.Shell and ns.Shell.JumpTo) then return end
-	Raidframes:_C2CLeave()
-	-- Aura icons live on their own tab now; everything else stays on the
-	-- context tab the clicked frame belongs to.
-	local tab
-	if cardKey:find("^aura%-") then
-		tab = "Auras"
-		-- The Auras tab carries its own context; the target tab name can no longer
-		-- express it, so hand it over through the profile before the jump. Flag a
-		-- real change so the Shell knows it must rebuild (an unchanged jump only
-		-- flashes the card instead of re-rendering the page).
-		local d = db()
-		if d then
-			local want = (host._pvCtx == "raid") and "raid" or "party"
-			if d.auraTabCtx ~= want then
-				d.auraTabCtx = want
-				ns.ShellJumpDirty = true
-			end
-		end
-	else
-		tab = (host._pvCtx == "raid") and "Raid" or "Group"
-	end
-	ns.Shell:JumpTo("Raidframes", tab, cardKey)
-end
-function Raidframes:_C2CLeave()
-	if c2cRing then c2cRing:Hide() end
-	if ns.W and ns.W.HideTip then ns.W.HideTip() end
-end
--- Ring around all VISIBLE icons of the hovered category. Bounds arithmetic is
--- valid because holder and icons share one effective scale.
-local C2C_PAD = 3
-function Raidframes:_C2CIconEnter(holder)
-	local minL, maxR, minB, maxT
-	for i = 1, #holder.icons do
-		local ic = holder.icons[i]
-		if ic:IsShown() then
-			local l, rt, b, t = ic:GetLeft(), ic:GetRight(), ic:GetBottom(), ic:GetTop()
-			if l then
-				if not minL or l < minL then minL = l end
-				if not maxR or rt > maxR then maxR = rt end
-				if not minB or b < minB then minB = b end
-				if not maxT or t > maxT then maxT = t end
-			end
-		end
-	end
-	if not minL then return end
-	local r = c2cGetRing()
-	r:SetParent(holder)
-	-- Hover ring: above the WHOLE aura band (top holder +16 plus its children), not
-	-- just above this holder — otherwise hovering the HoT row draws its ring under
-	-- the debuff icons. Measured from the overlay so it is the same for all four.
-	r:SetFrameLevel(holder._host.overlay:GetFrameLevel() + 24)
-	r:ClearAllPoints()
-	local hl, hb = holder:GetLeft() or 0, holder:GetBottom() or 0
-	r:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", minL - hl - C2C_PAD, minB - hb - C2C_PAD)
-	r:SetSize((maxR - minL) + C2C_PAD * 2, (maxT - minB) + C2C_PAD * 2)
-	r:Show()
-	if ns.W and ns.W.ShowTextTip then
-		ns.W.ShowTextTip(r, ns.T(C2C_LABELS[holder._cat] or ""), ns.T("Click to edit"))
-	end
-end
-function Raidframes:_C2CIconClick(holder)
-	c2cJump(holder._host, "aura-" .. (holder._cat or ""))
-end
-
-local function pvFrame(i, holder)
-	local f = pvFrames[i]
-	if not f then
-		f = CreateFrame("Frame", nil, holder)
-		f._c2c = true   -- BEFORE any icon creation: makeAuraIcon keys off this
-		Decorate(f)
-		f:EnableMouse(false)
-		-- Click-to-configure hotspots: ring + tooltip on hover, jump on click.
-		-- Anchored to the element's region; pvFillOne gates each on visibility.
-		-- `pad` = grow the hotspot beyond its region (default 3, comfortable for
-		-- small texts/icons). The resource bar passes 0: it is a thin strip at the
-		-- very bottom, and a padded hotspot would swallow clicks on the lower half
-		-- of a bottom-anchored aura icon.
-		local function hotspot(region, label, cardKey, pad)
-			pad = pad or 3
-			local b = CreateFrame("Button", nil, f.overlay)
-			-- Above the texts + the role/leader layer (+1), but BELOW every aura
-			-- holder (+4 and up): where an aura icon overlaps another element's
-			-- hotspot the click has to open the AURA card — that is what is drawn on
-			-- top there, and the icons carry their own scripts (makeAuraIcon).
-			b:SetFrameLevel(f.overlay:GetFrameLevel() + 2)
-			b:SetPoint("TOPLEFT", region, "TOPLEFT", -pad, pad)
-			b:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", pad, -pad)
-			b:SetScript("OnEnter", function()
-				local r = c2cGetRing()
-				r:SetParent(b)
-				r:SetFrameLevel(f.overlay:GetFrameLevel() + 24) -- above the aura band, as for the aura rings
-				r:ClearAllPoints()
-				r:SetAllPoints(b)
-				r:Show()
-				if ns.W and ns.W.ShowTextTip then
-					ns.W.ShowTextTip(r, ns.T(label), ns.T("Click to edit"))
-				end
-			end)
-			b:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
-			b:SetScript("OnClick", function() c2cJump(f, cardKey) end)
-			return b
-		end
-		f._c2cName  = hotspot(f.name,     "Text — name",       "text-name")
-		f._c2cHP    = hotspot(f.htext,    "Text — HP display", "text-hp")
-		f._c2cRole  = hotspot(f.roleIcon, "Role icon",         "icon-role")
-		f._c2cLead  = hotspot(f.leadIcon, "Leader icon",       "icon-lead")
-		f._c2cPower = hotspot(f.power,    "Resource bar",      "power-bar", 0)
-		pvFrames[i] = f
-	end
-	f:SetParent(holder)
-	-- Re-home the pooled frame on EVERY call: there is one pool but one anchored
-	-- band per raidframe tab now, so a frame built for the first band would stay
-	-- there and the other tabs would render an empty stage (Florian 2026-07-29:
-	-- switching context on Base left Raid/Group blank). With the single dock
-	-- band this could never happen.
-	if f:GetParent() ~= holder then
-		f:SetParent(holder)
-		f:ClearAllPoints()
-	end
-	return f
-end
-
--- Reset layers a previous eye-pass may have hidden; render + eye-pass then
--- hide again whatever settings/eyes say. Aura holders BEFORE ApplyConfig
--- (which re-hides config-disabled categories).
-local function pvResetLayers(f)
-	if f.auraHolders then for _, h in pairs(f.auraHolders) do h:Show() end end
-	f.shieldStripe:Show(); f.backfillStripe:Show(); f.healStripe:Show()
-	f.htext:Show()
-end
-
--- Eyes only HIDE: the fill pass before restored everything the settings show.
--- Aura categories filter INDIVIDUALLY (holder keys = AURA_CATS keys, matching
--- the filter popover's children: hotsOwn/defensives/major/debuffs).
-local function pvEyePass(f, eyes)
-	if f.auraHolders then
-		for key, h in pairs(f.auraHolders) do
-			if eyes[key] == false then h:Hide() end
-		end
-	end
-	if eyes.shields == false then
-		f.shieldStripe:Hide(); f.backfillStripe:Hide(); f.healStripe:Hide()
-	end
-	-- Name and HP text are SEPARATE preview layers (Florian 2026-07-26: hiding
-	-- one used to hide both). `text` stays understood as the old shared key so
-	-- existing profiles keep working.
-	if eyes.nameText == false or eyes.text == false then f.name:Hide() end
-	if eyes.healthText == false or eyes.text == false then f.htext:Hide() end
-	-- Role and leader are SEPARATE preview layers (Florian 2026-07-22): each card's
-	-- eye toggles only its own icon (grouped under "Role & leader icons").
-	if eyes.roleIcon == false then f.roleIcon:Hide() end
-	if eyes.leaderIcon == false then f.leadIcon:Hide() end
-end
-
--- Dispel/aggro filters work at the DATA level (a recolored health bar can't
--- be "hidden" afterwards): render a scratch copy without those fields.
--- The resource bar rides along here for the same reason: just hiding the strip
--- would leave a gap under the health bar, so "eye off" means "this unit has no
--- resource bar" and the health bar gets its height back.
-local pvScratch = {}
-local function pvEffectiveFake(fake, eyes)
-	if (eyes.dispel == false and fake.dispel) or (eyes.aggro == false and fake.aggro)
-		or eyes.power == false then
-		for k in pairs(pvScratch) do pvScratch[k] = nil end
-		for k, v in pairs(fake) do pvScratch[k] = v end
-		if eyes.dispel == false then pvScratch.dispel = nil end
-		if eyes.aggro == false then pvScratch.aggro = nil end
-		if eyes.power == false then pvScratch.noPower = true end
-		return pvScratch
-	end
-	return fake
-end
-
-local function pvFillOne(f, fake, ctx, eyes)
-	previewCtx = ctx
-	f._pvCtx = ctx   -- click-to-configure: which tab a click on this frame targets
-	f.fake = pvEffectiveFake(fake, eyes)
-	f.unit = nil
-	pvResetLayers(f)
-	Raidframes:ApplyConfig(f)
-	Raidframes:UpdateUnit(f)
-	pvEyePass(f, eyes)
-	-- Hotspots only while their element is actually visible (config + eyes).
-	if f._c2cName then
-		f._c2cName:SetShown(f.name:IsShown())
-		f._c2cHP:SetShown(f.htext:IsShown())
-		f._c2cRole:SetShown(f.roleIcon:IsShown())
-		f._c2cLead:SetShown(f.leadIcon:IsShown())
-		f._c2cPower:SetShown(f.power:IsShown())
-	end
-	previewCtx = nil
-	f:Show()
-end
-
-function Raidframes:AttachShellPreview(band, spec)
-	shellBands[band] = spec
-end
-
--- Which context a preview spec is showing right now.
-local function pvSpecCtx(spec, d)
-	if spec.ctxGet then return spec.ctxGet() end
-	if spec.baseSwitch then return (d.previewBaseCtx == "raid") and "raid" or "party" end
-	return spec.ctx
-end
-
--- Sample size for a spec: the Raid tab has its 5/10/20/25 chips, a spec may pin
--- a raid-context count (Auras tab), everything else shows one group.
-local function pvSpecCount(spec, ctx, d)
-	local n = GROUP_SIZE
-	-- Raid default is 10, not one group: five frames say nothing about a raid
-	-- layout (Florian 2026-07-29, matching what the Auras tab pins).
-	if spec.ctx == "raid" then n = d.previewSize or 10
-	elseif spec.raidN and ctx == "raid" then n = spec.raidN end
-	return min(n, 25)
-end
-
--- Grid extent of a preview in HOLDER units (before the true-size scale).
-local function pvExtent(spec, ctx, n, d)
-	local L = d[ctx]
-	local w, h, sp = L.width, L.height, L.spacing
-	local horizontal = (L.orientation == "horizontal")
-	local groups  = max(1, ceil(n / GROUP_SIZE))
-	local inGroup = max(1, min(n, GROUP_SIZE))
-	local cols, rows
-	if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
-	return cols * (w + sp) - sp, rows * (h + sp) - sp, horizontal
-end
-
--- VISUAL height a preview needs, in the units of `ref` (the shell frame the
--- stage lives in). The anchored bands are placed by the settings stack BEFORE
--- anything renders, so the screen has to know the height up front — this is the
--- same arithmetic RefreshShellPreview uses, just without touching frames.
-function Raidframes:PreviewExtent(spec, ref)
-	local d = db()
-	if not (d and ref) then return 1, 1 end
-	local sUI, sRef = UIParent:GetEffectiveScale(), ref:GetEffectiveScale()
-	if not (sUI and sRef) or sRef <= 0 then return 1, 1 end
-	local ok, cw, ch = pcall(function()
-		local ctx = pvSpecCtx(spec, d)
-		local n = pvSpecCount(spec, ctx, d)
-		local w, h = pvExtent(spec, ctx, n, d)
-		return w, h
-	end)
-	if not ok then return 1, 1 end
-	local s = sUI / sRef
-	return (cw or 1) * s, (ch or 1) * s
-end
-
-function Raidframes:RefreshShellPreview()
-	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
-	-- During an Edit Mode session the world previews mirror the same settings —
-	-- refresh them regardless of the dock band's visibility (it starts collapsed),
-	-- so live tab edits (size, opacity, auras, card eyes) show on the placed frames.
-	-- (RefreshPreview self-guards via ensureEditPreviews.)
-	if ns.EditMode and ns.EditMode.session then
-		self:RefreshPreview("party")
-		self:RefreshPreview("raid")
-	end
-	local band, spec
-	for b, sp in pairs(shellBands) do
-		if b:IsVisible() then band, spec = b, sp break end
-	end
-	if not band then return end
-	local holder = band.holder
-	local stage = holder:GetParent()
-	-- True on-screen size: scale the holder so its effective scale matches
-	-- UIParent (where the real frames live) despite the shell's panel scale.
-	local sUI, sStage = UIParent:GetEffectiveScale(), stage:GetEffectiveScale()
-	if not (sUI and sStage) or sStage <= 0 then return end
-	local s = sUI / sStage
-	holder:SetScale(s)
-
-	local d = db()
-	local eyes = band.GetEyes and band:GetEyes() or {}
-	local used, cw, ch, caption = 0, 1, 1, ""
-
-	-- Guarded fill: previewCtx MUST never leak into the real render paths.
-	local ok, err = pcall(function()
-		-- Context: fixed per tab (Raid/Group) — the Base tab switches via its
-		-- Raid/Group chips instead (so Base settings like aggro/dispel are
-		-- judged on the real group layout).
-		-- Context / sample size / grid: shared with PreviewExtent above, so the
-		-- height a screen reserved and the height actually rendered can't drift.
-		local ctx = pvSpecCtx(spec, d)
-		local n = pvSpecCount(spec, ctx, d)
-		local L = d[ctx]
-		local w, h, sp = L.width, L.height, L.spacing
-		local horizontal = (L.orientation == "horizontal")
-		-- 5 = the curated showcase roster; bigger samples use the test-mode
-		-- roster incl. its role-sort preview (honest sorting picture).
-		local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
-		for i = 1, n do
-			local f = pvFrame(i, holder)
-			pvFillOne(f, list[i], ctx, eyes)
-			-- Same slot math as the test-mode grid: vertical = members
-			-- stacked/groups side by side, horizontal = the transpose.
-			local idx   = i - 1
-			local group = floor(idx / GROUP_SIZE)
-			local slot  = idx % GROUP_SIZE
-			local col, row
-			if horizontal then col, row = slot, group else col, row = group, slot end
-			f:ClearAllPoints()
-			f:SetPoint("TOPLEFT", holder, "TOPLEFT", col * (w + sp), -row * (h + sp))
-		end
-		used = n
-		cw, ch = pvExtent(spec, ctx, n, d)
-		caption = ("%s  ·  %d  ·  %s"):format(
-			ctx == "raid" and ns.T("Raid") or ns.T("Group"), n,
-			horizontal and ns.T("horizontal") or ns.T("vertical"))
-	end)
-	previewCtx = nil
-	if not ok then
-		if ns.Lumen then ns.Lumen:Print("|cffD66A5CPreview:|r " .. tostring(err)) end
-		return
-	end
-
-	for i = used + 1, #pvFrames do pvFrames[i]:Hide() end
-	holder:SetSize(cw, ch)
-	-- Report the VISUAL extent (stage units): holder units render at scale s.
-	-- The band never resizes itself — the screen reserved its height up front via
-	-- PreviewExtent, so 20 raid frames simply make the preview taller and push
-	-- the cards further down (Florian 2026-07-29). Always TRUE on-screen size.
-	band:SetExtent(cw * s, ch * s, caption)
-end
-
--- ===========================================================================
---  Edit Mode two-frame previews (Group 5 / Raid 20). While a Lumen Edit Mode
---  session runs, the live secure frames are hidden and TWO placeable fake
---  previews are shown — one per context — so Group and Raid can be positioned
---  and sized INDEPENDENTLY (WoW-Edit-Mode style), even solo. Reuses the shell
---  preview fill (pvFillOne + previewCtx). Exiting restores the live frames.
--- ===========================================================================
-local epPools = { party = {}, raid = {} }
-local epHolders = {}          -- ctx -> world holder frame (mirrors the live 200x200 container)
--- The previews exist to POSITION/SIZE frames, not to judge appearance (that's the
--- tab dock). Show just the class-coloured health bars + names — no auras/shields/
--- icons/dispel/aggro — so overlapping Group/Raid previews stay clean (Florian).
-local PREVIEW_EYES = {
-	hotsOwn = false, defensives = false, major = false, debuffs = false,
-	shields = false, icons = false, dispel = false, aggro = false,
-}
-local epListenerAdded = false
-
-local function ensureEditPreviews()
-	if epHolders.party then return end
-	for _, ctx in ipairs({ "party", "raid" }) do
-		-- The holder MIRRORS the live container EXACTLY (200x200, positioned by the
-		-- same L.point) so a placed preview maps 1:1 to the real frames. The fakes
-		-- live in a `.frames` child anchored at the holder TOPLEFT (like the secure
-		-- header), which is also the Edit Mode bounds so the overlay hugs the frames.
-		local h = CreateFrame("Frame", nil, UIParent)
-		h:SetSize(200, 200)
-		h:SetFrameStrata("HIGH")
-		h:Hide()
-		h.frames = CreateFrame("Frame", nil, h)
-		h.frames:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
-		epHolders[ctx] = h
-	end
-end
-
-local function epFrame(ctx, i)
-	local pool = epPools[ctx]
-	local f = pool[i]
-	if not f then
-		f = CreateFrame("Frame", nil, epHolders[ctx].frames)
-		Decorate(f)
-		f:EnableMouse(false)   -- the Edit Mode overlay handles the mouse
-		pool[i] = f
-	end
-	f:SetParent(epHolders[ctx].frames)
-	return f
-end
-
--- Lay out ctx's fake sample (5 party / 20 raid) at ctx's size/spacing and move
--- the holder to ctx's saved position. Called on show + on every slider change.
-function Raidframes:RefreshPreview(ctx)
-	invalidatePreviewIcons()   -- pick up spec / whitelist changes on each redraw
-	ensureEditPreviews()
-	local holder = epHolders[ctx]
-	local L = db()[ctx]
-	local w, h, sp = L.width or 114, L.height or 60, L.spacing or 6
-	local horizontal = (L.orientation == "horizontal")
-	local n = (ctx == "raid") and 20 or GROUP_SIZE
-	local list = (n <= GROUP_SIZE) and PREVIEW_FAKE or GetFakeList(n)
-	-- The LIT context (the one whose settings are open in the Shell) shows its
-	-- eye-on layers (card eyes = db().previewEyes); every other context stays
-	-- clean (bars + names only) so the world isn't cluttered while placing.
-	local eyes = PREVIEW_EYES
-	if self._litCtx == ctx then eyes = db().previewEyes or {} end
-	local pool = epPools[ctx]
-	for i = 1, n do
-		local f = epFrame(ctx, i)
-		pvFillOne(f, list[i], ctx, eyes)
-		local idx   = i - 1
-		local group = floor(idx / GROUP_SIZE)
-		local slot  = idx % GROUP_SIZE
-		local col, row
-		if horizontal then col, row = slot, group else col, row = group, slot end
-		f:ClearAllPoints()
-		f:SetPoint("TOPLEFT", holder.frames, "TOPLEFT", col * (w + sp), -row * (h + sp))
-	end
-	for i = n + 1, #pool do if pool[i] then pool[i]:Hide() end end
-	local groups  = max(1, ceil(n / GROUP_SIZE))
-	local inGroup = max(1, min(n, GROUP_SIZE))
-	local cols, rows
-	if horizontal then cols, rows = inGroup, groups else cols, rows = groups, inGroup end
-	holder.frames:SetSize(cols * (w + sp) - sp, rows * (h + sp) - sp)
-	-- Position the 200x200 holder EXACTLY like the live container (applyHeaderLayout).
-	holder:ClearAllPoints()
-	holder:SetPoint(L.point or "CENTER", UIParent, L.point or "CENTER", L.x or 0, L.y or 0)
-end
-
--- Session on/off: swap the live secure frames for the two previews, or restore.
--- Bring one preview's whole subtree in front of the other so a grabbed,
--- overlapping frame lies COMPLETELY on top (no interleaving of the two frames'
--- bars). Strata cascades to the fake frames + their bars (they never set their
--- own strata), so bumping the holder is enough.
-function Raidframes:RaisePreview(ctx)
-	local other = (ctx == "raid") and "party" or "raid"
-	if epHolders[ctx] then epHolders[ctx]:SetFrameStrata("DIALOG") end
-	if epHolders[other] then epHolders[other]:SetFrameStrata("HIGH") end
-end
-
--- Which context is "lit" = shows its eye-on layers in Edit Mode (the one whose
--- settings are open in the Shell). nil = both clean. Set by the flyout's "Open
--- settings" and cleared when the Shell closes / the session ends.
-function Raidframes:SetLitPreview(ctx)
-	if self._litCtx == ctx then return end
-	self._litCtx = ctx
-	if ns.EditMode and ns.EditMode.session and epHolders.party then
-		self:RefreshPreview("party")
-		self:RefreshPreview("raid")
-	end
-end
-
-function Raidframes:ShowEditPreviews(on)
-	ensureEditPreviews()
-	self._litCtx = nil   -- session boundary: start clean, nothing lit
-	if on then
-		self:HideHeader()
-		if container then container:Hide() end
-		self:RefreshPreview("party")
-		self:RefreshPreview("raid")
-		epHolders.party:Show()
-		epHolders.raid:Show()
-		-- Defined z-order from the START (both stacked at the same default pos):
-		-- without this they sit on the same strata and their bars INTERLEAVE (the
-		-- back frame shows through the front, backgrounds look missing) until the
-		-- first click raised one. Group on top by default.
-		self:RaisePreview("party")
-	else
-		epHolders.party:Hide()
-		epHolders.raid:Hide()
-		if container then container:Show() end
-		self:UpdateLayout()   -- rebuild + reposition the real header
-	end
-end
-
--- ===========================================================================
 --  LIVE  (SecureGroupHeader + SecureUnitButtons) — clickable/targetable (phase 1).
 -- ===========================================================================
 
@@ -2712,12 +2278,24 @@ local function applyHeaderLayout()
 end
 
 -- Apply size/texture/text to all (pre-created) buttons + render occupied ones. ONLY out of combat.
-local function configureSecureButtons()
+--
+-- `sameConfig` = the caller knows no SETTING changed, only the roster or the
+-- world (see the event handler). ApplyConfig pushes ~35 settings-derived values
+-- per button -- sizes, textures, fonts, stripes, aura layout -- and measured at
+-- login it ran 80 times for 40 buttons because the world event repeated the
+-- whole pass. None of it can change on such an event, with ONE exception: the
+-- raid/party context swaps the entire layout table, so that is checked here
+-- rather than trusted to callers. Fail-safe by construction -- a caller that
+-- forgets the flag pays a redundant pass, it never gets a stale frame.
+local function configureSecureButtons(sameConfig)
 	if not header then return end
+	local ctx = isRaidContext() and "raid" or "party"
+	local skipCfg = sameConfig and Raidframes._cfgCtx == ctx
+	Raidframes._cfgCtx = ctx
 	for i = 1, 40 do
 		local btn = header[i]
 		if btn then
-			Raidframes:ApplyConfig(btn)   -- sets e.g. SetSize -> forbidden in combat, safe here OOC
+			if not skipCfg then Raidframes:ApplyConfig(btn) end   -- SetSize -> forbidden in combat, safe here OOC
 			-- Read the unit live from the attribute: assignments that happened on the very
 			-- first header show BEFORE attaching the OnAttributeChanged hooks would otherwise
 			-- only show on the next event. Catch up map + btn.unit here.
@@ -2733,6 +2311,7 @@ end
 -- Build the header once + pre-create 40 buttons (startingIndex trick) and decorate them.
 local function buildHeader()
 	if header then return end
+	Raidframes._cfgCtx = nil   -- fresh buttons: the next pass must configure them
 	local L = layoutCtx()
 	local bw, bh = L.width or 114, L.height or 60
 	header = CreateFrame("Frame", "LumenRaidHeader", container, "SecureGroupHeaderTemplate")
@@ -2760,7 +2339,7 @@ local function buildHeader()
 	end
 end
 
-function Raidframes:LayoutLive()
+function Raidframes:LayoutLive(sameConfig)
 	if InCombatLockdown() then secureLayoutDirty = true; return end
 	if not header then buildHeader() end
 	applyHeaderLayout()
@@ -2803,7 +2382,7 @@ function Raidframes:LayoutLive()
 	local layoutChanged = (header._appliedOrient ~= orient or header._appliedSpacing ~= spacing)
 	header._appliedW, header._appliedH = L.width, L.height
 	header._appliedOrient, header._appliedSpacing = orient, spacing
-	configureSecureButtons()   -- ApplyConfig sets e.g. the button size
+	configureSecureButtons(sameConfig)   -- ApplyConfig sets e.g. the button size
 	if (sizeChanged or sortChanged or layoutChanged) and header:IsShown() then
 		header:Hide()
 		-- Blizzard's configureChildren re-anchors active buttons with SetPoint but
@@ -2822,6 +2401,15 @@ function Raidframes:LayoutLive()
 	self:NotifyFrameChange()   -- inform foreign providers (e.g. MiniCC) about the new frame list
 end
 
+-- Hiding the live frames means hiding the HEADER — never the container around
+-- it. A frame with a protected descendant cannot have its visibility changed by
+-- addon code at all: not just in combat, always. `container:Hide()` therefore
+-- came back as ADDON_ACTION_BLOCKED and silently did nothing. The calls in
+-- Setup/Enable are the exception that proves it — they run BEFORE the header is
+-- built, while the container is still an empty holder.
+-- The header carries everything visible, so hiding it is the complete switch;
+-- the container only positions and listens for events (a hidden frame still
+-- receives events, only OnUpdate stops).
 function Raidframes:HideHeader()
 	if not header then return end
 	if InCombatLockdown() then secureLayoutDirty = true; return end
@@ -2860,7 +2448,10 @@ function Raidframes:RefreshAuras()
 end
 
 -- Settings/roster changes funnel through here -> relayout the secure header.
-function Raidframes:UpdateLayout()
+-- `sameConfig` is passed only by the roster/world event path, which cannot have
+-- changed a setting -- see configureSecureButtons. Every other caller (shell
+-- setters, profile switches, Enable) omits it and gets the full pass.
+function Raidframes:UpdateLayout(sameConfig)
 	if not container then return end
 	-- During an Edit Mode session the PREVIEWS are the display — never rebuild/show
 	-- the live secure header (it would pop up behind the previews when a tab setting
@@ -2876,17 +2467,36 @@ function Raidframes:UpdateLayout()
 	-- the header even though "Raidframes enabled" is off.
 	if not d.enabled then
 		self:HideHeader()
-		container:Hide()
+		if not header then container:Hide() end   -- see HideHeader: only legal while empty
 		self:RefreshShellPreview()   -- the shell band keeps rendering while disabled
 		return
 	end
 	dispelCurve = nil   -- dispel colors may have changed -> have the curve rebuilt
 	wlInvalidate()      -- profile may have switched -> re-resolve the whitelist table
-	self:LayoutLive()
+	self:LayoutLive(sameConfig)
+	-- LayoutLive aborts in combat (the secure header), but the resource role
+	-- switches must still take effect: with power events registered per unit, a
+	-- unit gated out earlier cannot hear the setting change on its own. Our
+	-- StatusBars are non-protected children, so this stays combat-legal.
+	self:RefreshPower()
 	self:RefreshShellPreview()   -- settings changes route through here -> keep the band live
 	-- If the raidframes are a coupled child, LayoutLive just reset the container
 	-- to its absolute position -> re-anchor it onto its Edit Mode link anchor.
 	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
+end
+
+-- Deferred repaint for a mid-combat roster burst (see the event handler). On the
+-- module table rather than a file local: this chunk is close to Lua's 200-local
+-- ceiling, and a once-per-burst call has nothing to gain from an upvalue.
+function Raidframes._RosterPaint()
+	Raidframes._rosterPaintQueued = false
+	if not header then return end
+	for i = 1, 40 do
+		local b = header[i]
+		if b and b:IsVisible() and b.unit and UnitExists(b.unit) then
+			Raidframes:RenderLive(b)
+		end
+	end
 end
 
 -- Unit events -> the SPLIT render part they need (PERF: a health tick no longer
@@ -3152,14 +2762,20 @@ function Raidframes:Setup()
 		if f and f:IsVisible() then Raidframes[UNIT_EVENT_METHOD[event]](Raidframes, f) end
 	end
 	if container.RegisterUnitEvent then
-		-- No table keeping the trackers: a created frame is owned by the C side and
-		-- never collected, and nothing re-registers them afterwards.
+		-- The trackers are kept in `unitTrackers` because the three resource
+		-- events are registered on demand (setPowerEvents): the raid default
+		-- shows healers only, so most members must not pay for every energy or
+		-- rune tick. Everything else here is registered once and never touched.
 		local function track(unit)
 			local t = CreateFrame("Frame")
 			for ev in pairs(UNIT_EVENT_METHOD) do
-				if ev:sub(1, 5) == "UNIT_" then t:RegisterUnitEvent(ev, unit) end
+				-- Power events are added later, by the role gate in RenderPower.
+				if ev:sub(1, 5) == "UNIT_" and not POWER_EVENT_SET[ev] then
+					t:RegisterUnitEvent(ev, unit)
+				end
 			end
 			t:SetScript("OnEvent", onUnitEvent)
+			unitTrackers[unit] = t
 		end
 		track("player")
 		for i = 1, 4 do track("party" .. i) end
@@ -3204,6 +2820,9 @@ function Raidframes:Setup()
 		end
 		if event == "PARTY_LEADER_CHANGED" or event == "PLAYER_ROLES_ASSIGNED" then
 			Raidframes:RefreshIndicators()
+			-- A reassigned role also moves the resource bar's role gate, and a
+			-- gated-out unit has no power events left to notice on its own.
+			if event == "PLAYER_ROLES_ASSIGNED" then Raidframes:RefreshPower() end
 			return
 		end
 		if event == "PLAYER_SPECIALIZATION_CHANGED" then
@@ -3227,67 +2846,41 @@ function Raidframes:Setup()
 					local b = header[i]
 					if b and b:IsVisible() then
 						local u2 = b:GetAttribute("unit")
-						if u2 and UnitExists(u2) then
-							b.unit = u2; unitToButton[u2] = b
-							Raidframes:RenderLive(b)
-						end
+						if u2 and UnitExists(u2) then b.unit = u2; unitToButton[u2] = b end
 					end
+				end
+				-- Routing above runs per fire -- an event must never reach the wrong
+				-- frame. The PAINT does not: combat zone-ins deliver this event in
+				-- bursts and a full pass per fire repaints every button several times
+				-- over. Coalesced into one next-frame pass that reads the burst's
+				-- final state. Content-only work, so it stays combat-legal.
+				if not Raidframes._rosterPaintQueued then
+					Raidframes._rosterPaintQueued = true
+					C_Timer.After(0, Raidframes._RosterPaint)
 				end
 			end
 			return
 		end
 		local _, class = UnitClass("player")
 		playerDispels = CLASS_DISPELS[class] or {}
-		Raidframes:UpdateLayout()
+		-- Roster/world/spec events: content and layout, never a settings change.
+		Raidframes:UpdateLayout(true)
 	end)
 	local _, class = UnitClass("player")
 	playerDispels = CLASS_DISPELS[class] or {}
 
-	if ns.EditMode then
-		-- Two independent placeable previews (WoW-Edit-Mode style, Florian's call):
-		-- "Group Frame" (5) and "Raid Frame" (20) — each edits its OWN context so
-		-- Group and Raid can be placed/sized differently, even solo. The flyout is
-		-- the spatial subset (size + spacing); visuals stay in the tab (Open settings).
-		ensureEditPreviews()
-		local function regPreview(ctx, key, label, tab)
-			ns.EditMode:Register(epHolders[ctx], ns.T(label),
-				function(p, x, y) local L = db()[ctx]; L.point, L.x, L.y = p, x, y end,
-				function() return epHolders[ctx].frames end,   -- overlay/physics hug the fakes
-				key,
-				{ fields = {
-					{ kind = "slider", label = ns.T("Width"),   min = 40, max = 240, unit = " px",
-						get = function() return db()[ctx].width end,
-						set = function(v) db()[ctx].width = v; Raidframes:RefreshPreview(ctx) end },
-					{ kind = "slider", label = ns.T("Height"),  min = 20, max = 160, unit = " px",
-						get = function() return db()[ctx].height end,
-						set = function(v) db()[ctx].height = v; Raidframes:RefreshPreview(ctx) end },
-					{ kind = "slider", label = ns.T("Spacing"), min = 0, max = 30, unit = " px",
-						get = function() return db()[ctx].spacing end,
-						set = function(v) db()[ctx].spacing = v; Raidframes:RefreshPreview(ctx) end },
-				},
-				-- Non-destructive: the session STAYS open (no CloseSession). The Shell
-				-- opens alongside and this context lights up (SetLitPreview) so you
-				-- see its auras/shields on the real placed frame while you edit.
-				openSettings = function()
-					Raidframes:SetLitPreview(ctx)
-					if ns.Shell then ns.Shell:OpenTo("Raidframes", tab) end
-				end,
-				onRaise = function() Raidframes:RaisePreview(ctx) end })
-		end
-		regPreview("party", "raidframes_group", "Group Frame", "Group")
-		regPreview("raid",  "raidframes_raid",  "Raid Frame",  "Raid")
-		-- Show the previews (and hide the live frames) only during a Lumen session.
-		if not epListenerAdded then
-			epListenerAdded = true
-			ns.EditMode:AddListener(function() Raidframes:ShowEditPreviews(ns.EditMode.session) end)
-		end
-	end
+	-- Edit-Mode world previews (two placeable frames, Group + Raid). The whole
+	-- registration lives in Modules/RaidframesPreview.lua so its holder pool and
+	-- listener latch stay private to that file.
+	self:_SetupEditPreviews()
 	container:Hide()   -- default = off; only Enable() shows the container (else frames despite "off")
 end
 
 function Raidframes:Enable()
 	self:Setup()
-	container:Show()
+	-- Only meaningful before the header exists (see HideHeader); afterwards
+	-- UpdateLayout below shows the header itself, which is the real switch.
+	if not header then container:Show() end
 	self:UpdateLayout()
 	suppressBlizzard()   -- hide Blizzard's default raid frames while Lumen's are active
 end
@@ -3302,6 +2895,24 @@ function Raidframes:Disable()
 	-- The container is the parent frame of the secure header -> Hide in combat would be
 	-- forbidden on protected children. Defer in combat (takes effect again on RefreshAll/regen).
 	if InCombatLockdown() then secureLayoutDirty = true; return end
-	if header then header:Hide() end
-	container:Hide()
+	if header then header:Hide() else container:Hide() end   -- see HideHeader
 end
+
+-- ===========================================================================
+--  PREVIEW BOUNDARY — the complete surface Modules/RaidframesPreview.lua may
+--  use from this file. That file holds the settings-shell band, the
+--  click-to-configure layer and the Edit-Mode world previews; it was split off
+--  because Lua 5.1 caps a chunk at 200 locals and this one had reached it.
+--
+--  Everything here is cold path (a settings redraw or an Edit-Mode session),
+--  so the extra table lookup costs nothing measurable — §9.3 forbids
+--  ALLOCATING in hot paths, not reading a field. Keep this list short: it is
+--  the contract, and each entry is a coupling you pay for on both sides.
+-- ===========================================================================
+Raidframes._GROUP_SIZE           = GROUP_SIZE
+Raidframes._Decorate             = Decorate
+Raidframes._GetFakeList          = GetFakeList
+Raidframes._InvalidatePreviewIcons = invalidatePreviewIcons
+-- previewCtx is READ by layoutCtx/isRaidContext in this file's render path, so
+-- the variable stays here and only the write crosses over.
+function Raidframes._SetPreviewCtx(ctx) previewCtx = ctx end

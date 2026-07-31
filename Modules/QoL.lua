@@ -92,7 +92,8 @@ local function db() return ns.Lumen.db.profile.qol.cursor end
 local ring, ringTex
 local lastX, lastY
 
-local function onUpdate()
+local raiseAcc = 0
+local function onUpdate(_, elapsed)
 	local s = UIParent:GetEffectiveScale()
 	local x, y = GetCursorPosition()
 	x, y = floor(x / s + 0.5), floor(y / s + 0.5)
@@ -101,10 +102,16 @@ local function onUpdate()
 		ring:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
 	end
 	-- Stay on top even of TOOLTIP-strata frames that SetToplevel(true) themselves
-	-- above us on interaction (e.g. the Edit Mode settings flyout). We already run
-	-- an OnUpdate while shown, so re-topping here keeps the ring above them with no
-	-- perceptible lag (one C call/frame, and only while the opt-in ring is visible).
-	ring:Raise()
+	-- above us on interaction (e.g. the Edit Mode settings flyout). Throttled: a
+	-- frame raising itself over us is a rare, interaction-driven event, while this
+	-- ran ~200 times a second and was measured as the ring's dominant cost (98% of
+	-- its ticks changed nothing at all). Four times a second is still faster than
+	-- anyone can notice, and the position above stays per-frame exact.
+	raiseAcc = raiseAcc + (elapsed or 0)
+	if raiseAcc >= 0.25 then
+		raiseAcc = 0
+		ring:Raise()
+	end
 end
 
 local function createRing()
