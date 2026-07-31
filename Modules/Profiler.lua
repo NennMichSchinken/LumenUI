@@ -25,6 +25,15 @@ local ADDON, ns = ...
 --  single profiler line, which also keeps the 200-local budget of
 --  Modules/Raidframes.lua untouched.
 --
+--  READING THE NUMBERS -- one caveat that has already misled us once: timings
+--  are WALL time (debugprofilestop), not pure compute. A garbage-collection
+--  step is charged to whichever function happens to be running when it fires,
+--  and the collector fires on allocation -- so a function that allocates
+--  nothing can still absorb the cost of a neighbour that allocates a lot (the
+--  aura scan builds a table per aura read). The tell is a PEAK that grows while
+--  the body is constant work: many cheap calls, a few very expensive ones. Read
+--  avg and peak together before blaming a code change.
+--
 --    /lumenprof              report
 --    /lumenprof on | off     persists (account-wide) -> survives /reload,
 --                            which is how a LOGIN capture is taken
