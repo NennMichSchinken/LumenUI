@@ -11,6 +11,7 @@
 
 embeds.xml
 Core.lua
+Modules\Profiler.lua
 EditMode.lua
 Style.lua
 Shell\Tokens.lua
