@@ -2357,6 +2357,15 @@ function Raidframes:LayoutLive()
 	self:NotifyFrameChange()   -- inform foreign providers (e.g. MiniCC) about the new frame list
 end
 
+-- Hiding the live frames means hiding the HEADER — never the container around
+-- it. A frame with a protected descendant cannot have its visibility changed by
+-- addon code at all: not just in combat, always. `container:Hide()` therefore
+-- came back as ADDON_ACTION_BLOCKED and silently did nothing. The calls in
+-- Setup/Enable are the exception that proves it — they run BEFORE the header is
+-- built, while the container is still an empty holder.
+-- The header carries everything visible, so hiding it is the complete switch;
+-- the container only positions and listens for events (a hidden frame still
+-- receives events, only OnUpdate stops).
 function Raidframes:HideHeader()
 	if not header then return end
 	if InCombatLockdown() then secureLayoutDirty = true; return end
@@ -2411,7 +2420,7 @@ function Raidframes:UpdateLayout()
 	-- the header even though "Raidframes enabled" is off.
 	if not d.enabled then
 		self:HideHeader()
-		container:Hide()
+		if not header then container:Hide() end   -- see HideHeader: only legal while empty
 		self:RefreshShellPreview()   -- the shell band keeps rendering while disabled
 		return
 	end
@@ -2801,7 +2810,9 @@ end
 
 function Raidframes:Enable()
 	self:Setup()
-	container:Show()
+	-- Only meaningful before the header exists (see HideHeader); afterwards
+	-- UpdateLayout below shows the header itself, which is the real switch.
+	if not header then container:Show() end
 	self:UpdateLayout()
 	suppressBlizzard()   -- hide Blizzard's default raid frames while Lumen's are active
 end
@@ -2816,8 +2827,7 @@ function Raidframes:Disable()
 	-- The container is the parent frame of the secure header -> Hide in combat would be
 	-- forbidden on protected children. Defer in combat (takes effect again on RefreshAll/regen).
 	if InCombatLockdown() then secureLayoutDirty = true; return end
-	if header then header:Hide() end
-	container:Hide()
+	if header then header:Hide() else container:Hide() end   -- see HideHeader
 end
 
 -- ===========================================================================
@@ -2838,8 +2848,3 @@ Raidframes._InvalidatePreviewIcons = invalidatePreviewIcons
 -- previewCtx is READ by layoutCtx/isRaidContext in this file's render path, so
 -- the variable stays here and only the write crosses over.
 function Raidframes._SetPreviewCtx(ctx) previewCtx = ctx end
--- The live container is this file's to own; the preview file only needs to
--- swap it out for the duration of an Edit-Mode session.
-function Raidframes:_SetContainerShown(on)
-	if container then container:SetShown(on) end
-end

@@ -1512,27 +1512,12 @@ evt:SetScript("OnEvent", function(_, event)
 		return
 	end
 	-- PLAYER_LOGIN: hook into WoW's Edit Mode so Lumen movers show up there too.
-	--
-	-- Both hooks step off the stack before doing anything. Blizzard reaches
-	-- Enter/ExitEditMode from inside a secure execution (game menu button ->
-	-- ShowUIPanel -> SetAttribute -> secureexecuterange), and a hook running
-	-- there executes TAINTED. Every protected call the refresh then makes is
-	-- blocked outright, even out of combat: hiding the secure header, swapping
-	-- the live raid container (its child header makes it protected too) and the
-	-- attribute writes of the layout rebuild on the way back out. A zero delay
-	-- puts the same work on a clean stack, where all of it is allowed again.
-	-- The session flag is captured per hook, so a fast enter/exit still applies
-	-- in order. One frame of lag on an out-of-combat panel is not noticeable.
 	if EditModeManagerFrame then
 		if EditModeManagerFrame.EnterEditMode then
-			hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-				C_Timer.After(0, function() EditMode:SetBlizzard(true) end)
-			end)
+			hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() EditMode:SetBlizzard(true) end)
 		end
 		if EditModeManagerFrame.ExitEditMode then
-			hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-				C_Timer.After(0, function() EditMode:SetBlizzard(false) end)
-			end)
+			hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() EditMode:SetBlizzard(false) end)
 		end
 	end
 end)

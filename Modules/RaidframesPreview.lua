@@ -537,8 +537,10 @@ function Raidframes:ShowEditPreviews(on)
 	ensureEditPreviews()
 	self._litCtx = nil   -- session boundary: start clean, nothing lit
 	if on then
+		-- Hiding the HEADER is the whole switch: everything visible lives under
+		-- it, and the container around it may not be hidden at all once the
+		-- header exists (see Raidframes:HideHeader).
 		self:HideHeader()
-		Raidframes:_SetContainerShown(false)
 		self:RefreshPreview("party")
 		self:RefreshPreview("raid")
 		epHolders.party:Show()
@@ -551,8 +553,7 @@ function Raidframes:ShowEditPreviews(on)
 	else
 		epHolders.party:Hide()
 		epHolders.raid:Hide()
-		Raidframes:_SetContainerShown(true)
-		self:UpdateLayout()   -- rebuild + reposition the real header
+		self:UpdateLayout()   -- rebuild + reposition + re-show the real header
 	end
 end
 
