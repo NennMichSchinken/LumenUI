@@ -51,7 +51,9 @@ local hooked  = {}      -- [i] = { tbl, name, fn } — originals, for restore
 local nHooked = 0
 
 local tStart  = 0       -- capture start (debugprofilestop ms)
-local tWorld            -- first PLAYER_ENTERING_WORLD after the capture started
+local totalMs = 0       -- sum of all measured SELF time in this capture
+local tWorld            -- wall ms from capture start to the first world state
+local msWorld           -- our own measured time inside that window
 
 -- Non-allocating call stack: wrappers nest (RenderLive -> RenderHealth -> …)
 -- and we want SELF time per key, so each level accumulates its children's
@@ -63,6 +65,7 @@ local function bump(key, selfMs)
 	if not s then s = { n = 0, ms = 0, peak = 0 }; stats[key] = s end
 	s.n = s.n + 1
 	s.ms = s.ms + selfMs
+	totalMs = totalMs + selfMs
 	if selfMs > s.peak then s.peak = selfMs end
 end
 
@@ -281,8 +284,18 @@ local function report()
 			k, p.n, p.hit, p.n > 0 and (p.hit / p.n * 100) or 0))
 	end
 
+	-- The wall-clock window to the first world state is dominated by the
+	-- LOADING SCREEN (world load, Blizzard UI), not by us — quoting it as a
+	-- Lumen cost would be plain wrong. What is ours is the measured time
+	-- inside that window, so report the share and label the rest as theirs.
 	if tWorld then
-		print(format("                 |cff9d9d9dlogin: first world state reached %.0f ms after Lumen initialised|r", tWorld))
+		if msWorld and msWorld > 0 then
+			print(format("                 |cff9d9d9dlogin: Lumen used %.1f ms of the %.1f s until the world appeared (%.2f%%); the rest is the loading screen|r",
+				msWorld, tWorld / 1000, msWorld / tWorld * 100))
+		else
+			print(format("                 |cff9d9d9dlogin: world reached after %.1f s — loading screen, not Lumen (profiler was off, no share measured)|r",
+				tWorld / 1000))
+		end
 	end
 end
 
@@ -291,7 +304,7 @@ end
 -- ---------------------------------------------------------------------------
 local function resetCounters()
 	wipe(stats); wipe(probes)
-	depth = 0
+	depth, totalMs = 0, 0
 	tStart = debugprofilestop()
 end
 
@@ -355,6 +368,9 @@ SlashCmdList["LUMENPROF"] = function(input) Prof:Command(input) end
 local evt = CreateFrame("Frame")
 evt:RegisterEvent("PLAYER_ENTERING_WORLD")
 evt:SetScript("OnEvent", function()
-	if not tWorld then tWorld = debugprofilestop() - tStart end
+	if not tWorld then
+		tWorld  = debugprofilestop() - tStart
+		msWorld = totalMs
+	end
 	if Prof.on then hookRing() end
 end)
