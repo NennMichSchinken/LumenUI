@@ -1456,8 +1456,16 @@ function Raidframes:RenderPower(f)
 	-- one safe place to also decide whether the unit needs the three resource
 	-- events at all — see setPowerEvents. Evaluating it FIRST also saves the two
 	-- power API calls below for every gated unit.
-	local roleShown = d.powerEnabled and self._powerRoleShown(L, self._unitRole(u)) or false
-	setPowerEvents(u, roleShown)
+	-- Cached per frame: the role only moves on PLAYER_ROLES_ASSIGNED (RefreshPower
+	-- clears this) and on a re-assignment (the full pass clears it), never on a
+	-- regen tick. That takes a UnitGroupRolesAssigned call off every single
+	-- energy/rage/rune tick.
+	local roleShown = f._pwShown
+	if roleShown == nil then
+		roleShown = (d.powerEnabled and self._powerRoleShown(L, self._unitRole(u))) and true or false
+		f._pwShown = roleShown
+		setPowerEvents(u, roleShown)
+	end
 	if not roleShown then self._setPowerShown(f, false, L); return end
 
 	local pType, token = UnitPowerType(u)
@@ -1481,8 +1489,15 @@ function Raidframes:RenderPower(f)
 	end
 	setBarValue(f.power, p, (f._powerArmed and d.smoothBars and not smoothBroken) and SB_EASE or nil)
 	f._powerArmed = true
-	local _, class = UnitClass(u)
-	f.power:SetStatusBarColor(self._powerRGB(d, class, pType, token))
+	-- Colour follows the power TYPE; the class and the colour settings behind it
+	-- cannot change without a full pass (which clears this). A plain regen tick
+	-- keeps its type, so it keeps its colour -- measured, 581 of 581 pushes in a
+	-- two-minute fight were identical.
+	if f._pwType ~= pType then
+		f._pwType = pType
+		local _, class = UnitClass(u)
+		f.power:SetStatusBarColor(self._powerRGB(d, class, pType, token))
+	end
 end
 
 -- TEST/PREVIEW pass (fake roster, no real unit). `noPower` = the preview eye is
@@ -1652,7 +1667,19 @@ local function auroraDamp(r, g, b)
 	return k < 0.5 and 0.5 or k
 end
 
-local function applyHealthColor(f, d, u)
+-- The bar colour is a pure function of: the grey (dead/offline) flag, the dispel
+-- flag, and the unit's class plus the colour settings. The last two can only
+-- change on a FULL pass, which clears the memo -- so a health tick compares two
+-- booleans and does no C call at all. Measured before this gate: 477 of 477
+-- paints in a two-minute fight repeated an unchanged colour.
+-- `force` is for the dispel scan, which must always push: the dispel COLOUR can
+-- change while the flag stays on (magic -> curse) and its rgb is secret, so it
+-- is not comparable in the first place.
+local function applyHealthColor(f, d, u, force)
+	local grey = f._greyed and true or false
+	local dOn  = f._dOn and true or false
+	if not force and f._cGrey == grey and f._cDOn == dOn then return end
+	f._cGrey, f._cDOn = grey, dOn
 	local ha = d.healthAlpha or 1   -- dim only the health-bar fill (4th alpha arg)
 	if f._greyed then
 		-- Dead/offline: neutral grey bar + glow (the status layer owns this flag).
@@ -1731,7 +1758,7 @@ function Raidframes:RenderDispelAuras(f)
 	local hasDispel, dr, dg, dbb
 	if d.dispelEnabled then hasDispel, dr, dg, dbb = self:GetDispel(u, d) end
 	f._dOn, f._dR, f._dG, f._dB = hasDispel or false, dr, dg, dbb
-	applyHealthColor(f, d, u)
+	applyHealthColor(f, d, u, true)   -- always: the dispel rgb is secret, see the memo
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
 
 	self:RenderAurasLive(f)
@@ -1903,6 +1930,7 @@ function Raidframes:RefreshPower()
 	for i = 1, 40 do
 		local b = header[i]
 		if b and b._lumenSecured and b.unit and UnitExists(b.unit) then
+			b._pwShown = nil   -- the role gate is exactly what this call re-evaluates
 			self:RenderPower(b)
 		end
 	end
@@ -1918,6 +1946,9 @@ function Raidframes:RenderLive(f)
 	if not f._secure then f:Show() end
 	local d = db()
 	f._barsArmed = nil   -- full pass = (re-)assignment: bars snap, they don't slide
+	-- A full pass is the one place where class, role and every setting behind the
+	-- render memos can have changed -> drop them all and let this pass re-derive.
+	f._cGrey, f._cDOn, f._pwShown, f._pwType = nil, nil, nil, nil
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
@@ -2247,12 +2278,24 @@ local function applyHeaderLayout()
 end
 
 -- Apply size/texture/text to all (pre-created) buttons + render occupied ones. ONLY out of combat.
-local function configureSecureButtons()
+--
+-- `sameConfig` = the caller knows no SETTING changed, only the roster or the
+-- world (see the event handler). ApplyConfig pushes ~35 settings-derived values
+-- per button -- sizes, textures, fonts, stripes, aura layout -- and measured at
+-- login it ran 80 times for 40 buttons because the world event repeated the
+-- whole pass. None of it can change on such an event, with ONE exception: the
+-- raid/party context swaps the entire layout table, so that is checked here
+-- rather than trusted to callers. Fail-safe by construction -- a caller that
+-- forgets the flag pays a redundant pass, it never gets a stale frame.
+local function configureSecureButtons(sameConfig)
 	if not header then return end
+	local ctx = isRaidContext() and "raid" or "party"
+	local skipCfg = sameConfig and Raidframes._cfgCtx == ctx
+	Raidframes._cfgCtx = ctx
 	for i = 1, 40 do
 		local btn = header[i]
 		if btn then
-			Raidframes:ApplyConfig(btn)   -- sets e.g. SetSize -> forbidden in combat, safe here OOC
+			if not skipCfg then Raidframes:ApplyConfig(btn) end   -- SetSize -> forbidden in combat, safe here OOC
 			-- Read the unit live from the attribute: assignments that happened on the very
 			-- first header show BEFORE attaching the OnAttributeChanged hooks would otherwise
 			-- only show on the next event. Catch up map + btn.unit here.
@@ -2268,6 +2311,7 @@ end
 -- Build the header once + pre-create 40 buttons (startingIndex trick) and decorate them.
 local function buildHeader()
 	if header then return end
+	Raidframes._cfgCtx = nil   -- fresh buttons: the next pass must configure them
 	local L = layoutCtx()
 	local bw, bh = L.width or 114, L.height or 60
 	header = CreateFrame("Frame", "LumenRaidHeader", container, "SecureGroupHeaderTemplate")
@@ -2295,7 +2339,7 @@ local function buildHeader()
 	end
 end
 
-function Raidframes:LayoutLive()
+function Raidframes:LayoutLive(sameConfig)
 	if InCombatLockdown() then secureLayoutDirty = true; return end
 	if not header then buildHeader() end
 	applyHeaderLayout()
@@ -2338,7 +2382,7 @@ function Raidframes:LayoutLive()
 	local layoutChanged = (header._appliedOrient ~= orient or header._appliedSpacing ~= spacing)
 	header._appliedW, header._appliedH = L.width, L.height
 	header._appliedOrient, header._appliedSpacing = orient, spacing
-	configureSecureButtons()   -- ApplyConfig sets e.g. the button size
+	configureSecureButtons(sameConfig)   -- ApplyConfig sets e.g. the button size
 	if (sizeChanged or sortChanged or layoutChanged) and header:IsShown() then
 		header:Hide()
 		-- Blizzard's configureChildren re-anchors active buttons with SetPoint but
@@ -2404,7 +2448,10 @@ function Raidframes:RefreshAuras()
 end
 
 -- Settings/roster changes funnel through here -> relayout the secure header.
-function Raidframes:UpdateLayout()
+-- `sameConfig` is passed only by the roster/world event path, which cannot have
+-- changed a setting -- see configureSecureButtons. Every other caller (shell
+-- setters, profile switches, Enable) omits it and gets the full pass.
+function Raidframes:UpdateLayout(sameConfig)
 	if not container then return end
 	-- During an Edit Mode session the PREVIEWS are the display — never rebuild/show
 	-- the live secure header (it would pop up behind the previews when a tab setting
@@ -2426,7 +2473,7 @@ function Raidframes:UpdateLayout()
 	end
 	dispelCurve = nil   -- dispel colors may have changed -> have the curve rebuilt
 	wlInvalidate()      -- profile may have switched -> re-resolve the whitelist table
-	self:LayoutLive()
+	self:LayoutLive(sameConfig)
 	-- LayoutLive aborts in combat (the secure header), but the resource role
 	-- switches must still take effect: with power events registered per unit, a
 	-- unit gated out earlier cannot hear the setting change on its own. Our
@@ -2436,6 +2483,20 @@ function Raidframes:UpdateLayout()
 	-- If the raidframes are a coupled child, LayoutLive just reset the container
 	-- to its absolute position -> re-anchor it onto its Edit Mode link anchor.
 	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
+end
+
+-- Deferred repaint for a mid-combat roster burst (see the event handler). On the
+-- module table rather than a file local: this chunk is close to Lua's 200-local
+-- ceiling, and a once-per-burst call has nothing to gain from an upvalue.
+function Raidframes._RosterPaint()
+	Raidframes._rosterPaintQueued = false
+	if not header then return end
+	for i = 1, 40 do
+		local b = header[i]
+		if b and b:IsVisible() and b.unit and UnitExists(b.unit) then
+			Raidframes:RenderLive(b)
+		end
+	end
 end
 
 -- Unit events -> the SPLIT render part they need (PERF: a health tick no longer
@@ -2785,18 +2846,25 @@ function Raidframes:Setup()
 					local b = header[i]
 					if b and b:IsVisible() then
 						local u2 = b:GetAttribute("unit")
-						if u2 and UnitExists(u2) then
-							b.unit = u2; unitToButton[u2] = b
-							Raidframes:RenderLive(b)
-						end
+						if u2 and UnitExists(u2) then b.unit = u2; unitToButton[u2] = b end
 					end
+				end
+				-- Routing above runs per fire -- an event must never reach the wrong
+				-- frame. The PAINT does not: combat zone-ins deliver this event in
+				-- bursts and a full pass per fire repaints every button several times
+				-- over. Coalesced into one next-frame pass that reads the burst's
+				-- final state. Content-only work, so it stays combat-legal.
+				if not Raidframes._rosterPaintQueued then
+					Raidframes._rosterPaintQueued = true
+					C_Timer.After(0, Raidframes._RosterPaint)
 				end
 			end
 			return
 		end
 		local _, class = UnitClass("player")
 		playerDispels = CLASS_DISPELS[class] or {}
-		Raidframes:UpdateLayout()
+		-- Roster/world/spec events: content and layout, never a settings change.
+		Raidframes:UpdateLayout(true)
 	end)
 	local _, class = UnitClass("player")
 	playerDispels = CLASS_DISPELS[class] or {}
