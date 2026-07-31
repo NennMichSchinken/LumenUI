@@ -54,6 +54,10 @@ local tStart  = 0       -- capture start (debugprofilestop ms)
 local totalMs = 0       -- sum of all measured SELF time in this capture
 local tWorld            -- wall ms from capture start to the first world state
 local msWorld           -- our own measured time inside that window
+-- Snapshot of what was measured BEFORE the first world state, kept apart from
+-- the live counters: the login pass happens once per session, so a `reset`
+-- taken before a combat capture must not be able to wipe it.
+local loginRows, loginN = {}, 0
 
 -- Non-allocating call stack: wrappers nest (RenderLive -> RenderHealth -> …)
 -- and we want SELF time per key, so each level accumulates its children's
@@ -236,7 +240,9 @@ local function reportEngine()
 		print("|cffE9BB69Lumen prof|r  engine layer unavailable (C_AddOnProfiler missing)")
 		return
 	end
-	print(format("|cffE9BB69Lumen prof|r  engine (%s): session %.3f ms/frame · recent %.3f · encounter %.3f · peak %.2f",
+	-- Four decimals on purpose: a lean addon rounds to 0.000 at three, which
+	-- reads like "not measured" rather than "small".
+	print(format("|cffE9BB69Lumen prof|r  engine (%s): session %.4f ms/frame · recent %.4f · encounter %.4f · peak %.2f",
 		ADDON, avg, metric("RecentAverageTime") or 0,
 		metric("EncounterAverageTime") or 0, metric("PeakTime") or 0))
 	print(format("                 frames over budget: >1ms %d · >5ms %d · >10ms %d · >50ms %d",
@@ -288,6 +294,13 @@ local function report()
 	-- LOADING SCREEN (world load, Blizzard UI), not by us — quoting it as a
 	-- Lumen cost would be plain wrong. What is ours is the measured time
 	-- inside that window, so report the share and label the rest as theirs.
+	if loginN > 0 then
+		print("                 |cff9d9d9dlogin pass (snapshot, survives reset)|r")
+		for i = 1, loginN do
+			local r = loginRows[i]
+			print(format("                 %-22s %6d %8.1f", r.key, r.n, r.ms))
+		end
+	end
 	if tWorld then
 		if msWorld and msWorld > 0 then
 			print(format("                 |cff9d9d9dlogin: Lumen used %.1f ms of the %.1f s until the world appeared (%.2f%%); the rest is the loading screen|r",
@@ -371,6 +384,11 @@ evt:SetScript("OnEvent", function()
 	if not tWorld then
 		tWorld  = debugprofilestop() - tStart
 		msWorld = totalMs
+		for k, s in pairs(stats) do
+			loginN = loginN + 1
+			loginRows[loginN] = { key = k, n = s.n, ms = s.ms }
+		end
+		tsort(loginRows, function(a, b) return a.ms > b.ms end)
 	end
 	if Prof.on then hookRing() end
 end)
