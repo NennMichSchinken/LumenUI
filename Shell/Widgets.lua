@@ -45,6 +45,17 @@ local function clamp(v, lo, hi)
 	if v < lo then return lo elseif v > hi then return hi else return v end
 end
 
+-- The floating singletons below (confirm dialog, colour picker) are children of
+-- the Shell panel, and setting the strata of a frame carries every CHILD along:
+-- EditMode lifts the panel to FULLSCREEN_DIALOG for a session and drops it back to
+-- DIALOG on close, which silently rewrites theirs too. Popovers are rebuilt per
+-- screen and get their strata back on their own; a singleton is built once, so it
+-- would stay a layer too low until /reload. Re-assert the strata on every show.
+-- (The tooltip solves the same problem by not being a child at all — see buildTip.)
+local function pinStrata(frame, strata)
+	if frame:GetFrameStrata() ~= strata then frame:SetFrameStrata(strata) end
+end
+
 
 -- (SectionDivider + SectionLabel retired with the Click-Cast card migration —
 -- every section is a real card now; the gold-rule dividers had no callers left.)
@@ -1131,6 +1142,7 @@ function W.Confirm(o)
 	end)
 	dlg.cancel:SetScript("OnClick", doCancel)
 	dlg.overlay:SetScript("OnClick", doCancel) -- click on the dimmed area = cancel
+	pinStrata(dlg.overlay, "FULLSCREEN_DIALOG") -- singleton, see pinStrata (the card follows its parent)
 	dlg.overlay:Show()
 	dlg.overlay:Raise()
 end
@@ -1247,12 +1259,23 @@ end
 -- ---------------------------------------------------------------------------
 local tipObj
 local function buildTip()
-	local host = W._menuHost or UIParent
-	local tip = CreateFrame("Frame", nil, host)
+	-- Deliberately NOT a child of the Shell panel. That panel is toplevel and
+	-- rewrites both its strata (Edit Mode session) and its frame level (every click
+	-- raises it) at runtime, and children are dragged along both times — while the
+	-- popovers anchor their level RELATIVE to the panel. So the panel climbing high
+	-- enough eventually lifted the search popover past the tip's fixed level and the
+	-- spell tooltip disappeared behind it again (Florian 2026-08-04). Living on
+	-- UIParent puts the tip out of that race for good; it only has to copy the
+	-- panel's SCALE (see applyTip), which it no longer inherits.
+	local tip = CreateFrame("Frame", nil, UIParent)
 	tip:SetFrameStrata("TOOLTIP")
 	tip:SetWidth(M.tipW)
 	tip:SetClampedToScreen(true) -- stays fully readable near a screen edge (e.g. TOP-anchored)
 	tip:Hide()
+	-- The Shell is not our parent any more, so closing it no longer hides us.
+	if W._menuHost then
+		W._menuHost:HookScript("OnHide", function() if tipObj then tipObj.tip:Hide() end end)
+	end
 	UI.RoundFill(tip, Surface.Window) -- darker than the popover -> clearer tooltip contrast
 	UI.RoundBorder(tip, Border.hover, "OVERLAY") -- v2: neutral popover border (no gold top accent — Florian 2026-07-05)
 
@@ -1277,6 +1300,15 @@ local function applyTip(owner, icon, titleText, bodyText, anchor)
 	local t = tipObj or buildTip()
 	local hasIcon = icon ~= nil
 	local hasBody = bodyText ~= nil and bodyText ~= ""
+
+	-- Read at the same physical size as the window it belongs to: the tip hangs off
+	-- UIParent (see buildTip), so it has to mirror the panel's effective scale
+	-- instead of inheriting it. Also keeps the owner-relative offsets below exact.
+	local shell = W._menuHost
+	if shell then
+		local us = UIParent:GetEffectiveScale()
+		if us and us > 0 then t.tip:SetScale((shell:GetEffectiveScale() or us) / us) end
+	end
 
 	t.icon:SetShown(hasIcon)
 	if hasIcon then t.icon:SetTexture(icon) end
@@ -2240,6 +2272,8 @@ function W.OpenColorPicker(o)
 	else
 		cp:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 	end
+	pinStrata(cp, "FULLSCREEN_DIALOG")         -- singleton, see pinStrata
+	pinStrata(cp._closer, "FULLSCREEN_DIALOG") -- sibling of cp, not a child -> pin separately
 	cp._closer:Show()
 	cp:Show()
 	cp:Raise()
