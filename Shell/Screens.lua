@@ -962,7 +962,10 @@ local function buildBase(d, stack)
 	-- Background + health-bar opacity (boxed sliders, two unit cells).
 	local trA, tcA = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 	sliderBox(tcA[1], { label = T("Background opacity"), min = 0, max = 100, unit = " %", get = pctget("bgAlpha"), set = pctset("bgAlpha") })
-	sliderBox(tcA[2], { label = T("Health bar opacity"), min = 0, max = 100, unit = " %", get = pctget("healthAlpha"), set = pctset("healthAlpha") })
+	-- Health bar bottoms out at 10 %, not 0: an invisible health bar reads as a bug.
+	-- The render clamps to the same floor (HEALTH_ALPHA_MIN in Raidframes.lua) and
+	-- the aurora/glow layer follows this value now.
+	sliderBox(tcA[2], { label = T("Health bar opacity"), min = 10, max = 100, unit = " %", get = pctget("healthAlpha"), set = pctset("healthAlpha") })
 	sBar:place(trA, M.sliderBoxH, R.tight)
 	sBar:close()
 
@@ -1722,6 +1725,10 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 		set = function(v) cset("autoFit")(v); refreshSize() end }), M.optionRowH, 0)
 	aSt:place(checkRow(aC, T("Cooldown swipe"),
 		{ get = cget("showSwipe"), set = cset("showSwipe") }), M.optionRowH, 0)
+	-- Shared between raid and group (no ctx suffix) — see the note in Core.lua.
+	aSt:place(checkRow(aC, T("Show tooltip"), {
+		tooltip = T("Hovering an icon of this category shows the aura's tooltip. Clicks still go through to the frame. Applies to raid and group."),
+		get = aget(cat.key, "showTooltip"), set = aset(cat.key, "showTooltip") }), M.optionRowH, 0)
 	local aH = blockClose(aBox, aSt, aC)
 
 	-- Equal heights (shared bottom edge), then the row itself.
@@ -2237,7 +2244,8 @@ local function buildGlobalBase(d, stack)
 					local tk = ns.Lumen.db.profile.qol.trackers
 					tk.brez.pos = { point = "CENTER", x = -30, y = -240 }
 					tk.lust.pos = { point = "CENTER", x = 30, y = -240 }
-					if ns.QoL then ns.QoL:ApplyPull(); ns.QoL:ApplyTrackers() end
+					ns.Lumen.db.profile.qol.markers.pos = { point = "CENTER", x = 0, y = -260 }
+					if ns.QoL then ns.QoL:ApplyPull(); ns.QoL:ApplyTrackers(); ns.QoL:ApplyMarkers() end
 					if ns.EditMode then ns.EditMode:_refresh() end
 				end,
 			})
@@ -2682,7 +2690,16 @@ local function buildQoLBase(d, stack)
 	local pr, pcells = W.FieldRow(d, d, 1, { height = M.sliderBoxH })
 	slPull = sliderBox(pcells[1], { label = T("Duration"), min = 3, max = 30, step = 1, unit = " s",
 		get = pget("duration"), set = pset("duration") })
-	pc:place(pr, M.sliderBoxH, R.tight)
+	pc:place(pr, M.sliderBoxH, R.row)
+
+	-- Marker bar sits on the pull card: same audience (whoever leads the group)
+	-- and the same "movable block of buttons" shape — not worth its own card.
+	local function qmk() return ns.Lumen.db.profile.qol.markers end
+	local rowMk = switchRow(d, T("Show marker bar"), {
+		get = function() return qmk().enabled end,
+		set = function(v) qmk().enabled = v; if ns.QoL then ns.QoL:ApplyMarkers() end end,
+		tooltip = T("Movable bar with target markers (on your current target) and world markers (on the ground). Works in combat. Unlock via Edit Mode.") })
+	pc:place(rowMk, rowH, 0)
 	pc:close()
 
 	-- ===== Mythic+ card =====================================================

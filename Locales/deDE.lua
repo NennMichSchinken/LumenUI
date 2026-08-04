@@ -185,6 +185,8 @@ ns.RegisterLocale("deDE", {
 	["Click to edit"] = "Zum Bearbeiten klicken",
 	["Max. icons"] = "Max. Icons",
 	["Cooldown swipe"] = "Cooldown-Swipe",
+	["Show tooltip"] = "Tooltip anzeigen",
+	["Hovering an icon of this category shows the aura's tooltip. Clicks still go through to the frame. Applies to raid and group."] = "Mit der Maus über einem Icon dieser Kategorie zeigt den Tooltip der Aura. Klicks gehen weiterhin an den Frame durch. Gilt für Raid und Gruppe.",
 	["Which debuffs are shown. Raid-relevant = Blizzard's default selection."] = "Welche Debuffs gezeigt werden. Raid-relevant = Blizzards Standard-Auswahl.",
 	["Position (anchor)"] = "Position (Anker)",
 	["Growth direction"] = "Wachstumsrichtung",
@@ -429,6 +431,11 @@ ns.RegisterLocale("deDE", {
 	["Movable button block (unlock via Edit Mode). Pull: left-click starts the countdown, right-click cancels. Ready starts a ready check."] = "Verschiebbarer Button-Block (über den Edit-Modus entsperren). Pull: Linksklick startet den Countdown, Rechtsklick bricht ab. Bereit startet einen Bereitschaftscheck.",
 	["Ready"] = "Bereit",
 	["Ready & Pull"] = "Bereit & Pull",
+	-- Marker bar ("Target" already exists above, in the Click-Cast block)
+	["Show marker bar"] = "Marker-Leiste anzeigen",
+	["Movable bar with target markers (on your current target) and world markers (on the ground). Works in combat. Unlock via Edit Mode."] = "Verschiebbare Leiste mit Ziel-Markierungen (auf dein aktuelles Ziel) und Welt-Markierungen (auf den Boden). Funktioniert im Kampf. Über den Edit-Modus entsperren.",
+	["Markers"] = "Markierungen",
+	["World"] = "Welt",
 	["Keystone and instance-reset helpers"] = "Schlüsselstein- und Instanz-Reset-Helfer",
 	["Auto-insert keystone"] = "Schlüsselstein automatisch einsetzen",
 	["Puts your keystone into the Font of Power automatically when its window opens."] = "Legt deinen Schlüsselstein automatisch in den Machtquell, sobald sich dessen Fenster öffnet.",
@@ -487,6 +494,17 @@ ns.RegisterLocale("deDE", {
 	["%s is new — |cffE9BB69/lumen|r shows what changed."] = "%s ist neu — |cffE9BB69/lumen|r zeigt, was sich geändert hat.",
 
 	-- Release notes (Shell/News.lua) — translate every new entry here as well.
+	-- 0.9.293
+	["A marker bar, aura tooltips per category, and a lighter render path."] = "Eine Marker-Leiste, Aura-Tooltips pro Kategorie und ein schlankerer Render-Pfad.",
+	["A movable marker bar: target markers for whatever you have targeted, world markers for the ground. It works in combat, and its size and rows are set in Edit Mode."] = "Eine verschiebbare Marker-Leiste: Ziel-Markierungen für dein aktuelles Ziel, Welt-Markierungen für den Boden. Sie funktioniert im Kampf; Größe und Reihen stellst du im Edit-Modus ein.",
+	["Aura icons can show their tooltip on hover, switched on per category — so debuffs explain themselves while your own HoTs stay quiet."] = "Aura-Icons können ihren Tooltip beim Überfahren zeigen, pro Kategorie schaltbar — so erklären sich Debuffs von selbst, während deine eigenen HoTs still bleiben.",
+	["The health bar keeps at least ten percent opacity and the glow now dims with it, instead of burning at full strength over an invisible bar."] = "Der Lebensbalken behält mindestens zehn Prozent Deckkraft, und der Glow wird jetzt mit abgedunkelt, statt in voller Stärke über einem unsichtbaren Balken zu leuchten.",
+	["The Ready and Pull block sits in a card like the marker bar, and both can be resized in Edit Mode."] = "Der Bereit-&-Pull-Block sitzt wie die Marker-Leiste in einer Karte, und beide lassen sich im Edit-Modus in der Größe ändern.",
+	["A blank placeholder texture another addon registers showed up in the texture lists; picking it left the bar invisible."] = "Eine leere Platzhalter-Textur, die ein anderes Addon registriert, tauchte in den Texturlisten auf; wer sie wählte, hatte einen unsichtbaren Balken.",
+	["In the aura tab, the tooltip of a spell you were about to add rendered behind the list it belonged to."] = "Im Auren-Tab lag der Tooltip eines Zaubers, den du hinzufügen wolltest, hinter der Liste, zu der er gehörte.",
+	["Opening Edit Mode while the settings were up could be refused by the game; the frames are no longer touched from inside its secure call."] = "Den Edit-Modus bei offenen Einstellungen zu öffnen konnte vom Spiel abgelehnt werden; die Frames werden nicht mehr aus dessen geschütztem Aufruf heraus angefasst.",
+	["The raid frames do less work per update: the preview lives in its own file, resource events are registered per unit, and a frame is only repainted where something actually changed."] = "Die Raidframes leisten weniger Arbeit pro Aktualisierung: Die Vorschau liegt in einer eigenen Datei, Ressourcen-Events werden pro Einheit registriert, und ein Frame wird nur dort neu gezeichnet, wo sich wirklich etwas geändert hat.",
+
 	["The preview follows a layout change, keeps room for the settings, and scrolls."] = "Die Vorschau folgt einem Layout-Wechsel, lässt Platz für die Einstellungen und scrollt.",
 	["A tall preview no longer squeezes the settings underneath it: it takes at most half the room and scrolls with the mouse wheel, so the frames keep their true size."] = "Eine hohe Vorschau quetscht die Einstellungen darunter nicht mehr: Sie nimmt höchstens die Hälfte des Platzes und scrollt mit dem Mausrad, damit die Frames ihre echte Größe behalten.",
 	["The frames sat on the line naming the preview; there is a guard between them now, and the line stays readable."] = "Die Frames saßen auf der Zeile, die die Vorschau benennt; jetzt liegt ein Abstand dazwischen und die Zeile bleibt lesbar.",
