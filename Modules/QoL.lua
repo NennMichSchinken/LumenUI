@@ -53,6 +53,7 @@ local IsInRaid = IsInRaid
 local GetTime = GetTime
 local IsItemKeystoneByID = C_Item and C_Item.IsItemKeystoneByID
 local CancelUnitBuff = CancelUnitBuff
+local RegisterStateDriver = RegisterStateDriver
 local IsInInstance = IsInInstance
 local IsShiftKeyDown = IsShiftKeyDown
 local C_GossipInfo = C_GossipInfo
@@ -303,6 +304,22 @@ end
 local btnFrame
 local BTN_W, BTN_H = 100, 26
 
+-- Shared chrome for the free-floating gameplay widgets (Ready/Pull block, marker
+-- bar): one flat card with padding, a single background and a single border,
+-- square corners like the rest of the gameplay layer. Without it the buttons read
+-- as loose parts floating on the world (Florian 2026-08-05).
+local WIDGET_PAD = 6
+local function panelFrame(name)
+	local UI = ns.UI
+	local f = CreateFrame("Frame", name, UIParent)
+	local bg = f:CreateTexture(nil, "BACKGROUND")
+	bg:SetAllPoints(f)
+	UI.SetColor(bg, UI.Surface.Window)
+	bg:SetAlpha(0.9) -- a hair of the world shows through; it is not a window
+	UI.Stroke(f, UI.Border.hover, 1, "OVERLAY")
+	return f
+end
+
 local function makeToolButton(parent, labelText, onClick)
 	local UI = ns.UI
 	local Surface, Text = UI.Surface, UI.Text
@@ -329,34 +346,50 @@ end
 local function createButtons()
 	if btnFrame then return end
 	local UI = ns.UI
-	btnFrame = CreateFrame("Frame", "LumenGroupTools", UIParent)
-	btnFrame:SetSize(BTN_W, BTN_H * 2 + 1) -- +1 = separator line between the two
+	btnFrame = panelFrame("LumenGroupTools")
+	btnFrame:SetSize(BTN_W + WIDGET_PAD * 2, BTN_H * 2 + 1 + WIDGET_PAD * 2) -- +1 = separator
 
 	local ready = makeToolButton(btnFrame, ns.T("Ready"), function()
 		if not leadOk() then return end
 		DoReadyCheck()
 	end)
-	ready:SetPoint("TOP", btnFrame, "TOP", 0, 0)
+	ready:SetPoint("TOPLEFT", btnFrame, "TOPLEFT", WIDGET_PAD, -WIDGET_PAD)
 
 	-- "Pull" is raid jargon in both languages -> no translation on purpose.
 	local pull = makeToolButton(btnFrame, "Pull", function(_, mouse)
 		startCountdown(mouse == "RightButton" and 0 or nil)
 	end)
 	pull:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-	pull:SetPoint("BOTTOM", btnFrame, "BOTTOM", 0, 0)
+	pull:SetPoint("BOTTOMLEFT", btnFrame, "BOTTOMLEFT", WIDGET_PAD, WIDGET_PAD)
 
-	-- Separator + one shared border -> reads as a single connected block.
+	-- Hairline between the two faces -> they read as one connected block inside
+	-- the card (the outer border comes from panelFrame).
 	local sep = btnFrame:CreateTexture(nil, "ARTWORK")
-	sep:SetPoint("TOPLEFT", btnFrame, "TOPLEFT", 0, -BTN_H)
-	sep:SetPoint("TOPRIGHT", btnFrame, "TOPRIGHT", 0, -BTN_H)
+	sep:SetPoint("TOPLEFT", ready, "BOTTOMLEFT", 0, 0)
+	sep:SetPoint("TOPRIGHT", ready, "BOTTOMRIGHT", 0, 0)
 	sep:SetHeight(1)
 	UI.SetColor(sep, UI.Border.hover)
-	UI.Stroke(btnFrame, UI.Border.hover, 1, "OVERLAY")
 
 	if ns.EditMode then
+		local function pdb() return ns.Lumen.db.profile.qol.pull end
+		-- Offsets stored in UIParent units, not the block's own scaled ones — see the
+		-- same note on the marker bar. Otherwise resizing walks the block away.
 		ns.EditMode:Register(btnFrame, ns.T("Ready & Pull"), function(pt, x, y)
-			ns.Lumen.db.profile.qol.pull.btnPos = { point = pt, x = x, y = y }
-		end, nil, "readypull")
+			local s = pdb().btnScale or 1
+			pdb().btnPos = { point = pt, x = x * s, y = y * s }
+		end, nil, "readypull", {
+			fields = {
+				{ kind = "slider", label = ns.T("Size"), min = 70, max = 160, unit = " %",
+					get = function() return math.floor((pdb().btnScale or 1) * 100 + 0.5) end,
+					set = function(v) pdb().btnScale = v / 100; QoL:ApplyPull() end },
+			},
+			reset = function()
+				local p = pdb()
+				p.btnScale = 1
+				p.btnPos = { point = "CENTER", x = 0, y = -300 }
+				QoL:ApplyPull()
+			end,
+		})
 	end
 end
 
@@ -383,14 +416,209 @@ function QoL:ApplyPull()
 	-- Position is re-anchored here so profile switches/imports move it along.
 	if p.buttons then
 		createButtons()
-		local pos = p.btnPos or {}
+		local pos, s = p.btnPos or {}, p.btnScale or 1
+		btnFrame:SetScale(s)
 		btnFrame:ClearAllPoints()
-		btnFrame:SetPoint(pos.point or "CENTER", UIParent, pos.point or "CENTER", pos.x or 0, pos.y or -300)
+		btnFrame:SetPoint(pos.point or "CENTER", UIParent, pos.point or "CENTER",
+			(pos.x or 0) / s, (pos.y or -300) / s)
 		btnFrame:Show()
 	elseif btnFrame then
 		btnFrame:Hide()
 	end
 	-- Re-anchor Edit Mode links (the block may be a coupled child or anchor).
+	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
+end
+
+-- ---------------------------------------------------------------------------
+--  Marker bar — two rows of buttons: target markers (skull, cross, …) on your
+--  current target, and world markers on the ground. WoW ships secure action
+--  types for exactly this ("raidtarget" / "worldmarker"), so the bar keeps
+--  working IN COMBAT, which is the only time anyone needs it. Position is
+--  profile-bound (qol.markers.pos) and movable through the Edit-Mode registry.
+--
+--  Two consequences of the buttons being secure (= protected frames):
+--   * visibility runs through a STATE DRIVER, never :Hide() — hiding a frame
+--     that has a protected child is refused outright ([[protected ancestor]]).
+--   * anchoring/creating is combat-locked -> ApplyMarkers defers to regen.
+-- ---------------------------------------------------------------------------
+local markerFrame
+local markerRows = {}         -- ["target"|"world"] = row frame (own visibility driver)
+local markerDeferred          -- an apply arrived in combat -> redo it on regen
+local markerEvents
+local MK_BTN, MK_GAP, MK_COLS = 22, 2, 9   -- 8 markers + clear
+local MK_LABEL_H = 12                       -- row caption ("Target" / "World")
+local MK_PAD = WIDGET_PAD                   -- card padding, shared with Ready/Pull
+local MK_ROW_W = MK_COLS * MK_BTN + (MK_COLS - 1) * MK_GAP
+-- Symbol -> world-marker id. The two are NOT the same numbering: the buttons show
+-- the SYMBOL sheet (1 star … 8 skull), while the ground flares have their own ids.
+-- Blizzard's own panel resolves it by walking its row in reverse and mapping
+-- through WORLD_RAID_MARKER_ORDER, so we read that table at runtime instead of
+-- baking a second copy of the mapping (fallback = the table's current contents).
+local MK_WORLD_ORDER = { 8, 4, 1, 7, 2, 3, 6, 5 }
+local function worldMarkerFor(symbol)
+	local order = _G.WORLD_RAID_MARKER_ORDER or MK_WORLD_ORDER
+	return order[MK_COLS - symbol] or symbol
+end
+
+-- symbol = 1..8 (the icon the button shows), nil = the clear button.
+--
+-- Everything that has to survive combat runs through MACROS, not through the
+-- matching secure action types: 12.0.7 GATES those (`raidtarget` set by an addon
+-- is dropped silently — the first version of this bar did exactly nothing), and
+-- Click-Cast hit the same wall with "target"/"togglemenu". Slash commands are
+-- ungated. Two consequences dictated by that route:
+--   * slash names come from the SLASH_* globals — they are LOCALIZED, a literal
+--     "/tm" would break every non-English client, including Florian's.
+--   * "!<n>" is the toggle form: set the marker, or clear it if the unit already
+--     wears it. Hence AnyDown only — down AND up would toggle twice.
+-- The two X buttons are NOT symmetric, and that is a hard limit, not a choice:
+-- "/cwm All" wipes every ground marker, but there is no slash form for "clear all
+-- TARGET markers" — calling RemoveRaidTargets() straight out of an addon is
+-- forbidden (ADDON_ACTION_FORBIDDEN, Florian 2026-08-05; pcall does not swallow
+-- that, it is an event). Only Blizzard's own raid panel may do it. So the target X
+-- clears the marker of the current target, and "[exists]" keeps it QUIET when
+-- there is none instead of throwing "You can't do that right now".
+local function makeMarkerButton(parent, symbol, world)
+	local UI = ns.UI
+	local slashTM = _G.SLASH_TARGET_MARKER1 or "/tm"
+	local slashWM = _G.SLASH_WORLD_MARKER1 or "/wm"
+	local slashCWM = _G.SLASH_CLEAR_WORLD_MARKER1 or "/cwm"
+	local b = CreateFrame("Button", nil, parent, "SecureActionButtonTemplate")
+	b:SetSize(MK_BTN, MK_BTN)
+	b:RegisterForClicks("AnyDown")
+	b:SetAttribute("type", "macro")
+	if world then
+		if symbol then
+			-- Left places the flare, right takes that one away again.
+			local id = worldMarkerFor(symbol)
+			b:SetAttribute("macrotext1", slashWM .. " " .. id)
+			b:SetAttribute("macrotext2", slashCWM .. " " .. id)
+		else
+			b:SetAttribute("macrotext", slashCWM .. " " .. (_G.ALL or "All"))
+		end
+	elseif symbol then
+		b:SetAttribute("macrotext1", slashTM .. " !" .. symbol) -- left: set
+		b:SetAttribute("macrotext2", slashTM .. " [exists] 0")  -- right: clear
+	else
+		b:SetAttribute("macrotext", slashTM .. " [exists] 0")
+	end
+	local fill = b:CreateTexture(nil, "BACKGROUND")
+	fill:SetAllPoints(b)
+	UI.SetColor(fill, UI.Surface.Card)
+	local icon = b:CreateTexture(nil, "ARTWORK")
+	icon:SetPoint("TOPLEFT", b, "TOPLEFT", 3, -3)
+	icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -3, 3)
+	icon:SetTexture(symbol and ("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. symbol)
+		or "Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+	-- HIGHLIGHT draw layer = the client shows it on hover by itself, no scripts —
+	-- and unlike recolouring the 3px background border behind the icon, an additive
+	-- wash over the whole button is actually visible (Florian 2026-08-05).
+	local hl = b:CreateTexture(nil, "HIGHLIGHT")
+	hl:SetAllPoints(b)
+	hl:SetColorTexture(1, 1, 1, 0.25)
+	hl:SetBlendMode("ADD")
+	return b
+end
+
+local function createMarkerBar()
+	if markerFrame then return end
+	local UI = ns.UI
+	markerFrame = panelFrame("LumenMarkerBar")
+
+	for _, row in ipairs({ { key = "target", world = false }, { key = "world", world = true } }) do
+		-- Each row is its own frame: switching one off means hiding it, and a frame
+		-- holding protected buttons may only be hidden by a state driver — which
+		-- needs something of its own to act on.
+		local rf = CreateFrame("Frame", nil, markerFrame)
+		rf:SetSize(MK_ROW_W, MK_LABEL_H + MK_GAP + MK_BTN)
+		local head = UI.FS(rf, "checkLabel", UI.Text.Secondary)
+		head:SetPoint("TOPLEFT", rf, "TOPLEFT", 0, 0)
+		head:SetText(row.world and ns.T("World") or ns.T("Target"))
+		for i = 1, MK_COLS do
+			-- Last column = clear (no symbol).
+			local b = makeMarkerButton(rf, i < MK_COLS and i or nil, row.world)
+			b:SetPoint("TOPLEFT", rf, "TOPLEFT", (i - 1) * (MK_BTN + MK_GAP), -(MK_LABEL_H + MK_GAP))
+		end
+		markerRows[row.key] = rf
+	end
+
+	if ns.EditMode then
+		local function mdb() return ns.Lumen.db.profile.qol.markers end
+		-- Anchor offsets are read back in the FRAME's own units, i.e. already divided
+		-- by its scale. Store them in UIParent units (x * scale) so the saved spot
+		-- means the same thing at every size — ApplyMarkers divides again. Without
+		-- this the bar walked across the screen while the size slider moved
+		-- (Florian 2026-08-05); it should grow in place like the trackers.
+		ns.EditMode:Register(markerFrame, ns.T("Markers"), function(pt, x, y)
+			local s = mdb().scale or 1
+			mdb().pos = { point = pt, x = x * s, y = y * s }
+		end, nil, "markers", {
+			fields = {
+				{ kind = "slider", label = ns.T("Size"), min = 70, max = 160, unit = " %",
+					get = function() return math.floor((mdb().scale or 1) * 100 + 0.5) end,
+					set = function(v) mdb().scale = v / 100; QoL:ApplyMarkers() end },
+				{ kind = "check", label = ns.T("Target"),
+					get = function() return mdb().target end,
+					set = function(v) mdb().target = v; QoL:ApplyMarkers() end },
+				{ kind = "check", label = ns.T("World"),
+					get = function() return mdb().world end,
+					set = function(v) mdb().world = v; QoL:ApplyMarkers() end },
+			},
+			reset = function()
+				local d = ns.Defaults and ns.Defaults.profile.qol.markers
+				local s = mdb()
+				s.scale, s.target, s.world = (d and d.scale) or 1, true, true
+				s.pos = { point = "CENTER", x = 0, y = -260 }
+				QoL:ApplyMarkers()
+			end,
+		})
+	end
+end
+
+function QoL:ApplyMarkers()
+	local m = ns.Lumen.db.profile.qol.markers
+	if not (m.enabled or markerFrame) then return end -- never built, still off: nothing to do
+	-- Creating, anchoring and scaling protected buttons is combat-locked. Later.
+	if InCombatLockdown() then
+		markerDeferred = true
+		if not markerEvents then
+			markerEvents = CreateFrame("Frame")
+			markerEvents:SetScript("OnEvent", function(evtFrame)
+				evtFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+				if markerDeferred then markerDeferred = nil; QoL:ApplyMarkers() end
+			end)
+		end
+		markerEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+		return
+	end
+	-- Never both rows off: an empty card cannot be clicked in Edit Mode, so there
+	-- would be no way back to it.
+	if not (m.target or m.world) then m.target = true end
+	createMarkerBar()
+	markerFrame:SetScale(m.scale or 1)
+
+	-- Stack whichever rows are on; the card shrinks to what is left. Both off is
+	-- treated as "bar off" rather than an empty card.
+	local y, rows = -MK_PAD, 0
+	for _, key in ipairs({ "target", "world" }) do
+		local rf = markerRows[key]
+		local on = m[key] and true or false
+		RegisterStateDriver(rf, "visibility", on and "show" or "hide")
+		if on then
+			rows = rows + 1
+			rf:ClearAllPoints()
+			rf:SetPoint("TOPLEFT", markerFrame, "TOPLEFT", MK_PAD, y)
+			y = y - rf:GetHeight() - MK_GAP * 2
+		end
+	end
+	markerFrame:SetSize(MK_ROW_W + MK_PAD * 2, (rows > 0 and (-y - MK_GAP * 2 + MK_PAD) or MK_PAD * 2))
+
+	local pos, s = m.pos or {}, m.scale or 1
+	markerFrame:ClearAllPoints()
+	markerFrame:SetPoint(pos.point or "CENTER", UIParent, pos.point or "CENTER",
+		(pos.x or 0) / s, (pos.y or -260) / s) -- see the note on the save callback
+	-- Secure visibility: the driver flips the frame, we never do (see header).
+	RegisterStateDriver(markerFrame, "visibility", (m.enabled and rows > 0) and "show" or "hide")
 	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
 end
 
@@ -1324,6 +1552,7 @@ function QoL:Setup()
 	end
 	self:ApplyCursor()
 	self:ApplyPull()
+	self:ApplyMarkers()
 	self:ApplyOutfitSuppress()
 	self:ApplyTrackers()
 	self:ApplyWindows()
