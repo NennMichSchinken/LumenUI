@@ -1194,6 +1194,23 @@ local function buildContent(frame, info)
 				sl:SetPoint("TOPLEFT", c, "TOPLEFT", 0, y)
 				y = y - (M.sliderCompactH + S.s3)
 				c._syncers[#c._syncers + 1] = function() sl:SetValueExternal(fd.get()) end
+			elseif fd.kind == "check" then
+				-- For elements built from parts that can be switched off individually
+				-- (marker bar rows). Re-anchors after the set: dropping a part changes
+				-- the element's size, so walls/overlay have to follow immediately.
+				local ck = W.Checkbox(c, { label = fd.label, get = fd.get,
+					set = function(v)
+						fd.set(v)
+						-- Re-read every field: a setter may correct itself (the marker
+						-- bar refuses to drop its last row) and the flyout has to show
+						-- what actually happened, not what was clicked.
+						for i2 = 1, #c._syncers do c._syncers[i2]() end
+						EditMode:_anchorOverlays()
+					end })
+				ck:SetPoint("TOPLEFT", c, "TOPLEFT", 0, y)
+				ck:SetPoint("TOPRIGHT", c, "TOPRIGHT", 0, y)
+				y = y - (M.checkBox + S.s3)
+				c._syncers[#c._syncers + 1] = function() ck:SetValueExternal(fd.get()) end
 			end
 		end
 	end
@@ -1428,6 +1445,8 @@ function EditMode:OpenSession()
 	-- (which are FULLSCREEN_DIALOG). It's toplevel, so raising its strata to match
 	-- + toplevel keeps the whole Shell on top of the previews/overlays; the Done
 	-- toolbar (TOOLTIP) stays above it. Restored on CloseSession.
+	-- NOTE: this rewrites the strata of every CHILD of the panel too. The Shell's
+	-- floating singletons re-assert theirs on show (see pinStrata in Widgets.lua).
 	if ns.Shell and ns.Shell._frame then
 		ns.Shell._frame:SetFrameStrata("FULLSCREEN_DIALOG")
 	end
