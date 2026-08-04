@@ -2700,6 +2700,12 @@ local function buildQoLBase(d, stack)
 		set = function(v) qmk().enabled = v; if ns.QoL then ns.QoL:ApplyMarkers() end end,
 		tooltip = T("Movable bar with target markers (on your current target) and world markers (on the ground). Works in combat. Unlock via Edit Mode.") })
 	pc:place(rowMk, rowH, 0)
+
+	local rowMkInst = switchRow(d, T("Only in dungeons and raids"), {
+		get = function() return qmk().instanceOnly end,
+		set = function(v) qmk().instanceOnly = v; if ns.QoL then ns.QoL:ApplyMarkers() end end,
+		tooltip = T("Outside instances the bar stays hidden. It reappears on its own when you zone into a dungeon, raid or scenario.") })
+	pc:place(rowMkInst, rowH, 0)
 	pc:close()
 
 	-- ===== Mythic+ card =====================================================

@@ -449,6 +449,7 @@ end
 -- ---------------------------------------------------------------------------
 local markerFrame
 local markerRows = {}         -- ["target"|"world"] = row frame (own visibility driver)
+local markerFills = {}        -- per-button faces; the background switch hides these too
 local markerDeferred          -- an apply arrived in combat -> redo it on regen
 local markerEvents
 local MK_BTN, MK_GAP, MK_COLS = 22, 2, 9   -- 8 markers + clear
@@ -513,6 +514,7 @@ local function makeMarkerButton(parent, symbol, world)
 	local fill = b:CreateTexture(nil, "BACKGROUND")
 	fill:SetAllPoints(b)
 	UI.SetColor(fill, UI.Surface.Card)
+	b._fill = fill -- the background switch takes these with it (see ApplyMarkers)
 	local icon = b:CreateTexture(nil, "ARTWORK")
 	icon:SetPoint("TOPLEFT", b, "TOPLEFT", 3, -3)
 	icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -3, 3)
@@ -548,6 +550,7 @@ local function createMarkerBar()
 			-- Last column = clear (no symbol).
 			local b = makeMarkerButton(rf, i < MK_COLS and i or nil, row.world)
 			b:SetPoint("TOPLEFT", rf, "TOPLEFT", (i - 1) * (MK_BTN + MK_GAP), -(MK_LABEL_H + MK_LABEL_GAP))
+			markerFills[#markerFills + 1] = b._fill
 		end
 		markerRows[row.key] = rf
 	end
@@ -609,7 +612,11 @@ function QoL:ApplyMarkers()
 	if not (m.target or m.world) then m.target = true end
 	createMarkerBar()
 	markerFrame:SetScale(m.scale or 1)
-	markerFrame:SetChromeShown(m.background ~= false)
+	-- Background off = the icons float on the world: card AND the face behind each
+	-- icon go, the hover wash stays so you still see what you are about to click.
+	local chrome = m.background ~= false
+	markerFrame:SetChromeShown(chrome)
+	for i = 1, #markerFills do markerFills[i]:SetShown(chrome) end
 
 	-- Stack whichever rows are on; the card shrinks to what is left. Both off is
 	-- treated as "bar off" rather than an empty card.
@@ -632,7 +639,15 @@ function QoL:ApplyMarkers()
 	markerFrame:SetPoint(pos.point or "CENTER", UIParent, pos.point or "CENTER",
 		(pos.x or 0) / s, (pos.y or -260) / s) -- see the note on the save callback
 	-- Secure visibility: the driver flips the frame, we never do (see header).
-	RegisterStateDriver(markerFrame, "visibility", (m.enabled and rows > 0) and "show" or "hide")
+	-- "Only in instances" cannot be a driver condition (there is no macro condition
+	-- for the instance type), so it is resolved here and re-resolved on every
+	-- PLAYER_ENTERING_WORLD — which is exactly when it can change, and never in combat.
+	local show = m.enabled and rows > 0
+	if show and m.instanceOnly then
+		local inInstance, kind = IsInInstance()
+		show = inInstance and (kind == "party" or kind == "raid" or kind == "scenario") or false
+	end
+	RegisterStateDriver(markerFrame, "visibility", show and "show" or "hide")
 	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
 end
 
@@ -1519,6 +1534,7 @@ function QoL:Setup()
 	driver:SetScript("OnEvent", function(_, event, ...)
 		if event == "PLAYER_ENTERING_WORLD" then
 			QoL:ApplyCursor()
+			QoL:ApplyMarkers() -- the bar may be limited to dungeons/raids
 			-- Boss mods (re)register /pull during login -> re-claim shortly after.
 			C_Timer.After(3, function() QoL:ApplyPull() end)
 			-- The outfit buff lands slightly AFTER the loading screen -> late pass.

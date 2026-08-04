@@ -436,6 +436,8 @@ ns.RegisterLocale("deDE", {
 	["Movable bar with target markers (on your current target) and world markers (on the ground). Works in combat. Unlock via Edit Mode."] = "Verschiebbare Leiste mit Ziel-Markierungen (auf dein aktuelles Ziel) und Welt-Markierungen (auf den Boden). Funktioniert im Kampf. Über den Edit-Modus entsperren.",
 	["Markers"] = "Markierungen",
 	["World"] = "Welt",
+	["Only in dungeons and raids"] = "Nur in Dungeons und Raids",
+	["Outside instances the bar stays hidden. It reappears on its own when you zone into a dungeon, raid or scenario."] = "Außerhalb von Instanzen bleibt die Leiste ausgeblendet. Sie kommt von allein zurück, sobald du einen Dungeon, Raid oder ein Szenario betrittst.",
 	["Keystone and instance-reset helpers"] = "Schlüsselstein- und Instanz-Reset-Helfer",
 	["Auto-insert keystone"] = "Schlüsselstein automatisch einsetzen",
 	["Puts your keystone into the Font of Power automatically when its window opens."] = "Legt deinen Schlüsselstein automatisch in den Machtquell, sobald sich dessen Fenster öffnet.",
