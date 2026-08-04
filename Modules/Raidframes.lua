@@ -46,6 +46,11 @@ local issecretvalue = issecretvalue or function() return false end
 local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
 local AbbrevNum = _G.AbbreviateNumbersAlt or _G.AbbreviateNumbers or tostring
 
+-- Floor for the health-bar opacity. A bar you can turn fully invisible reads as a
+-- broken addon, so the slider stops here and the render clamps to it as well —
+-- that also catches a 0 arriving from an older profile or an import.
+local HEALTH_ALPHA_MIN = 0.1
+
 -- Native StatusBar interpolation (12.0): the client eases the fill C-side — no
 -- OnUpdate, no manual animation. Only used when the "smooth bars" option is on;
 -- without it we keep the plain one-argument SetValue call shape (proven live).
@@ -120,22 +125,29 @@ local function FetchTexture(key)
 	if LSM then local p = LSM:Fetch("statusbar", key, true); if p then return p end end
 	return WHITE8X8
 end
+-- Adds every LibSharedMedia statusbar texture (i.e. what other addons brought
+-- along) to a value table. LSM is a shared registry, so it also carries entries
+-- that are not usable AS a bar: at least one addon registers a deliberately BLANK
+-- texture as a placeholder for media it could not resolve on import. Picking one
+-- of those leaves the bar invisible, which reads as a broken addon -> filtered out
+-- by name (Florian 2026-08-04).
+local function withLSM(t)
+	local LSM = getLSM()
+	if LSM then
+		for _, n in ipairs(LSM:List("statusbar")) do
+			if n ~= "Texture Not Found" then t[n] = n end
+		end
+	end
+	return t
+end
 function Raidframes:TextureValues()
 	local t = {}
 	for k in pairs(TEXTURES) do t[k] = k end
-	local LSM = getLSM()
-	if LSM then for _, n in ipairs(LSM:List("statusbar")) do t[n] = n end end
-	return t
+	return withLSM(t)
 end
 -- Shield/heal-absorb dropdown: the tiled Lumen pattern first + all statusbar textures
 -- (Lumen/Blizzard/LSM) usable as a smooth fill.
--- Shield/heal-absorb dropdown = Lumen entries + all LibSharedMedia statusbar textures
--- (other addons) -> "people have more". Deliberately WITHOUT Lumen's health-bar gradients.
-local function withLSM(t)
-	local LSM = getLSM()
-	if LSM then for _, n in ipairs(LSM:List("statusbar")) do t[n] = n end end
-	return t
-end
+-- Deliberately WITHOUT Lumen's health-bar gradients.
 function Raidframes:ShieldTextureValues()
 	local t = {}; for k in pairs(SHIELD_TEX_SPEC) do t[k] = k end; return withLSM(t)
 end
@@ -1005,6 +1017,23 @@ local function positionAuraIcons(holder, count)
 	end
 	holder._posCount = count
 end
+-- Aura tooltip (opt-in per category). Blizzard's own instance-ID setters do the
+-- work, so nothing secret is ever read here — the ID is only handed through.
+-- Mouse setup happens in layoutAuraCat: MOTION only, clicks stay disabled, so the
+-- icon never swallows a click meant for the secure unit button underneath.
+local function auraIconEnter(ic)
+	local holder = ic:GetParent()
+	local f = holder and holder._host
+	local u = f and f.unit
+	if not (u and ic._iid and UnitExists(u)) then return end
+	local filter = holder._filter
+	GameTooltip:SetOwner(ic, "ANCHOR_RIGHT")
+	local setter = strfind(filter or "", "HARMFUL")
+		and GameTooltip.SetUnitDebuffByAuraInstanceID or GameTooltip.SetUnitBuffByAuraInstanceID
+	if not (setter and pcall(setter, GameTooltip, u, ic._iid, filter)) then GameTooltip:Hide() end
+end
+local function auraIconLeave() GameTooltip:Hide() end
+
 local function makeAuraIcon(holder)
 	local ic = CreateFrame("Frame", nil, holder)
 	ic.bg = ic:CreateTexture(nil, "BACKGROUND")
@@ -1025,6 +1054,13 @@ local function makeAuraIcon(holder)
 		ic:SetScript("OnEnter", function() Raidframes:_C2CIconEnter(holder) end)
 		ic:SetScript("OnLeave", function() Raidframes:_C2CLeave() end)
 		ic:SetScript("OnMouseDown", function() Raidframes:_C2CIconClick(holder) end)
+	else
+		-- Live frame: hover handlers are always attached, the CATEGORY option decides
+		-- whether the icon accepts mouse motion at all (layoutAuraCat).
+		ic:SetMouseClickEnabled(false)
+		ic:SetMouseMotionEnabled(false)
+		ic:SetScript("OnEnter", auraIconEnter)
+		ic:SetScript("OnLeave", auraIconLeave)
 	end
 	ic:Hide()
 	return ic
@@ -1032,7 +1068,7 @@ end
 -- Layout a category block: position holder + icon pool at anchor/size/growth direction.
 -- Filling (texture/swipe/show) happens only at render time. Call ONLY in the layout path
 -- (may create frames -> out of combat).
-local function layoutAuraCat(f, key, cat, size, lvl)
+local function layoutAuraCat(f, key, cat, size, cdef)
 	local holder = f.auraHolders[key]
 	-- All display knobs are per context (raid/party) since Feature 1.
 	local K = auraKeys()
@@ -1046,11 +1082,12 @@ local function layoutAuraCat(f, key, cat, size, lvl)
 		-- otherwise land on the parent's level +1 like every other category, and ties
 		-- render in CREATION order -- i.e. whichever category was enabled first. Set
 		-- once at creation (§9.5/§9.8: no SetFrameLevel churn on a live unit frame).
-		holder:SetFrameLevel(f.overlay:GetFrameLevel() + (lvl or 4))
+		holder:SetFrameLevel(f.overlay:GetFrameLevel() + ((cdef and cdef.lvl) or 4))
 		holder.icons = {}
 		holder._host, holder._cat = f, key   -- click-to-configure needs owner + category
 		f.auraHolders[key] = holder
 	end
+	holder._filter = cdef and cdef.filter   -- which tooltip setter the icons need
 	holder:Show()
 	-- What the icons are measured against. INSIDE icons follow the HEALTH BAR, so a
 	-- bottom-anchored row sits ON the health bar instead of covering the resource
@@ -1073,6 +1110,10 @@ local function layoutAuraCat(f, key, cat, size, lvl)
 	holder._size    = size
 	holder._spacing = cat[K.spacing] or 0
 	holder._posCount = nil   -- layout params reset -> discard position cache
+	-- Aura tooltips: SHARED across contexts (see Core.lua), so no auraKeys() suffix.
+	-- The preview pool owns its icons' mouse for click-to-configure -> live only.
+	local tips = (cat.showTooltip and not f._c2c) and true or false
+	holder._tips = tips
 	local showSwipe = cat[K.showSwipe]
 	local maxN = cat[K.maxIcons] or 5
 	for i = 1, maxN do
@@ -1080,6 +1121,12 @@ local function layoutAuraCat(f, key, cat, size, lvl)
 		holder.icons[i] = ic
 		ic:SetSize(size, size)
 		if showSwipe then ic.cd:Show() else ic.cd:Hide() end
+		if not f._c2c then
+			-- Motion only: hovering explains the icon, clicking still goes through to
+			-- the secure button below it.
+			ic:SetMouseMotionEnabled(tips)
+			if not tips then ic._iid = nil end
+		end
 		ic:Hide()
 	end
 	for i = maxN + 1, #holder.icons do holder.icons[i]:Hide() end
@@ -1561,12 +1608,16 @@ function Raidframes:ApplyConfig(f)
 
 	if ns.Style then
 		local t = d.healthTexture
+		-- The glow is a layer of its OWN on top of the fill, so the health-bar
+		-- opacity has to be folded in here — otherwise turning the bar down left the
+		-- aurora burning at full strength over an invisible bar (Florian 2026-08-04).
+		local glowA = (d.auroraStrength or 1) * max(HEALTH_ALPHA_MIN, d.healthAlpha or 1)
 		if t == "Lumen Aurora" then
 			ns.Style:SetDepth(f.depth, 0)
-			ns.Style:SetAurora(f.depth, true, d.auroraStrength or 1, ns.Style.auroraTexture, nil)
+			ns.Style:SetAurora(f.depth, true, glowA, ns.Style.auroraTexture, nil)
 		elseif t == "Lumen Glow" then
 			ns.Style:SetDepth(f.depth, 0)
-			ns.Style:SetAurora(f.depth, true, d.auroraStrength or 1, ns.Style.glowTexture, nil)
+			ns.Style:SetAurora(f.depth, true, glowA, ns.Style.glowTexture, nil)
 		elseif t == "Lumen Gradient" then
 			ns.Style:SetAurora(f.depth, false); ns.Style:SetDepth(f.depth, 1.0)
 		elseif t == "Lumen Soft" then
@@ -1619,7 +1670,7 @@ function Raidframes:ApplyConfig(f)
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
 			local size = (cat and auraIconSize(cat, L, healthH)) or 16
-			layoutAuraCat(f, c.key, cat, size, c.lvl)
+			layoutAuraCat(f, c.key, cat, size, c)
 		end
 	end
 end
@@ -1680,7 +1731,7 @@ local function applyHealthColor(f, d, u, force)
 	local dOn  = f._dOn and true or false
 	if not force and f._cGrey == grey and f._cDOn == dOn then return end
 	f._cGrey, f._cDOn = grey, dOn
-	local ha = d.healthAlpha or 1   -- dim only the health-bar fill (4th alpha arg)
+	local ha = max(HEALTH_ALPHA_MIN, d.healthAlpha or 1) -- dim only the health-bar fill (4th alpha arg)
 	if f._greyed then
 		-- Dead/offline: neutral grey bar + glow (the status layer owns this flag).
 		f.health:SetStatusBarColor(0.35, 0.35, 0.35, ha)
@@ -1993,7 +2044,7 @@ function Raidframes:RenderFake(f)
 		dr, dg, dbb = dispelCol(d, fk.dispel)
 		hasDispel = true
 	end
-	local ha = d.healthAlpha or 1
+	local ha = max(HEALTH_ALPHA_MIN, d.healthAlpha or 1)
 	local hr, hg, hb, hk
 	if hasDispel and d.dispelMode == "recolor" then
 		hr, hg, hb, hk = dr, dg, dbb, 1
@@ -2091,6 +2142,9 @@ function Raidframes:RenderAurasLive(f)
 					local ic = holder.icons[shown]
 					if ic then
 						applyAuraIcon(ic, aura)
+						-- Only carried while the category shows tooltips; the ID may be
+						-- secret, so it is stored and handed on, never read.
+						if holder._tips then ic._iid = iid end
 						if showSwipe and ic.cd then
 							local durObj = iid and C_UnitAuras.GetAuraDuration and C_UnitAuras.GetAuraDuration(u, iid)
 							if durObj and ic.cd.SetCooldownFromDurationObject then
@@ -2433,7 +2487,7 @@ function Raidframes:RefreshAuras()
 		for _, c in ipairs(AURA_CATS) do
 			local cat  = d.auras[c.key]
 			local size = (cat and auraIconSize(cat, L, healthH)) or 16
-			layoutAuraCat(f, c.key, cat, size, c.lvl)
+			layoutAuraCat(f, c.key, cat, size, c)
 		end
 	end
 	if header then
