@@ -316,7 +316,13 @@ local function panelFrame(name)
 	bg:SetAllPoints(f)
 	UI.SetColor(bg, UI.Surface.Window)
 	bg:SetAlpha(0.9) -- a hair of the world shows through; it is not a window
-	UI.Stroke(f, UI.Border.hover, 1, "OVERLAY")
+	local edges = UI.Stroke(f, UI.Border.hover, 1, "OVERLAY")
+	-- Card off = bare icons on the world. Only the CHROME is hidden, never the
+	-- frame: it carries protected buttons, and hiding their ancestor is refused.
+	function f:SetChromeShown(on)
+		bg:SetShown(on)
+		for i = 1, #edges do edges[i]:SetShown(on) end
+	end
 	return f
 end
 
@@ -447,6 +453,8 @@ local markerDeferred          -- an apply arrived in combat -> redo it on regen
 local markerEvents
 local MK_BTN, MK_GAP, MK_COLS = 22, 2, 9   -- 8 markers + clear
 local MK_LABEL_H = 12                       -- row caption ("Target" / "World")
+local MK_LABEL_GAP = MK_GAP + 2             -- caption -> icons: the caption is a label
+                                            -- for the row below it, not a lid on it
 local MK_PAD = WIDGET_PAD                   -- card padding, shared with Ready/Pull
 local MK_ROW_W = MK_COLS * MK_BTN + (MK_COLS - 1) * MK_GAP
 -- Symbol -> world-marker id. The two are NOT the same numbering: the buttons show
@@ -530,14 +538,16 @@ local function createMarkerBar()
 		-- holding protected buttons may only be hidden by a state driver — which
 		-- needs something of its own to act on.
 		local rf = CreateFrame("Frame", nil, markerFrame)
-		rf:SetSize(MK_ROW_W, MK_LABEL_H + MK_GAP + MK_BTN)
-		local head = UI.FS(rf, "checkLabel", UI.Text.Secondary)
+		rf:SetSize(MK_ROW_W, MK_LABEL_H + MK_LABEL_GAP + MK_BTN)
+		-- "caption", not "checkLabel": the row heading is a quiet piece of info above
+		-- the icons, not a control label competing with them.
+		local head = UI.FS(rf, "caption", UI.Text.Secondary)
 		head:SetPoint("TOPLEFT", rf, "TOPLEFT", 0, 0)
 		head:SetText(row.world and ns.T("World") or ns.T("Target"))
 		for i = 1, MK_COLS do
 			-- Last column = clear (no symbol).
 			local b = makeMarkerButton(rf, i < MK_COLS and i or nil, row.world)
-			b:SetPoint("TOPLEFT", rf, "TOPLEFT", (i - 1) * (MK_BTN + MK_GAP), -(MK_LABEL_H + MK_GAP))
+			b:SetPoint("TOPLEFT", rf, "TOPLEFT", (i - 1) * (MK_BTN + MK_GAP), -(MK_LABEL_H + MK_LABEL_GAP))
 		end
 		markerRows[row.key] = rf
 	end
@@ -563,11 +573,14 @@ local function createMarkerBar()
 				{ kind = "check", label = ns.T("World"),
 					get = function() return mdb().world end,
 					set = function(v) mdb().world = v; QoL:ApplyMarkers() end },
+				{ kind = "check", label = ns.T("Background"),
+					get = function() return mdb().background end,
+					set = function(v) mdb().background = v; QoL:ApplyMarkers() end },
 			},
 			reset = function()
 				local d = ns.Defaults and ns.Defaults.profile.qol.markers
 				local s = mdb()
-				s.scale, s.target, s.world = (d and d.scale) or 1, true, true
+				s.scale, s.target, s.world, s.background = (d and d.scale) or 1, true, true, true
 				s.pos = { point = "CENTER", x = 0, y = -260 }
 				QoL:ApplyMarkers()
 			end,
@@ -596,6 +609,7 @@ function QoL:ApplyMarkers()
 	if not (m.target or m.world) then m.target = true end
 	createMarkerBar()
 	markerFrame:SetScale(m.scale or 1)
+	markerFrame:SetChromeShown(m.background ~= false)
 
 	-- Stack whichever rows are on; the card shrinks to what is left. Both off is
 	-- treated as "bar off" rather than an empty card.

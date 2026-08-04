@@ -256,6 +256,7 @@ local defaults = {
 				enabled = false, -- movable raid-marker bar (target row + world row)
 				target  = true,  -- show the target-marker row  (Edit Mode flyout)
 				world   = true,  -- show the world-marker row   (Edit Mode flyout)
+				background = true, -- card behind the icons; off = bare icons + captions
 				scale   = 1,     -- bar size (Edit Mode flyout)
 				pos     = { point = "CENTER", x = 0, y = -260 }, -- bar position (Edit Mode)
 			},
