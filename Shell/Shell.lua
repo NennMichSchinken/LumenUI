@@ -1923,8 +1923,6 @@ function Shell:IndexSetCard(frame, title)
 	e.hay = e.hay .. " " .. title:lower()
 end
 
-function Shell:SearchEntries() return searchIndex end
-
 -- Warm-up: screens are built lazily, so on a cold Shell the index only knows
 -- the tabs you happened to open. Before the first search we build the missing
 -- ones once into a hidden holder purely to collect labels, then throw the
@@ -2286,8 +2284,6 @@ function Shell:_UpdateNewsCard()
 	card._paint(false)
 	card:Show()
 end
-
-function Shell:IsWhatsNew() return self._whatsNew == true end
 
 function Shell:ShowWhatsNew()
 	self:Show()

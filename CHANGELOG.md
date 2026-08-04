@@ -10,6 +10,30 @@ instead of one sentence per entry. Keep the format: `## <version>` heading,
 `### <feature area>` sections, bullets starting with `- Fixed:` / `- New:` or a plain
 sentence for reworks. Plain and factual, no marketing.
 
+## 0.9.293-beta
+
+### Quality of life
+- New: a marker bar. Two rows of buttons — target markers for your current target, world markers for the ground — that work in combat. Left-click sets, right-click removes; the X clears the marker of your target, and in the world row it clears every ground marker at once. Switch it on in QoL, place it in Edit Mode.
+- New: click the marker bar in Edit Mode to resize it, to switch the target or the world row off individually, and to drop its background — that leaves the bare icons with their row caption on the world, with no tile behind them.
+- New: the bar can be limited to dungeons, raids and scenarios. Outside instances it stays hidden and comes back on its own when you zone in.
+- The Ready and Pull block now sits in a card, like the marker bar, and has the same size control in Edit Mode.
+- Note: removing ALL target markers at once is not something an add-on is allowed to do — that stays with Blizzard's raid panel.
+
+### Aura indicators
+- New: aura icons can show their tooltip on hover, switched on per category. The setting is shared between Raid and Group. Clicks still go through to the frame, so click-casting on a frame is unaffected.
+
+### Raid frames
+- The health-bar opacity now stops at ten percent instead of zero, and the aurora/glow layer dims along with it. Previously the glow stayed at full strength over a bar that had been turned invisible.
+- Fixed: a deliberately blank placeholder texture that another addon registers in LibSharedMedia appeared in the texture lists. Picking it left the bar invisible.
+- Fixed: opening Edit Mode while the settings window was open could be refused by the game.
+
+### Settings window
+- Fixed: in the aura tab, the tooltip of a spell you were about to add rendered behind the list it belonged to. It also drifted back behind it over a session, after repeatedly opening the window or an Edit Mode session.
+
+### Performance
+- The raid frames do less work per update: the preview surfaces moved into their own file, resource-bar events are registered per unit instead of for all group tokens, and a frame is only repainted where something actually changed.
+- New: `/lumenprof` reports where the addon spends its time. It is off by default and installs nothing while off.
+
 ## 0.9.292-beta
 
 ### Live preview

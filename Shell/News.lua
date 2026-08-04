@@ -48,6 +48,33 @@ local ADDON, ns = ...
 
 ns.News = {
 	{
+		version = "0.9.293",
+		date = "2026-08-05",
+		summary = "A marker bar, aura tooltips per category, and a lighter render path.",
+		entries = {
+			{ kind = "new",
+			  text = "A movable marker bar: target markers for whatever you have targeted, world markers for the ground. It works in combat, and its size and rows are set in Edit Mode.",
+			  section = "QoL", tab = "Base" },
+			{ kind = "new",
+			  text = "Aura icons can show their tooltip on hover, switched on per category — so debuffs explain themselves while your own HoTs stay quiet.",
+			  section = "Raidframes", tab = "Auras", card = "aura-debuffs" },
+			{ kind = "changed",
+			  text = "The health bar keeps at least ten percent opacity and the glow now dims with it, instead of burning at full strength over an invisible bar.",
+			  section = "Raidframes", tab = "Base", card = "health-bar" },
+			{ kind = "changed",
+			  text = "The Ready and Pull block sits in a card like the marker bar, and both can be resized in Edit Mode.",
+			  section = "QoL", tab = "Base" },
+			{ kind = "fixed",
+			  text = "A blank placeholder texture another addon registers showed up in the texture lists; picking it left the bar invisible." },
+			{ kind = "fixed",
+			  text = "In the aura tab, the tooltip of a spell you were about to add rendered behind the list it belonged to." },
+			{ kind = "fixed",
+			  text = "Opening Edit Mode while the settings were up could be refused by the game; the frames are no longer touched from inside its secure call." },
+			{ kind = "changed",
+			  text = "The raid frames do less work per update: the preview lives in its own file, resource events are registered per unit, and a frame is only repainted where something actually changed." },
+		},
+	},
+	{
 		version = "0.9.292",
 		date = "2026-07-30",
 		summary = "The preview follows a layout change, keeps room for the settings, and scrolls.",

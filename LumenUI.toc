@@ -3,7 +3,7 @@
 ## Notes: A focused UI suite — Raidframes (MVP)
 ## IconTexture: Interface\AddOns\LumenUI\Textures\Logo
 ## Author: NennMichSchinken
-## Version: 0.9.292
+## Version: 0.9.293
 ## SavedVariables: LumenDB
 ## OptionalDeps: MiniCC
 ## X-Website: https://github.com/NennMichSchinken
@@ -11,6 +11,7 @@
 
 embeds.xml
 Core.lua
+Modules\Profiler.lua
 EditMode.lua
 Style.lua
 Shell\Tokens.lua
@@ -21,6 +22,7 @@ Shell\News.lua
 Shell\Screens.lua
 Shell\Shell.lua
 Modules\Raidframes.lua
+Modules\RaidframesPreview.lua
 Modules\ClickCast.lua
 Modules\Share.lua
 Modules\MiniCC.lua

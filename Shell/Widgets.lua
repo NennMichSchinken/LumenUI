@@ -45,6 +45,17 @@ local function clamp(v, lo, hi)
 	if v < lo then return lo elseif v > hi then return hi else return v end
 end
 
+-- The floating singletons below (confirm dialog, colour picker) are children of
+-- the Shell panel, and setting the strata of a frame carries every CHILD along:
+-- EditMode lifts the panel to FULLSCREEN_DIALOG for a session and drops it back to
+-- DIALOG on close, which silently rewrites theirs too. Popovers are rebuilt per
+-- screen and get their strata back on their own; a singleton is built once, so it
+-- would stay a layer too low until /reload. Re-assert the strata on every show.
+-- (The tooltip solves the same problem by not being a child at all — see buildTip.)
+local function pinStrata(frame, strata)
+	if frame:GetFrameStrata() ~= strata then frame:SetFrameStrata(strata) end
+end
+
 
 -- (SectionDivider + SectionLabel retired with the Click-Cast card migration —
 -- every section is a real card now; the gold-rule dividers had no callers left.)
@@ -1131,6 +1142,7 @@ function W.Confirm(o)
 	end)
 	dlg.cancel:SetScript("OnClick", doCancel)
 	dlg.overlay:SetScript("OnClick", doCancel) -- click on the dimmed area = cancel
+	pinStrata(dlg.overlay, "FULLSCREEN_DIALOG") -- singleton, see pinStrata (the card follows its parent)
 	dlg.overlay:Show()
 	dlg.overlay:Raise()
 end
@@ -1247,12 +1259,23 @@ end
 -- ---------------------------------------------------------------------------
 local tipObj
 local function buildTip()
-	local host = W._menuHost or UIParent
-	local tip = CreateFrame("Frame", nil, host)
+	-- Deliberately NOT a child of the Shell panel. That panel is toplevel and
+	-- rewrites both its strata (Edit Mode session) and its frame level (every click
+	-- raises it) at runtime, and children are dragged along both times — while the
+	-- popovers anchor their level RELATIVE to the panel. So the panel climbing high
+	-- enough eventually lifted the search popover past the tip's fixed level and the
+	-- spell tooltip disappeared behind it again (Florian 2026-08-04). Living on
+	-- UIParent puts the tip out of that race for good; it only has to copy the
+	-- panel's SCALE (see applyTip), which it no longer inherits.
+	local tip = CreateFrame("Frame", nil, UIParent)
 	tip:SetFrameStrata("TOOLTIP")
 	tip:SetWidth(M.tipW)
 	tip:SetClampedToScreen(true) -- stays fully readable near a screen edge (e.g. TOP-anchored)
 	tip:Hide()
+	-- The Shell is not our parent any more, so closing it no longer hides us.
+	if W._menuHost then
+		W._menuHost:HookScript("OnHide", function() if tipObj then tipObj.tip:Hide() end end)
+	end
 	UI.RoundFill(tip, Surface.Window) -- darker than the popover -> clearer tooltip contrast
 	UI.RoundBorder(tip, Border.hover, "OVERLAY") -- v2: neutral popover border (no gold top accent — Florian 2026-07-05)
 
@@ -1277,6 +1300,15 @@ local function applyTip(owner, icon, titleText, bodyText, anchor)
 	local t = tipObj or buildTip()
 	local hasIcon = icon ~= nil
 	local hasBody = bodyText ~= nil and bodyText ~= ""
+
+	-- Read at the same physical size as the window it belongs to: the tip hangs off
+	-- UIParent (see buildTip), so it has to mirror the panel's effective scale
+	-- instead of inheriting it. Also keeps the owner-relative offsets below exact.
+	local shell = W._menuHost
+	if shell then
+		local us = UIParent:GetEffectiveScale()
+		if us and us > 0 then t.tip:SetScale((shell:GetEffectiveScale() or us) / us) end
+	end
 
 	t.icon:SetShown(hasIcon)
 	if hasIcon then t.icon:SetTexture(icon) end
@@ -2240,6 +2272,8 @@ function W.OpenColorPicker(o)
 	else
 		cp:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 	end
+	pinStrata(cp, "FULLSCREEN_DIALOG")         -- singleton, see pinStrata
+	pinStrata(cp._closer, "FULLSCREEN_DIALOG") -- sibling of cp, not a child -> pin separately
 	cp._closer:Show()
 	cp:Show()
 	cp:Raise()
@@ -2680,109 +2714,6 @@ function W.Button(parent, o)
 end
 
 -- ---------------------------------------------------------------------------
---  MenuButton — a button that opens a small popover list of options (labels may
---  carry inline |T..|t icons) and calls o.onPick(value). For "+ Add binding"
---  (pick a catalog action). Floats on the menu host (non-clipped), like W.Select.
---  o = { text, variant?, width?, options = { { value, label }, ... }, onPick }
--- ---------------------------------------------------------------------------
-function W.MenuButton(parent, o)
-	-- bare = catalog-row style trigger (square gold icon tile + plain "choose …"
-	-- text), so a freshly-added standard row matches the others and you pick the
-	-- action right in the row. Otherwise = a normal (e.g. green) button.
-	local btn
-	if o.bare then
-		btn = CreateFrame("Button", nil, parent)
-		btn:SetHeight(LO.clickcast.rowH)
-		if o.width then btn:SetWidth(o.width) end
-		local tile = W.SquareIcon(btn, LO.clickcast.icon)
-		tile:SetPoint("LEFT", btn, "LEFT", 0, 0)
-		tile:SetIcon(o.icon)
-		local txt = UI.FS(btn, "selectText", o.icon and Text.Secondary or Text.Description)
-		txt:SetPoint("LEFT", tile, "RIGHT", 10, 0)
-		txt:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
-		txt:SetJustifyH("LEFT"); txt:SetWordWrap(false)
-		txt:SetText(o.text or T("Select"))
-	else
-		btn = W.Button(parent, { text = o.text, variant = o.variant or "ghost", width = o.width })
-	end
-
-	local host = W._menuHost or parent
-	local closer = CreateFrame("Button", nil, host)
-	closer:SetAllPoints(UIParent)
-	closer:SetFrameStrata("FULLSCREEN_DIALOG")
-	closer:Hide()
-	local menu = CreateFrame("Frame", nil, host)
-	menu:SetFrameStrata("FULLSCREEN_DIALOG")
-	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
-	menu:Hide()
-	UI.RoundFill(menu, Surface.Input)
-	UI.RoundBorder(menu, Border.hover, "OVERLAY")
-	if W._popovers then W._popovers[#W._popovers + 1] = closer; W._popovers[#W._popovers + 1] = menu end
-
-	local function closeMenu() menu:Hide(); closer:Hide() end
-	closer:SetScript("OnClick", closeMenu)
-
-	local pad, rowH, gap = 6, 30, 2
-	local prev, maxw = nil, 1
-	for _, op in ipairs(o.options) do
-		local item = CreateFrame("Button", nil, menu)
-		item:SetHeight(rowH)
-		if prev then item:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -gap)
-		else item:SetPoint("TOPLEFT", menu, "TOPLEFT", pad, -pad) end
-		item:SetPoint("RIGHT", menu, "RIGHT", -pad, 0)
-		local wash = item:CreateTexture(nil, "BACKGROUND")
-		wash:SetAllPoints(item); wash:SetColorTexture(0, 0, 0, 0)
-		local itxt = UI.FS(item, "selectText", Text.Primary)
-		itxt:SetPoint("LEFT", item, "LEFT", 10, 0)
-		itxt:SetText(op.label)
-		item:SetScript("OnEnter", function()
-			wash:SetColorTexture(Surface.Hover.r, Surface.Hover.g, Surface.Hover.b, 1) -- lift off the Surface.Input menu bg
-			itxt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
-		end)
-		item:SetScript("OnLeave", function()
-			wash:SetColorTexture(0, 0, 0, 0)
-			itxt:SetTextColor(Text.Primary.r, Text.Primary.g, Text.Primary.b)
-		end)
-		item:SetScript("OnClick", function() closeMenu(); if o.onPick then o.onPick(op.value) end end)
-		local w = math.ceil(itxt:GetStringWidth()) + 32
-		if w > maxw then maxw = w end
-		prev = item
-	end
-	menu:SetWidth(math.max(maxw + pad * 2, btn:GetWidth() or 120))
-	menu:SetHeight(pad * 2 + #o.options * rowH + math.max(0, #o.options - 1) * gap)
-
-	btn:SetScript("OnClick", function()
-		if menu:IsShown() then closeMenu(); return end
-		menu:ClearAllPoints()
-		menu:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -4)
-		closer:Show(); menu:Show(); menu:Raise()
-	end)
-	return btn
-end
-
--- ---------------------------------------------------------------------------
---  IconTile — beveled gold chip (signature element) with a Cinzel letter. For
---  spell/module tiles in lists. o = {size,letter}.
--- ---------------------------------------------------------------------------
-function W.IconTile(parent, o)
-	local size = o.size or 56
-	local f = CreateFrame("Frame", nil, parent)
-	f:SetSize(size, size)
-	local bg = f:CreateTexture(nil, "BACKGROUND")
-	bg:SetAllPoints(f)
-	bg:SetColorTexture(1, 1, 1, 1)
-	bg:SetGradient("VERTICAL",
-		CreateColor(Surface.Scrim.r, Surface.Scrim.g, Surface.Scrim.b, 1),
-		CreateColor(Surface.Input.r, Surface.Input.g, Surface.Input.b, 1))
-	UI.Stroke(f, Border.default, 1)
-	local lt = UI.FS(f, "groupTitle", Text.Primary)
-	lt:SetPoint("CENTER", f, "CENTER", 0, 0)
-	lt:SetText(o.letter or "?")
-	f._letter = lt
-	return f
-end
-
--- ---------------------------------------------------------------------------
 --  Card — raised container (surface #171411, gold hairline). Height set by the
 --  caller; anchor content directly into the card or with its own padding.
 -- ---------------------------------------------------------------------------
@@ -2969,38 +2900,6 @@ function W.Disclosure(parent, o)
 	end)
 	f:SetScript("OnClick", function() if o.onToggle then o.onToggle(not o.open) end end)
 	return f
-end
-
--- ---------------------------------------------------------------------------
---  GroupPanel — bordered area with a heading + optional inline control on the
---  right (e.g. a "Show" toggle). o = {title}. Returns (frame, contentFrame).
---  Height set by the caller (frame:SetHeight); contentFrame fills below.
--- ---------------------------------------------------------------------------
-function W.GroupPanel(parent, o)
-	local g = CreateFrame("Frame", nil, parent)
-	local bg = g:CreateTexture(nil, "BACKGROUND")
-	bg:SetAllPoints(g)
-	bg:SetColorTexture(Surface.Card.r, Surface.Card.g, Surface.Card.b, 0.45)
-	UI.Stroke(g, Border.default, 1)
-
-	local title = UI.FS(g, "groupTitle", Text.Primary)
-	title:SetText(o.title or "")
-	title:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, M.groupTitleY)
-
-	-- Content area below the heading, with card padding.
-	local content = CreateFrame("Frame", nil, g)
-	content:SetPoint("TOPLEFT", g, "TOPLEFT", S.cardPad, M.groupContentY)
-	content:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", -S.cardPad, S.cardPad)
-
-	g._title, g._content = title, content
-	-- Anchor point for an optional header-right control.
-	g._headerRightAnchor = function(ctrl)
-		ctrl:SetParent(g)
-		ctrl:ClearAllPoints()
-		ctrl:SetPoint("RIGHT", g, "TOPRIGHT", -S.cardPad, 0)
-		ctrl:SetPoint("TOP", title, "TOP", 0, 4)
-	end
-	return g, content
 end
 
 -- ---------------------------------------------------------------------------
