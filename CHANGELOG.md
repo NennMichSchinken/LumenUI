@@ -14,7 +14,8 @@ sentence for reworks. Plain and factual, no marketing.
 
 ### Quality of life
 - New: a marker bar. Two rows of buttons — target markers for your current target, world markers for the ground — that work in combat. Left-click sets, right-click removes; the X clears the marker of your target, and in the world row it clears every ground marker at once. Switch it on in QoL, place it in Edit Mode.
-- New: click the marker bar in Edit Mode to resize it, to switch the target or the world row off individually, and to drop its background — that leaves the bare icons with their row caption on the world.
+- New: click the marker bar in Edit Mode to resize it, to switch the target or the world row off individually, and to drop its background — that leaves the bare icons with their row caption on the world, with no tile behind them.
+- New: the bar can be limited to dungeons, raids and scenarios. Outside instances it stays hidden and comes back on its own when you zone in.
 - The Ready and Pull block now sits in a card, like the marker bar, and has the same size control in Edit Mode.
 - Note: removing ALL target markers at once is not something an add-on is allowed to do — that stays with Blizzard's raid panel.
 
