@@ -425,7 +425,7 @@ UI.R = {
 UI.WIDGET = {
 	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
 	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
-	segHugPad   = 20, -- horizontal padding per cell for a content-width (hug) segment (tab-like, not stretched)
+	segHugPad   = 10, -- horizontal padding per cell of a content-width (hug) segment. THE RULE (Florian 2026-08-07): every cell is as wide as the LONGEST label plus this padding on each side -- uniform pills, guaranteed air, never a label touching the pill edge. 20 made the strip too wide once the cells became uniform.
 	-- Compact segment/button height for HEADER rows (card heads, the preview
 	-- band). Free-standing since segments and buttons became rounded rectangles
 	-- (Florian 2026-07-29) — the old capsules only existed at pill-asset heights.

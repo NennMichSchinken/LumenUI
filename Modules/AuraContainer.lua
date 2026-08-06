@@ -174,12 +174,13 @@ local function tipsOn(key)
 	local cat = catCfg(key)
 	return (cat and cat.showTooltip) and true or false
 end
--- Only categories you actually RE-CAST can have a refresh window. Defensives and
--- major cooldowns are cast once and run out; the engine would never light the
--- marker there, so the option does not exist for them (Florian 2026-08-06).
-local PANDEMIC_CATS = { hotsOwn = true }
+-- Offered for every category the player casts themselves (Florian 2026-08-07:
+-- someone may well want it on a defensive). Note what it can and cannot do: the
+-- engine lights the marker inside the REFRESH window, i.e. only for an aura that
+-- actually gets re-cast before it expires. On something you cast once and let run
+-- out the option is simply inert -- it is not an "expires soon" warning.
 local function pandemicOn(key)
-	if not PANDEMIC_CATS[key] then return false end
+	if key == "debuffs" then return false end   -- not ours to refresh
 	local cat = catCfg(key)
 	return (cat and cat.pandemic) and true or false
 end
@@ -478,6 +479,122 @@ local function syncDebuffs(container, ref, lo)
 	applyContainerLayout(container, ref, lo)
 end
 
+-- ---------------------------------------------------------------------------
+--  Dispel overlay, native (12.1)
+--  12.1 denies the aura SCAN to tainted callers, and that scan was how the old
+--  path answered "is a dispellable debuff up, and of which type". The native
+--  container answers both without us reading anything: a group filtered to
+--  dispellable harmful auras shows its single button exactly while such an aura
+--  sits on the unit, and AddDispelTypeTexture colours OUR textures through the
+--  same colour curve the old path fed to GetAuraDispelTypeColor — the engine
+--  resolves the secret type internally.
+--  Style note: the health-bar RECOLOUR mode cannot be rebuilt this way (that
+--  needs the colour in Lua, which needs the scan), so under the native path both
+--  modes render as the overlay.
+-- ---------------------------------------------------------------------------
+local DISPEL_KEY = "dispel"
+
+local function rfCfg()
+	return ns.Lumen and ns.Lumen.db and ns.Lumen.db.profile.raidframes
+end
+local function dispelOn()
+	local d = rfCfg()
+	return (d and d.dispelEnabled) and true or false
+end
+
+-- One overlay button: a translucent fill plus the four edges, all coloured by the
+-- engine. Registered ONCE here -- post-creation writes to an aura button are denied
+-- while auras are secret, which is exactly when this matters.
+local function initDispelFrame(w, h)
+	return function(button)
+		button:SetSize(w, h)
+		local rf = ns.Raidframes
+		local edgeCurve, fillCurve = rf:DispelCurves()
+		-- CustomAsset with NO asset map leaves our own texture in place and only
+		-- takes the colour (the engine's other styles would stamp a Blizzard border
+		-- atlas over it).
+		local function reg(tex, curve)
+			pcall(button.AddDispelTypeTexture, button, tex, {
+				style = Enum.CustomAuraButtonDispelTypeTextureStyle.CustomAsset,
+				customDispelColorCurve = curve,
+			})
+		end
+		local fill = button:CreateTexture(nil, "ARTWORK")
+		fill:SetAllPoints(button)
+		fill:SetColorTexture(1, 1, 1, 1)
+		reg(fill, fillCurve or edgeCurve)
+		local function edge(p1, p2, ww, hh)
+			local t = button:CreateTexture(nil, "OVERLAY")
+			t:SetColorTexture(1, 1, 1, 1)
+			t:SetPoint(p1); t:SetPoint(p2)
+			if ww then t:SetWidth(ww) else t:SetHeight(hh) end
+			reg(t, edgeCurve)
+		end
+		edge("TOPLEFT", "TOPRIGHT", nil, 2)
+		edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, 2)
+		edge("TOPLEFT", "BOTTOMLEFT", 2, nil)
+		edge("TOPRIGHT", "BOTTOMRIGHT", 2, nil)
+		pcall(button.SetMouseClickEnabled, button, false)
+		pcall(button.SetMouseMotionEnabled, button, false)
+	end
+end
+
+-- Attach / reconcile the dispel container on one button. Sized to the whole frame
+-- and kept BELOW the aura containers, so icons and their duration text are never
+-- covered (the layering standard the old overlay follows too).
+local function syncDispel(button, parent)
+	button._rfc = button._rfc or {}
+	local d = rfCfg()
+	local container = button._rfc[DISPEL_KEY]
+	if not dispelOn() then
+		if container then container:SetEnabled(false); container:Hide() end
+		return
+	end
+	local w, h = button:GetWidth() or 0, button:GetHeight() or 0
+	if w < 2 or h < 2 then return end
+	local filter = d.dispelShowAll and "HARMFUL" or "HARMFUL|RAID_PLAYER_DISPELLABLE"
+	if not container then
+		local ok, c = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+		if not ok or not c then return end
+		container = c
+		button._rfc[DISPEL_KEY] = container
+		pcall(container.SetFrameLevel, container, parent:GetFrameLevel())
+		local built = pcall(function()
+			container:SetSize(1, 1)
+			container:ClearAllPoints()
+			container:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+			layoutCall(container, "anchor", "TOPLEFT")
+			container:AddAuraGroup(DISPEL_KEY, filter, {
+				maxFrameCount   = 1,
+				initializeFrame = initDispelFrame(w, h),
+			})
+			container._dispelFilter = filter
+			local u = button.unit or button:GetAttribute("unit")
+			if u then container:SetUnit(u) end
+			container:SetEnabled(true)
+			container:UpdateAllAuras()
+		end)
+		if not built then button._rfc[DISPEL_KEY] = nil end
+		return
+	end
+	-- Live changes: the filter mode swaps through the group (no container churn),
+	-- the size follows the frame.
+	if container._dispelFilter ~= filter and container.SetAuraGroupFilterString then
+		if pcall(container.SetAuraGroupFilterString, container, DISPEL_KEY, filter) then
+			container._dispelFilter = filter
+		end
+	end
+	pcall(container.SetAuraGroupLayout, container, DISPEL_KEY, { elementWidth = w, elementHeight = h })
+	container:Show(); container:SetEnabled(true)
+	pcall(container.UpdateAllAuras, container)
+end
+
+-- True while the native path draws the dispel overlay -> the old scan-driven one
+-- stays off (it cannot run on 12.1 anyway, see ns.AurasRestricted).
+function RFC.OwnsDispel()
+	return RFC.enabled and true or false
+end
+
 local function forEachLiveButton(fn)
 	local rf = ns.Raidframes
 	if not (rf and rf.GetLiveButtons) then return end
@@ -494,6 +611,10 @@ local function attachCat(button, parent, c)
 	local ok, container = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
 	if not ok or not container then return nil end -- not 12.1 -> silently inert
 	button._rfc[key] = container
+	-- Two levels above the overlay: the dispel container sits AT the overlay level,
+	-- so icons and their duration text always draw over the dispel wash — the
+	-- layering standard the old holder path follows as well.
+	pcall(container.SetFrameLevel, container, parent:GetFrameLevel() + 2)
 
 	local lo  = readLayout(button, key)
 	local ref = anchorRef(button, lo.outside)
@@ -527,6 +648,7 @@ function RFC.Attach(button)
 	for _, c in ipairs(NATIVE_CATS) do
 		if catEnabled(c.key) then attachCat(button, parent, c) end
 	end
+	syncDispel(button, parent)
 end
 
 -- Re-point every category container's unit when the header (re)assigns a button.
@@ -579,6 +701,7 @@ function RFC.Relayout()
 				container:SetEnabled(false); container:Hide()
 			end
 		end
+		syncDispel(btn, parent)
 	end)
 	-- Resize existing aura buttons to their category's current icon size.
 	for _, e in ipairs(auraBtns) do

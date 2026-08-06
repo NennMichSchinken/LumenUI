@@ -738,23 +738,38 @@ end
 -- Dispel color curve (12.0): Blizzard evaluates the (secret) dispel type internally
 -- against the curve and returns the color -> type-accurate in combat, without reading
 -- the secret value. Built lazily and invalidated on settings changes (see UpdateLayout).
-local dispelCurve
+local dispelCurve, dispelCurveFill
 local function buildDispelCurve()
-	dispelCurve = nil
+	dispelCurve, dispelCurveFill = nil, nil
 	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and Enum and Enum.LuaCurveType) then return end
 	local d = db()
-	local function pt(c, idx, key)
+	-- Two curves, same colours: the native dispel overlay hands its textures to the
+	-- engine, which writes the WHOLE colour incl. alpha — a registered texture may
+	-- not be SetAlpha'd afterwards (the engine owns that aspect). So the fill's
+	-- transparency is baked into its own curve.
+	local a = d.dispelAlpha or 0.3
+	local function pt(idx, key)
 		local r, g, b = dispelCol(d, key)
-		c:AddPoint(idx, CreateColor(r, g, b))
+		dispelCurve:AddPoint(idx, CreateColor(r, g, b, 1))
+		dispelCurveFill:AddPoint(idx, CreateColor(r, g, b, a))
 	end
-	local c = C_CurveUtil.CreateColorCurve()
-	c:SetType(Enum.LuaCurveType.Step)
-	pt(c, 0, "Magic")   -- none/fallback
-	pt(c, 1, "Magic")
-	pt(c, 2, "Curse")
-	pt(c, 3, "Disease")
-	pt(c, 4, "Poison")
-	dispelCurve = c
+	dispelCurve = C_CurveUtil.CreateColorCurve()
+	dispelCurve:SetType(Enum.LuaCurveType.Step)
+	dispelCurveFill = C_CurveUtil.CreateColorCurve()
+	dispelCurveFill:SetType(Enum.LuaCurveType.Step)
+	pt(0, "Magic")   -- none/fallback
+	pt(1, "Magic")
+	pt(2, "Curse")
+	pt(3, "Disease")
+	pt(4, "Poison")
+end
+
+-- Public: the two dispel colour curves (border, fill). The native overlay passes
+-- them to the engine as `customDispelColorCurve`, which resolves the secret dispel
+-- type internally — the same trick the old scan path used, minus the scan.
+function Raidframes:DispelCurves()
+	if not dispelCurve then buildDispelCurve() end
+	return dispelCurve, dispelCurveFill
 end
 
 local function pointInset(point, x, y)
@@ -1921,7 +1936,13 @@ function Raidframes:RenderDispelAuras(f)
 	local d = db()
 
 	local hasDispel, dr, dg, dbb
-	if d.dispelEnabled then hasDispel, dr, dg, dbb = self:GetDispel(u, d) end
+	-- While the native path is on it draws the dispel overlay itself: its container
+	-- knows a dispellable debuff is up without reading anything, and the scan below
+	-- is denied on 12.1 anyway (ns.AurasRestricted). LIVE frames only — the preview
+	-- keeps its own fake dispel so the colours stay judgeable while configuring.
+	if d.dispelEnabled and not (ns.RFC and ns.RFC.OwnsDispel and ns.RFC.OwnsDispel()) then
+		hasDispel, dr, dg, dbb = self:GetDispel(u, d)
+	end
 	f._dOn, f._dR, f._dG, f._dB = hasDispel or false, dr, dg, dbb
 	applyHealthColor(f, d, u, true)   -- always: the dispel rgb is secret, see the memo
 	self:SetDispelOverlay(f, hasDispel and d.dispelMode == "overlay", dr, dg, dbb, d.dispelAlpha)
@@ -2686,7 +2707,7 @@ function Raidframes:UpdateLayout(sameConfig)
 		self:RefreshShellPreview()   -- the shell band keeps rendering while disabled
 		return
 	end
-	dispelCurve = nil   -- dispel colors may have changed -> have the curve rebuilt
+	dispelCurve, dispelCurveFill = nil, nil   -- colours may have changed -> rebuild the curves
 	wlInvalidate()      -- profile may have switched -> re-resolve the whitelist table
 	self:LayoutLive(sameConfig)
 	-- LayoutLive aborts in combat (the secure header), but the resource role
