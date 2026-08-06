@@ -1631,11 +1631,20 @@ function W.Segment(parent, o)
 	-- bar width are 0 at build time, so hug retries on a few short timers + OnShow).
 	if hug then
 		local function fitHug()
-			local x = 0
+			-- All cells take the WIDEST label's width (Florian 2026-08-06): sized
+			-- individually, a short option ("Thin") got a visibly smaller pill than
+			-- a long one next to it, and the strip read as if the controls had
+			-- different heights. Uniform cells are also what a segmented control is
+			-- supposed to look like.
+			local maxTw = 0
 			for _, c in ipairs(cells) do
 				local tw = math.ceil(c._txt:GetStringWidth() or 0)
 				if tw <= 0 then return end -- font not measured yet; a later retry catches it
-				local cw = tw + M.segHugPad * 2
+				if tw > maxTw then maxTw = tw end
+			end
+			local x = 0
+			for _, c in ipairs(cells) do
+				local cw = maxTw + M.segHugPad * 2
 				c:ClearAllPoints()
 				c:SetPoint("TOP", bar, "TOP", 0, 0)
 				c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)

@@ -682,6 +682,9 @@ local FISHING_CHANNEL = 131476
 local function cancelOutfits()
 	if not ns.Lumen.db.profile.qol.buffs.suppressOutfit then return end
 	if InCombatLockdown() then return end
+	-- 12.1 denies aura scans to tainted callers while auras are secret (it throws,
+	-- it does not return nil) — see ns.AurasRestricted in Raidframes.lua.
+	if ns.AurasRestricted and ns.AurasRestricted() then return end
 	-- Descending: canceling a buff shifts every index above the freed slot.
 	for i = 40, 1, -1 do
 		local a = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")

@@ -333,12 +333,12 @@ local function makeInitializer(size, key)
 		textLayer:SetAllPoints(button)
 		textLayer:SetFrameLevel(cd:GetFrameLevel() + 1)
 		local dt = textLayer:CreateFontString(nil, "OVERLAY")
-		-- Spans the icon rather than sitting on a CENTER point: the engine binding
-		-- gives the string a width (it must not leak a secret duration through the
-		-- text width), and a left-justified string in a wide box hugs the left edge.
-		-- Full span + centred justify (StyleTextFont) keeps the number in the middle.
-		dt:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-		dt:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+		-- ONE anchor point (EllesmereUI does the same): pinned on two corners the
+		-- string has a fixed width, so a number larger than the icon came out
+		-- ellipsised. Single point = it sizes itself and overhangs instead.
+		-- StyleTextFont additionally clears any width the engine may have set and
+		-- re-centres the justify, which is what kept pulling the number left.
+		dt:SetPoint("CENTER", button, "CENTER", 0, 0)
 
 		local e = { button = button, fs = dt, key = key,
 			level = textLayer:GetFrameLevel() + 1 }  -- pandemic ring rides above the text layer

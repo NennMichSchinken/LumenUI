@@ -332,11 +332,30 @@ local learnedIID = {}
 -- whenever the learner records a new signature — a negative entry from before
 -- the learning must not outlive it.
 local resolvedIID = {}
+-- 12.1: `GetAuraDataByIndex` THROWS for a tainted caller as soon as auras are
+-- secret ("Auras cannot be accessed when secret while tainted") — it does not
+-- just return nil, so every scan needs this gate in front of it or it errors
+-- once per unit per event (Florian's PTR log, 2026-08-06).
+-- Probed, not asked: `SecretUtil.ShouldAurasBeSecret` answers "are auras secret",
+-- which is TRUE on 12.0.7 too — where the call still works fine and the old path
+-- depends on it. The only honest question is "does the call throw for us", so we
+-- try it. Cached on the frame time (one probe per frame at most, both outcomes):
+-- the state flips on zoning, never inside a render pass.
+local restrictedStamp, restrictedVal
+local function aurasRestricted()
+	local now = GetTime()
+	if restrictedStamp == now then return restrictedVal end
+	restrictedStamp = now
+	restrictedVal = not pcall(C_UnitAuras.GetAuraDataByIndex, "player", 1, "HELPFUL")
+	return restrictedVal
+end
+ns.AurasRestricted = aurasRestricted
 -- Learn passively: ONLY out of combat (in combat zero cost -> early early-out), scan
 -- the own auras on u, remember new signature->spellID. Called once per UNIT_AURA of the unit.
 local function learnUnitSigs(u)
 	if InCombatLockdown() then return end           -- hot path in combat: a single check
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex and ns.Lumen and ns.Lumen.db) then return end
+	if aurasRestricted() then return end          -- 12.1: scanning would throw
 	local g = ns.Lumen.db.global
 	local store = g and g.auraSigs
 	if not store then return end
@@ -807,12 +826,14 @@ function Raidframes:StyleTextFont(fs, size, outline)
 	local sf = shadowFonts()
 	fs:SetFontObject(sf[outline] or sf.none)   -- inherit shadow BEFORE SetFont
 	setFrameFont(fs, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
-	-- SetFontObject also inherits the font object's JUSTIFY, and a CreateFont
-	-- object defaults to LEFT. Harmless while the string sizes itself to its text
-	-- — but the native duration text gets a WIDTH from the engine binding, so the
-	-- number jumped to the left edge of the icon the moment the outline (= a new
-	-- font object) was picked (Florian 2026-08-06). Both callers of this want the
-	-- text centred in its box, so re-assert it after every font change.
+	-- SetFontObject also inherits the font object's JUSTIFY (a CreateFont object
+	-- defaults to LEFT) — which is why the number jumped left the moment an
+	-- outline was picked (Florian 2026-08-06). Justify only bites on a string that
+	-- HAS a width, so clear that too: the callers anchor on a single centre point
+	-- and want the text to size itself (and overhang a small icon rather than be
+	-- cut off). SetWidth(0) restores auto-sizing; pcall'd because the native
+	-- duration string carries engine-owned aspects.
+	pcall(fs.SetWidth, fs, 0)
 	fs:SetJustifyH("CENTER")
 	fs:SetJustifyV("MIDDLE")
 end
@@ -858,6 +879,11 @@ local dispelScratch = { r = 1, g = 1, b = 1 }
 -- Returns: hasDispel(bool, secret-free), r, g, b (possibly secret -> only to C++ setters).
 function Raidframes:GetDispel(u, d)
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
+	-- No dispel colouring while auras are secret: the scan below is the ONLY way we
+	-- have to ask 'is there a dispellable debuff', and 12.1 denies it to tainted
+	-- callers. Follow-up before the cutover: drive the overlay off a native aura
+	-- container group (HARMFUL|RAID_PLAYER_DISPELLABLE) instead of a scan.
+	if aurasRestricted() then return false end
 	if not dispelCurve then buildDispelCurve() end
 	local filter = d.dispelShowAll and "HARMFUL" or "HARMFUL|RAID_PLAYER_DISPELLABLE"
 	local i = 1
@@ -1119,11 +1145,12 @@ local function makeAuraIcon(holder)
 	textLayer:SetAllPoints(ic)
 	textLayer:SetFrameLevel(ic.cd:GetFrameLevel() + 1)
 	ic.dur = textLayer:CreateFontString(nil, "OVERLAY")
-	-- Spans the icon (not a CENTER point) so the centred justify keeps the number
-	-- in the middle even when something else assigns the string a width — same
-	-- anchoring as the native path, see AuraContainer.lua.
-	ic.dur:SetPoint("TOPLEFT", ic, "TOPLEFT", 0, 0)
-	ic.dur:SetPoint("BOTTOMRIGHT", ic, "BOTTOMRIGHT", 0, 0)
+	-- ONE anchor point, no second edge: a font string pinned on two corners has a
+	-- fixed width, and a number too big for the icon then gets ellipsised ("18" ->
+	-- "1…", Florian 2026-08-06). With a single point it sizes itself and simply
+	-- overhangs, which is the honest answer to "I picked a size larger than the
+	-- icon". Same anchoring the native path uses (AuraContainer.lua).
+	ic.dur:SetPoint("CENTER", ic, "CENTER", 0, 0)
 	-- Click-to-configure: ONLY the non-secure dock-preview pool gets mouse
 	-- scripts — live secure frames must never have their clicks intercepted.
 	if holder._host and holder._host._c2c then
@@ -2163,6 +2190,7 @@ function Raidframes:RenderAurasLive(f)
 	local u = f.unit
 	local A = db().auras
 	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
+	if aurasRestricted() then return end          -- 12.1: the native path renders instead
 	learnUnitSigs(u)   -- passive signature learning (out of combat; groundwork for the whitelist)
 	local spec = currentSpecID()
 	local wl   = whitelistCached(spec)   -- whitelist of the active spec (cached; seeded once)
