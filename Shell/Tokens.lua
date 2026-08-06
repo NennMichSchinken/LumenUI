@@ -425,7 +425,7 @@ UI.R = {
 UI.WIDGET = {
 	controlH    = 51, -- dropdown/input height (v3 2026-07-22: 45->51 to match the mockup's taller select — padding 11px @ ~1x -> ~51 design-px)
 	selectChevSize = 17, -- dropdown chevron glyph (Lucide chevron-down; mockup 14px @ ~1x -> ~17)
-	segHugPad   = 10, -- air around the LABEL INSIDE THE PILL of a content-width (hug) segment. THE RULE (Florian 2026-08-07): every cell is as wide as the LONGEST label + this + the pill inset (tabStripPad) on each side -- uniform pills, and no label ever touches a pill edge. Measured from the CELL instead, the longest label sat flush against the pill.
+	segHugPad   = 10, -- air around the LABEL INSIDE THE PILL of a content-width (hug) segment. THE RULE (Florian 2026-08-07): every pill gets exactly this much air around its OWN word, so the pills differ in width but the rhythm is constant. The cell adds the pill inset (tabStripPad) on top, because the pill is drawn inset from the cell. Equal-width cells were tried and rejected -- identical boxes give every word a different amount of air.
 	-- Compact segment/button height for HEADER rows (card heads, the preview
 	-- band). Free-standing since segments and buttons became rounded rectangles
 	-- (Florian 2026-07-29) — the old capsules only existed at pill-asset heights.

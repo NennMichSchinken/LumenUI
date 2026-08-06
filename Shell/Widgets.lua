@@ -1631,25 +1631,19 @@ function W.Segment(parent, o)
 	-- bar width are 0 at build time, so hug retries on a few short timers + OnShow).
 	if hug then
 		local function fitHug()
-			-- All cells take the WIDEST label's width (Florian 2026-08-06): sized
-			-- individually, a short option ("Thin") got a visibly smaller pill than
-			-- a long one next to it, and the strip read as if the controls had
-			-- different heights. Uniform cells are also what a segmented control is
-			-- supposed to look like.
-			local maxTw = 0
+			local x = 0
 			for _, c in ipairs(cells) do
 				local tw = math.ceil(c._txt:GetStringWidth() or 0)
 				if tw <= 0 then return end -- font not measured yet; a later retry catches it
-				if tw > maxTw then maxTw = tw end
-			end
-			local x = 0
-			for _, c in ipairs(cells) do
-				-- segHugPad is the air around the LABEL INSIDE THE PILL, and the pill
-				-- itself is inset from the cell by `pad` — so the cell has to carry
-				-- both (Florian 2026-08-07: measured from the cell, the longest label
-				-- ended up flush against the pill edge again). Same anatomy as the tab
-				-- bar, which is the reference for "nothing touches".
-				local cw = maxTw + (M.segHugPad + pad) * 2
+				-- THE RULE (Florian 2026-08-07): every pill carries the SAME air around
+				-- its own word — segHugPad left and right — so the strip's rhythm is
+				-- constant even though the pills differ in width. Equal-width cells were
+				-- tried and rejected: identical boxes give every word a different amount
+				-- of air, which is the thing that looked untidy.
+				-- The cell has to carry the pill inset (`pad`) ON TOP of that padding,
+				-- because the pill is drawn inset from the cell — measured at the cell
+				-- edge, the label ends up flush against the pill again.
+				local cw = tw + (M.segHugPad + pad) * 2
 				c:ClearAllPoints()
 				c:SetPoint("TOP", bar, "TOP", 0, 0)
 				c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)

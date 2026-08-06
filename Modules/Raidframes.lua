@@ -271,8 +271,8 @@ local FAKE_MAJOR = {
 -- on top. Order by urgency, most urgent on top (Florian 2026-07-30):
 --   debuffs > defensives > major CDs > HoTs > role/leader icons (f.iconLayer, +1).
 -- Stride 4 leaves each holder room for its own children (icon +1, cooldown +2).
--- Matches the EllesmereUI benchmark, where the text band (name/health text, role
--- icon, leader crown) sits BELOW the aura band on purpose so auras always win.
+-- The text band (name/health text, role icon, leader crown) sits BELOW the aura
+-- band on purpose, so auras always win a collision.
 local AURA_CATS = {
 	{ key = "hotsOwn",    lvl = 4,  filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
 	{ key = "defensives", lvl = 12, filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
@@ -980,8 +980,8 @@ local function auraCtxSuffix() return isRaidContext() and "Raid" or "Party" end
 -- The suffixed key NAMES, built once per context instead of on every read.
 -- RenderAurasLive runs for every UNIT_AURA of every frame and touched four
 -- keys per category — building those strings there cost up to 16 concatenations
--- (each one a hash + string-table lookup) per event. §9.3. The benchmark suite
--- caches its filter strings the same way (EllesmereUI_AuraKit.lua, AK.Filter).
+-- (each one a hash + string-table lookup) per event. §9.3. Caching a computed key
+-- string instead of rebuilding it per event is the standard fix for this.
 local AURA_KEYS = {}
 for _, s in ipairs({ "Raid", "Party" }) do
 	local t = {}
@@ -1445,8 +1445,8 @@ local function Decorate(f)
 	-- icons stay readable while those are up) but BELOW the aura band (Florian
 	-- 2026-07-30) — an aura icon carries which effect and how long, the role icon is
 	-- static information you can also read from the frame's position, so it must not
-	-- occlude auras. Same call as the EllesmereUI benchmark, whose "text band"
-	-- (name/health text, role icon, leader crown) sits below the aura band too.
+	-- occlude auras. Same reasoning as the text band above: information you can
+	-- also read from the frame's position yields to information you cannot.
 	-- Anchored/sized per context in ApplyConfig, filled in the render pass.
 	f.iconLayer = CreateFrame("Frame", nil, f)
 	f.iconLayer:SetAllPoints(f)
@@ -1515,9 +1515,9 @@ end
 -- ⚠️ LOCAL BUDGET: a Lua 5.1 chunk allows only 200 locals and this file sits at
 -- that ceiling (adding the power block first blew it: "main function has more
 -- than 200 local variables"). The COLD helpers below therefore live on the
--- module TABLE — the same pattern as every Raidframes:Method here and as
--- EllesmereUI's ns.RF_*/ns._Resolve* helpers, which they call inside their own
--- per-unit update. Reading a table field costs the same class as reading a
+-- module TABLE — the same pattern as every Raidframes:Method here, and one that
+-- other large unit-frame suites use inside their per-unit updates as well.
+-- Reading a table field costs the same class as reading a
 -- global (one hash lookup); what the perf rules forbid is ALLOCATING tables in
 -- hot paths, which none of this does. The health-bar path keeps plain locals.
 
@@ -2993,8 +2993,7 @@ function Raidframes:Setup()
 	-- that is the bulk of the traffic). Registration is STATIC: one frame per
 	-- possible group token, created once. A token nobody occupies simply never
 	-- fires, so roster changes need no re-registration — this is what makes the
-	-- approach cheap. Same construction as the benchmark suite
-	-- (EllesmereUIRaidFrames.lua, MakeUnitTracker).
+	-- approach cheap (the standard construction for per-unit event trackers).
 	-- The two non-UNIT_ entries (INCOMING_RESURRECT_CHANGED / INCOMING_SUMMON_CHANGED)
 	-- carry a unit payload but are NOT unit events -> they stay on the container
 	-- and keep going through the routing block below.

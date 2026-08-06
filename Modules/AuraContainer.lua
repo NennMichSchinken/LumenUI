@@ -53,7 +53,7 @@ for _, c in ipairs(NATIVE_CATS) do IS_NATIVE[c.key] = true end
 -- RAID_IN_COMBAT), so it declares two non-overlapping groups (the second negates
 -- RAID) to avoid a double display. Groups live in ONE debuffs container; the
 -- active mode's groups get maxFrameCount = N, the rest 0 (live switching, no
--- container swap -- mirrors the EllesmereUI approach).
+-- container swap).
 local DEBUFF_PRESETS = {
 	all         = { { key = "db_all",   filter = "HARMFUL" } },
 	raid        = { { key = "db_raid",  filter = "HARMFUL|RAID" },
@@ -334,9 +334,9 @@ local function makeInitializer(size, key)
 		textLayer:SetAllPoints(button)
 		textLayer:SetFrameLevel(cd:GetFrameLevel() + 1)
 		local dt = textLayer:CreateFontString(nil, "OVERLAY")
-		-- ONE anchor point (EllesmereUI does the same): pinned on two corners the
-		-- string has a fixed width, so a number larger than the icon came out
-		-- ellipsised. Single point = it sizes itself and overhangs instead.
+		-- ONE anchor point: pinned on two corners the string has a fixed width, so a
+		-- number larger than the icon came out ellipsised. A single point lets it
+		-- size itself and overhang instead.
 		-- StyleTextFont additionally clears any width the engine may have set and
 		-- re-centres the justify, which is what kept pulling the number left.
 		dt:SetPoint("CENTER", button, "CENTER", 0, 0)
@@ -489,11 +489,11 @@ end
 --  same colour curve the old path fed to GetAuraDispelTypeColor — the engine
 --  resolves the secret type internally.
 --  Both display modes are covered. The OVERLAY mode is a translucent wash plus
---  four edges over the frame. The RECOLOUR mode does what the old path did by
---  tinting the bar: a texture anchored to the health bar's FILL texture, so it
---  covers exactly the filled portion and moves with it (EllesmereUI solves it the
---  same way). Level-tied to the health frame at ARTWORK sublevel 2 — above the
---  fill, below heal absorb / prediction, which live a level up.
+--  four edges over the frame. The RECOLOUR mode reaches the same result the old
+--  path got from tinting the bar: a texture anchored to the health bar's FILL
+--  region, which covers exactly the filled portion and follows it. Level-tied to
+--  the health frame at ARTWORK sublevel 2 — above the fill, below heal absorb and
+--  prediction, which live a level up.
 -- ---------------------------------------------------------------------------
 -- One container per MODE, because the per-button initializer runs once at frame
 -- creation and cannot be re-written afterwards (post-creation writes to an aura
@@ -535,8 +535,11 @@ local function initDispelFrame(mode, w, h, health)
 			pcall(button.SetFrameLevel, button, health:GetFrameLevel())
 			local tex = button:CreateTexture(nil, "ARTWORK", nil, 2)
 			tex:SetColorTexture(1, 1, 1, 1)
-			local fillTex = health.GetStatusBarTexture and health:GetStatusBarTexture()
-			tex:SetAllPoints(fillTex or health)
+			-- Anchor to the bar's fill REGION, not the bar frame: the fill shrinks
+			-- with the health, so the tint covers what is actually filled.
+			local target = health
+			if health.GetStatusBarTexture then target = health:GetStatusBarTexture() or health end
+			tex:SetAllPoints(target)
 			reg(tex, edgeCurve)   -- opaque curve: this REPLACES the bar colour
 			return
 		end

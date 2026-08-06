@@ -1002,7 +1002,7 @@ local function buildBase(d, stack)
 	b1.close()
 
 	-- ===== Band 2: Absorbs (6) + Resource bar (6) ==========================
-	-- Absorbs: shield + heal-absorb (SHARED, central — like EllesmereUI). Their
+	-- Absorbs: shield + heal-absorb (SHARED, central). Their
 	-- display lives here (not folded into the Health bar card); the eye toggles
 	-- the absorb overlay in the preview / on the selected Edit-Mode frame.
 	local absBand = stack:band({

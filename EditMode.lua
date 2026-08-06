@@ -1304,8 +1304,8 @@ function EditMode:_positionPanel()
 end
 
 -- ---------------------------------------------------------------------------
---  Session chrome: a subtle world dim (so it's obvious you're in Edit Mode,
---  Ellesmere/Blizzard style — behind all UI so the frames stay bright) + a
+--  Session chrome: a subtle world dim (so it's obvious you're in Edit Mode —
+--  behind all UI, so the frames stay bright) + a
 --  persistent screen-center crosshair as a fixed alignment reference.
 -- ---------------------------------------------------------------------------
 local editChrome
