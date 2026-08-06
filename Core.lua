@@ -189,8 +189,8 @@ local defaults = {
 					-- Pandemic marker (12.1+): the icon is marked while re-casting would
 					-- carry duration over. The engine drives it (base vs. extended duration
 					-- are secret), we only own the option -- shared across raid/group like
-					-- the tooltip. Offered on every self-cast category; on an aura that is
-					-- never re-cast it simply never lights (it is not an expiry warning).
+					-- the tooltip. HoTs ONLY: it lights inside the refresh window, so an aura
+					-- that never gets re-cast would never trigger it.
 					pandemic = false,
 				},
 				defensives = {
@@ -204,7 +204,6 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
-					pandemic = false,
 				},
 				-- Major CDs (big class cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
 				-- Raidframes.lua). Default anchor TOPLEFT = the last free corner (HoTs=BOTTOMLEFT,
@@ -220,7 +219,6 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
-					pandemic = false,
 				},
 				debuffs = {
 					showTooltip = false,

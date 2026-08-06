@@ -174,13 +174,13 @@ local function tipsOn(key)
 	local cat = catCfg(key)
 	return (cat and cat.showTooltip) and true or false
 end
--- Offered for every category the player casts themselves (Florian 2026-08-07:
--- someone may well want it on a defensive). Note what it can and cannot do: the
--- engine lights the marker inside the REFRESH window, i.e. only for an aura that
--- actually gets re-cast before it expires. On something you cast once and let run
--- out the option is simply inert -- it is not an "expires soon" warning.
+-- HoTs only, decided twice (Florian 2026-08-07, final): the engine lights the
+-- marker inside the REFRESH window, so it needs an aura that gets re-cast before
+-- it expires. A defensive or a major cooldown is cast once and runs out -- the
+-- switch would sit there and never do anything, which is worse than not having it.
+local PANDEMIC_CATS = { hotsOwn = true }
 local function pandemicOn(key)
-	if key == "debuffs" then return false end   -- not ours to refresh
+	if not PANDEMIC_CATS[key] then return false end
 	local cat = catCfg(key)
 	return (cat and cat.pandemic) and true or false
 end
@@ -488,11 +488,18 @@ end
 --  sits on the unit, and AddDispelTypeTexture colours OUR textures through the
 --  same colour curve the old path fed to GetAuraDispelTypeColor — the engine
 --  resolves the secret type internally.
---  Style note: the health-bar RECOLOUR mode cannot be rebuilt this way (that
---  needs the colour in Lua, which needs the scan), so under the native path both
---  modes render as the overlay.
+--  Both display modes are covered. The OVERLAY mode is a translucent wash plus
+--  four edges over the frame. The RECOLOUR mode does what the old path did by
+--  tinting the bar: a texture anchored to the health bar's FILL texture, so it
+--  covers exactly the filled portion and moves with it (EllesmereUI solves it the
+--  same way). Level-tied to the health frame at ARTWORK sublevel 2 — above the
+--  fill, below heal absorb / prediction, which live a level up.
 -- ---------------------------------------------------------------------------
-local DISPEL_KEY = "dispel"
+-- One container per MODE, because the per-button initializer runs once at frame
+-- creation and cannot be re-written afterwards (post-creation writes to an aura
+-- button are denied while auras are secret). Switching the mode enables the other
+-- container instead of rebuilding this one.
+local DISPEL_MODES = { overlay = "dispel_ov", recolor = "dispel_bar" }
 
 local function rfCfg()
 	return ns.Lumen and ns.Lumen.db and ns.Lumen.db.profile.raidframes
@@ -501,24 +508,39 @@ local function dispelOn()
 	local d = rfCfg()
 	return (d and d.dispelEnabled) and true or false
 end
+local function dispelMode()
+	local d = rfCfg()
+	return (d and d.dispelMode == "recolor") and "recolor" or "overlay"
+end
 
--- One overlay button: a translucent fill plus the four edges, all coloured by the
--- engine. Registered ONCE here -- post-creation writes to an aura button are denied
--- while auras are secret, which is exactly when this matters.
-local function initDispelFrame(w, h)
+-- The engine colours whatever textures we register. CustomAsset with NO asset map
+-- leaves our own texture in place and takes only the colour (every other style
+-- would stamp a Blizzard border atlas over it).
+local function initDispelFrame(mode, w, h, health)
 	return function(button)
 		button:SetSize(w, h)
 		local rf = ns.Raidframes
 		local edgeCurve, fillCurve = rf:DispelCurves()
-		-- CustomAsset with NO asset map leaves our own texture in place and only
-		-- takes the colour (the engine's other styles would stamp a Blizzard border
-		-- atlas over it).
 		local function reg(tex, curve)
 			pcall(button.AddDispelTypeTexture, button, tex, {
 				style = Enum.CustomAuraButtonDispelTypeTextureStyle.CustomAsset,
 				customDispelColorCurve = curve,
 			})
 		end
+		pcall(button.SetMouseClickEnabled, button, false)
+		pcall(button.SetMouseMotionEnabled, button, false)
+
+		if mode == "recolor" then
+			-- Sort with the health bar's own regions, not above them.
+			pcall(button.SetFrameLevel, button, health:GetFrameLevel())
+			local tex = button:CreateTexture(nil, "ARTWORK", nil, 2)
+			tex:SetColorTexture(1, 1, 1, 1)
+			local fillTex = health.GetStatusBarTexture and health:GetStatusBarTexture()
+			tex:SetAllPoints(fillTex or health)
+			reg(tex, edgeCurve)   -- opaque curve: this REPLACES the bar colour
+			return
+		end
+
 		local fill = button:CreateTexture(nil, "ARTWORK")
 		fill:SetAllPoints(button)
 		fill:SetColorTexture(1, 1, 1, 1)
@@ -534,39 +556,45 @@ local function initDispelFrame(w, h)
 		edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, 2)
 		edge("TOPLEFT", "BOTTOMLEFT", 2, nil)
 		edge("TOPRIGHT", "BOTTOMRIGHT", 2, nil)
-		pcall(button.SetMouseClickEnabled, button, false)
-		pcall(button.SetMouseMotionEnabled, button, false)
 	end
 end
 
--- Attach / reconcile the dispel container on one button. Sized to the whole frame
--- and kept BELOW the aura containers, so icons and their duration text are never
--- covered (the layering standard the old overlay follows too).
+-- Attach / reconcile the dispel containers on one button: the container of the
+-- ACTIVE mode is (built and) enabled, the other one is switched off. The overlay
+-- one stays BELOW the aura containers so icons and duration text are never
+-- covered; the recolour one sorts with the health bar (see the initializer).
 local function syncDispel(button, parent)
 	button._rfc = button._rfc or {}
 	local d = rfCfg()
-	local container = button._rfc[DISPEL_KEY]
-	if not dispelOn() then
-		if container then container:SetEnabled(false); container:Hide() end
-		return
+	local mode = dispelMode()
+	local on = dispelOn()
+	-- Whatever is not the active mode goes quiet.
+	for m, key in pairs(DISPEL_MODES) do
+		local c = button._rfc[key]
+		if c and (not on or m ~= mode) then c:SetEnabled(false); c:Hide() end
 	end
+	if not on then return end
+
+	local key = DISPEL_MODES[mode]
+	local container = button._rfc[key]
 	local w, h = button:GetWidth() or 0, button:GetHeight() or 0
 	if w < 2 or h < 2 then return end
 	local filter = d.dispelShowAll and "HARMFUL" or "HARMFUL|RAID_PLAYER_DISPELLABLE"
 	if not container then
+		local health = button.health or button
 		local ok, c = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
 		if not ok or not c then return end
 		container = c
-		button._rfc[DISPEL_KEY] = container
+		button._rfc[key] = container
 		pcall(container.SetFrameLevel, container, parent:GetFrameLevel())
 		local built = pcall(function()
 			container:SetSize(1, 1)
 			container:ClearAllPoints()
 			container:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
 			layoutCall(container, "anchor", "TOPLEFT")
-			container:AddAuraGroup(DISPEL_KEY, filter, {
+			container:AddAuraGroup(key, filter, {
 				maxFrameCount   = 1,
-				initializeFrame = initDispelFrame(w, h),
+				initializeFrame = initDispelFrame(mode, w, h, health),
 			})
 			container._dispelFilter = filter
 			local u = button.unit or button:GetAttribute("unit")
@@ -574,17 +602,17 @@ local function syncDispel(button, parent)
 			container:SetEnabled(true)
 			container:UpdateAllAuras()
 		end)
-		if not built then button._rfc[DISPEL_KEY] = nil end
+		if not built then button._rfc[key] = nil end
 		return
 	end
 	-- Live changes: the filter mode swaps through the group (no container churn),
 	-- the size follows the frame.
 	if container._dispelFilter ~= filter and container.SetAuraGroupFilterString then
-		if pcall(container.SetAuraGroupFilterString, container, DISPEL_KEY, filter) then
+		if pcall(container.SetAuraGroupFilterString, container, key, filter) then
 			container._dispelFilter = filter
 		end
 	end
-	pcall(container.SetAuraGroupLayout, container, DISPEL_KEY, { elementWidth = w, elementHeight = h })
+	pcall(container.SetAuraGroupLayout, container, key, { elementWidth = w, elementHeight = h })
 	container:Show(); container:SetEnabled(true)
 	pcall(container.UpdateAllAuras, container)
 end
@@ -721,6 +749,9 @@ function RFC.Enable(quiet)
 		RFC.Attach(btn)
 		RFC.SetUnit(btn, btn.unit or btn:GetAttribute("unit"))
 		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(true); c:Show() end end
+		-- ... except the dispel container of the mode that is NOT active: the blanket
+		-- show above does not know about modes, syncDispel does.
+		syncDispel(btn, btn.overlay or btn)
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
 	if not quiet then say("Native auras |cff44ff44ON|r (HoTs · Defensives · Major CDs · Debuffs).") end

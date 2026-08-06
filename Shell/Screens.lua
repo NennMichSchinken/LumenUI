@@ -1789,10 +1789,10 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 	cSt:place(checkRow(cC, T("Show tooltip"), {
 		tooltip = T("Hovering an icon of this category shows the aura's tooltip. Clicks still go through to the frame. Applies to raid and group."),
 		get = aget(cat.key, "showTooltip"), set = aset(cat.key, "showTooltip") }), M.optionRowH, 0)
-	-- Offered for every category you cast yourself; only debuffs are excluded
-	-- (nothing of ours refreshes those). It stays inert on an aura that never gets
-	-- re-cast — the engine lights it inside the refresh window, not before expiry.
-	if cat.key ~= "debuffs" then
+	-- HoTs only: the engine lights this inside the REFRESH window, so it needs an
+	-- aura that gets re-cast before it expires. On a defensive or a major cooldown
+	-- the switch would never do anything (Florian 2026-08-07, decided twice).
+	if cat.key == "hotsOwn" then
 		cSt:place(checkRow(cC, T("Refresh warning"), {
 			tooltip = T("Marks the icon while re-casting would carry the remaining time over (pandemic window). Needs patch 12.1. Applies to raid and group."),
 			get = aget(cat.key, "pandemic"), set = aset(cat.key, "pandemic") }), M.optionRowH, 0)

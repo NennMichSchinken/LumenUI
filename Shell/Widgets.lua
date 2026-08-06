@@ -1644,7 +1644,12 @@ function W.Segment(parent, o)
 			end
 			local x = 0
 			for _, c in ipairs(cells) do
-				local cw = maxTw + M.segHugPad * 2
+				-- segHugPad is the air around the LABEL INSIDE THE PILL, and the pill
+				-- itself is inset from the cell by `pad` — so the cell has to carry
+				-- both (Florian 2026-08-07: measured from the cell, the longest label
+				-- ended up flush against the pill edge again). Same anatomy as the tab
+				-- bar, which is the reference for "nothing touches".
+				local cw = maxTw + (M.segHugPad + pad) * 2
 				c:ClearAllPoints()
 				c:SetPoint("TOP", bar, "TOP", 0, 0)
 				c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
