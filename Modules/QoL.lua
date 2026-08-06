@@ -128,6 +128,9 @@ local function createRing()
 	ring:EnableMouse(false)
 	ring:SetPoint("CENTER", UIParent, "BOTTOMLEFT", 0, 0)
 	ringTex = ring:CreateTexture(nil, "OVERLAY")
+	-- The ring art is 128px and gets drawn at 30-60: with pixel snapping on, a
+	-- downscaled circle picks up stair steps on its edge (Florian 2026-08-07).
+	ringTex:SetSnapToPixelGrid(false); ringTex:SetTexelSnappingBias(0)
 	ringTex:SetAllPoints(ring)
 	-- OnUpdate never fires while the frame is hidden -> Show/Hide is the gate,
 	-- no self-checking poll needed.

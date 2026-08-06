@@ -317,6 +317,7 @@ local function makeInitializer(size, key)
 		bg:SetColorTexture(0, 0, 0, 1)
 
 		local icon = button:CreateTexture(nil, "ARTWORK")
+		icon:SetSnapToPixelGrid(false); icon:SetTexelSnappingBias(0)  -- 64px art at ~16px
 		icon:SetPoint("TOPLEFT", 1, -1)
 		icon:SetPoint("BOTTOMRIGHT", -1, 1)
 		icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)

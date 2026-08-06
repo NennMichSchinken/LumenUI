@@ -806,9 +806,13 @@ local function shadowFonts()
 		o:SetShadowOffset(a > 0 and 1 or 0, a > 0 and -1 or 0)
 		return o
 	end
-	-- full soft shadow for "shadow"; a faint one GROUNDS the outline modes; none = none.
-	local faint = mk("Faint", 0.4)
-	SHADOW_FONTS = { none = mk("None", 0), shadow = mk("Soft", 0.6), outline = faint, thick = faint }
+	-- Soft shadow for "shadow"; the OUTLINE modes get NO shadow (Florian 2026-08-07:
+	-- our outlined text read muddy next to other suites'). An outline is already a
+	-- dark ring around every glyph — adding a drop shadow under it stacks two dark
+	-- edges half a pixel apart, and at 12px that is exactly what smears the letter
+	-- shapes. Pick one or the other, never both.
+	local clean = mk("None", 0)
+	SHADOW_FONTS = { none = clean, shadow = mk("Soft", 0.6), outline = clean, thick = clean }
 	return SHADOW_FONTS
 end
 -- ONE funnel for every frame-text typeface, so the Global-tab font choice reaches
@@ -1147,6 +1151,7 @@ local function makeAuraIcon(holder)
 	ic.bg:SetAllPoints()
 	ic.bg:SetColorTexture(0, 0, 0, 1)            -- 1px black frame
 	ic.tex = ic:CreateTexture(nil, "ARTWORK")
+	ic.tex:SetSnapToPixelGrid(false); ic.tex:SetTexelSnappingBias(0)  -- spell icons are 64px art shown at ~16
 	ic.tex:SetPoint("TOPLEFT", 1, -1)
 	ic.tex:SetPoint("BOTTOMRIGHT", -1, 1)
 	ic.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)   -- cut off the default icon border
@@ -1395,6 +1400,7 @@ local function Decorate(f)
 	f.stext:SetPoint("CENTER")
 	f.stext:Hide()
 	f.statusIcon = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
+	f.statusIcon:SetSnapToPixelGrid(false); f.statusIcon:SetTexelSnappingBias(0)
 	f.statusIcon:SetSize(20, 20)
 	f.statusIcon:SetPoint("CENTER")
 	f.statusIcon:Hide()
@@ -1451,9 +1457,16 @@ local function Decorate(f)
 	f.iconLayer = CreateFrame("Frame", nil, f)
 	f.iconLayer:SetAllPoints(f)
 	f.iconLayer:SetFrameLevel(base + 7) -- = f.overlay + 1; aura holders start at +4
+	-- ART textures get pixel snapping turned OFF: these are Blizzard atlases far
+	-- larger than the 12-16px we draw them at, and snapping a downscaled icon to
+	-- the pixel grid is what makes its edges look chewed (Florian 2026-08-07).
+	-- Solid 1px fills and borders elsewhere KEEP snapping on purpose — there it is
+	-- what makes the line crisp.
 	f.roleIcon = f.iconLayer:CreateTexture(nil, "OVERLAY")
+	f.roleIcon:SetSnapToPixelGrid(false); f.roleIcon:SetTexelSnappingBias(0)
 	f.roleIcon:Hide()
 	f.leadIcon = f.iconLayer:CreateTexture(nil, "OVERLAY")
+	f.leadIcon:SetSnapToPixelGrid(false); f.leadIcon:SetTexelSnappingBias(0)
 	f.leadIcon:Hide()
 end
 
