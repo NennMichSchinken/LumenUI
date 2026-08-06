@@ -270,9 +270,18 @@ local NON_LATIN_LOCALE = { ruRU = true, koKR = true, zhCN = true, zhTW = true }
 function UI:FrameFont()
 	local db = ns.Lumen and ns.Lumen.db
 	local pick = db and db.global and db.global.frameFont
-	if pick ~= "lumen" then return STANDARD_TEXT_FONT end
-	if NON_LATIN_LOCALE[GetLocale()] then return STANDARD_TEXT_FONT end
-	return self.FONT.regular
+	if not pick or pick == "wow" then return STANDARD_TEXT_FONT end
+	if pick == "lumen" then
+		if NON_LATIN_LOCALE[GetLocale()] then return STANDARD_TEXT_FONT end
+		return self.FONT.regular
+	end
+	-- Anything else is a LibSharedMedia font NAME, i.e. a font some OTHER addon
+	-- registered. We bundle nothing but our own typeface on purpose — shipping a
+	-- third-party font means shipping its licence, and LSM is where everyone's
+	-- font packs already live. Unknown name (pack uninstalled) -> client font.
+	local lsm = LibStub and LibStub("LibSharedMedia-3.0", true)
+	local path = lsm and lsm:Fetch("font", pick, true)
+	return path or STANDARD_TEXT_FONT
 end
 
 -- Apply that typeface to a frame FontString. Lives here so raid frames and QoL

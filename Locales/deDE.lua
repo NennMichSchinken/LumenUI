@@ -311,7 +311,7 @@ ns.RegisterLocale("deDE", {
 	["Font"] = "Schriftart",
 	["Typeface on the frames — applies instantly."] = "Schrift auf den Frames — wirkt sofort.",
 	["Frame font"] = "Frame-Schrift",
-	["Applies to raid frames and trackers. Lumen's font covers Latin script only — if you regularly play with names in other alphabets, pick WoW."] = "Gilt für Raidframes und Tracker. Lumens Schrift deckt nur lateinische Zeichen ab — wenn du regelmäßig Namen in anderen Alphabeten siehst, nimm WoW.",
+	["Applies to raid frames and trackers. Fonts from other addons appear here through LibSharedMedia. Lumen's own font covers Latin script only — if you regularly play with names in other alphabets, pick WoW."] = "Gilt für Raidframes und Tracker. Schriften aus anderen Addons tauchen hier über LibSharedMedia auf. Lumens eigene Schrift deckt nur lateinische Schrift ab — wer regelmäßig mit Namen in anderen Alphabeten spielt, nimmt WoW.",
 	["The settings window always uses Lumen's own font."] = "Das Einstellungsfenster nutzt immer Lumens eigene Schrift.",
 	["Scale"] = "Größe",
 	["Move (Edit Mode)"] = "Verschieben (Edit-Modus)",

@@ -2409,9 +2409,24 @@ local function buildGlobalBase(d, stack)
 	-- window stays on Inter, whose weight hierarchy the client font cannot provide.
 	local sFont = b2.cards[2]
 	regJump("font", sFont)   -- what's-new / search land here and the card flashes
-	local fontSeg = W.Segment(d, { label = T("Frame font"), hug = true,
-		options = { { value = "wow", label = "WoW" }, { value = "lumen", label = "LumenUI" } },
-		tooltip = T("Applies to raid frames and trackers. Lumen's font covers Latin script only — if you regularly play with names in other alphabets, pick WoW."),
+	-- Our two typefaces plus every font another addon registered with
+	-- LibSharedMedia (font packs, ElvUI, WeakAuras …). Lumen bundles no
+	-- third-party font of its own: shipping one means shipping its licence, and
+	-- LSM is where the user's fonts already are.
+	local fontOpts = { { value = "wow", label = "WoW" }, { value = "lumen", label = "LumenUI" } }
+	local lsmFonts = LibStub and LibStub("LibSharedMedia-3.0", true)
+	if lsmFonts then
+		for _, name in ipairs(lsmFonts:List("font")) do
+			if name ~= "WoW" and name ~= "LumenUI" then
+				fontOpts[#fontOpts + 1] = { value = name, label = name }
+			end
+		end
+	end
+	-- A dropdown is a FIELD control, so it lives in a field row at the unit width
+	-- (design bible §6.1.3) — the old two-option segment could hug its content.
+	local fontRow, fontCells = W.FieldRow(d, d, 2, { height = fieldH })
+	local fontSeg = W.Select(fontCells[1], { label = T("Frame font"), options = fontOpts, search = #fontOpts > 8,
+		tooltip = T("Applies to raid frames and trackers. Fonts from other addons appear here through LibSharedMedia. Lumen's own font covers Latin script only — if you regularly play with names in other alphabets, pick WoW."),
 		get = function() return ns.Lumen.db.global.frameFont or "wow" end,
 		set = function(v)
 			ns.Lumen.db.global.frameFont = v
@@ -2423,7 +2438,8 @@ local function buildGlobalBase(d, stack)
 			end
 			if ns.QoL and ns.QoL.ApplyTrackers then ns.QoL:ApplyTrackers() end
 		end })
-	sFont:place(fontSeg, fieldH, R.tight)
+	fontSeg:SetAllPoints(fontCells[1])
+	sFont:place(fontRow, fieldH, R.tight)
 	sFont:place(W.Hint(d, T("The settings window always uses Lumen's own font.")), M.hintH, R.tight)
 	sFont:close()
 	b2.close()
