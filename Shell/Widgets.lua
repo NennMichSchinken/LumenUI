@@ -1625,54 +1625,52 @@ function W.Segment(parent, o)
 		cells[i] = cell
 	end
 
-	-- Layout: hug = each cell as wide as its text + padding (content-width strip,
-	-- like the tabs — left-aligned, never over-stretched); default = equal-width
-	-- cells across the field cell. Both snap the pill once widths resolve (text /
-	-- bar width are 0 at build time, so hug retries on a few short timers + OnShow).
-	if hug then
-		local function fitHug()
-			local x = 0
-			for _, c in ipairs(cells) do
-				local tw = math.ceil(c._txt:GetStringWidth() or 0)
-				if tw <= 0 then return end -- font not measured yet; a later retry catches it
-				-- THE RULE (Florian 2026-08-07): every pill carries the SAME air around
-				-- its own word — segHugPad left and right — so the strip's rhythm is
-				-- constant even though the pills differ in width. Equal-width cells were
-				-- tried and rejected: identical boxes give every word a different amount
-				-- of air, which is the thing that looked untidy.
-				-- The cell has to carry the pill inset (`pad`) ON TOP of that padding,
-				-- because the pill is drawn inset from the cell — measured at the cell
-				-- edge, the label ends up flush against the pill again.
-				local cw = tw + (M.segHugPad + pad) * 2
-				c:ClearAllPoints()
-				c:SetPoint("TOP", bar, "TOP", 0, 0)
-				c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
-				c:SetPoint("LEFT", bar, "LEFT", x, 0)
-				c:SetWidth(cw)
-				x = x + cw
-			end
-			bar:SetWidth(x)
-			reposition()
+	-- Layout — ONE cell rule for both flavours (Florian 2026-08-07): every pill
+	-- carries the SAME air around its OWN word, `segHugPad` per side. The cell
+	-- adds the pill inset on top, because the pill is drawn inset from the cell —
+	-- measured at the cell edge the label ends up flush against the pill.
+	--   hug        = the strip is exactly the sum of those cells (tab-bar style).
+	--   stretched  = the leftover width of the field cell is spread EQUALLY over
+	--                the cells, so the air per word stays identical and the strip
+	--                still fills its cell.
+	-- Equal-width cells were tried and rejected: identical boxes give every word a
+	-- different amount of air, which is exactly what looked untidy.
+	-- Text/bar rects are 0 at build time, hence the retries + OnShow.
+	local function layoutCells()
+		-- Two passes over GetStringWidth instead of a width table: this also runs
+		-- from OnSizeChanged, and §9.3 wants no allocation in a repeatable path.
+		local total = 0
+		for _, c in ipairs(cells) do
+			local tw = math.ceil(c._txt:GetStringWidth() or 0)
+			if tw <= 0 then return end -- fonts not measured yet; a later retry catches it
+			total = total + tw + (M.segHugPad + pad) * 2
 		end
-		fitHug()
-		for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do C_Timer.After(dl, fitHug) end
-		bar:HookScript("OnShow", fitHug)
-	else
-		bar:SetScript("OnSizeChanged", function(self2, w)
-			w = w or self2:GetWidth() or 0
-			if w <= 0 then return end
-			local cw = w / n
-			for i, c in ipairs(cells) do
-				c:ClearAllPoints()
-				c:SetPoint("TOP", bar, "TOP", 0, 0)
-				c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
-				c:SetPoint("LEFT", bar, "LEFT", (i - 1) * cw, 0)
-				c:SetWidth(cw)
-			end
-			reposition()
-		end)
-		bar:HookScript("OnShow", reposition) -- build-time rects were nil
+		local extra = 0
+		if not hug then
+			local bw = bar:GetWidth() or 0
+			if bw <= 0 then return end
+			extra = (bw - total) / n
+		end
+		local x = 0
+		for _, c in ipairs(cells) do
+			local cw = math.ceil(c._txt:GetStringWidth() or 0) + (M.segHugPad + pad) * 2 + extra
+			c:ClearAllPoints()
+			c:SetPoint("TOP", bar, "TOP", 0, 0)
+			c:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
+			c:SetPoint("LEFT", bar, "LEFT", x, 0)
+			c:SetWidth(cw)
+			x = x + cw
+		end
+		if hug then bar:SetWidth(x) end
+		reposition()
 	end
+	layoutCells()
+	for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do C_Timer.After(dl, layoutCells) end
+	bar:HookScript("OnShow", layoutCells)
+	-- Stretched strips re-run on every resize; a hug strip owns its width and must
+	-- not react to its own SetWidth.
+	if not hug then bar:SetScript("OnSizeChanged", layoutCells) end
+
 	paint(false)
 
 	f.SetValueExternal = function(_, v) cur = v; paint(true) end
