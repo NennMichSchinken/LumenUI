@@ -14,9 +14,14 @@
 -- a manual override. Inert on 12.0.x (the "AuraContainer" frame type does not
 -- exist -> attach no-ops, old scan path renders).
 --
--- Not final: layout parity for centered anchors, the pandemic warning, and the
--- debuff category are follow-ups; whether OTHER units' SECRET auras render on the
--- non-secure overlay parent still needs a real-group test.
+-- Not final: layout parity for centered anchors is a follow-up, and whether OTHER
+-- units' SECRET auras render on the non-secure overlay parent still needs a
+-- real-group test.
+--
+-- Build compatibility: the 12.1 PTR renamed and added API between builds, so every
+-- engine call that moved is resolved by presence, never assumed -- see
+-- LAYOUT_METHODS (SetAuraLayout* -> SetFlowLayout*), the duration formatter option
+-- key, and the pandemic regions (12.1 build 69111 and up).
 
 -- luacheck: globals SLASH_LUMENNATIVE1
 
@@ -112,13 +117,20 @@ local function usableHeight(button)
 	return h >= 2 and h or 60
 end
 
--- Icon size of a category (explicit only when auto-fit is off, else derived from
--- the usable height; the exact auto-fit math from Raidframes is a follow-up).
+-- Icon size of a category. Runs through the SAME resolver as the old path
+-- (Raidframes:AuraIconSize) so a given setting produces one size, not one per
+-- render path. The local fallback only covers the case of that module not being
+-- up yet.
 local function iconSizeFor(button, key)
-	local cat, sfx = catCfg(key), ctxSfx()
-	if cat and not cat["autoFit" .. sfx] and cat["size" .. sfx] then
-		return cat["size" .. sfx]
+	local cat = catCfg(key)
+	if not cat then return 16 end
+	local rf = ns.Raidframes
+	if rf and rf.AuraIconSize then
+		local ok, size = pcall(rf.AuraIconSize, rf, cat, usableHeight(button))
+		if ok and size then return size end
 	end
+	local sfx = ctxSfx()
+	if not cat["autoFit" .. sfx] and cat["size" .. sfx] then return cat["size" .. sfx] end
 	return math.max(10, math.min(40, floor(usableHeight(button) * 0.3)))
 end
 
@@ -156,6 +168,17 @@ local function getDurationFormatter()
 	return durationFormatter or nil
 end
 
+-- Aura tooltips and the pandemic marker are SHARED across raid/group (style, not
+-- geometry -- CLAUDE.md §4.1), so they carry no context suffix.
+local function tipsOn(key)
+	local cat = catCfg(key)
+	return (cat and cat.showTooltip) and true or false
+end
+local function pandemicOn(key)
+	local cat = catCfg(key)
+	return (cat and cat.pandemic) and true or false
+end
+
 -- Per-category duration-text options (per context).
 local function durOptsFor(key)
 	local cat, sfx = catCfg(key), ctxSfx()
@@ -165,9 +188,10 @@ local function durOptsFor(key)
 	return on, cat["durationSize" .. sfx] or 12, cat["durationOutline" .. sfx] or "shadow"
 end
 
--- Tracked { button, fs, key } so duration text can be RESTYLED live (size /
--- outline / show) on a settings change without rebuilding the containers.
-local durText = {}
+-- Every aura button the engine has created for us, as { button, fs, key, ring }.
+-- Settings changes are applied to this list (duration text, tooltips, pandemic
+-- marker, icon size) instead of rebuilding the containers.
+local auraBtns = {}
 
 -- Style one duration fontstring from its category's options + (re)register or
 -- clear the engine binding for the on/off state. An unstyled FontString hard-errors
@@ -195,14 +219,59 @@ local function applyDurStyle(button, fs, key)
 	end
 end
 
--- Re-apply duration styling to every tracked button (called on settings change).
-function RFC.RestyleDuration()
-	for i = #durText, 1, -1 do
-		local e = durText[i]
+-- ---------------------------------------------------------------------------
+--  Pandemic marker (12.1 build 69111+)
+--  A 2px red ring around the icon while re-applying the aura would carry time
+--  over -- WoW's refresh window. The ENGINE owns when it shows: AddPandemicRegion
+--  stamps SecretAspect.Shown on the region and drives it from the aura's base vs.
+--  extended duration, both of which are secret for other players. That is the
+--  whole reason this is an engine call and not our own timer.
+--  Two consequences we design around:
+--   * once registered we may no longer Show/Hide the ring -- the OFF state is
+--     therefore alpha 0, not hidden;
+--   * a registered ring makes the engine run an OnUpdate on that button while an
+--     aura with a refresh window sits there, so we register LAZILY: a category
+--     that never had the option on never pays for it.
+-- ---------------------------------------------------------------------------
+-- Bring one button's pandemic marker in line with its category's option.
+local function applyPandemic(e)
+	local on = pandemicOn(e.key)
+	if not e.ring then
+		if not on then return end                         -- never enabled -> never built
+		if not e.button.AddPandemicRegion then return end  -- pre-69111 build: no API
+		local rf = ns.Raidframes
+		if not (rf and rf.AuraPandemicRing) then return end
+		-- Same builder the preview uses, so both paths draw the identical ring.
+		local ring = rf:AuraPandemicRing(e.button, e.level or (e.button:GetFrameLevel() + 3))
+		-- Hidden BEFORE it is handed over: afterwards its visibility belongs to the
+		-- engine, and a fresh frame is shown by default (one frame of red flash).
+		ring:Hide()
+		if pcall(e.button.AddPandemicRegion, e.button, ring) then e.ring = ring end
+		return
+	end
+	pcall(e.ring.SetAlpha, e.ring, on and 1 or 0)
+end
+
+-- Tooltips: the native button shows the aura tooltip on hover by itself, so the
+-- option is expressed as "does this icon accept mouse motion at all". Clicks are
+-- disabled outright -- an aura icon must never swallow a click-cast on the unit
+-- button underneath it (same rule as the old icon path).
+local function applyMouse(e)
+	pcall(e.button.SetMouseClickEnabled, e.button, false)
+	pcall(e.button.SetMouseMotionEnabled, e.button, tipsOn(e.key))
+end
+
+-- Re-apply every per-button option (called on any aura settings change): duration
+-- text, tooltip/mouse, pandemic marker. Dead entries are swapped out as we go.
+function RFC.RefreshOptions()
+	for i = #auraBtns, 1, -1 do
+		local e = auraBtns[i]
 		if e.fs and e.button then
 			applyDurStyle(e.button, e.fs, e.key)
+			applyMouse(e)
+			applyPandemic(e)
 		else
-			durText[i] = durText[#durText]; durText[#durText] = nil
+			auraBtns[i] = auraBtns[#auraBtns]; auraBtns[#auraBtns] = nil
 		end
 	end
 end
@@ -237,8 +306,13 @@ local function makeInitializer(size, key)
 		textLayer:SetFrameLevel(cd:GetFrameLevel() + 1)
 		local dt = textLayer:CreateFontString(nil, "OVERLAY")
 		dt:SetPoint("CENTER", button, "CENTER", 0, 0)
-		durText[#durText + 1] = { button = button, fs = dt, key = key }
+
+		local e = { button = button, fs = dt, key = key,
+			level = textLayer:GetFrameLevel() + 1 }  -- pandemic ring rides above the text layer
+		auraBtns[#auraBtns + 1] = e
 		applyDurStyle(button, dt, key)
+		applyMouse(e)
+		applyPandemic(e)
 	end
 end
 
@@ -474,7 +548,7 @@ function RFC.Relayout()
 		end
 	end)
 	-- Resize existing aura buttons to their category's current icon size.
-	for _, e in ipairs(durText) do
+	for _, e in ipairs(auraBtns) do
 		if e.button and sizes[e.key] then pcall(e.button.SetSize, e.button, sizes[e.key], sizes[e.key]) end
 	end
 end
@@ -485,7 +559,7 @@ function RFC.Suppresses(key)
 end
 
 function RFC.Enable(quiet)
-	if InCombatLockdown() then if not quiet then say("|cffff5555OOC schalten (Kampf).|r") end return end
+	if InCombatLockdown() then if not quiet then say("|cffff5555Out of combat only.|r") end return end
 	RFC.enabled = true
 	forEachLiveButton(function(btn)
 		RFC.Attach(btn)
@@ -493,7 +567,7 @@ function RFC.Enable(quiet)
 		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(true); c:Show() end end
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	if not quiet then say("Native Auren |cff44ff44AN|r (HoTs · Defensives · Major CDs · Debuffs).") end
+	if not quiet then say("Native auras |cff44ff44ON|r (HoTs · Defensives · Major CDs · Debuffs).") end
 end
 
 -- Auto-default: on 12.1 turn native on by itself (once, after login), so no
@@ -510,13 +584,13 @@ autoFrame:SetScript("OnEvent", function()
 end)
 
 function RFC.Disable()
-	if InCombatLockdown() then say("|cffff5555OOC schalten (Kampf).|r"); return end
+	if InCombatLockdown() then say("|cffff5555Out of combat only.|r"); return end
 	RFC.enabled = false
 	forEachLiveButton(function(btn)
 		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(false); c:Hide() end end
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	say("Native Auren |cffffcc00AUS|r (altes System zurück).")
+	say("Native auras |cffffcc00OFF|r (old path renders again).")
 end
 
 SLASH_LUMENNATIVE1 = "/lumennative"
@@ -526,8 +600,8 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "off" then RFC.Disable()
 	elseif arg == "refresh" then RFC.Disable(); RFC.Enable()
 	else
-		say("Auren über den nativen 12.1-Container. Auf 12.1 automatisch AN.")
-		say("  /lumennative on | off | refresh   (aktuell: "
-			.. (RFC.enabled and "AN" or "AUS") .. (IS_121 and ", 12.1 erkannt" or ", kein 12.1") .. ")")
+		say("Auras through the native 12.1 container. Enabled automatically on 12.1.")
+		say("  /lumennative on | off | refresh   (currently: "
+			.. (RFC.enabled and "ON" or "OFF") .. (IS_121 and ", 12.1 detected" or ", not 12.1") .. ")")
 	end
 end

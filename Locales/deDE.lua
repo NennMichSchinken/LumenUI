@@ -211,6 +211,12 @@ ns.RegisterLocale("deDE", {
 	["Inside / outside"] = "Innen / außen",
 	["How many icons and how large"] = "Wie viele Icons und wie groß",
 	["Size from frame height"] = "Größe aus Frame-Höhe",
+	["Refresh warning"] = "Auffrisch-Warnung",
+	["Marks the icon red while re-casting would carry the remaining time over (pandemic window). Needs patch 12.1. Applies to raid and group."] = "Färbt das Icon rot, solange ein neuer Zauber die Restzeit mitnimmt (Pandemie-Fenster). Braucht Patch 12.1. Gilt für Raid und Gruppe.",
+	["Duration text"] = "Restzeit-Text",
+	["The remaining time on the icon"] = "Die Restzeit auf dem Icon",
+	["Show duration"] = "Restzeit anzeigen",
+	["Outline"] = "Umrandung",
 	-- Split so the VALUE can be highlighted separately in the info bar.
 	["Applies to"] = "Gilt für",
 	["Raid and Group"] = "Raid und Gruppe",
@@ -224,6 +230,7 @@ ns.RegisterLocale("deDE", {
 	["Where to"] = "Wohin",
 	["Position · Offsets"] = "Position · Versatz",
 	["Count · Size"] = "Anzahl · Größe",
+	["Show · Size · Outline"] = "Anzeigen · Größe · Umrandung",
 	["Copying placement onto another category stacks its icons in the same corner."] = "Die Platzierung auf eine andere Kategorie zu kopieren stapelt deren Icons in dieselbe Ecke.",
 
 	-- ── Tracking ─────────────────────────────────────────────────────────

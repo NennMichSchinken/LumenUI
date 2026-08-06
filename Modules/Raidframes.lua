@@ -970,6 +970,35 @@ local function auraIconSize(cat, L, availH)
 	end
 	return max(8, min(48, floor(size)))
 end
+-- Public: the icon size a category resolves to in the CURRENT context. The native
+-- 12.1 path renders the same categories through Blizzard's container, so it has to
+-- land on the same number -- otherwise one setting would produce two different icon
+-- sizes depending on which path is active. A method (not a local): this chunk sits
+-- near Lua's 200-local ceiling, see [[lumen-lua-200-local-limit]].
+function Raidframes:AuraIconSize(cat, availH)
+	return auraIconSize(cat, layoutCtx(), availH)
+end
+-- The pandemic ("refresh window") ring: 2px red edges around an aura icon, as one
+-- frame so a single Show/Hide toggles it. ONE builder for both aura paths — on
+-- 12.1 the engine owns when it shows (Modules/AuraContainer.lua), in the preview
+-- we place it ourselves, and they have to look the same. A method, not a local:
+-- this chunk sits near Lua's 200-local ceiling.
+function Raidframes:AuraPandemicRing(parent, level)
+	local ring = CreateFrame("Frame", nil, parent)
+	ring:SetAllPoints(parent)
+	if level then ring:SetFrameLevel(level) end
+	local function edge(p1, p2, w, h)
+		local tex = ring:CreateTexture(nil, "OVERLAY")
+		tex:SetColorTexture(0.95, 0.26, 0.26, 1)
+		tex:SetPoint(p1); tex:SetPoint(p2)
+		if w then tex:SetWidth(w) else tex:SetHeight(h) end
+	end
+	edge("TOPLEFT", "TOPRIGHT", nil, 2)
+	edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, 2)
+	edge("TOPLEFT", "BOTTOMLEFT", 2, nil)
+	edge("TOPRIGHT", "BOTTOMRIGHT", 2, nil)
+	return ring
+end
 -- Small inward offset so icons don't stick to the frame edge.
 local function auraInset(point)
 	local I, x, y = 1, 0, 0
@@ -2254,9 +2283,21 @@ function Raidframes:RenderAurasFake(f)
 			if durOn == nil then durOn = true end
 			local durSize    = cat[K.durationSize] or 12
 			local durOutline = cat[K.durationOutline] or "shadow"
+			-- Refresh warning: on live frames the ENGINE decides when the ring shows
+			-- (it owns the secret durations). The preview has no aura behind its
+			-- icons, so the FIRST one wears it as a sample — the option has to be
+			-- judgeable while configuring (design rule: fake mode renders every
+			-- aura feature).
+			local pandOn = cat.pandemic and true or false
 			for k = 1, n do
 				local ic = holder.icons[k]
 				if ic then
+					if pandOn and k == 1 then
+						ic.pand = ic.pand or self:AuraPandemicRing(ic, ic.cd:GetFrameLevel() + 2)
+						ic.pand:Show()
+					elseif ic.pand then
+						ic.pand:Hide()
+					end
 					ic.tex:SetTexture(fakeTex[((k - 1) % #fakeTex) + 1])
 					local dur = 6 + k * 4   -- sample duration for the swipe + remaining text
 					if showSwipe and ic.cd then
@@ -2556,9 +2597,9 @@ function Raidframes:RefreshAuras()
 		end
 	end
 	self:RefreshShellPreview()   -- aura setters route through here -> keep the band live
-	if ns.RFC then -- native aura path: apply layout + duration-text options live
+	if ns.RFC then -- native aura path: apply layout + per-icon options live
 		if ns.RFC.Relayout then ns.RFC.Relayout() end
-		if ns.RFC.RestyleDuration then ns.RFC.RestyleDuration() end
+		if ns.RFC.RefreshOptions then ns.RFC.RefreshOptions() end
 	end
 end
 

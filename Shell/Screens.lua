@@ -1349,6 +1349,7 @@ local function ctxSfx(ctx) return (ctx == "raid") and "Raid" or "Party" end
 local AURA_COPY_GROUPS = {
 	place = { "anchor", "grow", "spacing", "outside", "offX", "offY" },
 	look  = { "maxIcons", "size", "autoFit", "showSwipe" },
+	text  = { "showDuration", "durationSize", "durationOutline" },
 }
 
 -- ---------------------------------------------------------------------------
@@ -1655,11 +1656,10 @@ end
 
 -- ---------------------------------------------------------------------------
 --  DISPLAY pane — placement + look of ONE category in ONE context, as two
---  equal-height band cards. No "More options" disclosure: the chip bar carries
---  the category split, so everything of a single category fits on screen
---  (Florian 2026-07-29 — the old collapsed rows meant too much clicking).
---  Band 2 ("Restzeit"/duration text) arrives with the 12.1 aura rework, which
---  owns those profile fields.
+--  equal-height band cards, plus the full-width duration-text block under them.
+--  No "More options" disclosure: the chip bar carries the category split, so
+--  everything of a single category fits on screen (Florian 2026-07-29 — the old
+--  collapsed rows meant too much clicking).
 -- ---------------------------------------------------------------------------
 local function auraDisplayPane(d, host, cat, ctx, page)
 	local sfx = ctxSfx(ctx)
@@ -1724,6 +1724,13 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 	aSt:place(checkRow(aC, T("Show tooltip"), {
 		tooltip = T("Hovering an icon of this category shows the aura's tooltip. Clicks still go through to the frame. Applies to raid and group."),
 		get = aget(cat.key, "showTooltip"), set = aset(cat.key, "showTooltip") }), M.optionRowH, 0)
+	-- Refresh window: only meaningful for the categories you cast yourself.
+	-- Debuffs are not ours to refresh, so the row does not exist there.
+	if cat.key ~= "debuffs" then
+		aSt:place(checkRow(aC, T("Refresh warning"), {
+			tooltip = T("Marks the icon red while re-casting would carry the remaining time over (pandemic window). Needs patch 12.1. Applies to raid and group."),
+			get = aget(cat.key, "pandemic"), set = aset(cat.key, "pandemic") }), M.optionRowH, 0)
+	end
 	local aH = blockClose(aBox, aSt, aC)
 
 	-- Equal heights (shared bottom edge), then the row itself.
@@ -1746,8 +1753,34 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 	end
 	row:SetScript("OnSizeChanged", function(_, w) splitRow(w) end)
 	splitRow()
-	host:place(row, maxH, 0)
+	host:place(row, maxH, R.row)
 	splitRow()  -- place() gives the row its real width
+
+	-- --- Duration text (full width) -----------------------------------------
+	-- Its own block rather than a third column: the two rows above are about
+	-- WHERE and HOW BIG, this one is about the number on the icon. Full width
+	-- keeps the size slider and the outline segment on one line.
+	local dBox, dSt, dC = innerBlock(d, T("Duration text"), T("The remaining time on the icon"))
+	local durDeps = {}
+	local function refreshDur()
+		local on = cget("showDuration")() and true or false
+		for _, w in ipairs(durDeps) do w:SetWidgetEnabled(on) end
+	end
+	local durOn = checkRow(dC, T("Show duration"), {
+		get = cget("showDuration"),
+		set = function(v) cset("showDuration")(v); refreshDur() end })
+	dSt:place(durOn, M.optionRowH, R.row)
+	local t1, tc = W.FieldRow(dC, page, 2, { height = M.sliderBoxH })
+	durDeps[#durDeps + 1] = sliderBox(tc[1], { label = T("Size"), min = 6, max = 30, unit = " px",
+		get = cget("durationSize"), set = cset("durationSize") })
+	local durOut = W.Segment(tc[2], { label = T("Outline"), options = OUTLINE_SEG_OPTS,
+		get = cget("durationOutline"), set = cset("durationOutline") })
+	durOut:SetAllPoints(tc[2])
+	durDeps[#durDeps + 1] = durOut
+	dSt:place(t1, M.sliderBoxH, 0)
+	host:place(dBox, blockClose(dBox, dSt, dC), 0)
+	refreshDur()
+
 	refreshSize()
 end
 
@@ -1823,8 +1856,9 @@ local function buildAuras(d, stack)
 		title  = T("Copy settings"),
 		height = M.segCompactH,   -- matches the pane switch beside it
 		groups = {
-			{ key = "place", label = T("Placement"),  hint = T("Position · Offsets") },
-			{ key = "look",  label = T("Appearance"), hint = T("Count · Size") },
+			{ key = "place", label = T("Placement"),     hint = T("Position · Offsets") },
+			{ key = "look",  label = T("Appearance"),    hint = T("Count · Size") },
+			{ key = "text",  label = T("Duration text"), hint = T("Show · Size · Outline") },
 		},
 		-- NOTHING preselected (Florian 2026-07-30): a copy dialog that arrives with a
 		-- box already ticked invites a copy you did not choose. "Appearance" used to
