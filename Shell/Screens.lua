@@ -113,6 +113,10 @@ local function vget(ctx, key) return function() return (rf()[ctx] or {})[key] en
 local function vset(ctx, key)
 	return function(v)
 		local t = rf(); t[ctx] = t[ctx] or {}; t[ctx][key] = v; relayout()
+		-- Width/height/spacing/orientation change how much room the anchored preview
+		-- needs; the others (text position/size) do not, and the resize is a cheap
+		-- no-op when the height comes out the same. See ns.ShellPreviewResize.
+		if ns.ShellPreviewResize then ns.ShellPreviewResize() end
 	end
 end
 -- (Per-context color helpers removed: text colors now live SHARED in Base, see tcget/tcset.)
@@ -205,61 +209,219 @@ local function eyeToggle(key, tip)
 		end,
 	}
 end
--- Open state lives in the SHELL (sidebar "Open preview" button = the single
--- toggle, v3; session-only — the shell always starts with the preview closed).
+-- Which context the Auras tab edits. PERSISTED in the profile (like
+-- previewBaseCtx / previewSize): you come back to the tab to keep working on the
+-- same thing.
+local function auraTabCtx()
+	return (rf().auraTabCtx == "raid") and "raid" or "party"
+end
+local function setAuraTabCtx(v)
+	rf().auraTabCtx = (v == "raid") and "raid" or "party"
+end
 
-ns.ScreenPreviews = ns.ScreenPreviews or {}
-local function previewDock(spec)
-	return function(holder)
-		local band = W.PreviewBand(holder, {
-			eyes = previewEyes,
-			eyeDefs = previewEyeDefs(),
-			onEye = previewRefresh,
-			onLayout = function(side, w, h) ns.Shell:SetDockLayout(side, w, h) end,
-			onChrome = function(v) ns.Shell:SetDockChrome(v) end,
-			onResetPos = function() ns.Shell:ResetDockPosition() end,
-			-- Open state (session-only, shared across the three tabs; the band's
-			-- collapse chevron just closes the window via the Shell).
-			open = {
-				get = function() return ns.Shell:IsPreviewOpen() end,
-				set = function(v) ns.Shell:SetPreviewOpen(v) end,
-			},
-			-- Base tab: Raid/Group switch — Base settings (aggro, dispel,
-			-- colors) are judged on the real context layout of choice.
-			ctx = spec.baseSwitch and {
-				values = {
-					{ v = "party", label = T("Group") },
-					{ v = "raid",  label = T("Raid") },
-				},
-				get = function() return rf().previewBaseCtx or "party" end,
-				set = function(v) rf().previewBaseCtx = v; previewRefresh() end,
-			} or nil,
-			sizes = spec.sizes and {
-				values = { 5, 10, 20, 25 },
-				-- Clamp: profiles from the 5/10/20/40 era may still hold 40.
-				get = function() return math.min(rf().previewSize or 5, 25) end,
-				set = function(v) rf().previewSize = v; previewRefresh() end,
-			} or nil,
-		})
-		if ns.Raidframes then ns.Raidframes:AttachShellPreview(band, spec) end
-		pvBands[band] = true   -- eye-sync repaint target (previewRefresh)
-		holder._onShow = previewRefresh
+-- ---------------------------------------------------------------------------
+--  ANCHORED PREVIEW (2026-07-29) — every raidframe tab opens with the preview
+--  as the first thing on the page: one card, header row on top, frames below,
+--  settings scrolling underneath. It replaces the old collapsible satellite
+--  DOCK entirely (Florian: "dann haben wir einen sauberen Stand für alles und
+--  immer in der Shell") — no window to fold away, drag or lose, and no second
+--  place the same thing could live.
+--  The height is NOT capped and nothing is scaled down: the band is as tall as
+--  its content needs, so a 20-man raid sample simply pushes the cards further
+--  down. Frames therefore always render at TRUE on-screen size.
+--  One band is built PER TAB KEY and re-parented into each rebuild's container,
+--  so repeated renders never pile up dead bands in the module's registry.
+-- ---------------------------------------------------------------------------
+local pvHosts = {}   -- tab key -> the band built for it
+
+local function previewBandFor(key, container, spec, opts)
+	local band = pvHosts[key]
+	if band then
+		band:SetParent(container)
+		band:ClearAllPoints()
+		band:SetAllPoints(container)
+		band:Show()
+		return band
+	end
+	band = W.PreviewBand(container, {
+		eyes     = previewEyes,
+		eyeDefs  = previewEyeDefs(),
+		onEye    = previewRefresh,
+		hint     = T("Click an icon to edit"),
+		ctx      = opts and opts.ctx or nil,
+		sizes    = opts and opts.sizes or nil,
+		-- Folding it away: it is anchored, so it cannot be pushed aside when it
+		-- is in the way. Kept in the profile — a preference, not a view state.
+		fold = {
+			get = function() return rf().previewFolded and true or false end,
+			set = function(v)
+				rf().previewFolded = v and true or nil
+				if ns.Shell then ns.Shell:RenderContent(true) end
+			end,
+		},
+	})
+	if ns.Raidframes then ns.Raidframes:AttachShellPreview(band, spec) end
+	pvBands[band] = true   -- eye-sync repaint target (previewRefresh)
+	pvHosts[key] = band
+	return band
+end
+
+-- Parks the band for `key` in the Shell's STICKY area above the scroll region,
+-- sized to exactly the height its content needs. It therefore stays put while
+-- the settings scroll under it — a preview that scrolls away is no preview
+-- (Florian 2026-07-29). The extent is computed from the profile BEFORE anything
+-- renders (Raidframes:PreviewExtent), because the height must be known when the
+-- area is reserved.
+local pvHostFrames = {}   -- tab key -> the sticky host (reused across renders)
+local pvParked = {}       -- the band currently parked: { spec =, host =, band =, h = }
+-- The height the sticky area has to reserve for `spec`. Shared by the builder and
+-- by ns.ShellPreviewResize below, so the reserved height and the rendered content
+-- can never be computed two different ways.
+local function pvStickyH(spec, ref, band)
+	local P = L.raidframes.preview
+	if rf().previewFolded then return P.foldedH end
+	local h = P.minH
+	if ns.Raidframes and ns.Raidframes.PreviewExtent then
+		local _, ch = ns.Raidframes:PreviewExtent(spec, ref)
+		-- Chrome comes FROM THE BAND (f:ChromeH), not from a constant here: the band
+		-- owns its header height, paddings and caption zone, and when this was a
+		-- hand-tuned token the two drifted apart -- the frames overlapped the caption
+		-- line and the band saw an overflow that did not exist (Florian 2026-07-30).
+		local chrome = (band and band.ChromeH and band:ChromeH()) or P.chromeH
+		h = math.max(h, math.ceil(ch) + chrome)
+	end
+	-- Cap: the band may claim at most maxShare of the room it shares with the
+	-- settings. Beyond that the stage clips and scrolls (W.PreviewBand) instead of
+	-- shrinking the frames — a preview that lies about size is worthless.
+	local room = (ns.Shell.StickyRoom and ns.Shell:StickyRoom()) or 0
+	if room > 0 then
+		local cap = math.floor(room * P.maxShare)
+		if cap >= P.foldedH and h > cap then h = cap end
+	end
+	return h
+end
+
+-- Re-reserve the parked band's height after a setting changed the preview's
+-- EXTENT — width, height, spacing or orientation (Florian 2026-07-30: switching
+-- Vertical <-> Horizontal kept the old height, so the frames spilled out of the
+-- band until you touched the sample size, which was the only control that
+-- re-reserved it). Only those four feed Raidframes.PreviewExtent, so only they
+-- need this; aura settings never change the extent.
+--
+-- Deliberately NOT Shell:RenderContent(true), which is what the sample-size
+-- switch uses: three of the four are SLIDERS, and rebuilding the screen while a
+-- slider is being dragged destroys the very widget under the cursor (the same
+-- trap the spell search field hit). This touches nothing but the host's height.
+--
+-- Exposed on `ns` rather than as a file-local so the setters near the top of the
+-- file can reach it without a forward declaration (Screens.lua is large; see the
+-- Lua 200-local ceiling notes).
+function ns.ShellPreviewResize()
+	local p = pvParked
+	if not (p.host and p.spec and ns.Shell and p.host:IsShown()) then return end
+	local h = pvStickyH(p.spec, ns.Shell:Frame(), p.band)
+	if h == p.h then return end   -- unchanged: no SetSticky churn per slider tick
+	p.h = h
+	ns.Shell:SetSticky(p.host, h)
+	previewRefresh()              -- the stage resized; the frames have to re-place
+end
+
+local function previewRow(d, key, spec, opts)
+	local host = pvHostFrames[key]
+	if not host then
+		host = CreateFrame("Frame", nil, ns.Shell:Frame() or d)
+		pvHostFrames[key] = host
+	end
+	local band = previewBandFor(key, host, spec, opts)
+	local folded = rf().previewFolded and true or false
+	local h = pvStickyH(spec, ns.Shell:Frame() or d, band)
+	if band.SetFolded then band:SetFolded(folded) end
+	pvParked.spec, pvParked.host, pvParked.band, pvParked.h = spec, host, band, h
+	ns.Shell:SetSticky(host, h)
+	-- Fill once the frame has real dimensions. One deferred pass is not enough:
+	-- opening the tab from cold (or arriving via a jump) leaves the host without
+	-- a resolved rect on the first tick, and the preview then stayed empty until
+	-- you switched tabs and back (Florian 2026-07-29). Retry over a few frames —
+	-- the same cold-start cure the slider value boxes use.
+	for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do
+		C_Timer.After(dl, function() if host:IsVisible() then previewRefresh() end end)
+	end
+	-- A cached screen does not run its builder again; SetSticky re-shows the host,
+	-- so refill from there (Florian 2026-07-29: returning to Base showed an empty
+	-- band until you toggled something).
+	if not host._pvShowHooked then
+		host._pvShowHooked = true
+		host:HookScript("OnShow", function() C_Timer.After(0, previewRefresh) end)
 	end
 end
-ns.ScreenPreviews["Raidframes/Base"]  = previewDock({ kind = "ctx", baseSwitch = true })
-ns.ScreenPreviews["Raidframes/Raid"]  = previewDock({ kind = "ctx", ctx = "raid", sizes = true })
-ns.ScreenPreviews["Raidframes/Group"] = previewDock({ kind = "ctx", ctx = "party" })
 
--- Expand state of the aura/icon sections per context — SESSION-ONLY and
--- auto-collapsed on navigation (Florian 2026-07-04: a section left open made
--- the page long and buried the ones below on the next visit; pages now always
--- start short and predictable). ctx = "raid" | "party".
-local auraOpenState, iconOpenState = {}, {}
--- ns.ShellIndexing: while the search index is being built every collapsible
--- counts as OPEN, otherwise its rows are never created and the options inside
--- (aura categories, icon settings) would be invisible to the search.
-local function auraOpen(ctx) return ns.ShellIndexing or auraOpenState[ctx] or false end
-local function setAuraOpen(ctx, v) auraOpenState[ctx] = v end
+-- Per-tab preview specs. `kind`/`ctx` are read by the module's render.
+local PV_SPECS = {
+	-- raidN: Base has no size chips, so its raid view pins the same 10 the Auras
+	-- tab uses — one group says nothing about a raid layout.
+	["Raidframes/Base"]  = { kind = "ctx", baseSwitch = true, raidN = 10 },
+	["Raidframes/Raid"]  = { kind = "ctx", ctx = "raid", sizes = true },
+	["Raidframes/Group"] = { kind = "ctx", ctx = "party" },
+	["Raidframes/Auras"] = { kind = "ctx", raidN = 10, ctxGet = auraTabCtx },
+}
+
+-- Header controls per tab: Base switches which context it PREVIEWS, Auras
+-- switches which context it EDITS (values follow), Raid picks the sample size.
+local function previewOpts(key)
+	if key == "Raidframes/Base" then
+		return { ctx = {
+			values  = { { v = "party", label = T("Group") }, { v = "raid", label = T("Raid") } },
+			caption = T("Preview"),
+			get = function() return rf().previewBaseCtx or "party" end,
+			set = function(v)
+				rf().previewBaseCtx = v
+				previewRefresh()
+				-- The other context has different frame sizes, so the anchored
+				-- band needs a different height — without the re-render the frames
+				-- overflowed their area and covered the header (Florian 2026-07-29).
+				if ns.Shell then ns.Shell:RenderContent(true) end
+			end,
+		} }
+	elseif key == "Raidframes/Auras" then
+		return { ctx = {
+			values  = { { v = "party", label = T("Group") }, { v = "raid", label = T("Raid") } },
+			caption = T("Editing"),
+			get = auraTabCtx,
+			set = function(v)
+				setAuraTabCtx(v)
+				previewRefresh()
+				if ns.Shell then ns.Shell:RenderContent(true) end -- values follow the preview
+			end,
+		} }
+	elseif key == "Raidframes/Raid" then
+		return { sizes = {
+			values = { 5, 10, 20, 25 },
+			-- Clamp: profiles from the 5/10/20/40 era may still hold 40.
+			get = function() return math.min(rf().previewSize or 10, 25) end,
+			set = function(v)
+				rf().previewSize = v
+				previewRefresh()
+				-- A different sample size means a different band height -> the
+				-- screen has to re-reserve it.
+				if ns.Shell then ns.Shell:RenderContent(true) end
+			end,
+		} }
+	end
+end
+
+-- One call for a tab builder: park this screen's preview above the scroll area.
+local function placePreview(d, key)
+	local spec = PV_SPECS[key]
+	if not spec then return end
+	previewRow(d, key, spec, previewOpts(key))
+end
+
+-- Expand state of the icon section per context — SESSION-ONLY and auto-collapsed
+-- on navigation (Florian 2026-07-04: a section left open made the page long and
+-- buried the ones below on the next visit; pages now always start short and
+-- predictable). ctx = "raid" | "party". (The aura sections are gone — they live
+-- on their own tab since 2026-07-29 and need no collapse state.)
+local iconOpenState = {}
 
 -- Register a jumpable card's panel frame with the Shell (no-op outside a build).
 local function regJump(key, cardBox)
@@ -274,50 +436,63 @@ local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
 -- screen renders — open the context's collapsed aura/icon section so the target
 -- cards exist to scroll to. Other card keys need no preparation (their bands
 -- are always built).
+-- Returns FALSE when nothing had to change — the Shell then skips the rebuild
+-- and just flashes the card (a jump onto what is already on screen must not
+-- make the page twitch).
 ns.ShellJumpPrep = function(section, tab, cardKey)
-	if section ~= "Raidframes" or not cardKey then return end
+	if section ~= "Raidframes" or not cardKey then return false end
 	local ctx = (tab == "Raid") and "raid" or "party"
+	-- The caller already changed something the screen depends on (the Auras
+	-- context, set by c2cJump before the jump) -> a rebuild is required.
+	if ns.ShellJumpDirty then ns.ShellJumpDirty = nil; return true end
 	if cardKey:find("^aura%-") then
-		setAuraOpen(ctx, true)
+		-- Aura jumps land on the Auras tab: preselect the clicked CATEGORY so the
+		-- editor already shows it. (The CONTEXT is set by the caller before the
+		-- jump — the tab name can't carry it, see c2cJump in Raidframes.lua.)
+		local want = cardKey:gsub("^aura%-", "")
+		if rf().auraTabCat == want then return false end
+		rf().auraTabCat = want
 	elseif cardKey:find("^icon%-") then
+		if iconOpenState[ctx] then return false end
 		setIconOpen(ctx, true)
+	else
+		return false -- plain cards (health bar, text, …) are always built
 	end
 end
--- "More options" disclosure per aura category card ([ctx][cat] = true) —
--- same session-only rule as the collapsibles above.
-local auraAdvState = {}
 
+-- Settings search: a hit on the Auras tab carries the category it was indexed
+-- under (ns.ShellIndexScope) — select it before the screen rebuilds, otherwise
+-- the row belongs to a category that isn't on screen.
+ns.ShellPrepOption = function(entry)
+	if entry and entry.section == "Raidframes" and entry.tab == "Auras" and entry.scope then
+		rf().auraTabCat = entry.scope
+	end
+end
 -- Base tab (card grid): "Advanced" disclosures per card (text/dispel/aggro +
--- the Sorting card's role-priority list) — same session-only rule as the aura
--- sections above: navigating away resets to the calm default state.
+-- the Sorting card's role-priority list) — same session-only rule as the icon
+-- section above: navigating away resets to the calm default state.
 local baseAdvState = {}
 
 -- Called by the Shell when the MAIN SECTION changes (NOT on tab switches within
 -- a section). Open disclosures therefore persist while you move between a
--- module's tabs (e.g. check Tracking, jump back to Auras) and only reset to the
--- calm collapsed default once you leave the module entirely (Florian 2026-07-15).
+-- module's tabs and only reset to the calm collapsed default once you leave the
+-- module entirely (Florian 2026-07-15).
 -- Returns true if any state was cleared (so the Shell rebuilds the screens).
 -- Search jump target may sit inside a collapsed section -> open them, so the
 -- row actually exists on the rebuilt screen (the Shell drops the cache first).
 function ns.ShellOpenAllSections()
 	for _, ctx in ipairs({ "raid", "party" }) do
-		auraOpenState[ctx] = true
 		iconOpenState[ctx] = true
 	end
 end
 
 function ns.SectionLeft(section)
 	if section ~= "Raidframes" then return false end
-	local had = next(baseAdvState) or next(auraAdvState)
-		or next(auraOpenState) or next(iconOpenState)
+	local had = next(baseAdvState) or next(iconOpenState)
 	baseAdvState = {}
-	auraAdvState, auraOpenState, iconOpenState = {}, {}, {}
+	iconOpenState = {}
 	return had ~= nil
 end
-
--- Defined further below (needs PLACE_OPTS); forward-declared because buildRaid
--- (Raid/Group tabs) builds the per-context aura cards with it.
-local auraCat
 
 -- Display labels for Lumen's own texture keys: the VALUE stays the German key
 -- (texture/pattern matching in Raidframes.lua relies on it), only the shown label
@@ -431,6 +606,8 @@ end
 local function buildRaid(d, stack, ctx)
 	local fieldH = M.controlH + M.fieldGap -- height of a select WITH label
 	local R = L.rhythm
+
+	placePreview(d, (ctx == "raid") and "Raidframes/Raid" or "Raidframes/Group")
 
 	-- ===== Size & arrangement (12-card with exactly ONE field row) ==========
 	-- Full width is fine here BECAUSE there are no stacked rows: four unit
@@ -627,53 +804,10 @@ local function buildRaid(d, stack, ctx)
 		refreshRole(); refreshLead()
 	end
 
-	-- ===== Aura indicators (Feature 1: per context, collapsible at the bottom) =====
-	-- The standalone "Auras" tab is gone — its display settings live here, separated
-	-- per context. sfx maps the tab context to the aura field suffix ("Raid"/"Party").
-	-- Collapsed by default; the choice is remembered. Toggling re-renders the screen.
-	local sfx  = (ctx == "raid") and "Raid" or "Party"
-	local open = auraOpen(ctx)
-	local auraHead = W.Collapsible(d, { title = T("Aura indicators"), open = open,
-		onToggle = function(v) setAuraOpen(ctx, v); ns.Shell:RenderContent(true) end })
-	stack:place(auraHead, M.sectionHeaderH, open and R.afterCheck or M.headerStackGap)
-	if open then
-		local intro = W.Hint(d, T("Aura icons on the frame — set separately for this context. "
-			.. "Which spells are tracked is shared and set in the \"Tracking\" tab. "
-			.. "Shown in the live preview."), L.raidframes.tracking.introH)
-		stack:place(intro, L.raidframes.tracking.introH, R.row)
-		-- Two 6+6 bands (aura compaction 2026-07-05). The header toggles are
-		-- wired at band creation; each card's refresh lands in auraRefresh via
-		-- auraCat, so toggling greys the card without a rebuild.
-		local auraRefresh = {}
-		local function catToggle(cat)
-			return {
-				get = aget(cat, "enabled" .. sfx),
-				set = function(v)
-					aset(cat, "enabled" .. sfx)(v)
-					if auraRefresh[cat] then auraRefresh[cat]() end
-				end,
-			}
-		end
-		local eyeTip = T("Show in preview")
-		local ab1 = stack:band({
-			{ span = 6, title = T("HoTs"),                  toggle = catToggle("hotsOwn"),    eye = eyeToggle("hotsOwn", eyeTip) },
-			{ span = 6, title = T("Defensives & External"), toggle = catToggle("defensives"), eye = eyeToggle("defensives", eyeTip) },
-		})
-		auraCat(d, ab1.cards[1], "hotsOwn",    false, ctx, sfx, auraRefresh)
-		auraCat(d, ab1.cards[2], "defensives", false, ctx, sfx, auraRefresh)
-		regJump("aura-hotsOwn",    ab1.cards[1])
-		regJump("aura-defensives", ab1.cards[2])
-		ab1.close()
-		local ab2 = stack:band({
-			{ span = 6, title = T("Major CDs"), toggle = catToggle("major"),   eye = eyeToggle("major", eyeTip) },
-			{ span = 6, title = T("Debuffs"),   toggle = catToggle("debuffs"), eye = eyeToggle("debuffs", eyeTip) },
-		})
-		auraCat(d, ab2.cards[1], "major",   false, ctx, sfx, auraRefresh)
-		auraCat(d, ab2.cards[2], "debuffs", true,  ctx, sfx, auraRefresh)
-		regJump("aura-major",   ab2.cards[1])
-		regJump("aura-debuffs", ab2.cards[2])
-		ab2.close()
-	end
+	-- (Aura indicators moved OUT of Raid/Group into their own "Auras" tab, 2026-07-29:
+	-- the settings lived in three places — here per context plus the Tracking tab —
+	-- which read as one long unsorted list. The Auras tab carries the context switch
+	-- itself, so nothing is lost; see buildAuras below.)
 
 	applyModuleGate(d, rf().enabled) -- module off -> whole Raid/Group screen greyed + locked
 end
@@ -727,6 +861,7 @@ local function buildBase(d, stack)
 	local body -- forward-declare: the master closure gates this body frame
 	local G = UI.GRID
 	stack:gap(L.general.tabTop) -- more air on top before the master toggle
+	placePreview(d, "Raidframes/Base")
 	-- Full-width card with the global module switches (v3 mockup); each
 	-- checkbox carries a muted description line below its label.
 	local function checkDesc(cell, opts, desc)
@@ -827,7 +962,10 @@ local function buildBase(d, stack)
 	-- Background + health-bar opacity (boxed sliders, two unit cells).
 	local trA, tcA = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 	sliderBox(tcA[1], { label = T("Background opacity"), min = 0, max = 100, unit = " %", get = pctget("bgAlpha"), set = pctset("bgAlpha") })
-	sliderBox(tcA[2], { label = T("Health bar opacity"), min = 0, max = 100, unit = " %", get = pctget("healthAlpha"), set = pctset("healthAlpha") })
+	-- Health bar bottoms out at 10 %, not 0: an invisible health bar reads as a bug.
+	-- The render clamps to the same floor (HEALTH_ALPHA_MIN in Raidframes.lua) and
+	-- the aurora/glow layer follows this value now.
+	sliderBox(tcA[2], { label = T("Health bar opacity"), min = 10, max = 100, unit = " %", get = pctget("healthAlpha"), set = pctset("healthAlpha") })
 	sBar:place(trA, M.sliderBoxH, R.tight)
 	sBar:close()
 
@@ -1158,11 +1296,6 @@ local function buildBase(d, stack)
 	applyModuleGate(body, rf().enabled)
 end
 
--- ---------------------------------------------------------------------------
---  One aura category as a section card (mirrors auraCatGroup from Options.lua).
---  "Show" is the master: off -> all remaining controls greyed out. "Auto-Fit"
---  additionally greys out the two size sliders. `isDebuff` shows the filter.
--- ---------------------------------------------------------------------------
 -- Inside/Outside options (context segment switch): false = icons INSIDE the frame,
 -- true = the row is moved fully outside (next to / above / below the frame).
 local PLACE_OPTS
@@ -1170,131 +1303,71 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	PLACE_OPTS = { { value = false, label = T("Inside") }, { value = true, label = T("Outside") } }
 end
 
--- One aura category as a compact 6-span band card (aura compaction 2026-07-05:
--- four full-width cards were too tall). The context is FIXED by the host tab
--- (sfx = "Raid" on the Raid tab, "Party" on the Group tab); ALL display knobs
--- read/write the per-context key (<base> .. sfx). Visible = what you touch when
--- setting a category up: count + size, then where the row lives (anchor +
--- growth; Florian: "wo + wohin" belong together). Set-once fine-tuning
--- (spacing, inside/outside, offsets, auto-fit, swipe) lives in "More options".
--- `s` = the band card's inner stacker; the "Show" master toggle is wired at
--- band creation and reaches this card's refresh via `refreshReg[cat]`.
-function auraCat(d, s, cat, isDebuff, ctx, sfx, refreshReg)
-	local fieldH = M.controlH + M.fieldGap
-	local R = L.rhythm
-
-	local function cget(base) return aget(cat, base .. sfx) end
-	local function cset(base) return aset(cat, base .. sfx) end
-
-	local deps = {}   -- coupled to "Show" (all controls except the master + size)
-	local sizeW       -- size slider (additionally coupled to "Auto-Fit")
-	local function refresh()
-		local on = cget("enabled")() and true or false
-		for _, w in ipairs(deps) do w:SetWidgetEnabled(on) end
-		if sizeW then sizeW:SetWidgetEnabled(on and not cget("autoFit")()) end
-	end
-	refreshReg[cat] = refresh
-
-	-- Count + size (boxed sliders).
-	local a1, ac = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-	local maxW = sliderBox(ac[1], { label = T("Max. icons"), min = 1, max = 8, get = cget("maxIcons"), set = cset("maxIcons") })
-	sizeW = sliderBox(ac[2], { label = T("Size"), min = 8, max = 80, unit = " px", get = cget("size"), set = cset("size") })
-	deps[#deps + 1] = maxW
-	s:place(a1, M.sliderBoxH, R.row)
-
-	-- Where the icon row lives: anchor + growth direction.
-	local b1, bc = W.FieldRow(d, d, 2, { height = fieldH })
-	local anchorW = W.Select(bc[1], { label = T("Position (anchor)"), options = POINT_OPTS, get = cget("anchor"), set = cset("anchor") }); anchorW:SetAllPoints(bc[1])
-	local growW   = W.Select(bc[2], { label = T("Growth direction"), options = GROW_OPTS, get = cget("grow"), set = cset("grow") }); growW:SetAllPoints(bc[2])
-	deps[#deps + 1] = anchorW; deps[#deps + 1] = growW
-	s:place(b1, fieldH, R.row)
-
-	-- Debuffs only: which debuffs are shown (important enough to stay visible).
-	if isDebuff then
-		local f1, fc = W.FieldRow(d, d, 1, { height = fieldH })
-		local filterW = W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
-			tooltip = T("Which debuffs are shown. Raid-relevant = Blizzard's default selection."),
-			get = cget("filterMode"), set = cset("filterMode") })
-		filterW:SetAllPoints(fc[1])
-		deps[#deps + 1] = filterW
-		s:place(f1, fieldH, R.row)
-	end
-
-	-- More options: two clearly separated sub-sections -- the ICON PLACEMENT
-	-- (size/swipe/spacing/inside-outside/offsets = where the aura sits) and the
-	-- DURATION TEXT (its own show/size/outline). Sub-headings keep the offsets
-	-- visibly tied to the aura, not to the duration number.
-	if (auraAdvState[ctx] or {})[cat] then
-		s:place(subHeadRow(d, T("Icon placement")), M.subHeadH, R.tight)
-		local cbFit = checkRow(d, T("Auto-fit (size from frame height)"), { get = cget("autoFit"),
-			set = function(v) cset("autoFit")(v); refresh() end })
-		s:place(cbFit, M.optionRowH, 0)
-		local cbSwipe = checkRow(d, T("Cooldown swipe"), { get = cget("showSwipe"), set = cset("showSwipe") })
-		s:place(cbSwipe, M.optionRowH, R.row)
-		deps[#deps + 1] = cbFit; deps[#deps + 1] = cbSwipe
-
-		local e1, ec = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-		local spaceW = sliderBox(ec[1], { label = T("Spacing"), min = 0, max = 20, unit = " px", get = cget("spacing"), set = cset("spacing") })
-		local outW = W.Segment(ec[2], { label = T("Placement"), options = PLACE_OPTS, get = cget("outside"), set = cset("outside") })
-		outW:SetAllPoints(ec[2])
-		deps[#deps + 1] = spaceW; deps[#deps + 1] = outW
-		s:place(e1, M.sliderBoxH, R.row)
-
-		local e2, ec2 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-		local offXW = sliderBox(ec2[1], { label = T("Offset X"), min = -80, max = 80, unit = " px", get = cget("offX"), set = cset("offX") })
-		local offYW = sliderBox(ec2[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px", get = cget("offY"), set = cset("offY") })
-		deps[#deps + 1] = offXW; deps[#deps + 1] = offYW
-		s:place(e2, M.sliderBoxH, R.row)
-
-		-- Duration text on the icon: show + size + outline (same outline options
-		-- as the name text).
-		s:place(subHeadRow(d, T("Duration text")), M.subHeadH, R.row)
-		local cbDur = checkRow(d, T("Show duration"), { get = cget("showDuration"), set = cset("showDuration") })
-		s:place(cbDur, M.optionRowH, 0)
-		deps[#deps + 1] = cbDur
-		local du1, duc = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
-		local durSizeW = sliderBox(duc[1], { label = T("Size"), min = 6, max = 30, unit = " px", get = cget("durationSize"), set = cset("durationSize") })
-		local durOutW = W.Segment(duc[2], { label = T("Outline"), options = OUTLINE_SEG_OPTS, get = cget("durationOutline"), set = cset("durationOutline") })
-		durOutW:SetAllPoints(duc[2])
-		deps[#deps + 1] = durSizeW; deps[#deps + 1] = durOutW
-		s:place(du1, M.sliderBoxH, R.row)
-	end
-	local advOpen = (auraAdvState[ctx] or {})[cat]
-	s:place(W.Disclosure(d, { open = advOpen,
-		label = advOpen and T("Less") or T("More options"),
-		hint = T("Spacing") .. " · " .. T("Placement") .. " · " .. T("Offsets") .. " · " .. T("Cooldown swipe"),
-		onToggle = function(v)
-			auraAdvState[ctx] = auraAdvState[ctx] or {}
-			auraAdvState[ctx][cat] = v
-			ns.Shell:RenderContent(true)
-		end }), M.disclosureH, R.tight)
-
-	s:close()
-	refresh()
-end
-
--- ---------------------------------------------------------------------------
---  TrackingScreen — whitelist editor (B4): which spells are tracked as aura icons
---  (HoTs + own defensives). Mirrors the AceConfig "Tracking" tab.
---  ALWAYS bound to the ACTIVE spec (talents/spellbook only readable for it;
---  defaults cover other specs). Spell source = ns.ClickCast:GetAuraSpells()
---  (spellbook + chosen talents). Core piece: W.SpellPicker (searchable + scrollable).
--- ---------------------------------------------------------------------------
-local TRACK_CATS
+-- ===========================================================================
+--  AURA CATEGORY REGISTRY — the one list the Auras tab, the chip bar, the copy
+--  grid and the preview eyes all read. `key` is the profile key under
+--  rf().auras, `typ` the whitelist type (nil = the category has no spell list
+--  of its own), `color` the identity colour of its icon row.
+-- ===========================================================================
+local AURA_CATS
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
-	TRACK_CATS = {
-		{ typ = "hot", label = T("HoTs"),                desc = T("Your own heal-over-time effects as an icon on the frame.") },
-		{ typ = "def", label = T("Defensives & External"), desc = T("Your own defensives. External protection from others is shown automatically anyway.") },
-		{ typ = "major", label = T("Major CDs"), desc = T("Your class's big damage and resource cooldowns.") },
+	AURA_CATS = {
+		{ key = "hotsOwn",    typ = "hot",   label = T("HoTs"),
+		  color = { r = 0.31, g = 0.75, b = 0.48 },
+		  desc  = T("Your own heal-over-time effects as an icon on the frame.") },
+		{ key = "defensives", typ = "def",   label = T("Defensives & External"),
+		  color = { r = 0.36, g = 0.61, b = 0.84 },
+		  desc  = T("Your own defensives. External protection from others is shown automatically anyway.") },
+		{ key = "major",      typ = "major", label = T("Major CDs"),
+		  color = { r = 0.85, g = 0.70, b = 0.35 },
+		  desc  = T("Your class's big damage and resource cooldowns.") },
+		{ key = "debuffs",    typ = nil,     label = T("Debuffs"),
+		  color = { r = 0.69, g = 0.45, b = 0.85 },
+		  desc  = T("Harmful effects on your group. Picked by filter, not one by one.") },
 	}
 end
+local function auraCatDef(key)
+	for _, c in ipairs(AURA_CATS or {}) do if c.key == key then return c end end
+	return AURA_CATS and AURA_CATS[1] or nil
+end
 
+local function auraTabCat()
+	local k = rf().auraTabCat
+	if k and auraCatDef(k) and auraCatDef(k).key == k then return k end
+	return "hotsOwn"
+end
+local function setAuraTabCat(v) rf().auraTabCat = v end
+-- "Display" | "Spells" pane of the inline editor (session-only: the pane is a
+-- view, not a setting).
+local auraTabPane = "display"
+
+-- Suffix of the per-context profile fields ("sizeRaid" / "sizeParty").
+local function ctxSfx(ctx) return (ctx == "raid") and "Raid" or "Party" end
+
+-- The editor's cards ARE the copy groups (what you see is what you copy). The
+-- field lists are per-context BASE names; the suffix is added when copying.
+local AURA_COPY_GROUPS = {
+	place = { "anchor", "grow", "spacing", "outside", "offX", "offY" },
+	look  = { "maxIcons", "size", "autoFit", "showSwipe" },
+}
+
+-- ---------------------------------------------------------------------------
+--  Whitelist editing (former standalone "Tracking" tab, now the Auras tab's
+--  "Spells" pane): which spells are tracked as aura icons. ALWAYS bound to the
+--  ACTIVE spec (talents/spellbook only readable for it; curated defaults cover
+--  the others). Spell source = ns.ClickCast:GetAuraSpells() (spellbook + chosen
+--  talents). Adding happens through the pane's own search field (typing lists
+--  untracked matches, click adds) rather than a picker popover. The category
+--  labels/descriptions come from AURA_CATS — one list, no second catalog.
+-- ---------------------------------------------------------------------------
 local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) or 0 end
 
 -- One tracked-spell row (v2 refinement no. 3): icon + name + quiet trash button
 -- on the right (red only on hover); row hover = lighter surface + gold left edge.
-local function makeTrackRow(parent, e, onRemove)
-	local row = CreateFrame("Frame", nil, parent)
+-- `onAdd` turns the row into a CANDIDATE row: the whole row is clickable and
+-- carries a plus instead of the trash button (search results in the Spells pane).
+local function makeTrackRow(parent, e, onRemove, onAdd)
+	local row = CreateFrame(onAdd and "Button" or "Frame", nil, parent)
 	row:SetHeight(L.raidframes.tracking.rowH)
 	UI.RoundFill(row, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
 	UI.RoundBorder(row, UI.Border.default, "OVERLAY", nil, UI.ROUND_R_CTRL) -- note: L here is UI.LAYOUT (not the border table UI.Border)
@@ -1306,122 +1379,534 @@ local function makeTrackRow(parent, e, onRemove)
 	-- Trash: permanently red (grey drowned next to the row text — Florian feedback),
 	-- lighter red on hover, NO tooltip (it fought the row's spell tooltip = jumpy),
 	-- same size as the Click-Cast catalog trash.
-	local rm = W.IconButton(row, { icon = "icon-delete", size = M.iconAction,
-		color = Status.danger, hoverColor = Status.dangerHover, onClick = onRemove })
-	rm:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+	local rm
+	if onAdd then
+		-- Candidate: a quiet plus on the right, the whole row is the button.
+		rm = row:CreateTexture(nil, "OVERLAY")
+		rm:SetSize(M.iconAction, M.iconAction)
+		rm:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+		rm:SetTexture(TEX .. "icon-check")
+		rm:SetVertexColor(UI.Accent.color.r, UI.Accent.color.g, UI.Accent.color.b, 0.85)
+		rm:SetSnapToPixelGrid(false); rm:SetTexelSnappingBias(0)
+		row:SetScript("OnClick", onAdd)
+	else
+		rm = W.IconButton(row, { icon = "icon-delete", size = M.iconAction,
+			color = Status.danger, hoverColor = Status.dangerHover, onClick = onRemove })
+		rm:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+	end
 	local name = UI.FS(row, "selectText", Text.Primary)
 	name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
 	name:SetPoint("RIGHT", rm, "LEFT", -10, 0)
 	name:SetJustifyH("LEFT"); name:SetWordWrap(false)
 	name:SetText(e.name or (T("Spell") .. " " .. tostring(e.id)))
-	-- Hover: elementHover surface + gold left edge + own Lumen spell tooltip.
+	-- Hover: just a lighter surface. The gold left edge was a leftover marker from
+	-- the list's first version and read like a selection state on a row that has
+	-- none (Florian 2026-07-29).
 	local hov = UI.RoundFill(row, Surface.Hover, "BORDER", nil, UI.ROUND_R_CTRL); hov:SetAlpha(0)
-	local bar = row:CreateTexture(nil, "OVERLAY")
-	bar:SetWidth(3)
-	-- Straight edge bar stops before the rounded corners.
-	bar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -UI.ROUND_R_CTRL)
-	bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, UI.ROUND_R_CTRL)
-	UI.SetColor(bar, Text.Primary); bar:Hide()
 	row:EnableMouse(true)
+	row._spellID = e.id
 	row:SetScript("OnEnter", function(self2)
-		hov:SetAlpha(1); bar:Show(); W.ShowSpellTip(self2, e.id)
+		hov:SetAlpha(1); W.ShowSpellTip(self2, self2._spellID, "CURSOR")
 	end)
-	row:SetScript("OnLeave", function() hov:SetAlpha(0); bar:Hide(); W.HideTip() end)
+	row:SetScript("OnLeave", function() hov:SetAlpha(0); W.HideTip() end)
+	-- Reuse: the search popover keeps a small pool of rows and re-points them at
+	-- another spell instead of building one per keystroke.
+	function row:SetEntry(e2)
+		icon:SetTexture(e2.icon or 136243)
+		name:SetText(e2.name or (T("Spell") .. " " .. tostring(e2.id)))
+		self._spellID = e2.id
+	end
 	return row
 end
 
-local function buildTracking(d, stack)
+-- ---------------------------------------------------------------------------
+--  INNER BLOCK — a lighter box INSIDE a settings card, with its own title and
+--  its own stacker. The Shell's cards are page-level (one per band); this is the
+--  level below, so an editor can read as ONE card whose head belongs to the
+--  options under it instead of four cards floating next to each other (Florian
+--  2026-07-29). Returns the box, its stacker and the content frame — the caller
+--  places rows on the stacker and calls blockClose(...) when done.
+-- ---------------------------------------------------------------------------
+local function innerBlock(parent, title, desc)
+	local pad = M.subgroupPad
+	local box = CreateFrame("Frame", nil, parent)
+	UI.RoundFill(box, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(box, UI.Border.faint, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local content = CreateFrame("Frame", nil, box)
+	content:SetPoint("TOPLEFT", box, "TOPLEFT", pad, -pad)
+	content:SetPoint("TOPRIGHT", box, "TOPRIGHT", -pad, -pad)
+	local st = ns.Shell.NewStack(content)
+	-- Title + description as the first rows (same anatomy as a card header, one
+	-- level quieter).
+	local head = CreateFrame("Frame", nil, content)
+	local t = UI.FS(head, "sectionHead", Text.Primary)
+	t:SetPoint("TOPLEFT", head, "TOPLEFT", 0, 0)
+	t:SetText(title)
+	local hH = M.sectionHeaderH - M.subgroupPad
+	if desc then
+		-- "body" (regular 14) rather than "caption" (regular 12) or "label"
+		-- (MEDIUM 14): at caption size the line read as fine print, at label
+		-- weight it read heavy. Same size, thinner stroke (Florian 2026-07-29).
+		local dfs = UI.FS(head, "body", Text.Description)
+		dfs:SetPoint("TOPLEFT", t, "BOTTOMLEFT", 0, -4)
+		dfs:SetPoint("RIGHT", head, "RIGHT", 0, 0)
+		dfs:SetJustifyH("LEFT"); dfs:SetWordWrap(false)
+		dfs:SetText(desc)
+		hH = hH + M.subHeadH
+	end
+	st:place(head, hH, L.rhythm.row)
+	return box, st, content
+end
+
+-- Colour a fragment inline (WoW escape sequence). For sentences where only the
+-- VALUES should lead — the label text around them stays muted.
+local function hi(text, col)
+	col = col or Text.Primary
+	return ("|cff%02x%02x%02x%s|r"):format(col.r * 255, col.g * 255, col.b * 255, text)
+end
+
+-- Info bar: a quiet strip stating the SCOPE of what is below it. Its own
+-- surface, not a subtitle line — "these settings apply elsewhere too" is a
+-- fact about the block, and a plain grey line under the title was read as
+-- decoration (Florian 2026-07-29, mockup layout).
+local function infoBar(parent, text)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetHeight(M.infoBarH)
+	UI.RoundFill(f, Surface.Card, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(f, UI.Border.faint, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	local fs = UI.FS(f, "body", Text.Description)
+	fs:SetPoint("LEFT", f, "LEFT", M.infoBarPadX, 0)
+	fs:SetPoint("RIGHT", f, "RIGHT", -M.infoBarPadX, 0)
+	fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
+	fs:SetText(text)
+	return f
+end
+
+-- Content height of a stack used INSIDE a card. NOT stack:height() — that adds
+-- the panel gutter, which is meant for a whole scrolling page and here just
+-- padded every box with ~30 extra pixels at the bottom (Florian 2026-07-29: the
+-- cards had more air below than beside them).
+local function stackContentH(st) return -st:y() end
+
+-- Finish an inner block: content height -> box height. `minH` stretches it to a
+-- shared height (two blocks side by side share the taller one's bottom edge).
+local function blockClose(box, st, content, minH)
+	local h = stackContentH(st)
+	content:SetHeight(h)
+	box:SetHeight(math.max(h + M.subgroupPad * 2, minH or 0))
+	return h + M.subgroupPad * 2
+end
+
+-- ---------------------------------------------------------------------------
+--  SPELLS pane — the tracked-spell list of ONE category (this is the former
+--  standalone "Tracking" tab, folded into the Auras editor 2026-07-29 so a
+--  category is set up in ONE place). ALWAYS bound to the ACTIVE spec (WoW only
+--  exposes talents/spellbook for it; curated defaults cover the others) and
+--  SHARED by Raid + Group — the hint above the list says so, because everything
+--  else on this tab is per context.
+-- ---------------------------------------------------------------------------
+local function auraSpellsPane(d, host, cat, page)
 	local RFm  = ns.Raidframes
 	local spec = trkSpec()
+	local R    = L.rhythm
 
-	stack:gap(L.general.tabTop)
-	local intro = W.Hint(d, T("Which spells are tracked as aura icons — display & position are set per context in the \"Raid\" and \"Group\" tabs. "
-		.. "Your active spec is edited automatically (WoW cannot read talents of other specs; their defaults apply automatically once you play them)."))
-	stack:place(intro, L.raidframes.tracking.introH, L.raidframes.tracking.afterIntro)
-
-	-- v2 refinement no. 4: active spec as a badge in the tab strip (chrome)
-	-- instead of an inline text row in the content.
-	ns.Shell:SetTabBadge(T("Active spec:"), (ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?")
-
-	-- Band def for one category card: header shows the count (v2 refinement
-	-- no. 1) + "Restore defaults" as a quiet header action (no. 2); the
-	-- category description is the muted subtitle line.
-	local function catDef(cat, entries)
-		local catTyp = cat.typ
-		return { span = 6, title = cat.label, subtitle = cat.desc, count = #entries,
-			action = { text = T("Restore defaults"), onClick = function()
-				W.Confirm({
-					title       = T("Restore defaults?"),
-					body        = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
-					confirmText = T("Reset"),
-					cancelText  = T("Cancel"),
-					onConfirm   = function()
-						if RFm then RFm:ResetWhitelist(spec, catTyp) end
-						ns.Shell:RenderContent(true)
-					end,
-				})
-			end } }
+	if not cat.typ then
+		-- Debuffs: per-spellId whitelisting is not permitted for harmful auras
+		-- (12.1 API constraint), so this category is filter-based by design.
+		local sfx = ctxSfx(auraTabCtx())
+		local box, st, content = innerBlock(d, T("Which debuffs"), nil)
+		local f1, fc = W.FieldRow(content, page, 1, { height = M.controlH + M.fieldGap })
+		W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
+			tooltip = T("Which debuffs are shown. Raid-relevant = Blizzard's default selection."),
+			get = aget(cat.key, "filterMode" .. sfx), set = aset(cat.key, "filterMode" .. sfx) })
+			:SetAllPoints(fc[1])
+		st:place(f1, M.controlH + M.fieldGap, R.row)
+		st:place(W.Hint(content, T("Debuffs are chosen by filter, not one by one — WoW does not allow "
+			.. "picking individual harmful effects on other players."), M.hintH), M.hintH, 0)
+		host:place(box, blockClose(box, st, content), 0)
+		return
 	end
 
-	-- Card body: tracked spells ONE per row (in a 6-card a full row is about
-	-- the old 2-up cell width), or an empty state; picker action row last.
-	local function fillCat(s, cat, entries)
-		local catTyp = cat.typ
-		if #entries == 0 then
-			s:place(W.EmptyState(d, { text = T("No spells tracked yet — add the first one.") }),
-				L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
-		else
-			local rowH = L.raidframes.tracking.rowH
-			for i, e in ipairs(entries) do
-				local tr = makeTrackRow(d, e, function()
-					if RFm then RFm:RemoveWhitelist(spec, e.id) end
+	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
+	local box, st, content = innerBlock(d, T("Tracked spells"))
+
+	-- Scope strip: everything else on this tab is per context, so the list has to
+	-- say out loud that it is not. Only the VALUES lead; the words around them
+	-- stay muted.
+	st:place(infoBar(content, ("%s %s  ·  %s %s"):format(
+		T("Applies to"), hi(T("Raid and Group")),
+		T("Active spec:"), hi((ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))),
+		M.infoBarH, L.rhythm.row)
+
+	-- The search field IS the add control (Florian 2026-07-29): typing lists the
+	-- spells of your spec that are NOT tracked yet, click adds one.
+	-- Results appear in a POPOVER under the field, not in the page: re-rendering
+	-- the screen on every keystroke destroyed the edit box mid-typing, which is
+	-- why the field felt dead. The popover leaves the layout alone entirely.
+	local searchRow = CreateFrame("Frame", nil, content)
+	searchRow:SetHeight(M.controlH)
+	local search = W.TextInput(searchRow, { placeholder = T("Search a spell to add …") })
+	search:SetPoint("LEFT", searchRow, "LEFT", 0, 0)
+	search:SetPoint("RIGHT", searchRow, "RIGHT", 0, 0)
+	st:place(searchRow, M.controlH, R.row)
+
+	-- Result popover (floats on the menu host, like the dropdowns).
+	local resPop = CreateFrame("Frame", nil, W._menuHost or d)
+	resPop:SetFrameStrata("FULLSCREEN_DIALOG")
+	resPop:SetFrameLevel((W._menuHost or d):GetFrameLevel() + 70)
+	resPop:Hide()
+	UI.RoundFill(resPop, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
+	UI.RoundBorder(resPop, UI.Border.hover, "OVERLAY", nil, UI.ROUND_R_CTRL)
+	if W._popovers then W._popovers[#W._popovers + 1] = resPop end
+	local resRows = {}
+
+	local function refreshResults()
+		for _, r in ipairs(resRows) do r:Hide() end
+		local needle = (search:GetText() or ""):lower()
+		-- Focused but empty = show what IS addable right away. An empty field
+		-- that answers a click with nothing reads as broken (Florian 2026-07-29);
+		-- the list is what tells you there is anything to add at all.
+		if needle == "" and not search._edit:HasFocus() then resPop:Hide(); return end
+		local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
+		local pad, rowH = UI.S.s2, L.raidframes.tracking.rowH
+		local y, shownN = -pad, 0
+		for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
+			-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
+			local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
+			if not tracked[rid]
+				and (needle == "" or (sp.name or ""):lower():find(needle, 1, true))
+				and shownN < L.raidframes.tracking.maxHits then
+				shownN = shownN + 1
+				local id = sp.id
+				local r = resRows[shownN]
+				if not r then
+					r = makeTrackRow(resPop, sp, nil, function() end)
+					resRows[shownN] = r
+				else
+					r:SetEntry(sp)
+				end
+				r:SetScript("OnClick", function()
+					if RFm then RFm:AddWhitelist(spec, id, cat.typ) end
+					search:ClearText()
+					resPop:Hide()
 					ns.Shell:RenderContent(true)
 				end)
-				s:place(tr, rowH, (i == #entries) and L.raidframes.tracking.afterList or L.raidframes.tracking.betweenRows)
+				r:ClearAllPoints()
+				r:SetPoint("TOPLEFT", resPop, "TOPLEFT", pad, y)
+				r:SetPoint("TOPRIGHT", resPop, "TOPRIGHT", -pad, y)
+				r:Show()
+				y = y - rowH - UI.S.s1
 			end
 		end
+		if shownN == 0 then resPop:Hide(); return end
+		resPop:ClearAllPoints()
+		resPop:SetPoint("TOPLEFT", searchRow, "BOTTOMLEFT", 0, -UI.S.s2)
+		resPop:SetPoint("TOPRIGHT", searchRow, "BOTTOMRIGHT", 0, -UI.S.s2)
+		resPop:SetHeight(-y + pad - UI.S.s1)
+		resPop:Show(); resPop:Raise()
+	end
+	search._edit:HookScript("OnTextChanged", refreshResults)
+	search._edit:HookScript("OnEditFocusGained", refreshResults)
+	search._edit:HookScript("OnEditFocusLost", function()
+		-- Deferred: a click ON a result must land before the popover closes.
+		C_Timer.After(0.12, function() if not search._edit:HasFocus() then resPop:Hide() end end)
+	end)
+	content:HookScript("OnHide", function() resPop:Hide() end)
 
-		-- Action row: only the spell picker ("Restore defaults" lives in the header).
-		local actionRow = CreateFrame("Frame", nil, d)
-		actionRow:SetHeight(M.buttonH)
-		local picker = W.SpellPicker(actionRow, {
-			text = T("+ Add spell"), width = M.spBtnW,
-			fetch = function()
-				local out = {}
-				local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
-				for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
-					-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
-					local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
-					if not tracked[rid] then out[#out + 1] = sp end
-				end
-				return out
-			end,
-			onPick = function(id)
-				if RFm then RFm:AddWhitelist(spec, id, catTyp) end
+	local shown = entries
+	if #entries == 0 then
+		st:place(W.EmptyState(content, { text = T("No spells tracked yet — add the first one.") }),
+			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
+	else
+		local rowH = L.raidframes.tracking.rowH
+		for i, e in ipairs(shown) do
+			local tr = makeTrackRow(content, e, function()
+				if RFm then RFm:RemoveWhitelist(spec, e.id) end
 				ns.Shell:RenderContent(true)
-			end,
-		})
-		picker:SetPoint("LEFT", actionRow, "LEFT", 0, 0)
-		s:place(actionRow, M.buttonH, 0)
-		s:close()
+			end)
+			st:place(tr, rowH, (i == #shown) and L.raidframes.tracking.afterList
+				or L.raidframes.tracking.betweenRows)
+		end
 	end
 
-	-- 6-card layout (no full-width cards, Florian 2026-07-11): HoTs |
-	-- Defensives as a band, Major CDs below it.
-	local entries = {}
-	for i, cat in ipairs(TRACK_CATS) do
-		entries[i] = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
+	-- Restore defaults sits at the bottom: a rarely-used, destructive action does
+	-- not belong next to the everyday search field.
+	local reset = W.Button(content, { text = T("Restore defaults"), variant = "secondary",
+		height = M.segCompactH,
+		onClick = function()
+			W.Confirm({
+				title       = T("Restore defaults?"),
+				body        = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
+				confirmText = T("Reset"),
+				cancelText  = T("Cancel"),
+				onConfirm   = function()
+					if RFm then RFm:ResetWhitelist(spec, cat.typ) end
+					ns.Shell:RenderContent(true)
+				end,
+			})
+		end })
+	local resetRow = CreateFrame("Frame", nil, content)
+	resetRow:SetHeight(M.segCompactH)
+	reset:SetPoint("LEFT", resetRow, "LEFT", 0, 0)
+	st:place(resetRow, M.segCompactH, 0)
+
+	host:place(box, blockClose(box, st, content), 0)
+end
+
+-- ---------------------------------------------------------------------------
+--  DISPLAY pane — placement + look of ONE category in ONE context, as two
+--  equal-height band cards. No "More options" disclosure: the chip bar carries
+--  the category split, so everything of a single category fits on screen
+--  (Florian 2026-07-29 — the old collapsed rows meant too much clicking).
+--  Band 2 ("Restzeit"/duration text) arrives with the 12.1 aura rework, which
+--  owns those profile fields.
+-- ---------------------------------------------------------------------------
+local function auraDisplayPane(d, host, cat, ctx, page)
+	local sfx = ctxSfx(ctx)
+	local R   = L.rhythm
+	local fieldH = M.controlH + M.fieldGap
+	local function cget(base) return aget(cat.key, base .. sfx) end
+	local function cset(base) return aset(cat.key, base .. sfx) end
+
+	local sizeW
+	local function refreshSize()
+		if sizeW then sizeW:SetWidgetEnabled(not cget("autoFit")()) end
 	end
-	local tb1 = stack:band({ catDef(TRACK_CATS[1], entries[1]), catDef(TRACK_CATS[2], entries[2]) })
-	fillCat(tb1.cards[1], TRACK_CATS[1], entries[1])
-	fillCat(tb1.cards[2], TRACK_CATS[2], entries[2])
-	regJump("track-hot", tb1.cards[1])
-	regJump("track-def", tb1.cards[2])
-	tb1.close()
-	local tb2 = stack:band({ catDef(TRACK_CATS[3], entries[3]) })
-	fillCat(tb2.cards[1], TRACK_CATS[3], entries[3])
-	regJump("track-major", tb2.cards[1])
-	tb2.close()
+
+	-- Two blocks side by side INSIDE the editor card. Both are children of the
+	-- row and positioned by ONE explicit split — deliberately NOT via W.Row
+	-- cells: those resolve their width through OnSizeChanged, and a block
+	-- anchored to a cell that had not resolved yet came up completely empty
+	-- (Florian 2026-07-29, seen after a jump from another category). One local
+	-- layout function is predictable and re-runs on every resize.
+	local row = CreateFrame("Frame", nil, d)
+	row:SetHeight(1)
+
+	-- --- Placement -----------------------------------------------------------
+	local pBox, pSt, pC = innerBlock(row, T("Placement"), T("Where the icon row sits on the frame"))
+	local p1, pc = W.FieldRow(pC, page, 2, { height = fieldH })
+	W.Select(pc[1], { label = T("Position (anchor)"), options = POINT_OPTS,
+		get = cget("anchor"), set = cset("anchor") }):SetAllPoints(pc[1])
+	W.Select(pc[2], { label = T("Growth direction"), options = GROW_OPTS,
+		get = cget("grow"), set = cset("grow") }):SetAllPoints(pc[2])
+	pSt:place(p1, fieldH, R.row)
+
+	local p2, pc2 = W.FieldRow(pC, page, 2, { height = M.sliderBoxH })
+	sliderBox(pc2[1], { label = T("Spacing"), min = 0, max = 20, unit = " px",
+		get = cget("spacing"), set = cset("spacing") })
+	-- Label is NOT "Placement" — that is the block's own title right above it.
+	W.Segment(pc2[2], { label = T("Inside / outside"), options = PLACE_OPTS,
+		get = cget("outside"), set = cset("outside") }):SetAllPoints(pc2[2])
+	pSt:place(p2, M.sliderBoxH, R.row)
+
+	local p3, pc3 = W.FieldRow(pC, page, 2, { height = M.sliderBoxH })
+	sliderBox(pc3[1], { label = T("Offset X"), min = -80, max = 80, unit = " px",
+		get = cget("offX"), set = cset("offX") })
+	sliderBox(pc3[2], { label = T("Offset Y"), min = -80, max = 80, unit = " px",
+		get = cget("offY"), set = cset("offY") })
+	pSt:place(p3, M.sliderBoxH, 0)
+	local pH = blockClose(pBox, pSt, pC)
+
+	-- --- Appearance ----------------------------------------------------------
+	local aBox, aSt, aC = innerBlock(row, T("Appearance"), T("How many icons and how large"))
+	local a1, ac = W.FieldRow(aC, page, 2, { height = M.sliderBoxH })
+	sliderBox(ac[1], { label = T("Max. icons"), min = 1, max = 8,
+		get = cget("maxIcons"), set = cset("maxIcons") })
+	sizeW = sliderBox(ac[2], { label = T("Size"), min = 8, max = 80, unit = " px",
+		get = cget("size"), set = cset("size") })
+	aSt:place(a1, M.sliderBoxH, R.row)
+	aSt:place(checkRow(aC, T("Size from frame height"), {
+		get = cget("autoFit"),
+		set = function(v) cset("autoFit")(v); refreshSize() end }), M.optionRowH, 0)
+	aSt:place(checkRow(aC, T("Cooldown swipe"),
+		{ get = cget("showSwipe"), set = cset("showSwipe") }), M.optionRowH, 0)
+	-- Shared between raid and group (no ctx suffix) — see the note in Core.lua.
+	aSt:place(checkRow(aC, T("Show tooltip"), {
+		tooltip = T("Hovering an icon of this category shows the aura's tooltip. Clicks still go through to the frame. Applies to raid and group."),
+		get = aget(cat.key, "showTooltip"), set = aset(cat.key, "showTooltip") }), M.optionRowH, 0)
+	local aH = blockClose(aBox, aSt, aC)
+
+	-- Equal heights (shared bottom edge), then the row itself.
+	local maxH = math.max(pH, aH)
+	pBox:SetHeight(maxH); aBox:SetHeight(maxH)
+	row:SetHeight(maxH)
+	-- The split: left block from the left edge, right block from the right, each
+	-- half the width minus half the gutter. Re-applied on resize so a panel
+	-- rescale keeps them aligned.
+	local function splitRow(w)
+		w = w or row:GetWidth() or 0
+		if w <= 0 then return end
+		local half = (w - UI.GRID.cardGap) / 2
+		pBox:ClearAllPoints()
+		pBox:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+		pBox:SetWidth(half)
+		aBox:ClearAllPoints()
+		aBox:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+		aBox:SetWidth(half)
+	end
+	row:SetScript("OnSizeChanged", function(_, w) splitRow(w) end)
+	splitRow()
+	host:place(row, maxH, 0)
+	splitRow()  -- place() gives the row its real width
+	refreshSize()
+end
+
+-- ===========================================================================
+--  AURAS screen — the module's aura editor. Anchored preview above (the dock
+--  band, carrying the context switch labelled "Edit"), a category CHIP BAR,
+--  then the inline editor for the picked category. Replaces both the per-context
+--  "Aura indicators" blocks in Raid/Group AND the standalone Tracking tab
+--  (Florian 2026-07-29: one place per category instead of three).
+-- ===========================================================================
+local function buildAuras(d, stack)
+	local ctx = auraTabCtx()
+	local cat = auraCatDef(auraTabCat())
+	if not cat then return end -- locale not applied yet (AURA_CATS still empty)
+	local sfx = ctxSfx(ctx)
+
+	-- Search index: the tab renders ONE category, so indexing only the visible
+	-- one would drop three quarters of the aura options out of the search (they
+	-- were all indexed while they lived on the Raid/Group tabs). During the
+	-- warm-up pass build every category instead, each under its own index scope
+	-- so the keys stay identical to the single-category render.
+	if ns.ShellIndexing then
+		for _, c in ipairs(AURA_CATS) do
+			ns.ShellIndexScope = c.key
+			local sec = stack:section(c.label, { subtitle = c.desc })
+			auraSpellsPane(d, sec, c, d)
+			auraDisplayPane(d, sec, c, ctx, d)
+			sec:close()
+		end
+		ns.ShellIndexScope = nil
+		return
+	end
+
+	stack:gap(L.general.tabTop)
+	placePreview(d, "Raidframes/Auras")
+
+	-- Chip bar: pick the category. The dot shows whether it renders at all in
+	-- THIS context, the badge its icon count (or "off").
+	local defs = {}
+	for _, c in ipairs(AURA_CATS) do
+		defs[#defs + 1] = {
+			key = c.key, label = c.label, color = c.color,
+			on = function() return aget(c.key, "enabled" .. sfx)() and true or false end,
+			badge = function()
+				if not aget(c.key, "enabled" .. sfx)() then return T("off") end
+				return tostring(aget(c.key, "maxIcons" .. sfx)() or 0)
+			end,
+		}
+	end
+	local chips = W.ChipBar(d, {
+		defs = defs,
+		get = auraTabCat,
+		set = function(k) setAuraTabCat(k); ns.Shell:RenderContent(true) end,
+	})
+	stack:place(chips, M.chipH, L.raidframes.auras.afterChips)
+
+	-- Editor card. Its head carries EVERYTHING that belongs to the category as a
+	-- whole: eye, title + description, the Display/Spells switch, the copy button
+	-- and the master toggle — one row, so the head visibly belongs to the options
+	-- under it instead of sitting above them as a separate strip.
+	local paneSpells = (auraTabPane == "spells")
+
+	local paneSeg = W.Segment(d, {
+		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
+		get = function() return auraTabPane end,
+		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
+		width = L.raidframes.auras.paneSegW,
+		cellH = M.segCompactH,   -- same compact height as the preview's context switch
+	})
+
+	local copyBtn = W.CopyPopover(d, {
+		text   = T("Copy"),
+		title  = T("Copy settings"),
+		height = M.segCompactH,   -- matches the pane switch beside it
+		groups = {
+			{ key = "place", label = T("Placement"),  hint = T("Position · Offsets") },
+			{ key = "look",  label = T("Appearance"), hint = T("Count · Size") },
+		},
+		-- NOTHING preselected (Florian 2026-07-30): a copy dialog that arrives with a
+		-- box already ticked invites a copy you did not choose. "Appearance" used to
+		-- be on because placement is the risky one (it stacks both icon rows in the
+		-- same corner) -- but the honest answer to that is to preselect neither. The
+		-- Copy button stays dimmed and deafened until a What and a Where are picked.
+		defaults = {},
+		rows = (function()
+			local out = {}
+			for _, c in ipairs(AURA_CATS) do
+				out[#out + 1] = { key = c.key, label = c.label, color = c.color }
+			end
+			return out
+		end)(),
+		cols = { { key = "raid", label = T("Raid") }, { key = "party", label = T("Group") } },
+		source = function() return auraTabCat(), auraTabCtx() end,
+		warn = function(sel, picked)
+			if not sel.place then return nil end
+			for _, t in ipairs(picked) do
+				if t.row ~= auraTabCat() then
+					return T("Copying placement onto another category stacks its icons in the same corner.")
+				end
+			end
+			return nil
+		end,
+		onCopy = function(keys, picked)
+			local srcCat, srcCtx = auraTabCat(), auraTabCtx()
+			local srcSfx = ctxSfx(srcCtx)
+			for _, t in ipairs(picked) do
+				local dstSfx = ctxSfx(t.col)
+				for _, gk in ipairs(keys) do
+					for _, field in ipairs(AURA_COPY_GROUPS[gk] or {}) do
+						local v = aget(srcCat, field .. srcSfx)()
+						if v ~= nil then aset(t.row, field .. dstSfx)(v) end
+					end
+				end
+			end
+			ns.Shell:RenderContent(true)
+		end,
+	})
+	-- The card is created LAST of the head parts, because its header takes the
+	-- already-built controls (they chain leftwards from the master switch).
+	local editor = stack:section(("%s  ·  %s"):format(cat.label,
+			ctx == "raid" and T("Raid") or T("Group")), {
+		-- No description line: the chip bar right above already names the
+		-- category, so it only added a second, quieter line of the same thing
+		-- (Florian 2026-07-29). The wording still lives in AURA_CATS for the
+		-- copy dialog and the search index.
+		eye = eyeToggle(cat.key, T("Show in preview")),
+		toggle = {
+			get = aget(cat.key, "enabled" .. sfx),
+			set = function(v)
+				aset(cat.key, "enabled" .. sfx)(v)
+				ns.Shell:RenderContent(true)  -- chip dot/badge + greyed body follow
+			end,
+		},
+		toggleInline = true, toggleLabel = T("Show"),
+		headerControls = { copyBtn, paneSeg },
+	})
+
+	-- Body of the picked pane, built INSIDE the same card as the head — the head
+	-- belongs to these options, so it must not float above them as its own card
+	-- (Florian 2026-07-29). Its own stack lets the category master switch grey
+	-- the options without touching the head row. The index scope matches the
+	-- warm-up pass above, so a search hit resolves to the row on this screen.
+	local body = CreateFrame("Frame", nil, d)
+	local bstack = ns.Shell.NewStack(body)
+	ns.ShellIndexScope = cat.key
+	if paneSpells then
+		auraSpellsPane(body, bstack, cat, d)
+	else
+		auraDisplayPane(body, bstack, cat, ctx, d)
+	end
+	ns.ShellIndexScope = nil
+	editor:place(body, stackContentH(bstack), 0)
+	editor:close()
+	regJump("aura-" .. cat.key, editor)
+	-- Category off -> its options are dimmed + locked (same gate as the module
+	-- master); the spell list stays operable, it is shared and context-free.
+	if not paneSpells then
+		applyModuleGate(body, aget(cat.key, "enabled" .. sfx)() and true or false)
+	end
 
 	applyModuleGate(d, rf().enabled) -- module off -> whole screen greyed + locked
 end
@@ -1754,7 +2239,8 @@ local function buildGlobalBase(d, stack)
 					local tk = ns.Lumen.db.profile.qol.trackers
 					tk.brez.pos = { point = "CENTER", x = -30, y = -240 }
 					tk.lust.pos = { point = "CENTER", x = 30, y = -240 }
-					if ns.QoL then ns.QoL:ApplyPull(); ns.QoL:ApplyTrackers() end
+					ns.Lumen.db.profile.qol.markers.pos = { point = "CENTER", x = 0, y = -260 }
+					if ns.QoL then ns.QoL:ApplyPull(); ns.QoL:ApplyTrackers(); ns.QoL:ApplyMarkers() end
 					if ns.EditMode then ns.EditMode:_refresh() end
 				end,
 			})
@@ -2199,7 +2685,22 @@ local function buildQoLBase(d, stack)
 	local pr, pcells = W.FieldRow(d, d, 1, { height = M.sliderBoxH })
 	slPull = sliderBox(pcells[1], { label = T("Duration"), min = 3, max = 30, step = 1, unit = " s",
 		get = pget("duration"), set = pset("duration") })
-	pc:place(pr, M.sliderBoxH, R.tight)
+	pc:place(pr, M.sliderBoxH, R.row)
+
+	-- Marker bar sits on the pull card: same audience (whoever leads the group)
+	-- and the same "movable block of buttons" shape — not worth its own card.
+	local function qmk() return ns.Lumen.db.profile.qol.markers end
+	local rowMk = switchRow(d, T("Show marker bar"), {
+		get = function() return qmk().enabled end,
+		set = function(v) qmk().enabled = v; if ns.QoL then ns.QoL:ApplyMarkers() end end,
+		tooltip = T("Movable bar with target markers (on your current target) and world markers (on the ground). Works in combat. Unlock via Edit Mode.") })
+	pc:place(rowMk, rowH, 0)
+
+	local rowMkInst = switchRow(d, T("Only in dungeons and raids"), {
+		get = function() return qmk().instanceOnly end,
+		set = function(v) qmk().instanceOnly = v; if ns.QoL then ns.QoL:ApplyMarkers() end end,
+		tooltip = T("Outside instances the bar stays hidden. It reappears on its own when you zone into a dungeon, raid or scenario.") })
+	pc:place(rowMkInst, rowH, 0)
 	pc:close()
 
 	-- ===== Mythic+ card =====================================================
@@ -2343,4 +2844,4 @@ ns.Screens["Click-Cast/Bindings"] = buildClickCast
 ns.Screens["Raidframes/Base"]     = buildBase
 ns.Screens["Raidframes/Raid"]     = function(d, stack) buildRaid(d, stack, "raid") end
 ns.Screens["Raidframes/Group"]    = function(d, stack) buildRaid(d, stack, "party") end
-ns.Screens["Raidframes/Tracking"] = buildTracking
+ns.Screens["Raidframes/Auras"]    = buildAuras

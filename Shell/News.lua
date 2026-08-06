@@ -8,6 +8,13 @@ local ADDON, ns = ...
 --  notes we write anyway. That is a permanent extra release step, not a
 --  one-off — plan for it when tagging.
 --
+--  TWO files carry a release's notes and BOTH need the new version:
+--   * this one   -> the in-game "What's new" screen (one sentence per entry)
+--   * CHANGELOG.md -> the PUBLISHED changelog (GitHub release body + CurseForge),
+--                     grouped by feature area; wired up via manual-changelog in
+--                     .pkgmeta. Miss it and the packager falls back to generating
+--                     one from the commit messages.
+--
 --  Rules that keep the screen honest:
 --   * NEWEST version first. `version` matches the released tag (without -beta).
 --   * `summary` = the two lines the sidebar card shows for that release. Keep
@@ -25,10 +32,10 @@ local ADDON, ns = ...
 --     when the tag actually goes out if it was written ahead of time.
 --
 --  Registered card keys today:
---   Raidframes › Raid / Group: power-bar, text-name, text-hp, icon-role,
---     icon-lead, aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
+--   Raidframes › Raid / Group: power-bar, text-name, text-hp, icon-role, icon-lead
 --   Raidframes › Base: health-bar, text-style
---   Raidframes › Tracking: track-hot, track-def, track-major
+--   Raidframes › Auras: aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
+--     (the key also PRESELECTS that category when the jump lands)
 --   Global › Base: accent, whatsnew, font
 --   QoL › Base: qol-windows, qol-invites
 --  A key is what makes the target card FLASH on arrival. A jump without one
@@ -40,6 +47,83 @@ local ADDON, ns = ...
 -- ===========================================================================
 
 ns.News = {
+	{
+		version = "0.9.293",
+		date = "2026-08-05",
+		summary = "A marker bar, aura tooltips per category, and a lighter render path.",
+		entries = {
+			{ kind = "new",
+			  text = "A movable marker bar: target markers for whatever you have targeted, world markers for the ground. It works in combat, and its size and rows are set in Edit Mode.",
+			  section = "QoL", tab = "Base" },
+			{ kind = "new",
+			  text = "Aura icons can show their tooltip on hover, switched on per category — so debuffs explain themselves while your own HoTs stay quiet.",
+			  section = "Raidframes", tab = "Auras", card = "aura-debuffs" },
+			{ kind = "changed",
+			  text = "The health bar keeps at least ten percent opacity and the glow now dims with it, instead of burning at full strength over an invisible bar.",
+			  section = "Raidframes", tab = "Base", card = "health-bar" },
+			{ kind = "changed",
+			  text = "The Ready and Pull block sits in a card like the marker bar, and both can be resized in Edit Mode.",
+			  section = "QoL", tab = "Base" },
+			{ kind = "fixed",
+			  text = "A blank placeholder texture another addon registers showed up in the texture lists; picking it left the bar invisible." },
+			{ kind = "fixed",
+			  text = "In the aura tab, the tooltip of a spell you were about to add rendered behind the list it belonged to." },
+			{ kind = "fixed",
+			  text = "Opening Edit Mode while the settings were up could be refused by the game; the frames are no longer touched from inside its secure call." },
+			{ kind = "changed",
+			  text = "The raid frames do less work per update: the preview lives in its own file, resource events are registered per unit, and a frame is only repainted where something actually changed." },
+		},
+	},
+	{
+		version = "0.9.292",
+		date = "2026-07-30",
+		summary = "The preview follows a layout change, keeps room for the settings, and scrolls.",
+		entries = {
+			{ kind = "fixed",
+			  text = "Switching a layout between vertical and horizontal — or moving the width, height and spacing sliders — left the preview area at its old height, so the frames spilled out of it until you changed the sample size." },
+			{ kind = "changed",
+			  text = "A tall preview no longer squeezes the settings underneath it: it takes at most half the room and scrolls with the mouse wheel, so the frames keep their true size." },
+			{ kind = "fixed",
+			  text = "The frames sat on the line naming the preview; there is a guard between them now, and the line stays readable." },
+			{ kind = "fixed",
+			  text = "The dialog for copying aura settings opened with \"Appearance\" already ticked; nothing is preselected now." },
+			{ kind = "fixed",
+			  text = "The destination cells in that dialog read as switched off; each carries a real checkbox now, and the source column shows a greyed one with an X." },
+			{ kind = "fixed",
+			  text = "Clicking a spot in that dialog that was not a control — a caption, a gap between rows, the source cell — closed the whole dialog." },
+		},
+	},
+	{
+		version = "0.9.291",
+		date = "2026-07-30",
+		summary = "Aura settings now live on their own tab, with a preview and a copy dialog.",
+		entries = {
+			{ kind = "new",
+			  text = "Aura indicators have their own tab: pick a category, edit it below the preview, and switch between Raid and Group with one control.",
+			  section = "Raidframes", tab = "Auras", card = "aura-hotsOwn" },
+			{ kind = "new",
+			  text = "Copy settings from one category or context to another — the dialog shows every destination as a grid, so you pick exactly where they land.",
+			  section = "Raidframes", tab = "Auras" },
+			{ kind = "changed",
+			  text = "Which spells are tracked moved into the same tab, so a category is set up in one place instead of three; the separate Tracking tab is gone.",
+			  section = "Raidframes", tab = "Auras" },
+			{ kind = "changed",
+			  text = "All options of a category are visible at once — the \"More options\" link on the aura cards is gone." },
+			{ kind = "changed",
+			  text = "The preview is now anchored at the top of every raid frame tab and grows with its content; the separate preview window and its sidebar button are gone.",
+			  section = "Raidframes", tab = "Base" },
+			{ kind = "fixed",
+			  text = "The role and leader icons drew over the aura icons, so an icon could hide a debuff behind it." },
+			{ kind = "fixed",
+			  text = "Where two aura rows share a corner, the order is now fixed — debuffs, defensives, major cooldowns, then HoTs — instead of depending on which category you switched on first." },
+			{ kind = "changed",
+			  text = "The sample size above the raid preview is a segmented switch now, like every other either/or choice in the settings." },
+			{ kind = "changed",
+			  text = "Search and text fields sit a step lighter than the surface around them, so they read as something you can type into." },
+			{ kind = "changed",
+			  text = "The line under a card title is a little larger and thinner — it was smaller than the hints belonging to single controls inside the card." },
+		},
+	},
 	{
 		version = "0.9.290",
 		date = "2026-07-28",
@@ -94,7 +178,10 @@ ns.News = {
 			  section = "Raidframes", tab = "Base", card = "health-bar" },
 			{ kind = "new",
 			  text = "Augmentation Evoker aura defaults — Prescience, Ebon Might, Shifting Sands and the rest of the kit.",
-			  section = "Raidframes", tab = "Tracking", card = "track-hot" },
+			  -- Retargeted in 0.9.291: the Tracking tab is gone and the spell lists
+			  -- live in the Auras editor now. OpenTo skips an unknown tab silently, so
+			  -- this row used to land on whatever tab was remembered and flash nothing.
+			  section = "Raidframes", tab = "Auras", card = "aura-hotsOwn" },
 			{ kind = "new",
 			  text = "Accept group invites from friends and guild members automatically, while you are alone and outside an instance.",
 			  section = "QoL", tab = "Base", card = "qol-invites" },

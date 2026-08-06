@@ -11,7 +11,7 @@ ignore = { "211/ADDON" }
 -- Writable WoW globals (we add entries, not only read).
 -- LumenDB = our SavedVariables table; read once before AceDB creates it, to tell
 -- a fresh install apart from an existing one (see Core:OnInitialize).
-globals = { "StaticPopupDialogs", "SlashCmdList", "SLASH_LUMENPULL1", "LumenDB" }
+globals = { "StaticPopupDialogs", "SlashCmdList", "SLASH_LUMENPULL1", "SLASH_LUMENPROF1", "LumenDB" }
 
 -- Don't check third-party libraries and tools.
 exclude_files = { "Libs/", "tools/" }
@@ -77,6 +77,9 @@ read_globals = {
     "NUM_TOTAL_EQUIPPED_BAG_SLOTS",
     -- Localization
     "GetLocale",
+    -- Profiler (dev tool): engine-side addon metrics, always on since 12.0
+    -- (the scriptProfile CVar and GetAddOnCPUUsage were removed in 12.0.0).
+    "C_AddOnProfiler", "debugprofilestop",
     -- Ace3
     "LibStub",
     -- Optional foreign addons

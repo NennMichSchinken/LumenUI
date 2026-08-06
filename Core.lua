@@ -170,7 +170,12 @@ local defaults = {
 			-- (Raidframes.lua, whitelistFor) — deliberately NOT here in the defaults, so the first
 			-- write creates a real profile-owned table (no mutating of the shared defaults).
 			auras = {
+				-- showTooltip is SHARED between raid and group on purpose (unlike every
+				-- other knob here, which is per context): whether an icon explains
+				-- itself on hover is a habit, not a layout decision. Off by default —
+				-- it hands the icon the mouse, and that is a change you opt into.
 				hotsOwn = {
+					showTooltip = false,
 					enabledRaid = true,  enabledParty = true,
 					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 5, maxIconsParty = 5,
 					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
@@ -183,6 +188,7 @@ local defaults = {
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 				},
 				defensives = {
+					showTooltip = false,
 					enabledRaid = false, enabledParty = false,
 					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 3, maxIconsParty = 3,
 					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
@@ -197,6 +203,7 @@ local defaults = {
 				-- Raidframes.lua). Default anchor TOPLEFT = the last free corner (HoTs=BOTTOMLEFT,
 				-- Defensives=TOPRIGHT, Debuffs=BOTTOMRIGHT) -> collision-free when enabled.
 				major = {
+					showTooltip = false,
 					enabledRaid = false, enabledParty = false,
 					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 3, maxIconsParty = 3,
 					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
@@ -208,6 +215,7 @@ local defaults = {
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 				},
 				debuffs = {
+					showTooltip = false,
 					enabledRaid = false, enabledParty = false,
 					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 4, maxIconsParty = 4,
 					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
@@ -254,7 +262,17 @@ local defaults = {
 				enabled  = false, -- register the /pull chat command (opt-in; BigWigs/DBM claim /pull too)
 				duration = 10,    -- default countdown seconds (plain /pull + Pull button)
 				buttons  = false, -- movable Ready/Pull button block (MRT-style)
+				btnScale = 1,     -- block size (Edit Mode flyout)
 				btnPos   = { point = "CENTER", x = 0, y = -300 }, -- block position (Edit Mode)
+			},
+			markers = {
+				enabled = false, -- movable raid-marker bar (target row + world row)
+				target  = true,  -- show the target-marker row  (Edit Mode flyout)
+				world   = true,  -- show the world-marker row   (Edit Mode flyout)
+				background = true, -- card behind the icons; off = bare icons + captions
+				instanceOnly = false, -- only show inside dungeons/raids/scenarios
+				scale   = 1,     -- bar size (Edit Mode flyout)
+				pos     = { point = "CENTER", x = 0, y = -260 }, -- bar position (Edit Mode)
 			},
 			mplus = {
 				autoKeystone  = false, -- auto-insert the keystone when the pedestal opens
@@ -465,6 +483,10 @@ function Lumen:OnInitialize()
 	migrateLayout(self.db.profile.raidframes)
 	if ns.ClickCast then ns.ClickCast:MigrateCatalog() end
 
+	-- Before OnEnable builds anything: an armed profiler has to be in place to
+	-- capture the login pass (see Modules/Profiler.lua). No-op while it is off.
+	if ns.Prof then ns.Prof:Init() end
+
 	self.db.RegisterCallback(self, "OnProfileChanged", "RefreshAll")
 	self.db.RegisterCallback(self, "OnProfileCopied",  "RefreshAll")
 	self.db.RegisterCallback(self, "OnProfileReset",   "RefreshAll")
@@ -543,7 +565,7 @@ function Lumen:RefreshAll()
 	if ns.ClickCast then ns.ClickCast:MigrateCatalog(); ns.ClickCast:ApplyBindings() end
 	-- QoL features re-read the (possibly new) profile.
 	if ns.QoL then
-		ns.QoL:ApplyCursor(); ns.QoL:ApplyPull()
+		ns.QoL:ApplyCursor(); ns.QoL:ApplyPull(); ns.QoL:ApplyMarkers()
 		ns.QoL:ApplyOutfitSuppress(); ns.QoL:ApplyTrackers()
 		ns.QoL:ApplyWindows()
 	end
