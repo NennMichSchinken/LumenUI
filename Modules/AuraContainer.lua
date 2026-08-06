@@ -174,7 +174,12 @@ local function tipsOn(key)
 	local cat = catCfg(key)
 	return (cat and cat.showTooltip) and true or false
 end
+-- Only categories you actually RE-CAST can have a refresh window. Defensives and
+-- major cooldowns are cast once and run out; the engine would never light the
+-- marker there, so the option does not exist for them (Florian 2026-08-06).
+local PANDEMIC_CATS = { hotsOwn = true }
 local function pandemicOn(key)
+	if not PANDEMIC_CATS[key] then return false end
 	local cat = catCfg(key)
 	return (cat and cat.pandemic) and true or false
 end
@@ -196,60 +201,83 @@ local auraBtns = {}
 -- Style one duration fontstring from its category's options + (re)register or
 -- clear the engine binding for the on/off state. An unstyled FontString hard-errors
 -- in the engine's SetText path, so the font is set before the binding is attached.
-local function applyDurStyle(button, fs, key)
-	local on, size, outline = durOptsFor(key)
-	if ns.Raidframes and ns.Raidframes.StyleTextFont then
-		ns.Raidframes:StyleTextFont(fs, size, outline)
+local function applyDurStyle(e)
+	local button, fs = e.button, e.fs
+	local on, size, outline = durOptsFor(e.key)
+	local function style()
+		if ns.Raidframes and ns.Raidframes.StyleTextFont then
+			ns.Raidframes:StyleTextFont(fs, size, outline)
+		end
 	end
-	fs:SetTextColor(1, 1, 1)
+	style()
+	pcall(fs.SetTextColor, fs, 1, 1, 1)   -- VertexColor is a secret aspect once bound
 	if on then
-		local fmt = getDurationFormatter()
-		-- 68914 renamed this option key from `formatter` to `textFormatter`, and
-		-- the engine simply IGNORES an unknown key -- so passing the old name on a
-		-- new build silently falls back to the default formatter and the text reads
-		-- "14s" again instead of "14". No error to notice it by, hence both keys:
-		-- each build reads the one it knows.
-		local opts
-		if fmt then opts = { textFormatter = fmt, formatter = fmt } else opts = {} end
-		pcall(button.SetDurationText, button, fs, opts)
+		if not e.durBound then
+			local fmt = getDurationFormatter()
+			-- 68914 renamed this option key from `formatter` to `textFormatter`, and
+			-- the engine simply IGNORES an unknown key -- so passing the old name on a
+			-- new build silently falls back to the default formatter and the text reads
+			-- "14s" again instead of "14". No error to notice it by, hence both keys:
+			-- each build reads the one it knows.
+			local opts
+			if fmt then opts = { textFormatter = fmt, formatter = fmt } else opts = {} end
+			-- Bound ONCE, not on every settings change: SetDurationText re-arms the
+			-- binding and re-stamps the secret aspects, and Blizzard's own comment
+			-- warns that replacing an active binding needs the old one disabled first.
+			-- Size/outline are pure font state and do not need a re-bind.
+			if pcall(button.SetDurationText, button, fs, opts) then e.durBound = true end
+		end
+		-- Style AGAIN after the binding: taking the string over resets it to the
+		-- font object's size, which ate every size change (Florian 2026-08-06).
+		style()
 		fs:Show()
 	else
-		pcall(button.ClearDurationText, button)
+		if e.durBound then
+			pcall(button.ClearDurationText, button)
+			e.durBound = false
+		end
 		fs:Hide()
 	end
 end
 
 -- ---------------------------------------------------------------------------
 --  Pandemic marker (12.1 build 69111+)
---  A 2px red ring around the icon while re-applying the aura would carry time
+--  A pulsing red wash over the icon while re-applying the aura would carry time
 --  over -- WoW's refresh window. The ENGINE owns when it shows: AddPandemicRegion
 --  stamps SecretAspect.Shown on the region and drives it from the aura's base vs.
 --  extended duration, both of which are secret for other players. That is the
 --  whole reason this is an engine call and not our own timer.
---  Two consequences we design around:
---   * once registered we may no longer Show/Hide the ring -- the OFF state is
+--  Three consequences we design around:
+--   * once registered we may no longer Show/Hide the mark -- the OFF state is
 --     therefore alpha 0, not hidden;
---   * a registered ring makes the engine run an OnUpdate on that button while an
+--   * the blink animation OWNS the frame's alpha, so it has to be stopped before
+--     that alpha 0 sticks;
+--   * a registered mark makes the engine run an OnUpdate on that button while an
 --     aura with a refresh window sits there, so we register LAZILY: a category
 --     that never had the option on never pays for it.
 -- ---------------------------------------------------------------------------
 -- Bring one button's pandemic marker in line with its category's option.
 local function applyPandemic(e)
 	local on = pandemicOn(e.key)
-	if not e.ring then
+	if not e.mark then
 		if not on then return end                         -- never enabled -> never built
 		if not e.button.AddPandemicRegion then return end  -- pre-69111 build: no API
 		local rf = ns.Raidframes
-		if not (rf and rf.AuraPandemicRing) then return end
-		-- Same builder the preview uses, so both paths draw the identical ring.
-		local ring = rf:AuraPandemicRing(e.button, e.level or (e.button:GetFrameLevel() + 3))
+		if not (rf and rf.AuraPandemicMark) then return end
+		-- Same builder the preview uses, so both paths draw the identical marker.
+		local mark = rf:AuraPandemicMark(e.button, e.level or (e.button:GetFrameLevel() + 3))
 		-- Hidden BEFORE it is handed over: afterwards its visibility belongs to the
 		-- engine, and a fresh frame is shown by default (one frame of red flash).
-		ring:Hide()
-		if pcall(e.button.AddPandemicRegion, e.button, ring) then e.ring = ring end
+		mark:Hide()
+		if pcall(e.button.AddPandemicRegion, e.button, mark) then e.mark = mark end
 		return
 	end
-	pcall(e.ring.SetAlpha, e.ring, on and 1 or 0)
+	if on then
+		if e.mark.blink then e.mark.blink:Play() end
+	else
+		if e.mark.blink then e.mark.blink:Stop() end      -- release the alpha first
+		pcall(e.mark.SetAlpha, e.mark, 0)
+	end
 end
 
 -- Tooltips: the native button shows the aura tooltip on hover by itself, so the
@@ -267,7 +295,7 @@ function RFC.RefreshOptions()
 	for i = #auraBtns, 1, -1 do
 		local e = auraBtns[i]
 		if e.fs and e.button then
-			applyDurStyle(e.button, e.fs, e.key)
+			applyDurStyle(e)
 			applyMouse(e)
 			applyPandemic(e)
 		else
@@ -305,12 +333,17 @@ local function makeInitializer(size, key)
 		textLayer:SetAllPoints(button)
 		textLayer:SetFrameLevel(cd:GetFrameLevel() + 1)
 		local dt = textLayer:CreateFontString(nil, "OVERLAY")
-		dt:SetPoint("CENTER", button, "CENTER", 0, 0)
+		-- Spans the icon rather than sitting on a CENTER point: the engine binding
+		-- gives the string a width (it must not leak a secret duration through the
+		-- text width), and a left-justified string in a wide box hugs the left edge.
+		-- Full span + centred justify (StyleTextFont) keeps the number in the middle.
+		dt:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+		dt:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
 
 		local e = { button = button, fs = dt, key = key,
 			level = textLayer:GetFrameLevel() + 1 }  -- pandemic ring rides above the text layer
 		auraBtns[#auraBtns + 1] = e
-		applyDurStyle(button, dt, key)
+		applyDurStyle(e)
 		applyMouse(e)
 		applyPandemic(e)
 	end

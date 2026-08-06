@@ -1491,6 +1491,43 @@ local function stackContentH(st) return -st:y() end
 
 -- Finish an inner block: content height -> box height. `minH` stretches it to a
 -- shared height (two blocks side by side share the taller one's bottom edge).
+-- Two half-width blocks side by side inside a card. Both are children of the row
+-- and positioned by ONE explicit split — deliberately NOT via W.Row cells: those
+-- resolve their width through OnSizeChanged, and a block anchored to a cell that
+-- had not resolved yet came up completely empty (Florian 2026-07-29). One local
+-- layout function is predictable and re-runs on every resize.
+-- `right` may be nil — the left block still keeps the HALF width: field controls
+-- have one unit width (design bible §6.1.3), so a block stretched to card width
+-- would leave its two field cells swimming in empty space (Florian 2026-08-06).
+local function blockRow(parent)
+	local row = CreateFrame("Frame", nil, parent)
+	row:SetHeight(1)
+	return row
+end
+local function blockRowClose(host, row, left, leftH, right, rightH, gap)
+	local maxH = math.max(leftH or 0, rightH or 0)
+	left:SetHeight(maxH)
+	if right then right:SetHeight(maxH) end
+	row:SetHeight(maxH)
+	local function split(w)
+		w = w or row:GetWidth() or 0
+		if w <= 0 then return end
+		local half = (w - UI.GRID.cardGap) / 2
+		left:ClearAllPoints()
+		left:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+		left:SetWidth(half)
+		if right then
+			right:ClearAllPoints()
+			right:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+			right:SetWidth(half)
+		end
+	end
+	row:SetScript("OnSizeChanged", function(_, w) split(w) end)
+	split()
+	host:place(row, maxH, gap or 0)
+	split()   -- place() gives the row its real width
+end
+
 local function blockClose(box, st, content, minH)
 	local h = stackContentH(st)
 	content:SetHeight(h)
@@ -1673,14 +1710,8 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 		if sizeW then sizeW:SetWidgetEnabled(not cget("autoFit")()) end
 	end
 
-	-- Two blocks side by side INSIDE the editor card. Both are children of the
-	-- row and positioned by ONE explicit split — deliberately NOT via W.Row
-	-- cells: those resolve their width through OnSizeChanged, and a block
-	-- anchored to a cell that had not resolved yet came up completely empty
-	-- (Florian 2026-07-29, seen after a jump from another category). One local
-	-- layout function is predictable and re-runs on every resize.
-	local row = CreateFrame("Frame", nil, d)
-	row:SetHeight(1)
+	-- === Row 1: where the icons sit | how they look ===========================
+	local row = blockRow(d)
 
 	-- --- Placement -----------------------------------------------------------
 	local pBox, pSt, pC = innerBlock(row, T("Placement"), T("Where the icon row sits on the frame"))
@@ -1720,67 +1751,56 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 		set = function(v) cset("autoFit")(v); refreshSize() end }), M.optionRowH, 0)
 	aSt:place(checkRow(aC, T("Cooldown swipe"),
 		{ get = cget("showSwipe"), set = cset("showSwipe") }), M.optionRowH, 0)
-	-- Shared between raid and group (no ctx suffix) — see the note in Core.lua.
-	aSt:place(checkRow(aC, T("Show tooltip"), {
-		tooltip = T("Hovering an icon of this category shows the aura's tooltip. Clicks still go through to the frame. Applies to raid and group."),
-		get = aget(cat.key, "showTooltip"), set = aset(cat.key, "showTooltip") }), M.optionRowH, 0)
-	-- Refresh window: only meaningful for the categories you cast yourself.
-	-- Debuffs are not ours to refresh, so the row does not exist there.
-	if cat.key ~= "debuffs" then
-		aSt:place(checkRow(aC, T("Refresh warning"), {
-			tooltip = T("Marks the icon red while re-casting would carry the remaining time over (pandemic window). Needs patch 12.1. Applies to raid and group."),
-			get = aget(cat.key, "pandemic"), set = aset(cat.key, "pandemic") }), M.optionRowH, 0)
-	end
 	local aH = blockClose(aBox, aSt, aC)
+	blockRowClose(host, row, pBox, pH, aBox, aH, R.row)
 
-	-- Equal heights (shared bottom edge), then the row itself.
-	local maxH = math.max(pH, aH)
-	pBox:SetHeight(maxH); aBox:SetHeight(maxH)
-	row:SetHeight(maxH)
-	-- The split: left block from the left edge, right block from the right, each
-	-- half the width minus half the gutter. Re-applied on resize so a panel
-	-- rescale keeps them aligned.
-	local function splitRow(w)
-		w = w or row:GetWidth() or 0
-		if w <= 0 then return end
-		local half = (w - UI.GRID.cardGap) / 2
-		pBox:ClearAllPoints()
-		pBox:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-		pBox:SetWidth(half)
-		aBox:ClearAllPoints()
-		aBox:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
-		aBox:SetWidth(half)
-	end
-	row:SetScript("OnSizeChanged", function(_, w) splitRow(w) end)
-	splitRow()
-	host:place(row, maxH, R.row)
-	splitRow()  -- place() gives the row its real width
+	-- === Row 2: the number on the icon | the cues on the icon ==================
+	local row2 = blockRow(d)
 
-	-- --- Duration text (full width) -----------------------------------------
-	-- Its own block rather than a third column: the two rows above are about
-	-- WHERE and HOW BIG, this one is about the number on the icon. Full width
-	-- keeps the size slider and the outline segment on one line.
-	local dBox, dSt, dC = innerBlock(d, T("Duration text"), T("The remaining time on the icon"))
+	-- --- Duration text -------------------------------------------------------
+	local dBox, dSt, dC = innerBlock(row2, T("Duration text"), T("The remaining time on the icon"))
 	local durDeps = {}
 	local function refreshDur()
 		local on = cget("showDuration")() and true or false
 		for _, w in ipairs(durDeps) do w:SetWidgetEnabled(on) end
 	end
-	local durOn = checkRow(dC, T("Show duration"), {
+	dSt:place(checkRow(dC, T("Show duration"), {
 		get = cget("showDuration"),
-		set = function(v) cset("showDuration")(v); refreshDur() end })
-	dSt:place(durOn, M.optionRowH, R.row)
+		set = function(v) cset("showDuration")(v); refreshDur() end }), M.optionRowH, R.row)
 	local t1, tc = W.FieldRow(dC, page, 2, { height = M.sliderBoxH })
 	durDeps[#durDeps + 1] = sliderBox(tc[1], { label = T("Size"), min = 6, max = 30, unit = " px",
 		get = cget("durationSize"), set = cset("durationSize") })
-	local durOut = W.Segment(tc[2], { label = T("Outline"), options = OUTLINE_SEG_OPTS,
+	dSt:place(t1, M.sliderBoxH, R.row)
+	-- The outline segment HUGS its content (same as the Base tab's name/HP outline):
+	-- four options stretched across a unit-width field cell left the labels touching
+	-- the active pill (Florian 2026-08-06). Hug sizes each cell from its text plus
+	-- segHugPad, so the air is guaranteed regardless of the card width.
+	local durOut = W.Segment(dC, { label = T("Outline"), hug = true, options = OUTLINE_SEG_OPTS,
 		get = cget("durationOutline"), set = cset("durationOutline") })
-	durOut:SetAllPoints(tc[2])
+	dSt:place(durOut, fieldH, 0)
 	durDeps[#durDeps + 1] = durOut
-	dSt:place(t1, M.sliderBoxH, 0)
-	host:place(dBox, blockClose(dBox, dSt, dC), 0)
-	refreshDur()
+	local dH = blockClose(dBox, dSt, dC)
 
+	-- --- Cues ----------------------------------------------------------------
+	-- Both rows here are SHARED between raid and group (no ctx suffix — style, not
+	-- geometry; see the note in Core.lua), which is also why they do not sit with
+	-- the per-context controls above.
+	local cBox, cSt, cC = innerBlock(row2, T("Cues"), T("Extra hints on the icon"))
+	cSt:place(checkRow(cC, T("Show tooltip"), {
+		tooltip = T("Hovering an icon of this category shows the aura's tooltip. Clicks still go through to the frame. Applies to raid and group."),
+		get = aget(cat.key, "showTooltip"), set = aset(cat.key, "showTooltip") }), M.optionRowH, 0)
+	-- Refresh window: only auras you RE-CAST can have one. A defensive or a major
+	-- cooldown runs out and is not refreshed, so the engine would never light the
+	-- marker there — the row does not exist for those (Florian 2026-08-06).
+	if cat.key == "hotsOwn" then
+		cSt:place(checkRow(cC, T("Refresh warning"), {
+			tooltip = T("Marks the icon while re-casting would carry the remaining time over (pandemic window). Needs patch 12.1. Applies to raid and group."),
+			get = aget(cat.key, "pandemic"), set = aset(cat.key, "pandemic") }), M.optionRowH, 0)
+	end
+	local cH = blockClose(cBox, cSt, cC)
+
+	blockRowClose(host, row2, dBox, dH, cBox, cH, 0)
+	refreshDur()
 	refreshSize()
 end
 

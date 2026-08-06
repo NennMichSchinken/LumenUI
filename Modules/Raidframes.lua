@@ -807,6 +807,14 @@ function Raidframes:StyleTextFont(fs, size, outline)
 	local sf = shadowFonts()
 	fs:SetFontObject(sf[outline] or sf.none)   -- inherit shadow BEFORE SetFont
 	setFrameFont(fs, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
+	-- SetFontObject also inherits the font object's JUSTIFY, and a CreateFont
+	-- object defaults to LEFT. Harmless while the string sizes itself to its text
+	-- — but the native duration text gets a WIDTH from the engine binding, so the
+	-- number jumped to the left edge of the icon the moment the outline (= a new
+	-- font object) was picked (Florian 2026-08-06). Both callers of this want the
+	-- text centred in its box, so re-assert it after every font change.
+	fs:SetJustifyH("CENTER")
+	fs:SetJustifyV("MIDDLE")
 end
 
 local function GetFakeList(size)
@@ -978,18 +986,24 @@ end
 function Raidframes:AuraIconSize(cat, availH)
 	return auraIconSize(cat, layoutCtx(), availH)
 end
--- The pandemic ("refresh window") ring: 2px red edges around an aura icon, as one
--- frame so a single Show/Hide toggles it. ONE builder for both aura paths — on
--- 12.1 the engine owns when it shows (Modules/AuraContainer.lua), in the preview
--- we place it ourselves, and they have to look the same. A method, not a local:
--- this chunk sits near Lua's 200-local ceiling.
-function Raidframes:AuraPandemicRing(parent, level)
-	local ring = CreateFrame("Frame", nil, parent)
-	ring:SetAllPoints(parent)
-	if level then ring:SetFrameLevel(level) end
+-- The pandemic ("refresh window") mark: a pulsing red wash over the icon plus a
+-- 2px frame, as ONE frame so a single Show/Hide toggles all of it. A thin ring
+-- alone was not readable mid-fight (Florian 2026-08-06) — the wash is what the
+-- eye catches, the pulse is what makes it survive a busy screen.
+-- ONE builder for both aura paths: on 12.1 the engine owns WHEN it shows
+-- (Modules/AuraContainer.lua), in the preview we place it ourselves, and the two
+-- have to look identical. A method, not a local: this chunk sits near Lua's
+-- 200-local ceiling.
+function Raidframes:AuraPandemicMark(parent, level)
+	local mark = CreateFrame("Frame", nil, parent)
+	mark:SetAllPoints(parent)
+	if level then mark:SetFrameLevel(level) end
+	local wash = mark:CreateTexture(nil, "OVERLAY")
+	wash:SetAllPoints(mark)
+	wash:SetColorTexture(0.95, 0.16, 0.16, 0.34)
 	local function edge(p1, p2, w, h)
-		local tex = ring:CreateTexture(nil, "OVERLAY")
-		tex:SetColorTexture(0.95, 0.26, 0.26, 1)
+		local tex = mark:CreateTexture(nil, "OVERLAY", nil, 1)
+		tex:SetColorTexture(0.98, 0.28, 0.28, 0.95)
 		tex:SetPoint(p1); tex:SetPoint(p2)
 		if w then tex:SetWidth(w) else tex:SetHeight(h) end
 	end
@@ -997,7 +1011,20 @@ function Raidframes:AuraPandemicRing(parent, level)
 	edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, 2)
 	edge("TOPLEFT", "BOTTOMLEFT", 2, nil)
 	edge("TOPRIGHT", "BOTTOMRIGHT", 2, nil)
-	return ring
+	-- Blink via ONE looping alpha animation on the frame (children inherit it),
+	-- started at creation: no OnUpdate (§9), and no script the secure aura button
+	-- could object to. While the mark is hidden the animation simply is not seen.
+	-- NOTE for callers: the animation OWNS the frame's alpha, so switching the
+	-- option off must Stop() it before setting alpha 0 — see RFC.applyPandemic.
+	local ag = mark:CreateAnimationGroup()
+	ag:SetLooping("REPEAT")
+	local down = ag:CreateAnimation("Alpha")
+	down:SetFromAlpha(1); down:SetToAlpha(0.25); down:SetDuration(0.45); down:SetOrder(1)
+	local up = ag:CreateAnimation("Alpha")
+	up:SetFromAlpha(0.25); up:SetToAlpha(1); up:SetDuration(0.45); up:SetOrder(2)
+	mark.blink = ag
+	ag:Play()
+	return mark
 end
 -- Small inward offset so icons don't stick to the frame edge.
 local function auraInset(point)
@@ -1092,7 +1119,11 @@ local function makeAuraIcon(holder)
 	textLayer:SetAllPoints(ic)
 	textLayer:SetFrameLevel(ic.cd:GetFrameLevel() + 1)
 	ic.dur = textLayer:CreateFontString(nil, "OVERLAY")
-	ic.dur:SetPoint("CENTER", ic, "CENTER", 0, 0)
+	-- Spans the icon (not a CENTER point) so the centred justify keeps the number
+	-- in the middle even when something else assigns the string a width — same
+	-- anchoring as the native path, see AuraContainer.lua.
+	ic.dur:SetPoint("TOPLEFT", ic, "TOPLEFT", 0, 0)
+	ic.dur:SetPoint("BOTTOMRIGHT", ic, "BOTTOMRIGHT", 0, 0)
 	-- Click-to-configure: ONLY the non-secure dock-preview pool gets mouse
 	-- scripts — live secure frames must never have their clicks intercepted.
 	if holder._host and holder._host._c2c then
@@ -2293,7 +2324,7 @@ function Raidframes:RenderAurasFake(f)
 				local ic = holder.icons[k]
 				if ic then
 					if pandOn and k == 1 then
-						ic.pand = ic.pand or self:AuraPandemicRing(ic, ic.cd:GetFrameLevel() + 2)
+						ic.pand = ic.pand or self:AuraPandemicMark(ic, ic.cd:GetFrameLevel() + 2)
 						ic.pand:Show()
 					elseif ic.pand then
 						ic.pand:Hide()

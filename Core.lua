@@ -186,9 +186,10 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
-					-- Pandemic marker (12.1+): a red ring while re-applying would carry
-					-- duration over. The engine drives it (secret base/extended duration),
-					-- we only own the option -- shared across raid/group like the tooltip.
+					-- Pandemic marker (12.1+): the icon is marked while re-casting would
+					-- carry duration over. The engine drives it (base vs. extended duration
+					-- are secret), we only own the option -- shared across raid/group like
+					-- the tooltip. HoTs only: nothing else gets re-cast before it expires.
 					pandemic = false,
 				},
 				defensives = {
@@ -202,7 +203,6 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
-					pandemic = false,
 				},
 				-- Major CDs (big class cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
 				-- Raidframes.lua). Default anchor TOPLEFT = the last free corner (HoTs=BOTTOMLEFT,
@@ -218,7 +218,6 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
-					pandemic = false,
 				},
 				debuffs = {
 					showTooltip = false,
