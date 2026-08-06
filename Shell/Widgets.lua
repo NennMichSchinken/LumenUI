@@ -1514,14 +1514,11 @@ end
 --  Segment — compact multi-toggle (gold-filled active cell). ONE component,
 --  used multiple times: Raid|Group context switch AND inside|outside.
 --  o = { label?, options = {{value,label},…} (or strings), get, set, value,
---        width?, cellH?, tooltip?, hug?, id? }. With label -> label on top (like
+--        width?, cellH?, tooltip?, hug? }. With label -> label on top (like
 --  Select/Slider), bar below at controlH. Without label -> only the bar (height
---  cellH, e.g. compact header switch). Cell widths: see the layout block below.
---  `id` = stable key for a switch that REBUILDS its screen on set, so the fresh
---  strip can glide from the previous value instead of appearing in place.
+--  cellH, e.g. compact header switch). Cell widths: see the layout block below —
+--  same air around every word, hug or stretched.
 -- ---------------------------------------------------------------------------
-local SEG_LAST = {}   -- id -> last painted value (survives the rebuild)
-
 function W.Segment(parent, o)
 	local opts = normOptions(o.options or {})
 	local n = math.max(1, #opts)
@@ -1668,33 +1665,8 @@ function W.Segment(parent, o)
 		if hug then bar:SetWidth(x) end
 		reposition()
 	end
-	-- A switch whose `set` rebuilds its screen (the Auras pane / context switches)
-	-- throws away the very widget that would have glided, so its pill just appeared
-	-- in the new place (Florian 2026-08-07). With a stable `id` the fresh strip
-	-- starts on the PREVIOUS value and glides to the current one, so a rebuilding
-	-- switch feels exactly like an in-place one. Once per build.
-	local slidFromPrev = false
-	local function animateFromPrevious()
-		if slidFromPrev or not o.id then return end
-		slidFromPrev = true
-		local prev = SEG_LAST[o.id]
-		SEG_LAST[o.id] = cur
-		if prev == nil or prev == cur then return end
-		for _, c in ipairs(cells) do
-			if c._val == prev then
-				local ox, oy, cwd, chg = UI.itemRectIn(c, bar)
-				if ox then UI.slideTo(slider, ox + pad, oy - pad, cwd - pad * 2, chg - pad * 2, false) end
-				break
-			end
-		end
-		positionSlider(true)
-	end
-
 	layoutCells()
-	animateFromPrevious()
-	for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do
-		C_Timer.After(dl, function() layoutCells(); animateFromPrevious() end)
-	end
+	for _, dl in ipairs({ 0, 0.05, 0.15, 0.3 }) do C_Timer.After(dl, layoutCells) end
 	bar:HookScript("OnShow", layoutCells)
 	-- Stretched strips re-run on every resize; a hug strip owns its width and must
 	-- not react to its own SetWidth.
@@ -1702,11 +1674,7 @@ function W.Segment(parent, o)
 
 	paint(false)
 
-	f.SetValueExternal = function(_, v)
-		cur = v
-		if o.id then SEG_LAST[o.id] = v end   -- keep the glide-from cache truthful
-		paint(true)
-	end
+	f.SetValueExternal = function(_, v) cur = v; paint(true) end
 	f.SetWidgetEnabled = function(_, on)
 		f:SetAlpha(on and 1 or 0.35)
 		for _, c in ipairs(cells) do c:EnableMouse(on) end
@@ -3727,15 +3695,12 @@ function W.PreviewBand(parent, o)
 	-- segment (outline, HP display) is the normal way to pick one value out of
 	-- several. Two languages for the same job in one header read dated next to the
 	-- Base and Auras tabs (Florian 2026-07-30).
-	local function headerSeg(items, get, set, width, id)
+	local function headerSeg(items, get, set, width)
 		local opts2 = {}
 		for _, it in ipairs(items) do opts2[#opts2 + 1] = { value = it.v, label = it.label } end
 		local shown = get()
 		local seg
-		-- `id`: these header switches re-render the screen, which replaces the very
-		-- widget that would have animated -- the id lets the fresh one glide from
-		-- the previous value (see W.Segment).
-		seg = W.Segment(head, { options = opts2, get = get, id = id,
+		seg = W.Segment(head, { options = opts2, get = get,
 			set = function(v) shown = v; set(v) end,
 			width = width, cellH = M.segCompactH })
 		seg:SetPoint("LEFT", lbl, "RIGHT", M.pvChipGroupGap, 0)
@@ -3752,10 +3717,10 @@ function W.PreviewBand(parent, o)
 	if o.sizes then
 		local items = {}
 		for _, v in ipairs(o.sizes.values) do items[#items + 1] = { v = v, label = tostring(v) } end
-		f._sizeSeg = headerSeg(items, o.sizes.get, o.sizes.set, M.pvSizeSegW, "pvSize")
+		f._sizeSeg = headerSeg(items, o.sizes.get, o.sizes.set, M.pvSizeSegW)
 	end
 	if o.ctx then
-		f._ctxSeg = headerSeg(o.ctx.values, o.ctx.get, o.ctx.set, M.pvCtxSegW, "pvCtx")
+		f._ctxSeg = headerSeg(o.ctx.values, o.ctx.get, o.ctx.set, M.pvCtxSegW)
 	end
 	-- Quiet right-aligned hint that the stage is clickable (click-to-configure is
 	-- otherwise only discoverable by hovering).

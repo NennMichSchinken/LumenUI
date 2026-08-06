@@ -1864,8 +1864,6 @@ local function buildAuras(d, stack)
 	local paneSpells = (auraTabPane == "spells")
 
 	local paneSeg = W.Segment(d, {
-		-- Rebuilds the screen on set -> needs an id so the pill still glides.
-		id = "auraPane",
 		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
 		get = function() return auraTabPane end,
 		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
