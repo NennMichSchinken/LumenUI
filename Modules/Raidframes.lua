@@ -828,11 +828,24 @@ local function setFrameFont(fs, size, flags)
 	end
 end
 
+-- Font flags for an outline mode, plus the shared "pixel-crisp" switch. WoW takes
+-- the flags as a comma list, and MONOCHROME simply turns the font's edge smoothing
+-- off — combinable with either outline. One funnel so every frame text (name, HP,
+-- aggro, aura duration, preview) obeys the same switch.
+local function outlineFlags(outline)
+	local f = OUTLINE_FLAGS[outline] or ""
+	local d = db()
+	if d and d.textMonochrome then
+		return (f ~= "" and (f .. ",MONOCHROME")) or "MONOCHROME"
+	end
+	return f
+end
+
 local function applyText(fs, frame, point, x, y, size, color, outline)
 	point = point or "CENTER"
 	local sf = shadowFonts()
 	fs:SetFontObject(sf[outline] or sf.none)   -- inherit shadow BEFORE SetFont (12.0.7)
-	setFrameFont(fs, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
+	setFrameFont(fs, max(6, size or 12), outlineFlags(outline))
 	fs:ClearAllPoints()
 	local ix, iy = pointInset(point, x, y)
 	fs:SetPoint(point, frame, point, ix, iy)
@@ -846,7 +859,7 @@ end
 function Raidframes:StyleTextFont(fs, size, outline)
 	local sf = shadowFonts()
 	fs:SetFontObject(sf[outline] or sf.none)   -- inherit shadow BEFORE SetFont
-	setFrameFont(fs, max(6, size or 12), OUTLINE_FLAGS[outline] or "")
+	setFrameFont(fs, max(6, size or 12), outlineFlags(outline))
 	-- SetFontObject also inherits the font object's JUSTIFY (a CreateFont object
 	-- defaults to LEFT) — which is why the number jumped left the moment an
 	-- outline was picked (Florian 2026-08-06). Justify only bites on a string that

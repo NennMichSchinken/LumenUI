@@ -58,6 +58,12 @@ local defaults = {
 			nameOutline       = "shadow",   -- none | shadow | outline | thick
 			healthTextColor   = { r = 1, g = 1, b = 1 },
 			healthTextOutline = "shadow",
+			-- Pixel-crisp text: adds WoW's MONOCHROME flag to every frame text, i.e.
+			-- turns the font's edge smoothing OFF. At the 10-14px these texts run at,
+			-- smoothing is what makes small glyphs look soft; off they are hard-edged
+			-- and blocky. Taste, so it is a switch — shared by raid and group, like
+			-- the other text LOOK settings.
+			textMonochrome = false,
 
 			-- Frame visibility: show the group frame even when solo (default off -> no frame
 			-- when alone; on -> always visible). Sets the SecureGroupHeader attribute showSolo.
