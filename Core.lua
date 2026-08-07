@@ -73,7 +73,15 @@ local defaults = {
 			-- Dispel (secret-safe: Blizzard filter + color curve, works in combat)
 			dispelEnabled = true,
 			dispelMode    = "recolor",          -- "recolor" (recolor bar) | "overlay" (border+overlay, keeps class color)
-			dispelShowAll = false,              -- false = only what I can dispel; true = all dispellable
+			-- Which dispels light the frame up. Straight from Blizzard's aura filter
+			-- list (AuraUtil.AuraFilters), so all three are secret-safe -- the dispel
+			-- TYPE never has to be read in Lua:
+			--   mine  = HARMFUL|RAID                    "harmful auras the player can dispel"
+			--   group = HARMFUL|RAID_PLAYER_DISPELLABLE "someone in the player's raid can dispel"
+			--   all   = HARMFUL                          every debuff carrying a dispel type
+			-- Default "mine": Lumen is built for healers under pressure, and a
+			-- highlight you cannot act on is noise (Florian 2026-08-07).
+			dispelScope   = "mine",
 			dispelAlpha   = 0.30,               -- overlay fill opacity (only mode "overlay")
 			dispelColors  = {
 				Magic   = { r = 0.20, g = 0.60, b = 1.00 },
@@ -231,9 +239,15 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
-					-- Blizzard default filter (per context): "raid" = only raid-relevant debuffs
-					-- (like Blizzard's default), "all" = all, "dispellable" = only self-dispellable.
-					filterModeRaid = "raid", filterModeParty = "raid",
+					-- Filter (per context): "raid" = only raid-relevant debuffs (Blizzard's
+					-- own default), "all" = all, "dispellable" = only self-dispellable.
+					-- "all" rather than Blizzard's "raid" (Florian 2026-08-07): the dispel
+					-- highlight reads EVERY dispellable debuff, the icon row with "raid"
+					-- reads only the flagged ones -- so a bar could light up for a dispel
+					-- with no icon anywhere explaining it. Together with the dispel default
+					-- ("only what I can dispel") this pairs into the readable baseline:
+					-- highlighted = mine to remove, icons = everything that is on them.
+					filterModeRaid = "all", filterModeParty = "all",
 				},
 			},
 		},
@@ -283,14 +297,17 @@ local defaults = {
 			mplus = {
 				autoKeystone  = false, -- auto-insert the keystone when the pedestal opens
 				resetAnnounce = false, -- announce instance resets to the group
-				quickGossip   = false, -- dungeon gossip: auto-select single options, 1-9 keys
+				quickGossip      = false, -- dungeon gossip: auto-select single options, 1-9 keys
+				gossipEverywhere = false, -- ...and in the open world too (opt-in)
 			},
 			buffs = {
 				suppressOutfit = false, -- auto-cancel cosmetic profession-gear buffs (chef's hat etc.)
 			},
 			trackers = {
-				-- Placeable icons (Edit Mode). Brez shows only while a key runs /
-				-- a raid boss is engaged; lust shows in group instances.
+				-- Placeable icons (Edit Mode). An enabled tracker is always on
+				-- screen and greys out while unavailable; instanceOnly limits
+				-- both of them to dungeons/raids.
+				instanceOnly = false,
 				brez = { enabled = false, size = 40, pos = { point = "CENTER", x = -30, y = -240 } },
 				lust = { enabled = false, size = 40, pos = { point = "CENTER", x = 30, y = -240 } },
 			},
@@ -452,6 +469,15 @@ local function migrateLayout(rf)
 				end
 			end
 		end
+		-- v6: dispel scope went from a bool to three levels. The old bool was
+		-- MISLABELLED -- "off" claimed "only yours" but actually ran on
+		-- RAID_PLAYER_DISPELLABLE, which Blizzard defines as "someone in the
+		-- player's raid can dispel". Migrate to what the label PROMISED, not to
+		-- what the code did: off -> "mine", on -> "all" (Florian 2026-08-07).
+		if rawget(rf, "dispelShowAll") ~= nil and rawget(rf, "dispelScope") == nil then
+			rf.dispelScope = rf.dispelShowAll and "all" or "mine"
+		end
+		rf.dispelShowAll = nil
 		-- v5: aura DISPLAY knobs (enabled/spacing/maxIcons/autoFit/showSwipe/filterMode)
 		-- also moved from shared -> per context (Feature 1). Deliberately NO carry-over
 		-- (fresh defaults, agreed) — just strip the now-obsolete unsuffixed fields so they
