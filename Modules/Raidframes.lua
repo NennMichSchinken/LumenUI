@@ -289,8 +289,16 @@ local function debuffModeAccept(u, iid, mode, fn)
 	if mode == "dispellable" then
 		return not fn(u, iid, "HARMFUL|RAID_PLAYER_DISPELLABLE")
 	end
-	-- "raid" (default, Blizzard-relevant) + fallback
-	return (not fn(u, iid, "HARMFUL|RAID")) or (not fn(u, iid, "HARMFUL|RAID_IN_COMBAT"))
+	-- "raid" (Blizzard-relevant) + fallback -- PLUS anything the GROUP can dispel.
+	-- RAID_PLAYER_DISPELLABLE is not "my own dispel types": Blizzard's filter list
+	-- defines it as "auras someone in the player's raid can dispel", which is
+	-- exactly the set the dispel highlight runs on. Without this third test the
+	-- highlight and the icon row disagreed -- a bar could light up as dispellable
+	-- with no icon anywhere saying why (Florian lost half an hour to that,
+	-- 2026-08-07). The extra call only runs when the first two already missed.
+	return (not fn(u, iid, "HARMFUL|RAID"))
+		or (not fn(u, iid, "HARMFUL|RAID_IN_COMBAT"))
+		or (not fn(u, iid, "HARMFUL|RAID_PLAYER_DISPELLABLE"))
 end
 
 -- ---- Aura signature learning (phase 2 / stage B1) ---------------------------
@@ -764,6 +772,16 @@ local function buildDispelCurve()
 	pt(4, "Poison")
 end
 
+-- The aura filter behind the dispel highlight. Shared with the native 12.1 path
+-- so both can never drift apart. All three strings come from Blizzard's own
+-- filter list and resolve the (secret) dispel type engine-side.
+function Raidframes:DispelFilter()
+	local scope = db().dispelScope
+	if scope == "all" then return "HARMFUL" end
+	if scope == "group" then return "HARMFUL|RAID_PLAYER_DISPELLABLE" end
+	return "HARMFUL|RAID"   -- "mine": harmful auras THE PLAYER can dispel
+end
+
 -- Public: the two dispel colour curves (border, fill). The native overlay passes
 -- them to the engine as `customDispelColorCurve`, which resolves the secret dispel
 -- type internally — the same trick the old scan path used, minus the scan.
@@ -906,7 +924,7 @@ function Raidframes:GetDispel(u, d)
 	-- container group (HARMFUL|RAID_PLAYER_DISPELLABLE) instead of a scan.
 	if aurasRestricted() then return false end
 	if not dispelCurve then buildDispelCurve() end
-	local filter = d.dispelShowAll and "HARMFUL" or "HARMFUL|RAID_PLAYER_DISPELLABLE"
+	local filter = self:DispelFilter()
 	local i = 1
 	while true do
 		local aura = C_UnitAuras.GetAuraDataByIndex(u, i, filter)
@@ -2202,7 +2220,10 @@ function Raidframes:RenderFake(f)
 
 	-- Test mode: no real aura object -> map the type directly to the configured color.
 	local hasDispel, dr, dg, dbb = false
-	if d.dispelEnabled and fk.dispel and (d.dispelShowAll or playerDispels[fk.dispel]) then
+	-- "mine" is the only scope the fake data can honour: group composition is not
+	-- something a preview has, so the wider scopes simply show every sample dispel.
+	if d.dispelEnabled and fk.dispel
+		and (d.dispelScope ~= "mine" or playerDispels[fk.dispel]) then
 		dr, dg, dbb = dispelCol(d, fk.dispel)
 		hasDispel = true
 	end
@@ -2997,11 +3018,21 @@ function Raidframes:Setup()
 	container = CreateFrame("Frame", "LumenRaidContainer", UIParent)
 	container:SetSize(200, 200)
 	container:SetPoint("CENTER", UIParent, "CENTER", 0, -120)
-	-- HIGH strata: raidframes must never sit under action-bar/HUD elements
-	-- (both default to MEDIUM, so hotkey text bled through on overlap). Set
-	-- BEFORE any child exists so the whole subtree inherits one base; dialogs/
-	-- tooltips (DIALOG+) still cover us.
-	container:SetFrameStrata("HIGH")
+	-- Layering: MEDIUM strata, but a high frame LEVEL inside it. Both halves
+	-- matter and they were learned one after the other:
+	--   * the level keeps us above action bars and the rest of the static HUD,
+	--     which sit at MEDIUM with low levels (that was the original reason for
+	--     HIGH -- hotkey text bled through on overlap);
+	--   * the strata keeps Blizzard's WINDOWS above us. Panels like the world map
+	--     are managed by the UI panel system, which raises them within their own
+	--     strata when they open -- from HIGH we simply outranked them and covered
+	--     the map (Florian 2026-08-07). Dialogs/tooltips (DIALOG+) cover us either
+	--     way; Blizzard's own CompactRaidFrameContainer is HIGH, but it is not a
+	--     precedent worth the map bug.
+	-- Set BEFORE any child exists so the whole subtree inherits one base -- every
+	-- inner bar level is relative to this (§9.8: no level churn afterwards).
+	container:SetFrameStrata("MEDIUM")
+	container:SetFrameLevel(100)
 	container:RegisterEvent("PLAYER_ENTERING_WORLD")
 	container:RegisterEvent("GROUP_ROSTER_UPDATE")
 	container:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")

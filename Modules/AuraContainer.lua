@@ -56,11 +56,18 @@ for _, c in ipairs(NATIVE_CATS) do IS_NATIVE[c.key] = true end
 -- container swap).
 local DEBUFF_PRESETS = {
 	all         = { { key = "db_all",   filter = "HARMFUL" } },
+	-- Third group: whatever the GROUP can dispel always gets an icon, even when
+	-- Blizzard did not flag it raid-relevant -- otherwise the dispel highlight
+	-- fires with nothing on the frame explaining it (mirror of the 12.0 path's
+	-- debuffModeAccept, Florian 2026-08-07). RAID_PLAYER_DISPELLABLE means "someone
+	-- in the player's raid can dispel it", not "the player can" -- the same set the
+	-- highlight uses. Negations keep the three groups disjoint (no double display).
 	raid        = { { key = "db_raid",  filter = "HARMFUL|RAID" },
-	                { key = "db_raidc", filter = "HARMFUL|RAID_IN_COMBAT|!RAID" } },
+	                { key = "db_raidc", filter = "HARMFUL|RAID_IN_COMBAT|!RAID" },
+	                { key = "db_raidd", filter = "HARMFUL|RAID_PLAYER_DISPELLABLE|!RAID|!RAID_IN_COMBAT" } },
 	dispellable = { { key = "db_disp",  filter = "HARMFUL|RAID_PLAYER_DISPELLABLE" } },
 }
-local ALL_DEBUFF_KEYS = { "db_all", "db_raid", "db_raidc", "db_disp" }
+local ALL_DEBUFF_KEYS = { "db_all", "db_raid", "db_raidc", "db_raidd", "db_disp" }
 
 -- Native aura path is available on 12.1.0+ (the "AuraContainer" frame type). On
 -- 12.1 it becomes the DEFAULT automatically (no toggle); on 12.0.x it stays off
@@ -569,7 +576,6 @@ end
 -- covered; the recolour one sorts with the health bar (see the initializer).
 local function syncDispel(button, parent)
 	button._rfc = button._rfc or {}
-	local d = rfCfg()
 	local mode = dispelMode()
 	local on = dispelOn()
 	-- Whatever is not the active mode goes quiet.
@@ -583,7 +589,9 @@ local function syncDispel(button, parent)
 	local container = button._rfc[key]
 	local w, h = button:GetWidth() or 0, button:GetHeight() or 0
 	if w < 2 or h < 2 then return end
-	local filter = d.dispelShowAll and "HARMFUL" or "HARMFUL|RAID_PLAYER_DISPELLABLE"
+	-- Scope comes from Raidframes so the native and the scan path cannot drift.
+	local filter = (ns.Raidframes and ns.Raidframes.DispelFilter
+		and ns.Raidframes:DispelFilter()) or "HARMFUL|RAID"
 	if not container then
 		local health = button.health or button
 		local ok, c = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
