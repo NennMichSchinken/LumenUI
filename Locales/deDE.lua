@@ -154,8 +154,6 @@ ns.RegisterLocale("deDE", {
 	["Name in class color"] = "Name in Klassenfarbe",
 	["Name outline"] = "Namens-Umrandung",
 	["HP outline"] = "HP-Umrandung",
-	["Pixel-crisp text"] = "Pixelscharfer Text",
-	["Turns off the font's edge smoothing. At small sizes the text gets hard, blocky edges instead of soft ones — some find that easier to read. Applies to every raid-frame text."] = "Schaltet die Kantenglättung der Schrift ab. Bei kleinen Größen bekommt der Text harte, kantige Ränder statt weicher — manche lesen das besser. Gilt für alle Texte auf den Raidframes.",
 	["Name color"] = "Namensfarbe",
 	["HP text color"] = "HP-Text-Farbe",
 

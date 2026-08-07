@@ -985,18 +985,6 @@ local function buildBase(d, stack)
 	sText:place(nameOut, fieldH, R.tight)
 	local hpOut = W.Segment(d, { label = T("HP outline"), hug = true, options = OUTLINE_SEG_OPTS, get = tget("healthTextOutline"), set = tset("healthTextOutline") })
 	sText:place(hpOut, fieldH, R.row)
-	-- One switch for every frame text rather than a fifth outline option per text:
-	-- crisp-vs-smooth is a rendering taste that applies to all of them at once.
-	sText:place(checkRow(d, T("Pixel-crisp text"), {
-		tooltip = T("Turns off the font's edge smoothing. At small sizes the text gets hard, blocky edges instead of soft ones — some find that easier to read. Applies to every raid-frame text."),
-		get = tget("textMonochrome"),
-		-- The aura duration text is styled by the aura pass, not the layout pass —
-		-- without this it would keep its smoothing until the next aura change.
-		set = function(v)
-			rf().textMonochrome = v
-			relayout()
-			if ns.Raidframes then ns.Raidframes:RefreshAuras() end
-		end }), M.optionRowH, R.row)
 	-- Advanced: the two text colors as chip rows (rarely touched — most run
 	-- class color/white; curation 2026-07-04).
 	if baseAdvState.text then
