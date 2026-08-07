@@ -34,6 +34,7 @@ read_globals = {
     "UnitExists", "UnitName", "UnitClass", "UnitFactionGroup", "UnitThreatSituation", "UnitGroupRolesAssigned",
     "UnitIsUnit", "GetSpecializationRole", "UnitIsGroupLeader", "UnitIsGroupAssistant",
     "UnitIsConnected", "UnitIsDeadOrGhost", "UnitIsGhost", "UnitHasIncomingResurrection",
+    "UnitInRange",
     "GetReadyCheckStatus", "C_IncomingSummon",
     "UnitHealth", "UnitHealthMax", "UnitHealthPercent",
     -- Resource bar (power); UnitPowerPercent resolves the secret value C-side

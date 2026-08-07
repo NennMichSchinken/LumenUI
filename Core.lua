@@ -37,6 +37,9 @@ local defaults = {
 			-- text is always on (core correctness, no options).
 			showReadyCheck = true,  -- ready-check icons in the frame center
 			showSummon     = true,  -- incoming-summon status (pending/accepted/declined)
+			-- The out-of-range fade is option-free as well (Florian 2026-08-07): a
+			-- member you cannot reach must LOOK unreachable, and Blizzard's raid
+			-- frames have no switch for it either. See Raidframes._applyFrameAlpha.
 
 			-- Background & transparency (shared — "Base" tab). Alpha 0..1.
 			bgColor         = { r = 0.11, g = 0.11, b = 0.11 }, -- frame background color (was fixed 0.11)

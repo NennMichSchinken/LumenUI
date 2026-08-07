@@ -1997,6 +1997,40 @@ function Raidframes:RenderAggro(f)
 	end
 end
 
+-- Frame transparency has TWO independent sources: the status layer (offline) and
+-- the range check. A frame owns exactly ONE alpha, so both funnel through here
+-- instead of overwriting each other. Both are option-free: the 0.5 is Blizzard's
+-- own out-of-range value, the 0.55 our offline dim.
+--
+-- SECRET: UnitInRange is declared SecretReturns, so the in-range flag must never
+-- reach a Lua branch. Both possible results are computed here as plain numbers and
+-- the ENGINE picks between them (SetAlphaFromBoolean is explicitly allowed from
+-- tainted code). Consequence: GetAlpha/GetEffectiveAlpha on these frames may
+-- return nil from now on -- nothing reads them back.
+function Raidframes._applyFrameAlpha(f)
+	local a = (f._statusMode == "offline") and 0.55 or 1
+	local r = f._range
+	-- `== nil` does not READ a secret value -> safe even while r is secret.
+	if r == nil or not f.SetAlphaFromBoolean then f:SetAlpha(a); return end
+	-- Offline AND out of range: the stronger dim wins, the two don't stack.
+	f:SetAlphaFromBoolean(r, a, a < 0.5 and a or 0.5)
+end
+
+-- UNIT_IN_RANGE_UPDATE: dim a member you cannot reach. The event carries the new
+-- state, but its payload is secret as well -> re-query like Blizzard's own frames
+-- do and hand the result straight to the engine. `checkedRange` false means the
+-- client cannot judge this unit at all (no check performed) -> full opacity.
+function Raidframes:RenderRange(f)
+	local u = f.unit
+	if not u or not UnitExists(u) then return end
+	local ok, inRange, checked = pcall(UnitInRange, u)
+	-- A secret `checkedRange` cannot be tested -> assume the check happened; the
+	-- engine still decides the actual alpha from the (secret) in-range flag.
+	if ok and issecretvalue and issecretvalue(checked) then checked = true end
+	if ok and checked then f._range = inRange else f._range = nil end
+	self._applyFrameAlpha(f)
+end
+
 -- Unit status: Offline > Rez (incoming resurrection while dead) > Ghost/Dead.
 -- UnitIsConnected/UnitIsDeadOrGhost return CLEAN booleans for group units in
 -- 12.0 (only UnitIsAFK can be secret) -> safe in plain conditionals. Cached
@@ -2029,9 +2063,10 @@ function Raidframes:RenderStatus(f)
 		f.stext:Hide()
 		f.htext:Show()
 	end
-	-- Grey the bar while dead/offline; dim the whole frame only when offline.
+	-- Grey the bar while dead/offline; dim the whole frame only when offline
+	-- (the range check is the second source of frame alpha -> shared helper).
 	f._greyed = (mode ~= nil) or nil
-	f:SetAlpha(mode == "offline" and 0.55 or 1)
+	self._applyFrameAlpha(f)
 	applyHealthColor(f, db(), u)
 end
 
@@ -2180,6 +2215,7 @@ function Raidframes:RenderLive(f)
 	-- A full pass is the one place where class, role and every setting behind the
 	-- render memos can have changed -> drop them all and let this pass re-derive.
 	f._cGrey, f._cDOn, f._pwShown, f._pwType = nil, nil, nil, nil
+	f._range = nil       -- the previous occupant's range state must not leak into this unit
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
@@ -2192,6 +2228,8 @@ function Raidframes:RenderLive(f)
 	self:RenderHealth(f)        -- segments + HP text + status (color re-uses the fresh cache)
 	self:RenderAggro(f)
 	self:RenderCenterIcon(f)
+	-- The range event only reports CHANGES -> a freshly assigned unit needs one query.
+	self:RenderRange(f)
 	setIndicators(f, self._unitRole(u),
 		UnitIsGroupLeader and UnitIsGroupLeader(u),
 		UnitIsGroupAssistant and UnitIsGroupAssistant(u))
@@ -2203,9 +2241,10 @@ function Raidframes:RenderFake(f)
 	local d = db()
 	f:Show()
 
-	-- Test mode has no real units -> neutral status layer.
+	-- Test mode has no real units -> neutral status layer (no dead/offline and no
+	-- range check either; a preview has no distances).
 	f.stext:Hide(); f.statusIcon:Hide(); f.htext:Show()
-	f._statusMode, f._greyed = nil, nil
+	f._statusMode, f._greyed, f._range = nil, nil, nil
 	f:SetAlpha(1)
 
 	local L = layoutCtx()
@@ -2809,6 +2848,7 @@ local UNIT_EVENT_METHOD = {
 	UNIT_CONNECTION                 = "RenderStatus",
 	UNIT_FLAGS                      = "RenderStatus",
 	INCOMING_RESURRECT_CHANGED      = "RenderStatus",
+	UNIT_IN_RANGE_UPDATE            = "RenderRange",
 	INCOMING_SUMMON_CHANGED         = "RenderCenterIcon",
 }
 
