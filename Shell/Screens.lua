@@ -30,6 +30,7 @@ local ALIGN_OPTS, HPTEXT_SEG_OPTS, POINT_OPTS, GROW_OPTS
 local AURA_FILTER_OPTS, SORT_MODE_OPTS
 local ROLE_LABEL, DISPEL_TYPES
 local OUTLINE_SEG_OPTS, DISPEL_SEG_OPTS, AGGRO_SEG_OPTS, POWER_COLOR_SEG_OPTS
+local DISPEL_SCOPE_OPTS
 
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	ALIGN_OPTS = {
@@ -62,8 +63,14 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 		{ value = "DOWN",  label = T("Down") },
 	}
 	-- Auras tab: debuff filter mode (only the "debuffs" category).
+	-- Dispel card: whose dispels light a frame up (Blizzard's filter levels).
+	DISPEL_SCOPE_OPTS = {
+		{ value = "mine",  label = T("Mine") },
+		{ value = "group", label = T("Group") },
+		{ value = "all",   label = T("All") },
+	}
 	AURA_FILTER_OPTS = {
-		{ value = "raid",        label = T("Raid-relevant (Blizzard)") },
+		{ value = "raid",        label = T("Raid-relevant + dispellable") },
 		{ value = "all",         label = T("All") },
 		{ value = "dispellable", label = T("Dispellable only") },
 	}
@@ -316,8 +323,20 @@ end
 -- Exposed on `ns` rather than as a file-local so the setters near the top of the
 -- file can reach it without a forward declaration (Screens.lua is large; see the
 -- Lua 200-local ceiling notes).
+-- Held for the duration of a size-slider DRAG. The frames themselves keep
+-- resizing live — that is the whole point of a preview — but the sticky area
+-- must not re-reserve its height per tick, or the settings (and the slider under
+-- the cursor) walk away while you drag (Florian 2026-08-07). Releasing runs the
+-- one resize that was skipped. The flag rides on pvParked instead of a new
+-- file-local: Screens.lua is large, see the Lua 200-local ceiling notes.
+function ns.ShellPreviewHold(on)
+	pvParked.held = on and true or nil
+	if not on then ns.ShellPreviewResize() end
+end
+
 function ns.ShellPreviewResize()
 	local p = pvParked
+	if p.held then return end
 	if not (p.host and p.spec and ns.Shell and p.host:IsShown()) then return end
 	local h = pvStickyH(p.spec, ns.Shell:Frame(), p.band)
 	if h == p.h then return end   -- unchanged: no SetSticky churn per slider tick
@@ -616,9 +635,18 @@ local function buildRaid(d, stack, ctx)
 	-- a tooltip (no longer inline).
 	local sSize = stack:section(T("Size & arrangement"))
 	local r1, c1 = W.FieldRow(d, d, 4, { height = M.sliderBoxH })
-	sliderBox(c1[1], { label = T("Width"),   min = 40, max = 240, unit = " px", get = vget(ctx, "width"),   set = vset(ctx, "width") })
-	sliderBox(c1[2], { label = T("Height"),  min = 20, max = 160, unit = " px", get = vget(ctx, "height"),  set = vset(ctx, "height") })
-	sliderBox(c1[3], { label = T("Spacing"), min = 0,  max = 30,  unit = " px", get = vget(ctx, "spacing"), set = vset(ctx, "spacing") })
+	-- These three change the anchored preview's EXTENT. set() still runs on every
+	-- drag tick — you must SEE the frames grow while you drag — but the band's
+	-- height reservation is held until mouse-up, because re-reserving it per tick
+	-- shoved the settings, including this very slider, around under the cursor
+	-- (Florian 2026-08-07). Inside the band the stage just clips meanwhile, which
+	-- is what it does past the size cap anyway.
+	sliderBox(c1[1], { label = T("Width"),   min = 40, max = 240, unit = " px",
+		onDrag = ns.ShellPreviewHold, get = vget(ctx, "width"),   set = vset(ctx, "width") })
+	sliderBox(c1[2], { label = T("Height"),  min = 20, max = 160, unit = " px",
+		onDrag = ns.ShellPreviewHold, get = vget(ctx, "height"),  set = vset(ctx, "height") })
+	sliderBox(c1[3], { label = T("Spacing"), min = 0,  max = 30,  unit = " px",
+		onDrag = ns.ShellPreviewHold, get = vget(ctx, "spacing"), set = vset(ctx, "spacing") })
 	W.Select(c1[4], { label = T("Alignment"), options = ALIGN_OPTS, get = vget(ctx, "orientation"), set = vset(ctx, "orientation"),
 		tooltip = T("Position: move via the Edit Mode button (sidebar) or WoW's Edit Mode. Raid and Group have separate positions.") }):SetAllPoints(c1[4])
 	sSize:place(r1, M.sliderBoxH, R.tight)
@@ -1082,11 +1110,14 @@ local function buildBase(d, stack)
 		if dispelAlphaW then dispelAlphaW:SetWidgetEnabled(on and rf().dispelMode == "overlay") end
 	end
 
-	-- Stacked row first (§8), then the two field controls (2 unit cells fill
-	-- the 6-card exactly): display segment | overlay opacity inset box.
-	local rowShowAll = checkRow(d, T("Show all dispellable (not just yours)"), {
-		get = tget("dispelShowAll"), set = tset("dispelShowAll") })
-	sDispel:place(rowShowAll, M.optionRowH, R.row)
+	-- Scope segment first, then the two field controls (2 unit cells fill the
+	-- 6-card exactly): display segment | overlay opacity inset box.
+	local dr0, dc0 = W.FieldRow(d, d, 1, { height = M.sliderBoxH })
+	local dispScope = W.Segment(dc0[1], { label = T("Highlight dispels for"), options = DISPEL_SCOPE_OPTS,
+		tooltip = T("Mine: only debuffs your own class can remove — nothing lights up that you cannot act on. Group: everything somebody in the group can dispel. All: every debuff carrying a dispel type, even when nobody present has the right dispel."),
+		get = tget("dispelScope"), set = tset("dispelScope") })
+	dispScope:SetAllPoints(dc0[1])
+	sDispel:place(dr0, M.sliderBoxH, R.row)
 	local dr1, dc1 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 	local dispMode = W.Segment(dc1[1], { label = T("Display"), options = DISPEL_SEG_OPTS,
 		get = tget("dispelMode"), set = function(v) tset("dispelMode")(v); refreshDispel() end })
@@ -1112,7 +1143,7 @@ local function buildBase(d, stack)
 		onToggle = function(v) baseAdvState.dispel = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
 	sDispel:close()
 
-	for _, w in ipairs({ dispMode, rowShowAll, dispColW[1], dispColW[2], dispColW[3], dispColW[4] }) do
+	for _, w in ipairs({ dispMode, dispScope, dispColW[1], dispColW[2], dispColW[3], dispColW[4] }) do
 		dispelDeps[#dispelDeps + 1] = w
 	end
 	refreshDispel()
@@ -1555,7 +1586,7 @@ local function auraSpellsPane(d, host, cat, page)
 		local box, st, content = innerBlock(d, T("Which debuffs"), nil)
 		local f1, fc = W.FieldRow(content, page, 1, { height = M.controlH + M.fieldGap })
 		W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
-			tooltip = T("Which debuffs are shown. Raid-relevant = Blizzard's default selection."),
+			tooltip = T("Which debuffs are shown. Raid-relevant + dispellable adds everything your group can dispel — no matter who has to do it — so a dispel highlight never stands there without an icon. All drops the curation and shows every debuff."),
 			get = aget(cat.key, "filterMode" .. sfx), set = aset(cat.key, "filterMode" .. sfx) })
 			:SetAllPoints(fc[1])
 		st:place(f1, M.controlH + M.fieldGap, R.row)
@@ -2786,6 +2817,11 @@ local function buildQoLBase(d, stack)
 		tooltip = T("In dungeons and raids: NPC dialogs with a single talk option are selected automatically (hold Shift to keep the window). With several options, press 1-9 to pick one.") })
 	mc:place(rowGossip, rowH, 0)
 
+	local rowGossipWorld = switchRow(d, T("Quick gossip everywhere"), {
+		get = mpget("gossipEverywhere"), set = mpset("gossipEverywhere"),
+		tooltip = T("Extends quick gossip to the open world. Careful: flight masters, vendors and quest NPCs with a single talk option are then taken instantly too — hold Shift to read one.") })
+	mc:place(rowGossipWorld, rowH, 0)
+
 	mc:close()
 	pb.close()
 
@@ -2817,14 +2853,20 @@ local function buildQoLBase(d, stack)
 	local rowBrez = switchRow(d, T("Combat res tracker"), {
 		get = function() return qt().brez.enabled end,
 		set = function(v) qt().brez.enabled = v; applyTrackers(); if v then trackerHint() end end,
-		tooltip = T("Shared battle-res pool as an icon (charges + recharge timer) — visible during Mythic+ runs and raid bosses, greyed while no charge is up. Place it via Edit Mode.") })
+		tooltip = T("Shared battle-res pool as an icon: charges and recharge time while a key or raid boss runs. Outside that it follows your own battle res, if you have one. Always on screen, with the remaining time right on the icon. Place it via Edit Mode.") })
 	tc:place(rowBrez, rowH, 0)
 
 	local rowLust = switchRow(d, T("Bloodlust tracker"), {
 		get = function() return qt().lust.enabled end,
 		set = function(v) qt().lust.enabled = v; applyTrackers(); if v then trackerHint() end end,
-		tooltip = T("Shows whether Bloodlust is available: normal icon when ready, greyed with a timer while you are Sated. Visible in dungeons and raids. Place it via Edit Mode.") })
+		tooltip = T("Always on screen. While Bloodlust is running the icon stays bright and counts the burst window down; afterwards it switches to the cooldown and shows how long you stay Sated. Place it via Edit Mode.") })
 	tc:place(rowLust, rowH, R.row)
+
+	local rowTrInst = switchRow(d, T("Only in dungeons and raids"), {
+		get = function() return qt().instanceOnly end,
+		set = function(v) qt().instanceOnly = v; applyTrackers() end,
+		tooltip = T("Off: both trackers stay on screen everywhere. On: they only appear inside dungeons and raids.") })
+	tc:place(rowTrInst, rowH, 0)
 
 	local trHint = W.Hint(d, T("Size and position: adjust each tracker in Edit Mode."))
 	tc:place(trHint, M.hintH, R.row)

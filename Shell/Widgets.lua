@@ -340,13 +340,28 @@ function W.Slider(parent, o)
 	box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
 	local function onUpd() commit(valFromCursor(), deferSet) end
-	local function beginDrag() track:SetScript("OnUpdate", onUpd); commit(valFromCursor(), deferSet) end
+	local function beginDrag()
+		-- onDrag/onRelease bracket the drag for callers whose set() is fine to run
+		-- live but whose LAYOUT reaction is not (the raidframe size sliders: the
+		-- frames must resize on every tick, the preview band must not re-reserve
+		-- its height until the mouse comes up). commitOnRelease is the blunter
+		-- tool that also defers set() itself.
+		if o.onDrag then o.onDrag(true) end
+		track:SetScript("OnUpdate", onUpd); commit(valFromCursor(), deferSet)
+	end
 	local function stopDrag() track:SetScript("OnUpdate", nil) end
 	-- Mouse-up = end of a drag: with deferSet, this is where set() finally fires.
-	local function endDrag() stopDrag(); if deferSet and o.set then o.set(cur) end end
+	local function endDrag()
+		stopDrag()
+		if deferSet and o.set then o.set(cur) end
+		if o.onDrag then o.onDrag(false) end
+		if o.onRelease then o.onRelease(cur) end
+	end
 	track:SetScript("OnMouseDown", beginDrag)
 	track:SetScript("OnMouseUp", endDrag)
-	track:SetScript("OnHide", stopDrag)   -- just stop; don't commit on a hide
+	-- Hidden mid-drag: just stop, don't commit — but DO release the bracket, or a
+	-- caller's "hold off on relayouting" flag would stay stuck on forever.
+	track:SetScript("OnHide", function() stopDrag(); if o.onDrag then o.onDrag(false) end end)
 	-- Make the thumb itself grabbable: at the stops (0/100 %) the square sticks out half
 	-- past the track — that part used to be dead (only the track was clickable). Mouse-enabled
 	-- + 2px larger hit area (purely clickable, visually unchanged) -> easy to grab.

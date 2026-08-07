@@ -780,7 +780,10 @@ UI.LAYOUT = {
 			-- away for fit. 0.5 rather than the 1/3 that was also considered: at 1/2
 			-- a 5-man vertical group still fits without scrolling at all, and that is
 			-- the common case; dial it here if it should be tighter.
-			maxShare = 0.5,
+			-- Lowered from 0.5 to 0.4 (Florian 2026-08-07, beta feedback): 0.5 left
+			-- the settings too cramped under a vertical layout, plain 1/3 made even a
+			-- 5-man vertical group scroll noticeably. 0.4 is the middle ground.
+			maxShare = 0.4,
 		},
 		auras = {               -- Auras tab (category chips + inline editor)
 			afterChips = 20,  -- chip bar -> editor card
