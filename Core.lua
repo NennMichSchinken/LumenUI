@@ -372,6 +372,13 @@ local defaults = {
 -- fields of an imported code are filled cleanly with Lumen defaults).
 ns.Defaults = defaults
 
+-- The lust LOCKOUT debuffs (Sated, Exhaustion, Temporal Displacement, ...). Kept
+-- here rather than inside a module because two of them need the same list and it
+-- must never drift: the QoL tracker switches its icon to the lockout while one of
+-- these is up, and the raidframes hide them from the debuff row -- they sit on
+-- everyone for ten minutes and would own a slot without saying anything.
+ns.LustLockoutIDs = { 57723, 57724, 80354, 95809, 160455, 264689, 390435, 428628 }
+
 -- Name/HP text fields that live per context (raid/party) (for the migration).
 local TEXT_FIELDS = {
 	"showName", "nameSize", "namePoint", "nameX", "nameY", "nameColor", "nameOutline",

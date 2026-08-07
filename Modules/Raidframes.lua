@@ -282,8 +282,55 @@ local AURA_CATS = {
 -- Debuff filter modes (Blizzard standard): "raid" = Blizzard's curated raid-relevant
 -- debuffs (HARMFUL|RAID resp. RAID_IN_COMBAT), "dispellable" = only self-dispellable,
 -- "all" = all. Secret-safe via IsAuraFilteredOutByInstanceID (only bool).
+-- The lust LOCKOUT (Sated / Exhaustion / Temporal Displacement ...) sits on EVERY
+-- group member for ten minutes and would own a debuff slot the whole time while
+-- telling nobody anything they don't already know (Florian 2026-08-07). Hidden in
+-- every filter mode -- that is correctness, not a taste setting.
+--
+-- Identifying it WITHOUT reading a secret spellId: hand the engine our own id and
+-- take the auraInstanceID back. Instance ids are this pipeline's non-secret
+-- currency (IsAuraFilteredOutByInstanceID already runs on them), so comparing them
+-- stays legal in combat.
+--
+-- Two caches keep it off the hot path: WHICH lockout is out is asked from the
+-- player's own auras at most every few seconds (a ten-minute debuff needs no
+-- better resolution), and the per-unit instance id is then remembered until that
+-- answer changes. Steady state is a single table read per debuff.
+local lockout = { iid = {}, spell = nil, t = 0 }
+local function lockoutInstance(u)
+	local now = GetTime()
+	if now - lockout.t > 3 then
+		lockout.t = now
+		local ids = ns.LustLockoutIDs
+		local gp = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+		local found
+		if ids and gp then
+			for i = 1, #ids do
+				local ok, a = pcall(gp, ids[i])
+				if ok and a then found = ids[i]; break end
+			end
+		end
+		if found ~= lockout.spell then lockout.spell = found; wipe(lockout.iid) end
+	end
+	if not lockout.spell then return nil end
+	local hit = lockout.iid[u]
+	if hit then return hit end
+	local gu = C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID
+	if not gu then return nil end
+	local ok, a = pcall(gu, u, lockout.spell)
+	local id
+	if ok and a then id = a.auraInstanceID end
+	if id ~= nil and issecretvalue and issecretvalue(id) then id = nil end
+	-- Only a POSITIVE answer is kept. While combat restricts aura access this
+	-- lookup can come back empty, and that must never freeze into "this unit has
+	-- none" for the remaining nine minutes.
+	if id ~= nil then lockout.iid[u] = id end
+	return id
+end
+
 local function debuffModeAccept(u, iid, mode, fn)
 	if mode == "none" then return false end
+	if iid and iid == lockoutInstance(u) then return false end
 	if mode == "all" then return true end
 	if not (fn and iid) then return true end   -- can't filter -> rather show
 	if mode == "dispellable" then

@@ -989,7 +989,7 @@ local LUST_ICON_ID = 2825 -- Bloodlust — generic fallback for the icon texture
 -- not somebody else's Bloodlust. Shamans depend on faction (see lustIconSpell);
 -- classes without a lust of their own keep the fallback above.
 local LUST_ICON_BY_CLASS = { MAGE = 80353, EVOKER = 390386, HUNTER = 264667 }
-local SATED_IDS = { 57723, 57724, 80354, 95809, 160455, 264689, 390435, 428628 }
+local SATED_IDS = ns.LustLockoutIDs   -- shared with the raidframe debuff row (Core.lua)
 
 -- The lust BUFF itself — the ~40s burst window, as opposed to the lockout
 -- debuff above. Two phases, because they answer different questions: while the
@@ -1119,7 +1119,11 @@ local function refreshTrackerSpells()
 	end
 	ownBrezID = id
 	if lustFrame then
-		local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(lustIconSpell())
+		-- Keep the icon guard (see setLustIcon) in step, otherwise a spec or faction
+		-- change would repaint here and the poller would think nothing changed.
+		local sp = lustIconSpell()
+		lustFrame._iconFor = sp
+		local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sp)
 		if tex then lustFrame.icon:SetTexture(tex) end
 	end
 end
@@ -1166,11 +1170,25 @@ local function pollBrez()
 	end
 end
 
+-- Returns the aura AND the id it matched: the lockout phase shows the icon of the
+-- exact debuff that is up, so the caller needs to know which one that was.
 local function findPlayerAura(ids)
 	for i = 1, #ids do
 		local a = C_UnitAuras.GetPlayerAuraBySpellID(ids[i])
-		if a then return a end
+		if a then return a, ids[i] end
 	end
+end
+
+-- The lust icon has two faces: the lust the player would CAST while it is
+-- available or running, and the LOCKOUT debuff while it is on cooldown (Florian
+-- 2026-08-07 -- "Exhaustion" is what you are actually waiting on for those ten
+-- minutes, so that is what the icon should say). Guarded by the id it currently
+-- shows, because the poller runs on a ticker and SetTexture per tick is waste.
+local function setLustIcon(f, spellID)
+	if f._iconFor == spellID then return end
+	f._iconFor = spellID
+	local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
+	if tex then f.icon:SetTexture(tex) end
 end
 
 -- Seconds left on an aura, or nil when the timestamp came back secret (12.0
@@ -1185,10 +1203,12 @@ end
 
 local function pollLust()
 	local f = lustFrame
-	local sated = findPlayerAura(SATED_IDS)
+	local sated, satedID = findPlayerAura(SATED_IDS)
 	if not sated then
-		-- Not locked out -> the icon sits bright and idle. Whether anybody in the
-		-- group actually brings lust is not knowable, so it is not guessed at.
+		-- Not locked out -> the icon sits bright and idle, showing the lust the
+		-- player would cast. Whether anybody in the group actually brings lust is
+		-- not knowable, so it is not guessed at.
+		setLustIcon(f, lustIconSpell())
 		setLocked(f, false); f.cd:Clear(); f.timer:SetText("")
 		return
 	end
@@ -1200,6 +1220,7 @@ local function pollLust()
 		-- Burst window: FULL COLOUR, with the swipe winding down over it like a
 		-- HoT. The colour is what separates this from the lockout below -- both
 		-- carry a swipe, so the swipe alone cannot tell the two apart.
+		setLustIcon(f, lustIconSpell())
 		setLocked(f, false)
 		local bExp, bDur = buff.expirationTime, buff.duration
 		if bExp and bDur and not issecretvalue(bExp) and not issecretvalue(bDur) and bDur > 0 then
@@ -1210,7 +1231,9 @@ local function pollLust()
 		f.timer:SetText(fmtTime(auraSecondsLeft(buff)))
 		return
 	end
-	-- Locked out: greyed, plus the swipe and "when can we do this again".
+	-- Locked out: the icon becomes the LOCKOUT debuff (that is what the ten minutes
+	-- belong to), greyed, plus the swipe and "when can we do this again".
+	setLustIcon(f, satedID)
 	setLocked(f, true)
 	local exp, dur = sated.expirationTime, sated.duration
 	if exp and dur and not issecretvalue(exp) and not issecretvalue(dur) then
