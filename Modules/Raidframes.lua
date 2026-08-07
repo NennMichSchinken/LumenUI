@@ -811,8 +811,10 @@ local function shadowFonts()
 	-- dark ring around every glyph — adding a drop shadow under it stacks two dark
 	-- edges half a pixel apart, and at 12px that is exactly what smears the letter
 	-- shapes. Pick one or the other, never both.
+	-- 0.8, not 0.6: on a bright class-coloured bar the softer shadow barely
+	-- separated the text from the fill (Florian 2026-08-07).
 	local clean = mk("None", 0)
-	SHADOW_FONTS = { none = clean, shadow = mk("Soft", 0.6), outline = clean, thick = clean }
+	SHADOW_FONTS = { none = clean, shadow = mk("Soft", 0.8), outline = clean, thick = clean }
 	return SHADOW_FONTS
 end
 -- ONE funnel for every frame-text typeface, so the Global-tab font choice reaches
@@ -2081,11 +2083,23 @@ end
 -- Indicator icons: role (LFG atlases, like the group finder) + leader/
 -- assistant crown. Shared by the live and fake render paths; role/leader
 -- flags are NOT secret (safe to branch on in combat).
+-- Role icons: the MICRO artwork, which is what Blizzard's own raid frames draw
+-- (CompactUnitFrame -> GetMicroIconForRole). The plain "UI-LFG-RoleIcon-Tank"
+-- set we used before is the big Group-Finder art — squeezed down to the 12-16px
+-- a raid frame gives it, that is what looked chewed (Florian 2026-08-07).
+-- Falls back to the large set if a client does not know the micro atlas.
 local ROLE_ATLAS = {
-	TANK    = "UI-LFG-RoleIcon-Tank",
-	HEALER  = "UI-LFG-RoleIcon-Healer",
-	DAMAGER = "UI-LFG-RoleIcon-DPS",
+	TANK    = "UI-LFG-RoleIcon-Tank-Micro-GroupFinder",
+	HEALER  = "UI-LFG-RoleIcon-Healer-Micro-GroupFinder",
+	DAMAGER = "UI-LFG-RoleIcon-DPS-Micro-GroupFinder",
 }
+if not (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(ROLE_ATLAS.TANK)) then
+	ROLE_ATLAS = {
+		TANK    = "UI-LFG-RoleIcon-Tank",
+		HEALER  = "UI-LFG-RoleIcon-Healer",
+		DAMAGER = "UI-LFG-RoleIcon-DPS",
+	}
+end
 local LEAD_TEX   = "Interface\\GroupFrame\\UI-Group-LeaderIcon"
 local ASSIST_TEX = "Interface\\GroupFrame\\UI-Group-AssistantIcon"
 local function setIndicators(f, role, isLead, isAssist)

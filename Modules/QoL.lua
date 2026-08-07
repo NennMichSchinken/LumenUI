@@ -79,10 +79,19 @@ local TEXDIR = "Interface\\AddOns\\" .. ADDON .. "\\Textures\\cursor\\" -- QoL d
 -- Thickness = pre-baked ring steps (constant outer diameter, ring grows inward;
 -- a single texture can't change stroke width by scaling). 1 = thin .. 5 = thick.
 local RING_STEPS = 5
-local function ringTexture(step)
+-- Pick the art whose resolution is CLOSEST above the display size. The ring runs
+-- from 16 to 96 px, and the full-size art is 128 — squeezing that into a 28px ring
+-- means the graphics card samples four source pixels per drawn pixel, which is
+-- what made the small ring look ragged (Florian 2026-08-07). The 64/32 variants
+-- are the same circle, downsampled properly once instead of roughly every frame.
+local function ringTexture(step, size)
 	step = floor(tonumber(step) or 3)
 	if step < 1 then step = 1 elseif step > RING_STEPS then step = RING_STEPS end
-	return TEXDIR .. "cursor-ring-" .. step
+	local base = TEXDIR .. "cursor-ring-" .. step
+	size = tonumber(size) or 28
+	if size <= 32 then return base .. "-32" end
+	if size <= 64 then return base .. "-64" end
+	return base
 end
 
 local function db() return ns.Lumen.db.profile.qol.cursor end
@@ -165,7 +174,7 @@ function QoL:ApplyCursor()
 	if not c.enabled and not ring then return end -- never built, nothing to do
 	createRing()
 	ring:SetSize(c.size or 28, c.size or 28)
-	ringTex:SetTexture(ringTexture(c.thickness or 3))
+	ringTex:SetTexture(ringTexture(c.thickness or 3, c.size or 28))
 	-- Class color is NOT a secret value -> tinting is secret-safe.
 	local r, g, b = 1, 1, 1
 	if c.classColor then
