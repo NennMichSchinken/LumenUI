@@ -2023,6 +2023,14 @@ end
 function Raidframes:RenderRange(f)
 	local u = f.unit
 	if not u or not UnitExists(u) then return end
+	-- Solo there is nothing to be out of range OF. And a unit that is not a real
+	-- group member does not come back as "not checked", it comes back as NOT IN
+	-- RANGE -> with "show frame when solo" on, your own frame sat there dimmed
+	-- (Florian 2026-08-07). IsInGroup is a plain boolean, safe to branch on.
+	if not IsInGroup() then
+		if f._range ~= nil then f._range = nil; self._applyFrameAlpha(f) end
+		return
+	end
 	local ok, inRange, checked = pcall(UnitInRange, u)
 	-- A secret `checkedRange` cannot be tested -> assume the check happened; the
 	-- engine still decides the actual alpha from the (secret) in-range flag.
