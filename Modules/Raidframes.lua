@@ -2041,16 +2041,6 @@ function Raidframes:RenderRange(f)
 		if f._range ~= nil then f._range = nil; self._applyFrameAlpha(f) end
 		return
 	end
-	-- A phased member (different layer/shard) is unreachable no matter how close
-	-- the distance says they are -- and phasing does NOT fire UNIT_IN_RANGE_UPDATE,
-	-- so it has to be asked for separately (that is why UNIT_PHASE is registered).
-	-- `~= nil` does not read the value, and a "not phased" answer is plainly nil,
-	-- never a secret -> the test holds in combat.
-	if UnitPhaseReason and UnitPhaseReason(u) ~= nil then
-		f._range = false
-		self._applyFrameAlpha(f)
-		return
-	end
 	local ok, inRange, checked = pcall(UnitInRange, u)
 	-- A secret `checkedRange` cannot be tested -> assume the check happened; the
 	-- engine still decides the actual alpha from the (secret) in-range flag.
@@ -2139,6 +2129,17 @@ function Raidframes:RenderCenterIcon(f)
 	if d.showSummon and C_IncomingSummon and C_IncomingSummon.HasIncomingSummon(u) then
 		local atlas = SUMMON_ATLAS[C_IncomingSummon.IncomingSummonStatus(u)]
 		if atlas then tex:SetAtlas(atlas); tex:Show(); return end
+	end
+	-- Phasing (another layer/shard): unreachable no matter what the distance says.
+	-- Blizzard answers this with the CENTER ICON rather than a fade, and we follow
+	-- them here (Florian's call 2026-08-07) -- their atlas too, so it reads as the
+	-- symbol people already know. Option-free like the dead/offline text: "I cannot
+	-- reach them" is correctness, not taste. `~= nil` does not read the value, and
+	-- "not phased" comes back plainly nil, so the test holds in combat.
+	if UnitPhaseReason and UnitPhaseReason(u) ~= nil then
+		tex:SetAtlas("RaidFrame-Icon-Phasing")
+		tex:Show()
+		return
 	end
 	tex:Hide()
 end
@@ -2890,7 +2891,7 @@ local UNIT_EVENT_METHOD = {
 	UNIT_FLAGS                      = "RenderStatus",
 	INCOMING_RESURRECT_CHANGED      = "RenderStatus",
 	UNIT_IN_RANGE_UPDATE            = "RenderRange",
-	UNIT_PHASE                      = "RenderRange",   -- phasing never fires the range event
+	UNIT_PHASE                      = "RenderCenterIcon",   -- phasing shows the center icon
 	INCOMING_SUMMON_CHANGED         = "RenderCenterIcon",
 }
 
