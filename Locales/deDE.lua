@@ -128,6 +128,7 @@ ns.RegisterLocale("deDE", {
 	["Class color as fill color"] = "Klassenfarbe als Füllfarbe",
 	["Fill color"] = "Füllfarbe",
 	["Background"] = "Hintergrund",
+	["Side by side"] = "Nebeneinander",
 	["Background color"] = "Hintergrundfarbe",
 	["Background opacity"] = "Hintergrund-Deckkraft",
 	["Health bar opacity"] = "Lebensbalken-Deckkraft",

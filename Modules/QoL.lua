@@ -360,32 +360,54 @@ local function makeToolButton(parent, labelText, onClick)
 	return b
 end
 
+-- Stacked or side by side, plus the card on or off. Split out of createButtons
+-- because both are live settings now, not a one-time build decision.
+function QoL._LayoutPullBlock()
+	local f = btnFrame
+	if not f or not f._ready then return end
+	local p = ns.Lumen.db.profile.qol.pull
+	local ready, pull, sep = f._ready, f._pull, f._sep
+	local pad = WIDGET_PAD
+	f:SetChromeShown(p.btnBackground ~= false)
+	ready:ClearAllPoints(); pull:ClearAllPoints(); sep:ClearAllPoints()
+	if p.btnHorizontal then
+		f:SetSize(BTN_W * 2 + 1 + pad * 2, BTN_H + pad * 2)
+		ready:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -pad)
+		pull:SetPoint("TOPLEFT", ready, "TOPRIGHT", 1, 0)
+		sep:SetPoint("TOPLEFT", ready, "TOPRIGHT", 0, 0)
+		sep:SetPoint("BOTTOMRIGHT", ready, "BOTTOMRIGHT", 1, 0)
+	else
+		f:SetSize(BTN_W + pad * 2, BTN_H * 2 + 1 + pad * 2)   -- +1 = separator
+		ready:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -pad)
+		pull:SetPoint("TOPLEFT", ready, "BOTTOMLEFT", 0, -1)
+		sep:SetPoint("TOPLEFT", ready, "BOTTOMLEFT", 0, 0)
+		sep:SetPoint("BOTTOMRIGHT", ready, "BOTTOMRIGHT", 0, -1)
+	end
+end
+
 local function createButtons()
 	if btnFrame then return end
 	local UI = ns.UI
 	btnFrame = panelFrame("LumenGroupTools")
-	btnFrame:SetSize(BTN_W + WIDGET_PAD * 2, BTN_H * 2 + 1 + WIDGET_PAD * 2) -- +1 = separator
 
 	local ready = makeToolButton(btnFrame, ns.T("Ready"), function()
 		if not leadOk() then return end
 		DoReadyCheck()
 	end)
-	ready:SetPoint("TOPLEFT", btnFrame, "TOPLEFT", WIDGET_PAD, -WIDGET_PAD)
 
 	-- "Pull" is raid jargon in both languages -> no translation on purpose.
 	local pull = makeToolButton(btnFrame, "Pull", function(_, mouse)
 		startCountdown(mouse == "RightButton" and 0 or nil)
 	end)
 	pull:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-	pull:SetPoint("BOTTOMLEFT", btnFrame, "BOTTOMLEFT", WIDGET_PAD, WIDGET_PAD)
 
 	-- Hairline between the two faces -> they read as one connected block inside
-	-- the card (the outer border comes from panelFrame).
+	-- the card (the outer border comes from panelFrame). Re-anchored with the
+	-- buttons, because it runs along whichever edge they meet on.
 	local sep = btnFrame:CreateTexture(nil, "ARTWORK")
-	sep:SetPoint("TOPLEFT", ready, "BOTTOMLEFT", 0, 0)
-	sep:SetPoint("TOPRIGHT", ready, "BOTTOMRIGHT", 0, 0)
-	sep:SetHeight(1)
 	UI.SetColor(sep, UI.Border.hover)
+	btnFrame._ready, btnFrame._pull, btnFrame._sep = ready, pull, sep
+	QoL._LayoutPullBlock()
 
 	if ns.EditMode then
 		local function pdb() return ns.Lumen.db.profile.qol.pull end
@@ -399,10 +421,18 @@ local function createButtons()
 				{ kind = "slider", label = ns.T("Size"), min = 70, max = 160, unit = " %",
 					get = function() return math.floor((pdb().btnScale or 1) * 100 + 0.5) end,
 					set = function(v) pdb().btnScale = v / 100; QoL:ApplyPull() end },
+				{ kind = "check", label = ns.T("Side by side"),
+					get = function() return pdb().btnHorizontal end,
+					set = function(v) pdb().btnHorizontal = v; QoL:ApplyPull() end },
+				{ kind = "check", label = ns.T("Background"),
+					get = function() return pdb().btnBackground ~= false end,
+					set = function(v) pdb().btnBackground = v; QoL:ApplyPull() end },
 			},
 			reset = function()
 				local p = pdb()
 				p.btnScale = 1
+				p.btnHorizontal = false
+				p.btnBackground = true
 				p.btnPos = { point = "CENTER", x = 0, y = -300 }
 				QoL:ApplyPull()
 			end,
@@ -433,6 +463,7 @@ function QoL:ApplyPull()
 	-- Position is re-anchored here so profile switches/imports move it along.
 	if p.buttons then
 		createButtons()
+		self._LayoutPullBlock()   -- card on/off + stacked or side by side
 		local pos, s = p.btnPos or {}, p.btnScale or 1
 		btnFrame:SetScale(s)
 		btnFrame:ClearAllPoints()

@@ -450,6 +450,12 @@ local HOT_DEFAULTS = {
 	[257]  = { 139, 77489, 41635 },                                -- Holy Priest: Renew, Echo of Light, PoM
 	[270]  = { 119611, 124682, 115175, 450769 },                   -- MW Monk: Renewing/Enveloping/Soothing Mist, Aspect of Harmony
 	[264]  = { 61295, 974, 382024, 207400, 444490 },               -- Resto Shaman: Riptide, Earth Shield, Earthliving, Ancestral Vigor, Hydrobubble
+	-- Earth Shield sits in the SHAMAN class tree, not the Resto tree, so Elemental
+	-- and Enhancement can take it too and want it tracked like any other healer
+	-- would (Florian on his Ele Shaman, 2026-08-07). Seeding it for a spec that
+	-- did not take the talent costs nothing -- an aura you never have never shows.
+	[262]  = { 974 },                                              -- Ele Shaman: Earth Shield
+	[263]  = { 974 },                                              -- Enh Shaman: Earth Shield
 	[65]   = { 156910, 156322, 53563, 1244893, 200025, 431381 },   -- Holy Pala: Beacon of Faith, Eternal Flame, Beacon of Light, Beacon of Savior, Beacon of Virtue, Dawnlight
 	[1468] = { 364343, 366155, 367364, 355941, 376788, 363502, 373267 }, -- Pres Evoker: Echo, Reversion, Echo Reversion, Dream Breath, Echo Dream Breath, Dream Flight, Lifebind
 	[1473] = { 410089, 413984, 360827, 410263, 410686, 395152, 369459 }, -- Aug Evoker: Prescience, Shifting Sands, Blistering Scales, Infernos Blessing, Symbiotic Bloom, Ebon Might, Source of Magic

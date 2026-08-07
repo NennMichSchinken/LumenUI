@@ -287,6 +287,11 @@ local defaults = {
 				buttons  = false, -- movable Ready/Pull button block (MRT-style)
 				btnScale = 1,     -- block size (Edit Mode flyout)
 				btnPos   = { point = "CENTER", x = 0, y = -300 }, -- block position (Edit Mode)
+				-- Same two knobs the marker bar has (Florian 2026-08-07): the card can
+				-- go so only the two faces float, and they can sit side by side instead
+				-- of stacked. Both live in the Edit Mode flyout, next to the size.
+				btnBackground = true,
+				btnHorizontal = false,
 			},
 			markers = {
 				enabled = false, -- movable raid-marker bar (target row + world row)
