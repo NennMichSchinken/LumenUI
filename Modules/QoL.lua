@@ -541,6 +541,40 @@ local function makeMarkerButton(parent, symbol, world)
 	return b
 end
 
+-- Grey the rows out while nothing can be marked. Placing a marker needs a GROUP,
+-- and inside a raid it needs lead or assist -- that is WoW's rule, not ours, and
+-- without a hint the buttons just swallow the click in silence (Florian's group
+-- test 2026-08-07: "they work as soon as you are in a group and in a dungeon").
+--
+-- We only DIM, we never Disable(): if this condition is ever wrong somewhere, a
+-- dimmed button that still works is a far smaller sin than a dead button that
+-- should have worked. Alpha is not a protected aspect either, so unlike the
+-- anchoring and scaling in ApplyMarkers this stays legal in combat.
+local MK_DIM = 0.5   -- Blizzard's own alpha for a disabled leader button
+local function markersUsable(world)
+	if not IsInGroup() then return false end
+	-- Party: anybody may mark. Raid: leader/assistant only -- the same gate
+	-- Blizzard puts on its whole marker/leader panel.
+	if IsInRaid() and not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
+		return false
+	end
+	-- Ground markers additionally need the world-marker system to be available at
+	-- all; Blizzard gates its own marker dropdown on exactly this call.
+	if world and IsRaidMarkerSystemEnabled and not IsRaidMarkerSystemEnabled() then
+		return false
+	end
+	return true
+end
+
+-- Light pass: alpha only, combat-safe, no layout. Rides on roster/leader changes
+-- and the zone change, which is everything that can flip the answer.
+function QoL:RefreshMarkerState()
+	if not markerFrame then return end
+	for key, rf in pairs(markerRows) do
+		rf:SetAlpha(markersUsable(key == "world") and 1 or MK_DIM)
+	end
+end
+
 local function createMarkerBar()
 	if markerFrame then return end
 	local UI = ns.UI
@@ -659,6 +693,7 @@ function QoL:ApplyMarkers()
 		show = inInstance and (kind == "party" or kind == "raid" or kind == "scenario") or false
 	end
 	RegisterStateDriver(markerFrame, "visibility", show and "show" or "hide")
+	self:RefreshMarkerState()
 	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
 end
 
@@ -1712,6 +1747,10 @@ function QoL:Setup()
 	driver:RegisterEvent("PARTY_INVITE_REQUEST")
 	-- Trackers: a spec change can add/remove the player's own battle res.
 	driver:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	-- Marker bar: joining/leaving a group and a lead/assist change decide whether
+	-- the buttons can do anything at all (see markersUsable).
+	driver:RegisterEvent("GROUP_ROSTER_UPDATE")
+	driver:RegisterEvent("PARTY_LEADER_CHANGED")
 	driver:SetScript("OnEvent", function(_, event, ...)
 		if event == "PLAYER_ENTERING_WORLD" then
 			QoL:ApplyCursor()
@@ -1734,6 +1773,8 @@ function QoL:Setup()
 			onPartyInvite(...)
 		elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
 			refreshTrackerSpells()
+		elseif event == "GROUP_ROSTER_UPDATE" or event == "PARTY_LEADER_CHANGED" then
+			QoL:RefreshMarkerState()   -- alpha only -> safe in combat, no deferral needed
 		elseif event == "PLAYER_REGEN_ENABLED" then
 			updateVisibility()
 			cancelOutfits() -- catch outfit buffs that appeared during combat
