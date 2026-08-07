@@ -357,6 +357,7 @@ local function makeToolButton(parent, labelText, onClick)
 		txt:SetTextColor(Text.Secondary.r, Text.Secondary.g, Text.Secondary.b)
 	end)
 	b:SetScript("OnClick", onClick)
+	b._fill = fill -- the background switch takes these with it (see _LayoutPullBlock)
 	return b
 end
 
@@ -368,7 +369,15 @@ function QoL._LayoutPullBlock()
 	local p = ns.Lumen.db.profile.qol.pull
 	local ready, pull, sep = f._ready, f._pull, f._sep
 	local pad = WIDGET_PAD
-	f:SetChromeShown(p.btnBackground ~= false)
+	-- Background off = the two words float on the world, the way the marker bar
+	-- drops its icon faces (Florian 2026-08-07): card, button faces and the hairline
+	-- between them all go, so there is nothing left but the labels. Hover still
+	-- brightens the text, which is the whole button at that point.
+	local chrome = p.btnBackground ~= false
+	f:SetChromeShown(chrome)
+	ready._fill:SetShown(chrome)
+	pull._fill:SetShown(chrome)
+	sep:SetShown(chrome)
 	ready:ClearAllPoints(); pull:ClearAllPoints(); sep:ClearAllPoints()
 	if p.btnHorizontal then
 		f:SetSize(BTN_W * 2 + 1 + pad * 2, BTN_H + pad * 2)
@@ -428,12 +437,17 @@ local function createButtons()
 					get = function() return pdb().btnBackground ~= false end,
 					set = function(v) pdb().btnBackground = v; QoL:ApplyPull() end },
 			},
+			-- Reset restores the KNOBS above it, never the position (Florian
+			-- 2026-08-07 -- the rule for every movable widget in this file). The
+			-- button sits directly under the three settings it is named for, and
+			-- where you dragged something is the one thing that costs real work to
+			-- rebuild: resetting it dropped this block behind the raidframes, with
+			-- no way back but another drag.
 			reset = function()
 				local p = pdb()
 				p.btnScale = 1
 				p.btnHorizontal = false
 				p.btnBackground = true
-				p.btnPos = { point = "CENTER", x = 0, y = -300 }
 				QoL:ApplyPull()
 			end,
 		})
@@ -574,6 +588,7 @@ local function makeMarkerButton(parent, symbol, world)
 	icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -3, 3)
 	icon:SetTexture(symbol and ("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. symbol)
 		or "Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+	b._icon = icon -- greyed out while the row cannot mark (see RefreshMarkerState)
 	-- HIGHLIGHT draw layer = the client shows it on hover by itself, no scripts —
 	-- and unlike recolouring the 3px background border behind the icon, an additive
 	-- wash over the whole button is actually visible (Florian 2026-08-05).
@@ -594,6 +609,10 @@ end
 -- reacts is worse than either honest state (Florian's call after seeing exactly
 -- that). Disabling touches a protected button, so it waits for the end of combat
 -- while the alpha -- which is never protected -- applies immediately.
+-- Dimming alone read as "a bit darker", not as "off" (Florian 2026-08-07) -- the
+-- marker icons are strongly coloured, so half alpha still leaves a red skull and
+-- a blue moon. Desaturating them takes the colour out as well, which is the part
+-- the eye reads as disabled; the alpha then only has to carry the rest.
 local MK_DIM = 0.5   -- Blizzard's own alpha for a disabled leader button
 local function markersUsable(world)
 	-- Raid: leader/assistant only, for both kinds -- the same gate Blizzard puts on
@@ -622,17 +641,25 @@ function QoL:RefreshMarkerState()
 		local on = markersUsable(key == "world")
 		rf:SetAlpha(on and 1 or MK_DIM)
 		local btns = markerBtns[key]
-		if btns and not locked then
+		if btns then
+			-- A texture is never protected, so the grey lands right away -- unlike the
+			-- Enable/Disable below, which touches the protected button itself.
 			for i = 1, #btns do
-				local b = btns[i]
-				-- Both, on purpose: Disable stops the click, EnableMouse(false) also
-				-- takes away the hover so a dead button cannot even light up.
-				if on then b:Enable() else b:Disable() end
-				b:EnableMouse(on)
+				local ic = btns[i]._icon
+				if ic then ic:SetDesaturated(not on) end
 			end
-		elseif btns then
-			markerDeferred = true   -- redo the enable/disable when combat drops
-			ensureMarkerRegen()
+			if not locked then
+				for i = 1, #btns do
+					local b = btns[i]
+					-- Both, on purpose: Disable stops the click, EnableMouse(false) also
+					-- takes away the hover so a dead button cannot even light up.
+					if on then b:Enable() else b:Disable() end
+					b:EnableMouse(on)
+				end
+			else
+				markerDeferred = true   -- redo the enable/disable when combat drops
+				ensureMarkerRegen()
+			end
 		end
 	end
 end
@@ -690,11 +717,11 @@ local function createMarkerBar()
 					get = function() return mdb().background end,
 					set = function(v) mdb().background = v; QoL:ApplyMarkers() end },
 			},
+			-- Knobs only, position stays -- see the note on the Ready & Pull reset.
 			reset = function()
 				local d = ns.Defaults and ns.Defaults.profile.qol.markers
 				local s = mdb()
 				s.scale, s.target, s.world, s.background = (d and d.scale) or 1, true, true, true
-				s.pos = { point = "CENTER", x = 0, y = -260 }
 				QoL:ApplyMarkers()
 			end,
 		})
@@ -1134,8 +1161,9 @@ local function createTrackers()
 	if ns.EditMode then
 		-- Quick descriptor: size lives ONLY in the Edit Mode flyout now (the QoL
 		-- tab just toggles the tracker on/off) — the real icon resizes live under
-		-- the panel. Reset restores the default size + a non-overlapping position.
-		local function trackerQuick(which, defX)
+		-- the panel. Reset restores the default size and leaves the position alone
+		-- (see the note on the Ready & Pull reset).
+		local function trackerQuick(which)
 			return {
 				fields = { { kind = "slider", label = ns.T("Size"), min = 24, max = 80, unit = " px",
 					get = function() return ns.Lumen.db.profile.qol.trackers[which].size end,
@@ -1144,17 +1172,16 @@ local function createTrackers()
 					local d = ns.Defaults and ns.Defaults.profile.qol.trackers[which]
 					local s = ns.Lumen.db.profile.qol.trackers[which]
 					s.size = (d and d.size) or 40
-					s.pos = { point = "CENTER", x = defX, y = -240 }
 					QoL:ApplyTrackers()
 				end,
 			}
 		end
 		ns.EditMode:Register(brezFrame, ns.T("Combat res"), function(p, x, y)
 			ns.Lumen.db.profile.qol.trackers.brez.pos = { point = p, x = x, y = y }
-		end, nil, "brez", trackerQuick("brez", -30))
+		end, nil, "brez", trackerQuick("brez"))
 		ns.EditMode:Register(lustFrame, "Bloodlust", function(p, x, y)
 			ns.Lumen.db.profile.qol.trackers.lust.pos = { point = p, x = x, y = y }
-		end, nil, "lust", trackerQuick("lust", 30))
+		end, nil, "lust", trackerQuick("lust"))
 	end
 end
 
