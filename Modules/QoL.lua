@@ -30,11 +30,10 @@ ns.QoL = QoL
 local floor, max = math.floor, math.max
 local format = string.format
 local STANDARD_TEXT_FONT = STANDARD_TEXT_FONT
-local GetInstanceInfo = GetInstanceInfo
-local IsEncounterInProgress = IsEncounterInProgress
 local issecretvalue = issecretvalue or function() return false end
 local GetCursorPosition = GetCursorPosition
 local UnitClass = UnitClass
+local UnitFactionGroup = UnitFactionGroup
 local InCombatLockdown = InCombatLockdown
 local CanMerchantRepair = CanMerchantRepair
 local GetRepairAllCost = GetRepairAllCost
@@ -802,11 +801,15 @@ local gossipNums = {}                -- reused: gossipOptionID -> displayed numb
 local lastAutoID, lastAutoAt = nil, 0
 
 local function gossipActive()
-	if not ns.Lumen.db.profile.qol.mplus.quickGossip then return false end
+	local m = ns.Lumen.db.profile.qol.mplus
+	if not m.quickGossip then return false end
+	-- Instanced group content by default (Florian 2026-07-17): dungeons, raids and
+	-- scenarios (delves). The open world is opt-in (gossipEverywhere, Florian
+	-- 2026-08-07) because that is where the gossips you actually want to READ live
+	-- -- flight masters, vendors with a talk option, quest NPCs. Shift stays the
+	-- escape hatch in both cases.
+	if m.gossipEverywhere then return true end
 	local inInstance, itype = IsInInstance()
-	-- Instanced group content only (Florian 2026-07-17): dungeons, raids and
-	-- scenarios (delves) -- never the open world. Raid boss-RP gossips are the
-	-- reason the Shift escape hatch exists.
 	return inInstance and (itype == "party" or itype == "raid" or itype == "scenario") or false
 end
 
@@ -865,11 +868,24 @@ local function ensureGossipKeys()
 	end)
 end
 
+-- Does this option start a cinematic? Blizzard marks those in the option's flag
+-- field (PlayMovieLabelPrepend -- the flag that makes the client prefix the
+-- label with the little movie tag). Auto-picking one skips a cutscene before the
+-- player can decide to watch it, which is not ours to do (Florian 2026-08-07).
+local GOSSIP_MOVIE_FLAG = (Enum and Enum.GossipOptionRecFlags
+	and Enum.GossipOptionRecFlags.PlayMovieLabelPrepend) or 4
+local function gossipPlaysMovie(opt)
+	local flags = opt and opt.flags
+	return type(flags) == "number" and bit.band(flags, GOSSIP_MOVIE_FLAG) ~= 0
+end
+
 local function onGossipShow()
 	if not gossipActive() then return end
 	local opts = C_GossipInfo.GetOptions()
-	-- (1) Auto-select the single option (no quests offered, Shift not held).
+	-- (1) Auto-select the single option (no quests offered, no cutscene behind
+	-- it, Shift not held).
 	if #opts == 1 and not IsShiftKeyDown()
+		and not gossipPlaysMovie(opts[1])
 		and C_GossipInfo.GetNumAvailableQuests() == 0
 		and C_GossipInfo.GetNumActiveQuests() == 0 then
 		local id = opts[1].gossipOptionID
@@ -902,35 +918,85 @@ local function onGossipShow()
 end
 
 -- ---------------------------------------------------------------------------
---  Trackers — battle-res pool + Bloodlust availability as placeable icons
---  (mockup option B: real spell icon, charge badge, cooldown swipe, greyed
---  while unavailable). Brez pool: C_Spell.GetSpellCharges(20484/Rebirth) IS
---  the shared raid/M+ pool — no combat-log math needed; it only means
---  anything while a key runs or a raid boss is engaged, so visibility gates
---  on those events. Sated: querying KNOWN spell IDs via GetPlayerAuraBySpellID
---  works even in combat (returned fields may be secret -> issecretvalue
---  guards before any arithmetic). ONE shared 0.5s ticker runs only while at
---  least one icon is shown; Edit Mode force-shows both for placement.
+--  Trackers — battle-res pool + Bloodlust as placeable icons (real spell icon,
+--  charge badge, cooldown swipe, remaining time centred in the icon like an
+--  action button's countdown). An enabled tracker is ALWAYS on screen (option:
+--  limit it to dungeons/raids) — it is a status light, so it has to be
+--  readable before the pull, not only once the pull happened.
+--  A darkened icon means EXACTLY ONE thing: "on cooldown / locked out right
+--  now" — never "probably nobody here can do this". Guessing availability from
+--  the group's classes was considered and dropped on purpose: whether another
+--  player talented Intercession, runs a Ferocity pet, or carries drums is not
+--  readable from the outside, so the guess would be wrong precisely when it
+--  matters. An idle bright icon is the honest state.
+--  Brez: C_Spell.GetSpellCharges(20484/Rebirth) IS the shared raid/M+ pool —
+--  no combat-log math needed. It only exists while a key runs or a raid boss
+--  is engaged; outside that the icon falls back to the player's OWN battle-res
+--  cooldown, which is the only other thing that is actually knowable.
+--  Lust runs in two phases (buff, then lockout) — see LUST_BUFF_IDS below.
+--  Querying KNOWN spell IDs via GetPlayerAuraBySpellID works even in combat
+--  (returned fields may be secret -> issecretvalue guards before any
+--  arithmetic). ONE shared 0.5s ticker runs only while at least one icon is
+--  shown; Edit Mode force-shows both for placement.
 -- ---------------------------------------------------------------------------
 local BREZ_ID = 20484     -- Rebirth (canonical shared-pool spell)
-local LUST_ICON_ID = 2825 -- Bloodlust (used for the icon texture only)
+local LUST_ICON_ID = 2825 -- Bloodlust — generic fallback for the icon texture
+-- The icon shows the lust the PLAYER would cast, so a Mage sees Time Warp and
+-- not somebody else's Bloodlust. Shamans depend on faction (see lustIconSpell);
+-- classes without a lust of their own keep the fallback above.
+local LUST_ICON_BY_CLASS = { MAGE = 80353, EVOKER = 390386, HUNTER = 264667 }
 local SATED_IDS = { 57723, 57724, 80354, 95809, 160455, 264689, 390435, 428628 }
 
-local trackerState = { challenge = false, encounter = false }
+-- The lust BUFF itself — the ~40s burst window, as opposed to the lockout
+-- debuff above. Two phases, because they answer different questions: while the
+-- buff runs the icon stays BRIGHT and counts down "how much burst is left";
+-- once it drops the icon switches to the lockout swipe and counts down "when
+-- can we do this again". The drum variants at the end are the least certain
+-- entries in this list -- if one is missing, that source simply skips the
+-- bright phase and goes straight to the lockout display.
+local LUST_BUFF_IDS = {
+	2825,   -- Bloodlust
+	32182,  -- Heroism
+	80353,  -- Time Warp
+	90355,  -- Ancient Hysteria
+	160452, -- Netherwinds
+	264667, -- Primal Rage
+	390386, -- Fury of the Aspects
+	381301, 444062, 444257, -- drums
+}
+
+-- The player's own battle res, for the no-pool fallback (same ids Click-Cast
+-- uses for its "battle res" action). Resolved once per login/spec change.
+local BREZ_BY_CLASS = { DRUID = 20484, DEATHKNIGHT = 61999, WARLOCK = 20707, PALADIN = 391054 }
+local ownBrezID
 local trackerTicker
 local brezFrame, lustFrame
 
 local function fmtTime(s)
 	if not s or s <= 0 then return "" end
+	-- Bare seconds under a minute (the burst window is read at a glance, "0:12"
+	-- is noise there), m:ss above — the way WoW writes timers everywhere.
+	if s < 60 then return format("%d", floor(s + 0.5)) end
 	return format("%d:%02d", floor(s / 60), floor(s % 60))
 end
 
-local function setGrey(f, on)
-	if on == f._grey then return end
-	f._grey = on
+-- "Cannot be used right now" = colour drained, brightness kept. Desaturation
+-- ALONE, deliberately: the swipe already darkens, and dimming the vertex colour
+-- on top of it is what made these icons read as almost black. Grey-but-bright is
+-- the difference between "running" and "locked out" at a glance (Florian
+-- 2026-08-07 -- the swipe by itself was not a clear enough signal).
+local function setLocked(f, on)
+	if on == f._locked then return end
+	f._locked = on
 	f.icon:SetDesaturated(on)
-	local v = on and 0.6 or 1
-	f.icon:SetVertexColor(v, v, v, 1)
+end
+
+local function lustIconSpell()
+	local _, class = UnitClass("player")
+	if class == "SHAMAN" then -- Horde casts Bloodlust, Alliance casts Heroism
+		return UnitFactionGroup("player") == "Alliance" and 32182 or LUST_ICON_ID
+	end
+	return LUST_ICON_BY_CLASS[class] or LUST_ICON_ID
 end
 
 local function makeTrackerIcon(name, spellID)
@@ -946,21 +1012,32 @@ local function makeTrackerIcon(name, spellID)
 	edge:SetPoint("TOPLEFT", -1, 1)
 	edge:SetPoint("BOTTOMRIGHT", 1, -1)
 	edge:SetColorTexture(0, 0, 0, 0.9)
+	-- On cooldown the SWIPE does the darkening and nothing else — that is the
+	-- WoW standard (Blizzard's action buttons only desaturate level-locked
+	-- actions, never something that is merely recharging). Dimming the icon on
+	-- top of the swipe is what made these look almost black.
 	f.cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
 	f.cd:SetAllPoints(f)
 	f.cd:SetDrawEdge(false)
-	f.cd:SetHideCountdownNumbers(true) -- we render our own timer below the icon
-	f.count = f.cd:CreateFontString(nil, "OVERLAY")
+	f.cd:SetHideCountdownNumbers(true) -- our own text, in the suite's font
+	-- Text gets its own layer ABOVE the cooldown: the swipe is drawn by the
+	-- Cooldown frame itself and would otherwise creep over the numbers.
+	local textLayer = CreateFrame("Frame", nil, f)
+	textLayer:SetAllPoints(f)
+	textLayer:SetFrameLevel(f.cd:GetFrameLevel() + 1)
+	f.count = textLayer:CreateFontString(nil, "OVERLAY")
 	f.count:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
-	f.timer = f.cd:CreateFontString(nil, "OVERLAY")
-	f.timer:SetPoint("TOP", f, "BOTTOM", 0, -3)
+	-- Remaining time sits IN the icon (action-button standard: count bottom
+	-- right, countdown centred), not on a line underneath it.
+	f.timer = textLayer:CreateFontString(nil, "OVERLAY")
+	f.timer:SetPoint("CENTER", f, "CENTER", 0, 0)
 	return f
 end
 
 local function createTrackers()
 	if brezFrame then return end
 	brezFrame = makeTrackerIcon("LumenBrezTracker", BREZ_ID)
-	lustFrame = makeTrackerIcon("LumenLustTracker", LUST_ICON_ID)
+	lustFrame = makeTrackerIcon("LumenLustTracker", lustIconSpell())
 	if ns.EditMode then
 		-- Quick descriptor: size lives ONLY in the Edit Mode flyout now (the QoL
 		-- tab just toggles the tracker on/off) — the real icon resizes live under
@@ -988,18 +1065,55 @@ local function createTrackers()
 	end
 end
 
+-- Which spells this character's icons stand for. (Cold path: login/spec change.)
+local function refreshTrackerSpells()
+	local _, class = UnitClass("player")
+	local id = BREZ_BY_CLASS[class]
+	if id and C_SpellBook and C_SpellBook.IsSpellInSpellBook and Enum and Enum.SpellBookSpellBank
+		and not C_SpellBook.IsSpellInSpellBook(id, Enum.SpellBookSpellBank.Player, true) then
+		id = nil -- e.g. a Paladin who did not take Intercession
+	end
+	ownBrezID = id
+	if lustFrame then
+		local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(lustIconSpell())
+		if tex then lustFrame.icon:SetTexture(tex) end
+	end
+end
+
+-- No shared pool (no key running, no raid boss engaged): show the player's own
+-- battle-res cooldown if they have one, otherwise sit idle. NOT greyed for
+-- "nobody else has one" — see the header.
+local function pollOwnBrez(f)
+	f.count:SetText("")
+	local cd = ownBrezID and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(ownBrezID)
+	local start, dur = cd and cd.startTime, cd and cd.duration
+	-- > 1.5 filters the global cooldown out: GetSpellCooldown reports the GCD on
+	-- every spell, so without this the icon would blink on every cast. The retail
+	-- GCD never exceeds 1.5s, a battle res is minutes.
+	if start and dur and dur > 1.5 and cd.isEnabled ~= false then
+		local left = start + dur - GetTime()
+		if left > 0 then
+			setLocked(f, true)
+			f.cd:SetCooldown(start, dur)
+			f.timer:SetText(fmtTime(left))
+			return
+		end
+	end
+	setLocked(f, false)
+	f.cd:Clear(); f.timer:SetText("")
+end
+
 local function pollBrez()
 	local f = brezFrame
 	local info = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(BREZ_ID)
 	if not info or not info.maxCharges then
-		f.count:SetText(""); f.timer:SetText(""); f.cd:Clear()
-		setGrey(f, false)
+		pollOwnBrez(f)
 		return
 	end
 	local c = info.currentCharges or 0
 	f.count:SetText(c)
 	if c <= 0 then f.count:SetTextColor(0.95, 0.30, 0.30) else f.count:SetTextColor(1, 1, 1) end
-	setGrey(f, c <= 0)
+	setLocked(f, c <= 0) -- no charge left = greyed, same language as the lust icon
 	if c < info.maxCharges and (info.cooldownDuration or 0) > 0 and info.cooldownStartTime then
 		f.cd:SetCooldown(info.cooldownStartTime, info.cooldownDuration)
 		f.timer:SetText(fmtTime(info.cooldownStartTime + info.cooldownDuration - GetTime()))
@@ -1008,27 +1122,60 @@ local function pollBrez()
 	end
 end
 
-local function findSated()
-	for i = 1, #SATED_IDS do
-		local a = C_UnitAuras.GetPlayerAuraBySpellID(SATED_IDS[i])
+local function findPlayerAura(ids)
+	for i = 1, #ids do
+		local a = C_UnitAuras.GetPlayerAuraBySpellID(ids[i])
 		if a then return a end
+	end
+end
+
+-- Seconds left on an aura, or nil when the timestamp came back secret (12.0
+-- combat) -- the caller then shows no number rather than doing arithmetic.
+local function auraSecondsLeft(a)
+	local exp = a and a.expirationTime
+	if exp and not issecretvalue(exp) then
+		local left = exp - GetTime()
+		if left > 0 then return left end
 	end
 end
 
 local function pollLust()
 	local f = lustFrame
-	local a = findSated()
-	if not a then
-		setGrey(f, false); f.cd:Clear(); f.timer:SetText("")
+	local sated = findPlayerAura(SATED_IDS)
+	if not sated then
+		-- Not locked out -> the icon sits bright and idle. Whether anybody in the
+		-- group actually brings lust is not knowable, so it is not guessed at.
+		setLocked(f, false); f.cd:Clear(); f.timer:SetText("")
 		return
 	end
-	setGrey(f, true)
-	local exp, dur = a.expirationTime, a.duration
+	-- The lockout lands together with the buff, so the buff can only ever exist
+	-- while sated -- which is why this second lookup hangs off the sated branch
+	-- instead of running on every tick.
+	local buff = findPlayerAura(LUST_BUFF_IDS)
+	if buff then
+		-- Burst window: FULL COLOUR, with the swipe winding down over it like a
+		-- HoT. The colour is what separates this from the lockout below -- both
+		-- carry a swipe, so the swipe alone cannot tell the two apart.
+		setLocked(f, false)
+		local bExp, bDur = buff.expirationTime, buff.duration
+		if bExp and bDur and not issecretvalue(bExp) and not issecretvalue(bDur) and bDur > 0 then
+			f.cd:SetCooldown(bExp - bDur, bDur)
+		else
+			f.cd:Clear()
+		end
+		f.timer:SetText(fmtTime(auraSecondsLeft(buff)))
+		return
+	end
+	-- Locked out: greyed, plus the swipe and "when can we do this again".
+	setLocked(f, true)
+	local exp, dur = sated.expirationTime, sated.duration
 	if exp and dur and not issecretvalue(exp) and not issecretvalue(dur) then
 		f.cd:SetCooldown(exp - dur, dur)
 		f.timer:SetText(fmtTime(exp - GetTime()))
 	else
-		f.timer:SetText("") -- secret mid-combat -> blank number, no arithmetic
+		-- Secret mid-combat: no arithmetic, so no swipe and no number -- the grey
+		-- is the only thing left saying "sated", which is why it carries it.
+		f.cd:Clear(); f.timer:SetText("")
 	end
 end
 
@@ -1037,28 +1184,21 @@ local function pollTrackers()
 	if lustFrame and lustFrame:IsShown() then pollLust() end
 end
 
-local function challengeActive()
-	return (C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive
-		and C_ChallengeMode.IsChallengeModeActive()) or false
-end
-
-local function refreshTrackerState()
-	trackerState.challenge = challengeActive()
-	local _, itype = GetInstanceInfo()
-	trackerState.encounter = ((IsEncounterInProgress and IsEncounterInProgress()) or false)
-		and itype == "raid"
-end
-
 function QoL:UpdateTrackerVisibility()
 	local t = ns.Lumen.db.profile.qol.trackers
 	if not brezFrame and not (t.brez.enabled or t.lust.enabled) then return end
 	createTrackers()
 	local editing = (ns.EditMode and ns.EditMode.active) or false
-	local _, itype = GetInstanceInfo()
-	local inGroupInstance = (itype == "party" or itype == "raid")
-	-- Brez pool only exists while a key runs / a raid boss is engaged.
-	local showBrez = t.brez.enabled and (editing or (inGroupInstance and (trackerState.challenge or trackerState.encounter)))
-	local showLust = t.lust.enabled and (editing or inGroupInstance)
+	-- Enabled means visible; "unavailable" is the grey state, not a hidden icon.
+	-- The only gate is the optional dungeon/raid restriction (Edit Mode overrides
+	-- it so both icons can always be placed).
+	local place = true
+	if t.instanceOnly then
+		local inInstance, kind = IsInInstance()
+		place = (inInstance and (kind == "party" or kind == "raid")) or false
+	end
+	local showBrez = t.brez.enabled and (editing or place)
+	local showLust = t.lust.enabled and (editing or place)
 	brezFrame:SetShown(showBrez)
 	lustFrame:SetShown(showLust)
 	if showBrez or showLust then
@@ -1080,17 +1220,21 @@ function QoL:ApplyTrackers()
 		local size = s.size or 40
 		f:SetSize(size, size)
 		-- Same typeface funnel as the raid frames (Global tab: client font vs. Inter).
+		-- The timer now sits inside the icon, so it carries the icon like an
+		-- action button's countdown does: a step above the charge badge.
+		local countSize, timerSize = max(10, floor(size * 0.30)), max(11, floor(size * 0.36))
 		if ns.UI and ns.UI.SetFrameFont then
-			ns.UI:SetFrameFont(f.count, max(10, floor(size * 0.32)), "OUTLINE")
-			ns.UI:SetFrameFont(f.timer, max(10, floor(size * 0.30)), "OUTLINE")
+			ns.UI:SetFrameFont(f.count, countSize, "OUTLINE")
+			ns.UI:SetFrameFont(f.timer, timerSize, "OUTLINE")
 		else
-			f.count:SetFont(STANDARD_TEXT_FONT, max(10, floor(size * 0.32)), "OUTLINE")
-			f.timer:SetFont(STANDARD_TEXT_FONT, max(10, floor(size * 0.30)), "OUTLINE")
+			f.count:SetFont(STANDARD_TEXT_FONT, countSize, "OUTLINE")
+			f.timer:SetFont(STANDARD_TEXT_FONT, timerSize, "OUTLINE")
 		end
 		local pos = s.pos or {}
 		f:ClearAllPoints()
 		f:SetPoint(pos.point or "CENTER", UIParent, pos.point or "CENTER", pos.x or 0, pos.y or -240)
 	end
+	refreshTrackerSpells()
 	self:UpdateTrackerVisibility()
 	-- Re-anchor Edit Mode links (a tracker may be a coupled child or anchor).
 	if ns.EditMode and ns.EditMode.ApplyLinks then ns.EditMode:ApplyLinks() end
@@ -1116,6 +1260,14 @@ local WIN_PRELOADED = {
 	"MailFrame", "GossipFrame", "QuestFrame", "MerchantFrame", "AddonList",
 	"ChatConfigFrame", "ItemTextFrame", "LFGDungeonReadyDialog",
 	"GuildInviteFrame", "TabardFrame", "GuildRegistrarFrame",
+	-- Bags. Only these two, and that is enough: UpdateContainerFrameAnchors
+	-- anchors the FIRST shown bag to the screen and chains every other bag off
+	-- it, so pinning the first one carries the whole stack. Which frame that is
+	-- depends on the client's combined-bags setting -- combined on gives
+	-- ContainerFrameCombinedBags, off gives the backpack. Blizzard re-anchors
+	-- these on nearly every bag event; the SetPoint hook further down is what
+	-- makes the pin stick through that.
+	"ContainerFrameCombinedBags", "ContainerFrame1",
 }
 
 -- Load-on-demand panels: these only exist once their Blizzard addon has loaded,
@@ -1178,9 +1330,25 @@ local WIN_LOD = {
 local WIN_DRAG_HEADERS = {
 	["WorldMapFrame"] = "WorldMapTitleButton",
 }
+-- The title bar of any PortraitFrame-family panel. It ships with the mouse
+-- DISABLED (it only carries the title text), so it has to be switched on before
+-- it can serve as a grab surface -- harmless, since Blizzard puts no click
+-- handling of its own on it.
+local function winTitleHandle(frame)
+	local t = frame and frame.TitleContainer
+	if not t or not t.EnableMouse then return nil end
+	t:EnableMouse(true)
+	return t
+end
+
 -- Extra drag handles ON TOP of the body, where a mouse-enabled child covers it.
 local WIN_EXTRA_DRAG = {
 	["AchievementFrame"] = function(frame) return frame.Header or _G["AchievementFrameHeader"] end,
+	-- Bags are wall-to-wall item buttons, and Shift+click on an item slot is
+	-- already taken (split stack / link) -- so the title bar is the only place
+	-- left to grab one.
+	["ContainerFrameCombinedBags"] = winTitleHandle,
+	["ContainerFrame1"]            = winTitleHandle,
 }
 
 local function wdb() return ns.Lumen.db.profile.qol.windows end
@@ -1375,7 +1543,11 @@ local function winHookFrame(frame, name)
 	hooksecurefunc(frame, "SetPoint", function()
 		if not wdb().enabled then return end
 		if winIgnoreSP[frame] then return end
-		if winDrag.frame == frame then return end
+		-- `dragging` covers the NON-protected drag, winDrag the secure one. Without
+		-- the first one a frame whose owner re-anchors it mid-drag (the bags do this
+		-- on every bag event) got yanked back to the saved pin while the mouse was
+		-- still holding it -- the window simply refused to move.
+		if dragging or winDrag.frame == frame then return end
 		if InCombatLockdown() and frame:IsProtected() then return end
 		if wdb().positions[name] then winApplyPosition(frame, name) end
 	end)
@@ -1538,14 +1710,8 @@ function QoL:Setup()
 	driver:RegisterEvent("GOSSIP_SHOW")
 	driver:RegisterEvent("GOSSIP_CLOSED")
 	driver:RegisterEvent("PARTY_INVITE_REQUEST")
-	-- Tracker visibility (brez pool / lust icon in group instances)
-	driver:RegisterEvent("ENCOUNTER_START")
-	driver:RegisterEvent("ENCOUNTER_END")
-	driver:RegisterEvent("CHALLENGE_MODE_START")
-	driver:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-	driver:RegisterEvent("CHALLENGE_MODE_RESET")
-	driver:RegisterEvent("WORLD_STATE_TIMER_START")
-	driver:RegisterEvent("WORLD_STATE_TIMER_STOP")
+	-- Trackers: a spec change can add/remove the player's own battle res.
+	driver:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 	driver:SetScript("OnEvent", function(_, event, ...)
 		if event == "PLAYER_ENTERING_WORLD" then
 			QoL:ApplyCursor()
@@ -1554,7 +1720,7 @@ function QoL:Setup()
 			C_Timer.After(3, function() QoL:ApplyPull() end)
 			-- The outfit buff lands slightly AFTER the loading screen -> late pass.
 			C_Timer.After(2, cancelOutfits)
-			refreshTrackerState()
+			refreshTrackerSpells()
 			QoL:UpdateTrackerVisibility()
 		elseif event == "MERCHANT_SHOW" then
 			onMerchantShow()
@@ -1566,20 +1732,8 @@ function QoL:Setup()
 			hideGossipKeys()
 		elseif event == "PARTY_INVITE_REQUEST" then
 			onPartyInvite(...)
-		elseif event == "ENCOUNTER_START" then
-			local _, itype = GetInstanceInfo()
-			trackerState.encounter = (itype == "raid")
-			QoL:UpdateTrackerVisibility()
-		elseif event == "ENCOUNTER_END" then
-			trackerState.encounter = false
-			QoL:UpdateTrackerVisibility()
-		elseif event == "CHALLENGE_MODE_START" or event == "WORLD_STATE_TIMER_START" then
-			trackerState.challenge = challengeActive()
-			QoL:UpdateTrackerVisibility()
-		elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET"
-			or event == "WORLD_STATE_TIMER_STOP" then
-			trackerState.challenge = false
-			QoL:UpdateTrackerVisibility()
+		elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+			refreshTrackerSpells()
 		elseif event == "PLAYER_REGEN_ENABLED" then
 			updateVisibility()
 			cancelOutfits() -- catch outfit buffs that appeared during combat

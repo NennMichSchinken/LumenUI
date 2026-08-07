@@ -31,7 +31,7 @@ read_globals = {
     "CompactRaidFrameContainer", "PartyFrame", "EventUtil", "ReloadUI",
     "StaticPopup_Show",
     -- Units / health
-    "UnitExists", "UnitName", "UnitClass", "UnitThreatSituation", "UnitGroupRolesAssigned",
+    "UnitExists", "UnitName", "UnitClass", "UnitFactionGroup", "UnitThreatSituation", "UnitGroupRolesAssigned",
     "UnitIsUnit", "GetSpecializationRole", "UnitIsGroupLeader", "UnitIsGroupAssistant",
     "UnitIsConnected", "UnitIsDeadOrGhost", "UnitIsGhost", "UnitHasIncomingResurrection",
     "GetReadyCheckStatus", "C_IncomingSummon",
@@ -61,7 +61,7 @@ read_globals = {
     "C_PartyInfo", "DoReadyCheck", "SendChatMessage", "CancelUnitBuff",
     "GetInstanceInfo", "IsEncounterInProgress", "C_ChallengeMode",
     -- Quick gossip
-    "C_GossipInfo", "GossipFrame",
+    "C_GossipInfo", "GossipFrame", "bit",
     -- Auto-accept invites
     "AcceptGroup", "IsGuildMember", "WillAcceptInviteRemoveQueues",
     "C_BattleNet", "C_FriendList", "C_LFGList",
