@@ -2702,21 +2702,29 @@ function Raidframes:LayoutLive(sameConfig)
 	header._appliedW, header._appliedH = L.width, L.height
 	header._appliedOrient, header._appliedSpacing = orient, spacing
 	configureSecureButtons(sameConfig)   -- ApplyConfig sets e.g. the button size
-	if (sizeChanged or sortChanged or layoutChanged) and header:IsShown() then
-		header:Hide()
+	if sizeChanged or sortChanged or layoutChanged then
 		-- Blizzard's configureChildren re-anchors active buttons with SetPoint but
 		-- never ClearAllPoints them first. Flipping the anchor `point` (orientation
 		-- change: TOP<->LEFT) therefore ADDS a second anchor instead of replacing it,
 		-- so the buttons get pulled diagonally until a /reload recreates them. Clear
 		-- the stale anchors ourselves (OOC only) so the reflow on Show() is clean.
+		--
+		-- Clearing must NOT depend on the header being visible right this moment.
+		-- Every path that hides it defers the change to exactly this point: an Edit
+		-- Mode session hides the header (ShowEditPreviews) and UpdateLayout returns
+		-- early while it runs, so an orientation change made DURING a session first
+		-- reaches this line on session END -- with the header still hidden. Same for
+		-- a change made while the module was switched off. Requiring IsShown() here
+		-- skipped the clear on exactly those paths and the frames came out diagonal
+		-- until the orientation was toggled a second time (report 2026-08-07).
+		if header:IsShown() then header:Hide() end
 		for i = 1, 40 do
 			local btn = header[i]
 			if btn then btn:ClearAllPoints() end
 		end
-		header:Show()
-	else
-		header:Show()
 	end
+	-- Show() is what re-runs the layout: the template's OnShow is SecureGroupHeader_Update.
+	header:Show()
 	self:NotifyFrameChange()   -- inform foreign providers (e.g. MiniCC) about the new frame list
 end
 
