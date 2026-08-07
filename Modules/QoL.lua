@@ -550,6 +550,11 @@ end
 -- dimmed button that still works is a far smaller sin than a dead button that
 -- should have worked. Alpha is not a protected aspect either, so unlike the
 -- anchoring and scaling in ApplyMarkers this stays legal in combat.
+-- The two rows do NOT follow the same rule (Florian 2026-08-07):
+--   * TARGET markers work wherever you are in a group -- open world included;
+--   * GROUND markers only exist inside an instance, which is what his group test
+--     showed ("they work as soon as you are in a group and in a dungeon").
+-- What they share: a group, and inside a RAID lead or assist.
 local MK_DIM = 0.5   -- Blizzard's own alpha for a disabled leader button
 local function markersUsable(world)
 	if not IsInGroup() then return false end
@@ -558,10 +563,14 @@ local function markersUsable(world)
 	if IsInRaid() and not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
 		return false
 	end
-	-- Ground markers additionally need the world-marker system to be available at
-	-- all; Blizzard gates its own marker dropdown on exactly this call.
-	if world and IsRaidMarkerSystemEnabled and not IsRaidMarkerSystemEnabled() then
-		return false
+	if world then
+		-- Deliberately "any instance" instead of a list of instance types: the open
+		-- world is the case that was actually reported, and splitting it finer would
+		-- be a guess about scenarios and battlegrounds that nobody has measured. No
+		-- API reports "ground markers are allowed here", so this cannot be looked up.
+		if not IsInInstance() then return false end
+		-- Plus the system check Blizzard gates its own marker dropdown on.
+		if IsRaidMarkerSystemEnabled and not IsRaidMarkerSystemEnabled() then return false end
 	end
 	return true
 end
