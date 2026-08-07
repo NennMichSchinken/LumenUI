@@ -430,6 +430,12 @@ end
 
 -- One call for a tab builder: park this screen's preview above the scroll area.
 local function placePreview(d, key)
+	-- The search index warm-up builds screens into a throwaway holder. Parking a
+	-- preview from there would hand the LIVE sticky header — and the parked-preview
+	-- bookkeeping the refresh reads — to a frame that is discarded a moment later.
+	-- Nothing in the band is searchable, so skipping it costs the index nothing.
+	-- (The Auras tab returns even earlier, before it gets here.)
+	if ns.ShellIndexing then return end
 	local spec = PV_SPECS[key]
 	if not spec then return end
 	previewRow(d, key, spec, previewOpts(key))

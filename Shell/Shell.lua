@@ -1568,7 +1568,7 @@ local function newStack(holder)
 			-- select) sit nested in a FieldRow cell, so walk a few levels down.
 			if ns.Shell and ns.Shell.IndexSetCard and o.title then
 				local function tagCard(fr, depth)
-					if fr._searchEntry then ns.Shell:IndexSetCard(fr, o.title) end
+					if fr._searchEntry then ns.Shell:IndexSetCard(fr, o.title, o.subtitle) end
 					if depth <= 0 or not fr.GetChildren then return end
 					for _, ch in ipairs({ fr:GetChildren() }) do tagCard(ch, depth - 1) end
 				end
@@ -1867,7 +1867,14 @@ end
 -- ---------------------------------------------------------------------------
 local searchIndex = {}   -- ordered: { label, tip, kind, section, tab, card, key, hay }
 local indexByKey = {}    -- key -> entry (an option is listed once, not once per rebuild)
-local builtScreens = {}  -- "Section/Tab" -> true (built at least once, warm-up skips it)
+-- "Section/Tab" -> true, set ONLY by the warm-up pass below. A screen built by
+-- plain navigation does NOT count as indexed: outside an indexing pass a
+-- collapsed disclosure builds nothing, so everything behind it stays invisible
+-- to the search. The Base tab is built the moment the Shell opens, so with the
+-- old "built at least once" rule it was never warmed and its advanced rows
+-- (name color, dispel colors, the aggro instance filter, the role priority
+-- list) could not be found at all (Florian's search test 2026-08-07).
+local indexedScreens = {}
 local indexCtx           -- { section, tab } — set ONLY while a builder runs
 
 function Shell:IndexOption(label, frame, kind, tip)
@@ -1916,11 +1923,18 @@ end
 
 -- Called from a card's place(): records the owning card and makes it searchable,
 -- so "cursor" finds every option on the Cursor card even when no label says so.
-function Shell:IndexSetCard(frame, title)
+function Shell:IndexSetCard(frame, title, subtitle)
 	local e = frame and frame._searchEntry
 	if not (e and title and title ~= "") or e.card then return end
 	e.card = title
-	e.hay = e.hay .. " " .. title:lower()
+	-- The subtitle says in plain words what the card is FOR ("Order and role
+	-- priority"), which is often closer to what someone types than any label on
+	-- it — "Rollen" found nothing while the role list lived one dropdown away
+	-- (Florian 2026-08-07). Kept in its own field, not appended to the card name:
+	-- the collapse rule below reads both, so a subtitle hit still yields ONE card
+	-- result instead of every option on it.
+	e.cardSub = subtitle
+	e.hay = e.hay .. " " .. title:lower() .. (subtitle and (" " .. subtitle:lower()) or "")
 end
 
 -- Warm-up: screens are built lazily, so on a cold Shell the index only knows
@@ -1949,8 +1963,8 @@ function Shell:WarmSearchIndex()
 			for _, tabName in ipairs(sec[2]) do
 				local key = sec[1] .. "/" .. tabName
 				local builder = ns.Screens and ns.Screens[key]
-				if builder and not builtScreens[key] then
-					builtScreens[key] = true
+				if builder and not indexedScreens[key] then
+					indexedScreens[key] = true
 					local d = CreateFrame("Frame", nil, holder)
 					d:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
 					d:SetPoint("TOPRIGHT", holder, "TOPRIGHT", 0, 0)
@@ -2014,7 +2028,7 @@ function Shell:SearchResults()
 			-- Listing them all is noise: jumping to the card shows the lot
 			-- anyway, so collapse them into one card-level result (Florian
 			-- 2026-07-26). Options whose own LABEL matched stay individual.
-			if e.card and matchesAll(normalize(e.card)) then
+			if e.card and matchesAll(normalize(e.card .. " " .. (e.cardSub or ""))) then
 				local ck = e.section .. "/" .. e.tab .. "/" .. e.card
 				if not seenCard[ck] then
 					seenCard[ck] = true
@@ -2586,7 +2600,8 @@ function Shell:RenderContent(changed)
 			-- (otherwise just an empty tab without a hint). Print the error to chat.
 			-- The index context is live for exactly this call (see Shell:IndexOption)
 			-- and is cleared OUTSIDE the pcall so an erroring screen can't leak it.
-			builtScreens[key] = true
+			-- This pass does NOT mark the screen indexed: collapsed disclosures build
+			-- nothing here, so the warm-up still owes this screen a full pass.
 			indexCtx = { section = sec[1], tab = sec[2][self._tab] or "" }
 			local ok, err = pcall(builder, d, stack)
 			indexCtx = nil
