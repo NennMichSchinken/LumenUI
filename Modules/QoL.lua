@@ -460,9 +460,21 @@ end
 -- ---------------------------------------------------------------------------
 local markerFrame
 local markerRows = {}         -- ["target"|"world"] = row frame (own visibility driver)
+local markerBtns = {}         -- same keys -> the row's buttons, for enable/disable
 local markerFills = {}        -- per-button faces; the background switch hides these too
 local markerDeferred          -- an apply arrived in combat -> redo it on regen
 local markerEvents
+-- One shared "catch up when combat drops" latch: both the full apply (anchoring,
+-- scaling) and the enable/disable half of the state refresh are combat-locked.
+local function ensureMarkerRegen()
+	if markerEvents then markerEvents:RegisterEvent("PLAYER_REGEN_ENABLED"); return end
+	markerEvents = CreateFrame("Frame")
+	markerEvents:SetScript("OnEvent", function(evtFrame)
+		evtFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+		if markerDeferred then markerDeferred = nil; QoL:ApplyMarkers() end
+	end)
+	markerEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
 local MK_BTN, MK_GAP, MK_COLS = 22, 2, 9   -- 8 markers + clear
 local MK_LABEL_H = 12                       -- row caption ("Target" / "World")
 local MK_LABEL_GAP = MK_GAP + 2             -- caption -> icons: the caption is a label
@@ -541,46 +553,56 @@ local function makeMarkerButton(parent, symbol, world)
 	return b
 end
 
--- Grey the rows out while nothing can be marked. Placing a marker needs a GROUP,
--- and inside a raid it needs lead or assist -- that is WoW's rule, not ours, and
--- without a hint the buttons just swallow the click in silence (Florian's group
--- test 2026-08-07: "they work as soon as you are in a group and in a dungeon").
+-- The two rows follow DIFFERENT rules, measured in-game (Florian 2026-08-07):
+--   * TARGET markers work anywhere, solo included -- he set one while the row was
+--     greyed, which is what killed the original "needs a group" assumption. The
+--     only real limit left is a RAID without lead or assist.
+--   * GROUND markers need a group AND an instance. Outside that they do nothing.
 --
--- We only DIM, we never Disable(): if this condition is ever wrong somewhere, a
--- dimmed button that still works is a far smaller sin than a dead button that
--- should have worked. Alpha is not a protected aspect either, so unlike the
--- anchoring and scaling in ApplyMarkers this stays legal in combat.
--- The two rows do NOT follow the same rule (Florian 2026-08-07):
---   * TARGET markers work wherever you are in a group -- open world included;
---   * GROUND markers only exist inside an instance, which is what his group test
---     showed ("they work as soon as you are in a group and in a dungeon").
--- What they share: a group, and inside a RAID lead or assist.
+-- The world row is DISABLED, not merely dimmed: a button that looks dead but still
+-- reacts is worse than either honest state (Florian's call after seeing exactly
+-- that). Disabling touches a protected button, so it waits for the end of combat
+-- while the alpha -- which is never protected -- applies immediately.
 local MK_DIM = 0.5   -- Blizzard's own alpha for a disabled leader button
 local function markersUsable(world)
-	if not IsInGroup() then return false end
-	-- Party: anybody may mark. Raid: leader/assistant only -- the same gate
-	-- Blizzard puts on its whole marker/leader panel.
+	-- Raid: leader/assistant only, for both kinds -- the same gate Blizzard puts on
+	-- its whole marker/leader panel.
 	if IsInRaid() and not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
 		return false
 	end
-	if world then
-		-- Deliberately "any instance" instead of a list of instance types: the open
-		-- world is the case that was actually reported, and splitting it finer would
-		-- be a guess about scenarios and battlegrounds that nobody has measured. No
-		-- API reports "ground markers are allowed here", so this cannot be looked up.
-		if not IsInInstance() then return false end
-		-- Plus the system check Blizzard gates its own marker dropdown on.
-		if IsRaidMarkerSystemEnabled and not IsRaidMarkerSystemEnabled() then return false end
-	end
+	if not world then return true end
+	if not IsInGroup() then return false end
+	-- Deliberately "any instance" instead of a list of instance types: the open
+	-- world is the case that was actually reported, and splitting it finer would be
+	-- a guess about scenarios and battlegrounds that nobody has measured. No API
+	-- reports "ground markers are allowed here", so this cannot be looked up.
+	if not IsInInstance() then return false end
+	-- Plus the system check Blizzard gates its own marker dropdown on.
+	if IsRaidMarkerSystemEnabled and not IsRaidMarkerSystemEnabled() then return false end
 	return true
 end
 
--- Light pass: alpha only, combat-safe, no layout. Rides on roster/leader changes
--- and the zone change, which is everything that can flip the answer.
+-- Light pass: no layout, so it may run at any time. The alpha half is always
+-- applied; the enable/disable half is combat-locked and catches up on regen.
 function QoL:RefreshMarkerState()
 	if not markerFrame then return end
+	local locked = InCombatLockdown()
 	for key, rf in pairs(markerRows) do
-		rf:SetAlpha(markersUsable(key == "world") and 1 or MK_DIM)
+		local on = markersUsable(key == "world")
+		rf:SetAlpha(on and 1 or MK_DIM)
+		local btns = markerBtns[key]
+		if btns and not locked then
+			for i = 1, #btns do
+				local b = btns[i]
+				-- Both, on purpose: Disable stops the click, EnableMouse(false) also
+				-- takes away the hover so a dead button cannot even light up.
+				if on then b:Enable() else b:Disable() end
+				b:EnableMouse(on)
+			end
+		elseif btns then
+			markerDeferred = true   -- redo the enable/disable when combat drops
+			ensureMarkerRegen()
+		end
 	end
 end
 
@@ -600,13 +622,16 @@ local function createMarkerBar()
 		local head = UI.FS(rf, "caption", UI.Text.Secondary)
 		head:SetPoint("TOPLEFT", rf, "TOPLEFT", 0, 0)
 		head:SetText(row.world and ns.T("World") or ns.T("Target"))
+		local btns = {}
 		for i = 1, MK_COLS do
 			-- Last column = clear (no symbol).
 			local b = makeMarkerButton(rf, i < MK_COLS and i or nil, row.world)
 			b:SetPoint("TOPLEFT", rf, "TOPLEFT", (i - 1) * (MK_BTN + MK_GAP), -(MK_LABEL_H + MK_LABEL_GAP))
 			markerFills[#markerFills + 1] = b._fill
+			btns[i] = b
 		end
 		markerRows[row.key] = rf
+		markerBtns[row.key] = btns
 	end
 
 	if ns.EditMode then
@@ -651,14 +676,7 @@ function QoL:ApplyMarkers()
 	-- Creating, anchoring and scaling protected buttons is combat-locked. Later.
 	if InCombatLockdown() then
 		markerDeferred = true
-		if not markerEvents then
-			markerEvents = CreateFrame("Frame")
-			markerEvents:SetScript("OnEvent", function(evtFrame)
-				evtFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
-				if markerDeferred then markerDeferred = nil; QoL:ApplyMarkers() end
-			end)
-		end
-		markerEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+		ensureMarkerRegen()
 		return
 	end
 	-- Never both rows off: an empty card cannot be clicked in Edit Mode, so there

@@ -491,6 +491,12 @@ end
 -- the Sorting card's role-priority list) — same session-only rule as the icon
 -- section above: navigating away resets to the calm default state.
 local baseAdvState = {}
+-- Same rule the icon sections already follow (iconOpen above): while the search
+-- index is being built, a collapsed "More options" must still build its contents,
+-- otherwise everything behind it is invisible to the search. That is what hid the
+-- aggro instance filter -- its word only lives in the tooltip, and the row was
+-- never created to carry it (Florian's search test 2026-08-07).
+local function advOpen(key) return ns.ShellIndexing or baseAdvState[key] or false end
 
 -- Called by the Shell when the MAIN SECTION changes (NOT on tab switches within
 -- a section). Open disclosures therefore persist while you move between a
@@ -502,6 +508,12 @@ local baseAdvState = {}
 function ns.ShellOpenAllSections()
 	for _, ctx in ipairs({ "raid", "party" }) do
 		iconOpenState[ctx] = true
+	end
+	-- The Base tab's "More options" disclosures too, for the same reason: a jump
+	-- into one of those rows rebuilds the screen first, and a collapsed disclosure
+	-- would not recreate the row the jump is aiming at.
+	for _, key in ipairs({ "text", "dispel", "aggro", "sort" }) do
+		baseAdvState[key] = true
 	end
 end
 
@@ -1015,7 +1027,7 @@ local function buildBase(d, stack)
 	sText:place(hpOut, fieldH, R.row)
 	-- Advanced: the two text colors as chip rows (rarely touched — most run
 	-- class color/white; curation 2026-07-04).
-	if baseAdvState.text then
+	if advOpen("text") then
 		local rowName = colorRow(d, T("Name color"), tcget("nameColor"), tcset("nameColor"))
 		sText:place(rowName, M.optionRowH, 0)
 		sText:place(colorRow(d, T("HP text color"), tcget("healthTextColor"), tcset("healthTextColor")), M.optionRowH, R.row)
@@ -1128,7 +1140,7 @@ local function buildBase(d, stack)
 
 	-- Advanced: the four dispel type colors as chip rows (set once; curation 2026-07-04).
 	local dispColW = {}
-	if baseAdvState.dispel then
+	if advOpen("dispel") then
 		for i, t in ipairs(DISPEL_TYPES) do
 			local row = colorRow(d, t.label, dcget(t.key), dcset(t.key))
 			sDispel:place(row, M.optionRowH, i == #DISPEL_TYPES and R.row or 0)
@@ -1198,7 +1210,7 @@ local function buildBase(d, stack)
 
 	-- Advanced: text fine-tuning (both stages), overlay opacity and the
 	-- instance filter (curation 2026-07-04: all set-once).
-	if baseAdvState.aggro then
+	if advOpen("aggro") then
 		-- Stacked row first (§8: instance filter), then the field rows —
 		-- 2 unit cells fill the 6-card exactly.
 		local rowInst = checkRow(d, T("Dungeon/raid only"), {
@@ -1257,7 +1269,7 @@ local function buildBase(d, stack)
 		sSort:place(checkRow(d, T("Also sort by role in raid"), {
 			tooltip = T("Off: your arrangement is kept in raids. On: role sorting also applies in raids. (Dungeon/party is always sorted.)"),
 			get = tget("sortApplyRaid"), set = tset("sortApplyRaid") }), M.optionRowH, R.row)
-		if baseAdvState.sort then
+		if advOpen("sort") then
 			local function swapRole(i, j)
 				local o = rf().sortRoleOrder
 				if not (o and o[i] and o[j]) then return end
