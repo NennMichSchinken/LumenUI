@@ -2023,11 +2023,21 @@ end
 function Raidframes:RenderRange(f)
 	local u = f.unit
 	if not u or not UnitExists(u) then return end
-	-- Solo there is nothing to be out of range OF. And a unit that is not a real
-	-- group member does not come back as "not checked", it comes back as NOT IN
-	-- RANGE -> with "show frame when solo" on, your own frame sat there dimmed
-	-- (Florian 2026-08-07). IsInGroup is a plain boolean, safe to branch on.
-	if not IsInGroup() then
+	-- YOUR OWN frame is never dimmed (Florian 2026-08-07, hard rule): you are always
+	-- in range of yourself, and a washed-out bar where you expect your own health is
+	-- the worst thing this feature could do. UnitIsUnit can be secret in combat, so
+	-- the answer is resolved whenever it is READABLE and remembered on the frame --
+	-- it only changes when the header reassigns tokens, and that always runs a full
+	-- pass, in combat (_RosterPaint) as well as out of it.
+	local okMe, isMe = pcall(UnitIsUnit, u, "player")
+	if okMe and not (issecretvalue and issecretvalue(isMe)) then
+		f._isMe = isMe and true or nil
+	end
+	-- Solo there is nothing to be out of range OF either. And a unit that is not a
+	-- real group member does not come back as "not checked", it comes back as NOT IN
+	-- RANGE -> with "show frame when solo" on, your own frame sat there dimmed.
+	-- IsInGroup is a plain boolean, safe to branch on.
+	if f._isMe or not IsInGroup() then
 		if f._range ~= nil then f._range = nil; self._applyFrameAlpha(f) end
 		return
 	end
