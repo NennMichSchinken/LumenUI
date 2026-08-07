@@ -2041,6 +2041,16 @@ function Raidframes:RenderRange(f)
 		if f._range ~= nil then f._range = nil; self._applyFrameAlpha(f) end
 		return
 	end
+	-- A phased member (different layer/shard) is unreachable no matter how close
+	-- the distance says they are -- and phasing does NOT fire UNIT_IN_RANGE_UPDATE,
+	-- so it has to be asked for separately (that is why UNIT_PHASE is registered).
+	-- `~= nil` does not read the value, and a "not phased" answer is plainly nil,
+	-- never a secret -> the test holds in combat.
+	if UnitPhaseReason and UnitPhaseReason(u) ~= nil then
+		f._range = false
+		self._applyFrameAlpha(f)
+		return
+	end
 	local ok, inRange, checked = pcall(UnitInRange, u)
 	-- A secret `checkedRange` cannot be tested -> assume the check happened; the
 	-- engine still decides the actual alpha from the (secret) in-range flag.
@@ -2084,8 +2094,13 @@ function Raidframes:RenderStatus(f)
 	-- Grey the bar while dead/offline; dim the whole frame only when offline
 	-- (the range check is the second source of frame alpha -> shared helper).
 	f._greyed = (mode ~= nil) or nil
-	self._applyFrameAlpha(f)
 	applyHealthColor(f, db(), u)
+	-- A connection change does NOT fire UNIT_IN_RANGE_UPDATE, so someone who moved
+	-- while disconnected would come back wearing their old range state. Re-asking
+	-- here is cheap because this line only runs on an actual status TRANSITION --
+	-- the early return above keeps it off the health-tick path. RenderRange applies
+	-- the frame alpha for us.
+	self:RenderRange(f)
 end
 
 -- Center icon: ready check (priority) + incoming summon — Blizzard's own
@@ -2875,6 +2890,7 @@ local UNIT_EVENT_METHOD = {
 	UNIT_FLAGS                      = "RenderStatus",
 	INCOMING_RESURRECT_CHANGED      = "RenderStatus",
 	UNIT_IN_RANGE_UPDATE            = "RenderRange",
+	UNIT_PHASE                      = "RenderRange",   -- phasing never fires the range event
 	INCOMING_SUMMON_CHANGED         = "RenderCenterIcon",
 }
 
