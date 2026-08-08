@@ -1434,7 +1434,9 @@ local function trkSpec() return (ns.ClickCast and ns.ClickCast:CurrentSpecID()) 
 -- on the right (red only on hover); row hover = lighter surface + gold left edge.
 -- `onAdd` turns the row into a CANDIDATE row: the whole row is clickable and
 -- carries a plus instead of the trash button (search results in the Spells pane).
-local function makeTrackRow(parent, e, onRemove, onAdd)
+-- `action` overrides the right-hand button (icon + colours) for rows whose action
+-- is not "delete" — the hidden defensives put a restore glyph there.
+local function makeTrackRow(parent, e, onRemove, onAdd, action)
 	local row = CreateFrame(onAdd and "Button" or "Frame", nil, parent)
 	row:SetHeight(L.raidframes.tracking.rowH)
 	UI.RoundFill(row, Surface.Input, nil, nil, UI.ROUND_R_CTRL)
@@ -1458,8 +1460,9 @@ local function makeTrackRow(parent, e, onRemove, onAdd)
 		rm:SetSnapToPixelGrid(false); rm:SetTexelSnappingBias(0)
 		row:SetScript("OnClick", onAdd)
 	else
-		rm = W.IconButton(row, { icon = "icon-delete", size = M.iconAction,
-			color = Status.danger, hoverColor = Status.dangerHover, onClick = onRemove })
+		action = action or { icon = "icon-delete", color = Status.danger, hoverColor = Status.dangerHover }
+		rm = W.IconButton(row, { icon = action.icon, size = M.iconAction,
+			color = action.color, hoverColor = action.hoverColor, onClick = onRemove })
 		rm:SetPoint("RIGHT", row, "RIGHT", -12, 0)
 	end
 	local name = UI.FS(row, "selectText", Text.Primary)
@@ -1763,17 +1766,7 @@ local function auraHidePane(d, host)
 		if hidden[e.id] then hiddenList[#hiddenList + 1] = e else shown[#shown + 1] = e end
 	end
 
-	-- The search only exists once something IS hidden: it is the way back, and a
-	-- field that can never return a result is furniture.
-	if #hiddenList > 0 then
-		spellSearchRow(d, content, st, R.row, {
-			placeholder = T("Search a spell to show again …"),
-			fetch       = function() return hiddenList end,
-			onPick      = function(e) if RFm then RFm:SetDefensiveHidden(e.id, false) end end,
-		})
-	end
-
-	-- Trailing air only when something follows the list (the way-back button).
+	-- Trailing air only when something follows the list.
 	local tailGap = (#hiddenList > 0) and L.raidframes.tracking.afterList or 0
 	local rowH, lastClass = L.raidframes.tracking.rowH, nil
 	for i, e in ipairs(shown) do
@@ -1790,11 +1783,25 @@ local function auraHidePane(d, host)
 		st:place(tr, rowH, (i == #shown) and tailGap or L.raidframes.tracking.betweenRows)
 	end
 	if #shown == 0 then
-		st:place(W.EmptyState(content, { text = T("Everything is hidden — search above to bring one back.") }),
+		st:place(W.EmptyState(content, { text = T("Everything is hidden — bring one back below.") }),
 			L.raidframes.tracking.emptyH, tailGap)
 	end
 
+	-- What was switched off keeps standing here, under its own heading, with the
+	-- way back on the row itself. It first lived in the search field's popover and
+	-- that was the wrong home twice over: the way back was hidden behind typing,
+	-- and the popover ate the click (Florian 2026-08-09). A list this short has no
+	-- reason to hide anything.
 	if #hiddenList > 0 then
+		st:place(subHeadRow(content, T("Hidden")), M.subHeadH, 0)
+		for i, e in ipairs(hiddenList) do
+			local tr = makeTrackRow(content, e, function()
+				if RFm then RFm:SetDefensiveHidden(e.id, false) end
+				ns.Shell:RenderContent(true)
+			end, nil, { icon = "icon-reset", color = UI.Accent.color, hoverColor = UI.Accent.hover })
+			st:place(tr, rowH, (i == #hiddenList) and L.raidframes.tracking.afterList
+				or L.raidframes.tracking.betweenRows)
+		end
 		local back = W.Button(content, { text = T("Show all again"), variant = "secondary",
 			height = M.segCompactH,
 			onClick = function()
@@ -1846,13 +1853,12 @@ local function auraSpellsPane(d, host, cat, page)
 		return
 	end
 
-	-- Group buffs on the native path: Blizzard's group-window list carries the
-	-- category, so what is left here is only what the player added ON TOP.
-	local extras = (cat.key == "hotsOwn") and nativeAuras()
+	-- Plain whitelist editor. On the native path this is only ever reached for the
+	-- defensives FALLBACK (`/lumennative flags off`) and on 12.0.7 -- where our
+	-- list really is the source. Group buffs never land here: Blizzard's list is
+	-- the category and has no second half to edit.
 	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
-	local box, st, content = innerBlock(d,
-		extras and T("Additional spells") or T("Tracked spells"),
-		extras and T("Shown on top of the Cooldown Manager's list") or nil)
+	local box, st, content = innerBlock(d, T("Tracked spells"))
 
 	-- Scope strip: everything else on this tab is per context, so the list has to
 	-- say out loud that it is not. Only the VALUES lead; the words around them
@@ -1878,31 +1884,10 @@ local function auraSpellsPane(d, host, cat, page)
 		onPick = function(sp) if RFm then RFm:AddWhitelist(spec, sp.id, cat.typ) end end,
 	})
 
-	-- Bottom action, decided BEFORE the list so the list knows whether anything
-	-- follows it. A rarely-used, destructive action does not belong next to the
-	-- everyday search field -- and on the native path "restore defaults" would be
-	-- a lie, because the defaults are Blizzard's list, not ours. What is left for
-	-- the additions is emptying them, and only while there are any.
-	local action
-	if extras then
-		if #entries > 0 then
-			action = { text = T("Remove all"), title = T("Remove all additions?"),
-				body = T("Your own additions in this category will be removed. Blizzard's list is untouched."),
-				confirm = T("Remove") }
-		end
-	else
-		action = { text = T("Restore defaults"), title = T("Restore defaults?"),
-			body = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
-			confirm = T("Reset") }
-	end
-	local tailGap = action and L.raidframes.tracking.afterList or 0
-
 	local shown = entries
 	if #entries == 0 then
-		st:place(W.EmptyState(content, { text = extras
-				and T("Nothing added — Blizzard's list covers this category on its own.")
-				or T("No spells tracked yet — add the first one.") }),
-			L.raidframes.tracking.emptyH, tailGap)
+		st:place(W.EmptyState(content, { text = T("No spells tracked yet — add the first one.") }),
+			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
 	else
 		local rowH = L.raidframes.tracking.rowH
 		for i, e in ipairs(shown) do
@@ -1910,33 +1895,31 @@ local function auraSpellsPane(d, host, cat, page)
 				if RFm then RFm:RemoveWhitelist(spec, e.id) end
 				ns.Shell:RenderContent(true)
 			end)
-			st:place(tr, rowH, (i == #shown) and tailGap or L.raidframes.tracking.betweenRows)
+			st:place(tr, rowH, (i == #shown) and L.raidframes.tracking.afterList
+				or L.raidframes.tracking.betweenRows)
 		end
 	end
 
-	if action then
-		local reset = W.Button(content, { text = action.text, variant = "secondary",
-			height = M.segCompactH,
-			onClick = function()
-				W.Confirm({
-					title       = action.title,
-					body        = action.body,
-					confirmText = action.confirm,
-					cancelText  = T("Cancel"),
-					onConfirm   = function()
-						if RFm then
-							if extras then RFm:ClearWhitelist(spec, cat.typ)
-							else RFm:ResetWhitelist(spec, cat.typ) end
-						end
-						ns.Shell:RenderContent(true)
-					end,
-				})
-			end })
-		local resetRow = CreateFrame("Frame", nil, content)
-		resetRow:SetHeight(M.segCompactH)
-		reset:SetPoint("LEFT", resetRow, "LEFT", 0, 0)
-		st:place(resetRow, M.segCompactH, 0)
-	end
+	-- Restore defaults sits at the bottom: a rarely-used, destructive action does
+	-- not belong next to the everyday search field.
+	local reset = W.Button(content, { text = T("Restore defaults"), variant = "secondary",
+		height = M.segCompactH,
+		onClick = function()
+			W.Confirm({
+				title       = T("Restore defaults?"),
+				body        = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
+				confirmText = T("Reset"),
+				cancelText  = T("Cancel"),
+				onConfirm   = function()
+					if RFm then RFm:ResetWhitelist(spec, cat.typ) end
+					ns.Shell:RenderContent(true)
+				end,
+			})
+		end })
+	local resetRow = CreateFrame("Frame", nil, content)
+	resetRow:SetHeight(M.segCompactH)
+	reset:SetPoint("LEFT", resetRow, "LEFT", 0, 0)
+	st:place(resetRow, M.segCompactH, 0)
 
 	host:place(box, blockClose(box, st, content), 0)
 end
@@ -2076,7 +2059,11 @@ local function buildAuras(d, stack)
 		for _, c in ipairs(AURA_CATS) do
 			ns.ShellIndexScope = c.key
 			local sec = stack:section(c.label, { subtitle = c.desc })
-			auraSpellsPane(d, sec, c, d)
+			-- Same gate as the real render below: indexing a pane that no longer
+			-- exists would put search hits on rows nobody can reach.
+			if not (c.key == "hotsOwn" and nativeAuras()) then
+				auraSpellsPane(d, sec, c, d)
+			end
 			auraDisplayPane(d, sec, c, ctx, d)
 			sec:close()
 		end
@@ -2112,15 +2099,23 @@ local function buildAuras(d, stack)
 	-- whole: eye, title + description, the Display/Spells switch, the copy button
 	-- and the master toggle — one row, so the head visibly belongs to the options
 	-- under it instead of sitting above them as a separate strip.
-	local paneSpells = (auraTabPane == "spells")
+	-- Group buffs on the native path have NOTHING to edit here: Blizzard's list is
+	-- the category, and it is edited in Blizzard's panel (the button above). A
+	-- second list beside it would be the same two-truths problem the rework just
+	-- removed -- and the spellbook it offered was full of noise that never belonged
+	-- on a raid frame ("Auto Attack"). So the category loses its pane switch
+	-- entirely (Florian 2026-08-09). The 12.0.7 fallback keeps the editor, because
+	-- there our list really is the source.
+	local hasSpells = not (cat.key == "hotsOwn" and nativeAuras())
+	local paneSpells = hasSpells and (auraTabPane == "spells")
 
-	local paneSeg = W.Segment(d, {
+	local paneSeg = hasSpells and W.Segment(d, {
 		options = { { value = "display", label = T("Display") }, { value = "spells", label = T("Spells") } },
 		get = function() return auraTabPane end,
 		set = function(v) auraTabPane = v; ns.Shell:RenderContent(true) end,
 		width = L.raidframes.auras.paneSegW,
 		cellH = M.segCompactH,   -- same compact height as the preview's context switch
-	})
+	}) or nil
 
 	local copyBtn = W.CopyPopover(d, {
 		text   = T("Copy"),
@@ -2210,7 +2205,7 @@ local function buildAuras(d, stack)
 			end,
 		},
 		toggleInline = true, toggleLabel = T("Show"),
-		headerControls = { copyBtn, paneSeg },
+		headerControls = paneSeg and { copyBtn, paneSeg } or { copyBtn },
 	})
 
 	-- Body of the picked pane, built INSIDE the same card as the head — the head

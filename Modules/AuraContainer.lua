@@ -162,8 +162,12 @@ end
 --   shown = every item minus the ones the player moved to "not shown"
 --   minus anything Blizzard itself flags as a defensive, because the Defensives
 --     category already draws those and it would land twice otherwise
---   plus the player's own extras (whitelist type "hot"), which is how a spell
---     Blizzard's list does not carry at all still gets shown.
+-- Blizzard's list is the WHOLE truth here: the extras layer (whitelist type "hot"
+-- on top) is gone with the tab's spell pane -- Florian 2026-08-09, and the reason
+-- is the point of the rework. Two editable lists for one category is exactly the
+-- state we left behind, and the second one could only ever be curated by us.
+-- The stored entries are left alone, so bringing the layer back is a one-line
+-- change if a spell Blizzard does not carry ever turns up.
 -- Cached because syncHelpful runs per button; invalidated by the events below
 -- rather than rebuilt per call (CLAUDE.md §9: no allocation in repeated paths).
 local buffInclude, buffOwned, buffIcons, buffHidden
@@ -182,7 +186,7 @@ local function buildBuffSource()
 		local rf = ns.Raidframes
 		if rf and rf.MigrateGroupBuffs then rf:MigrateGroupBuffs(currentSpecID(), all) end
 	end
-	local include = buildInclude("hot")
+	local include = {}
 	-- pool = what the PREVIEW draws from, include = what the FRAMES draw. They differ
 	-- by the player's hidden set on purpose, see the note below.
 	local pool, nHidden = {}, 0
@@ -1043,9 +1047,7 @@ autoFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- it in Blizzard's own panel, or the spec (and with it the whole list) changes.
 -- Pushing new candidate filters keeps the existing aura buttons -- no container
 -- rebuild, so this is legal while a container already lives on a frame.
--- `quiet` = the caller is the settings page itself (it rebuilds right after), so
--- the courtesy re-render at the end would only be a second full rebuild.
-function RFC.RefreshBuffSource(quiet)
+function RFC.RefreshBuffSource()
 	buffInclude, buffOwned, buffIcons = nil, nil, nil
 	-- The preview caches its icons per spec, and this can change without one.
 	local rf = ns.Raidframes
@@ -1066,7 +1068,7 @@ function RFC.RefreshBuffSource(quiet)
 	-- moment the player edits Blizzard's panel with the shell open beside it --
 	-- which is exactly how they will do it.
 	local S = ns.Shell
-	if not quiet and S and S.RenderContent and S._frame and S._frame:IsShown() then
+	if S and S.RenderContent and S._frame and S._frame:IsShown() then
 		pcall(S.RenderContent, S, true)
 	end
 end

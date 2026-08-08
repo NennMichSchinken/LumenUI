@@ -686,21 +686,12 @@ function Raidframes:WhitelistMap(specID)
 	if not specID or specID == 0 then return {} end
 	return whitelistFor(specID) or {}
 end
--- The group-buff category is Blizzard's list PLUS the entries kept here, and the
--- containers hold that union as a candidate filter -- so an edit in this list has
--- to be pushed, or an added spell sits there until the next spec change. Quiet:
--- every caller is the settings page, which rebuilds itself right after.
-local function pushBuffSource()
-	if ns.RFC and ns.RFC.RefreshBuffSource then pcall(ns.RFC.RefreshBuffSource, true) end
-end
-
 -- Add a spell to the whitelist.
 function Raidframes:AddWhitelist(specID, spellID, typ)
 	if not specID or specID == 0 or not spellID then return end
 	spellID = TALENT_TO_AURA[spellID] or spellID   -- talent ID -> real aura ID
 	local s = whitelistFor(specID); if not s then return end
 	s[spellID] = typ
-	pushBuffSource()
 	self:RefreshAuras()
 end
 -- Remove a spell. The seeded marker stays set deliberately -> a default-seeded spell
@@ -710,19 +701,6 @@ function Raidframes:RemoveWhitelist(specID, spellID)
 	local A = db().auras; if not A or not A.whitelist then return end
 	local s = A.whitelist[specID]; if not s then return end
 	s[spellID] = nil
-	pushBuffSource()
-	self:RefreshAuras()
-end
--- Empty a type completely. The seeded markers stay, so nothing creeps back on the
--- next spec visit -- this is the "remove all" of the additions list, where
--- restoring OUR defaults would be the wrong promise: on the native path the
--- defaults are Blizzard's list, and re-seeding ours would just duplicate it.
-function Raidframes:ClearWhitelist(specID, typ)
-	if not specID or specID == 0 then return end
-	local A = db().auras; if not A or not A.whitelist then return end
-	local s = A.whitelist[specID]; if not s then return end
-	for sid, t in pairs(s) do if t == typ then s[sid] = nil end end
-	pushBuffSource()
 	self:RefreshAuras()
 end
 -- Reset to the curated defaults of this type: first remove all entries of the type
@@ -745,7 +723,6 @@ function Raidframes:ResetWhitelist(specID, typ)
 		restore(DEF_DEFAULTS[specID])
 		restore(DEF_CLASS[SPEC_CLASS[specID]])
 	end
-	pushBuffSource()
 	self:RefreshAuras()
 end
 
