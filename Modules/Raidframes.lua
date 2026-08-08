@@ -2521,7 +2521,7 @@ function Raidframes:RenderAurasLive(f)
 	-- -- so it ran once per UNIT_AURA per unit for nothing. Measured at 76.8 us
 	-- average with a 401 us peak across a 144 s dummy fight, the third-largest item
 	-- in that capture, in a function that draws nothing at all on 12.1 (Florian,
-	-- 2026-08-10).
+	-- 2026-08-08).
 	-- The holders come down here rather than only in the layout path: this is the
 	-- pass that runs when the native path is switched on mid-session.
 	local S = ns.RFC and ns.RFC.Suppresses

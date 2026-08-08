@@ -790,7 +790,7 @@ local function syncHelpful(container, c, lo)
 	-- Declare ONLY the side that is actually feeding the category. Declaring both
 	-- and flipping the frame budget looked free and is not: AddAuraGroup creates a
 	-- whole batch of aura buttons there and then -- ten, measured on the 12.1 PTR
-	-- (Florian, 2026-08-10) -- whether the group can ever show one or not, because
+	-- (Florian, 2026-08-08) -- whether the group can ever show one or not, because
 	-- the frame provider batches before maxFrameCount is ever read. On top of that
 	-- every declared group is another parse filter that each aura change has to be
 	-- tested against, and the idle one carried the widest filter in the file
@@ -1248,7 +1248,7 @@ end
 function RFC.RefreshBuffSource()
 	-- The events behind this fire far more often than the list actually changes: a
 	-- shapeshift reloads the cooldown-viewer data, and a single solo dummy fight
-	-- produced FIFTEEN rebuilds (measured 2026-08-10, Florian on a Resto Druid
+	-- produced FIFTEEN rebuilds (measured 2026-08-08, Florian on a Resto Druid
 	-- cycling Tree of Life). Everything after the rebuild is expensive -- a
 	-- candidate-filter push is a full aura re-parse of one unit, and there is one
 	-- per live button -- so the answer is compared before any of it runs.
@@ -1488,7 +1488,7 @@ function RFC.Disable()
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
 	-- On 12.1 this is an OFF switch, not a fallback. The old scan path is denied to
 	-- a tainted caller while auras are secret, which on a 12.1 client is always --
-	-- measured solo in the open world, not just in a group (Florian, 2026-08-10).
+	-- measured solo in the open world, not just in a group (Florian, 2026-08-08).
 	-- Saying so beats leaving empty frames that read as a bug.
 	if IS_121 then
 		say("Native auras |cffffcc00OFF|r -- on 12.1 that means |cffff5555no aura icons at all|r; "
