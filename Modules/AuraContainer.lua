@@ -214,9 +214,14 @@ end
 -- needs this: a category that is switched on in the profile but has no list
 -- behind it draws nothing, and saying so beats a settings page that claims
 -- otherwise (a Hunter has no group-buff list at all).
-function RFC.GroupBuffCount()
-	local _, owned = buildBuffSource()
-	return owned
+-- Returns Blizzard's entry count AND the size of everything we would draw. The
+-- two differ when the player has extras: no Blizzard list is not the same as
+-- nothing to show, and the tab must not claim it is.
+function RFC.GroupBuffState()
+	local include, owned = buildBuffSource()
+	local total = 0
+	for _ in pairs(include) do total = total + 1 end
+	return owned, total
 end
 
 local function buffSourceEmpty()

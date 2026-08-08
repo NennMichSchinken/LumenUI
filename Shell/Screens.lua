@@ -1588,14 +1588,14 @@ end
 --  SHARED by Raid + Group — the hint above the list says so, because everything
 --  else on this tab is per context.
 -- ---------------------------------------------------------------------------
--- True only while the native path is the one rendering AND Blizzard has nothing
--- for this spec. On 12.0.x the old scan path still draws the curated list, so the
--- absence of a group-buff list says nothing there.
+-- True only while the native path renders AND there is nothing at all behind the
+-- category: no Blizzard list for this spec and no extras of the player's own.
+-- Extras alone still draw, so a missing Blizzard list by itself is not empty.
 local function noGroupBuffList()
 	local R = ns.RFC
-	if not (R and R.enabled and R.GroupBuffCount) then return false end
-	local ok, n = pcall(R.GroupBuffCount)
-	return ok and (n or 0) == 0
+	if not (R and R.enabled and R.GroupBuffState) then return false end
+	local ok, owned, total = pcall(R.GroupBuffState)
+	return ok and (owned or 0) == 0 and (total or 0) == 0
 end
 
 local function auraSpellsPane(d, host, cat, page)
