@@ -40,34 +40,53 @@ local floor, strfind    = math.floor, string.find
 RFC.enabled = false
 
 -- Categories the native path owns. HELPFUL ones have TWO possible sources, see
--- `flagFilter` below; debuffs are HARMFUL (harmful=true) and filter by MODE via
+-- `flagFilters` below; debuffs are HARMFUL (harmful=true) and filter by MODE via
 -- filter strings (per-spellId matching is not permitted for harmful auras on
 -- assistable units -- the Phase 1 constraint).
 --
--- flagFilter = Blizzard's own answer to "which auras belong in this category",
+-- flagFilters = Blizzard's own answer to "which auras belong in this category",
 -- flagged per spell by them instead of curated per spec by us. Their comment in
 -- AuraUtil.AuraFilters names our exact case: RAID_IN_COMBAT is "auras flagged to
 -- show on raid frames in combat -- combine with Player & Helpful to return
 -- self-cast HoTs". A hand-kept list can only ever have holes (Earth Shield was
 -- missing for two shaman specs); a per-spell flag covers every class and spec,
--- including the ones nobody ever tested.
+-- including the ones nobody ever tested. Measured on the 12.1 PTR (Florian
+-- 2026-08-08): the HoT set arrives IN and OUT of combat, and Earth Shield shows
+-- up for Elemental without a whitelist entry -- the gap that started all this.
 --
--- Which of the two sources feeds a category is a SESSION switch for now
--- (RFC.useFlags, `/lumennative flags on`), not a profile setting: two things have
--- to be measured in-game before this can become the default, and both need a
--- side-by-side against the curated list --
---   1. does RAID_IN_COMBAT deliver OUT of combat too? (the name suggests a combat
---      condition, Blizzard's comment reads like a plain per-spell flag), and
---   2. does Blizzard's set match what a healer expects -- what is missing, what
---      is noise.
--- Until then the whitelist stays the default source and nothing changes by
--- itself. The override layer (deselected -> excludeSpellIDs, extras -> their own
--- group) comes after the answer, together with the Auras tab that has to explain
--- it.
+-- A list per category, not one filter, for two reasons:
+--   * filter strings are AND-joined (AuraUtil.CreateFilterString), so a category
+--     that is a UNION of two flags needs one group per flag, and
+--   * Blizzard's flags OVERLAP where ours do not. Ironbark is EXTERNAL_DEFENSIVE
+--     *and* BIG_DEFENSIVE, and out of combat it is raid-flagged on top -- it drew
+--     three times on the same frame. The negations below make the sets disjoint,
+--     the same trick the debuff "raid" preset already uses.
+--
+-- Where a flag maps to a DIFFERENT category than ours, our curation decides:
+-- Barkskin and Ironbark are BIG_DEFENSIVE for Blizzard but sit in DEF_CLASS /
+-- DEF_DEFAULTS for us, so BIG_DEFENSIVE feeds Defensives, not Major CDs.
+--
+-- Major CDs has NO flag source on purpose. It is Tree of Life, Innervate, Power
+-- Infusion, Divine Hymn -- healing THROUGHPUT cooldowns, and Blizzard has no flag
+-- for those (BIG_DEFENSIVE is about surviving, which is the other card). It also
+-- does not need one: two or three signature buttons per healer spec is a set that
+-- a curated list can actually hold complete, unlike every HoT in the game.
+--
+-- Which source feeds the two flagged categories is a SESSION switch for now
+-- (RFC.useFlags, `/lumennative flags on`), not a profile setting -- the override
+-- layer (deselected -> excludeSpellIDs, extras -> their own group) still has to
+-- be designed together with the Auras tab that explains it.
 local NATIVE_CATS = {
-	{ key = "hotsOwn",    wl = "hot",   flagFilter = "HELPFUL|PLAYER|RAID_IN_COMBAT" },
-	{ key = "defensives", wl = "def",   flagFilter = "HELPFUL|EXTERNAL_DEFENSIVE" },
-	{ key = "major",      wl = "major", flagFilter = "HELPFUL|BIG_DEFENSIVE" },
+	{ key = "hotsOwn",    wl = "hot", flagFilters = {
+		-- Self-cast raid-relevant buffs, minus anything that is really a defensive
+		-- (out of combat Ironbark matched here too).
+		"HELPFUL|PLAYER|RAID_IN_COMBAT|!EXTERNAL_DEFENSIVE|!BIG_DEFENSIVE" } },
+	{ key = "defensives", wl = "def", flagFilters = {
+		-- Externals first; big personal defensives second, minus the externals so
+		-- an aura that is both is drawn once.
+		"HELPFUL|EXTERNAL_DEFENSIVE",
+		"HELPFUL|BIG_DEFENSIVE|!EXTERNAL_DEFENSIVE" } },
+	{ key = "major",      wl = "major" },
 	{ key = "debuffs",    harmful = true },
 }
 -- Session switch: false = the curated whitelist feeds the three helpful
@@ -485,32 +504,54 @@ local function applyGroupLayout(container, gkey, lo, maxN)
 	})
 end
 
+-- Lust lockouts (Exhaustion/Sated/…) never belong on a raid frame: the tracker icon
+-- already says the group is locked out, and the debuff row would carry it on every
+-- member for ten minutes. The old scan path filtered them by id; the native path
+-- needs excludeSpellIDs for the same result.
+-- This works despite the rule that identity filters are refused for HARMFUL auras on
+-- a friendly unit (Blizzard's anti-abuse gate, so nobody can rebuild boss debuffs as
+-- exact readouts): the gate lets NeverSecret spells through, and the lockouts are
+-- NeverSecret. Blizzard names this exact case in Blizzard_AuraContainerUtil -- "this
+-- allows noisy debuffs (Exhaustion/Sated) to be filtered out on friendly units".
+-- Confirmed present under the native path before the fix (Florian, PTR 2026-08-08).
+local function debuffCandidateFilters()
+	local ids = ns.LustLockoutIDs
+	if not ids then return nil end
+	local excl = {}
+	for i = 1, #ids do excl[ids[i]] = true end
+	return { excludeSpellIDs = excl }
+end
+
 -- Declare a debuff group on demand (engine groups are add-only) + configure it.
 local function ensureDebuffGroup(container, gkey, filter, lo, maxN)
 	container._dbGroups = container._dbGroups or {}
 	if not container._dbGroups[gkey] then
 		container._dbGroups[gkey] = true
 		container:AddAuraGroup(gkey, filter, {
-			maxFrameCount   = maxN,
-			initializeFrame = makeInitializer(lo.size, "debuffs"),
+			maxFrameCount    = maxN,
+			candidateFilters = debuffCandidateFilters(),
+			initializeFrame  = makeInitializer(lo.size, "debuffs"),
 		})
 	end
 	applyGroupLayout(container, gkey, lo, maxN)
 end
 
--- Declare + reconcile the two sources of ONE helpful category. Both groups live in
--- the same container and only one carries a frame budget at a time: switching the
--- source is a max-frame-count flip, the same move the debuff modes make above. So
--- there is no container churn, no re-initialization of aura buttons that already
--- exist, and the switch works in a live raid -- which is the point, since the two
--- sources can only be judged against each other.
--- The flag group's frames run through the SAME initializer as the whitelist one,
--- so both sources look identical and only the SET of icons differs.
-local function flagGroupKey(key) return key .. "_f" end
+-- Declare + reconcile the sources of ONE helpful category. The whitelist group and
+-- the flag group(s) all live in the same container and only one SIDE carries a
+-- frame budget at a time: switching the source is a max-frame-count flip, the same
+-- move the debuff modes make above. So there is no container churn, no
+-- re-initialization of aura buttons that already exist, and the switch works in a
+-- live raid -- which is the point, since the two sources can only be judged against
+-- each other.
+-- Every group runs through the SAME initializer, so both sources look identical and
+-- only the SET of icons differs.
+-- A category without flagFilters (Major CDs) simply keeps its whitelist group in
+-- both modes -- see the note on NATIVE_CATS for why it has no flag source.
+local function flagGroupKey(key, i) return key .. "_f" .. i end
 
 local function syncHelpful(container, c, lo)
-	local key, fkey = c.key, flagGroupKey(c.key)
-	local useFlags = (RFC.useFlags and c.flagFilter) and true or false
+	local key, filters = c.key, c.flagFilters
+	local useFlags = (RFC.useFlags and filters) and true or false
 	if not container._helpfulGroups then
 		container._helpfulGroups = true
 		container:AddAuraGroup(key, "HELPFUL", {
@@ -518,17 +559,19 @@ local function syncHelpful(container, c, lo)
 			candidateFilters = { includeSpellIDs = buildInclude(c.wl) },
 			initializeFrame  = makeInitializer(lo.size, key),
 		})
-		if c.flagFilter then
-			-- Declared with the full budget and corrected two lines down, the way the
-			-- debuff groups are: a group that only ever sees 0 is untested ground.
-			container:AddAuraGroup(fkey, c.flagFilter, {
+		for i = 1, (filters and #filters or 0) do
+			-- Declared with the full budget and corrected below, the way the debuff
+			-- groups are: a group that only ever sees 0 is untested ground.
+			container:AddAuraGroup(flagGroupKey(key, i), filters[i], {
 				maxFrameCount   = lo.maxN,
 				initializeFrame = makeInitializer(lo.size, key),
 			})
 		end
 	end
 	applyGroupLayout(container, key, lo, useFlags and 0 or lo.maxN)
-	if c.flagFilter then applyGroupLayout(container, fkey, lo, useFlags and lo.maxN or 0) end
+	for i = 1, (filters and #filters or 0) do
+		applyGroupLayout(container, flagGroupKey(key, i), lo, useFlags and lo.maxN or 0)
+	end
 end
 
 -- Reconcile the debuffs container to the active filter mode: the active preset's
@@ -847,8 +890,9 @@ function RFC.SetFlagSource(on)
 	if InCombatLockdown() then say("|cffff5555Out of combat only.|r"); return end
 	RFC.useFlags = on
 	RFC.Relayout()
-	say("Helpful categories now from |cff44ff44" ..
-		(on and "Blizzard's per-spell flags" or "the curated whitelist") .. "|r.")
+	say("HoTs + Defensives now from |cff44ff44" ..
+		(on and "Blizzard's per-spell flags" or "the curated whitelist") ..
+		"|r (Major CDs stay curated either way).")
 	-- On 12.0.x the native path is inert, so the switch is set but renders nothing.
 	-- Saying so beats letting an unchanged frame read as "the flags show nothing".
 	if not RFC.enabled then
@@ -878,7 +922,7 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 		say("Auras through the native 12.1 container. Enabled automatically on 12.1.")
 		say("  /lumennative on | off | refresh   (currently: "
 			.. (RFC.enabled and "ON" or "OFF") .. (IS_121 and ", 12.1 detected" or ", not 12.1") .. ")")
-		say("  /lumennative flags on | off   -- source of HoTs/Defensives/Major CDs: "
+		say("  /lumennative flags on | off   -- source of HoTs/Defensives (Major CDs stay curated): "
 			.. (RFC.useFlags and "|cff44ff44Blizzard flags|r" or "|cffffcc00curated whitelist|r"))
 	end
 end
