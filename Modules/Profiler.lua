@@ -21,9 +21,16 @@ local ADDON, ns = ...
 --  branch, nothing — they are the untouched originals. Switching on swaps
 --  them for wrappers; switching off puts the originals back.
 --
---  Because of that, all instrumentation lives HERE. No render file needs a
---  single profiler line, which also keeps the 200-local budget of
+--  Because of that, all TIMING instrumentation lives HERE. No render file needs
+--  a single profiler line, which also keeps the 200-local budget of
 --  Modules/Raidframes.lua untouched.
+--
+--  One exception, and it is deliberate: the native 12.1 aura path is the one
+--  place where the cost is paid inside the ENGINE, so a wrapper around our own
+--  call cannot see it. Modules/AuraContainer.lua therefore keeps four integer
+--  counters (RFC.stat / RFC.Stats) at its group-declaration and filter-push
+--  sites — cold paths, no allocation, and they answer a question timing cannot.
+--  Audit scaffolding; see the RFC.stat comment for what each one means.
 --
 --  READING THE NUMBERS -- one caveat that has already misled us once: timings
 --  are WALL time (debugprofilestop), not pure compute. A garbage-collection
@@ -220,6 +227,20 @@ local function install()
 	hook(RF, "GetDispel",        "rf.GetDispel")
 	hook(RF, "RefreshIndicators","rf.RefreshIndicators")
 	hook(RF, "RefreshPower",     "rf.RefreshPower")
+	-- Native 12.1 aura path. Without these a 12.1 capture reads as if the aura
+	-- work had vanished: rf.RenderAuras measures the OLD scan, which the native
+	-- path suppresses. What is left on OUR side are these entry points -- the
+	-- reconcile (which contains the whole per-group sync) and the per-button
+	-- option pass. Everything below them is engine time and shows up only in the
+	-- C_AddOnProfiler figures, which is exactly why the counters exist too.
+	-- No-ops on 12.0.x: hook() ignores a table that is not there.
+	local RC = ns.RFC
+	hook(RC, "Relayout",              "rfc.Relayout")
+	hook(RC, "Attach",                "rfc.Attach")
+	hook(RC, "SetUnit",               "rfc.SetUnit")
+	hook(RC, "RefreshOptions",        "rfc.RefreshOptions")
+	hook(RC, "RefreshBuffSource",     "rfc.RefreshBuffSource")
+	hook(RC, "RefreshDefensiveSource","rfc.RefreshDefSource")
 	-- Settings surface (cold, but the first shell open is a visible hitch).
 	hook(ns.Shell, "Build",         "shell.Build")
 	hook(ns.Shell, "RenderContent", "shell.RenderContent")
@@ -257,6 +278,34 @@ local function reportEngine()
 	print(format("                 frames over budget: >1ms %d · >5ms %d · >10ms %d · >50ms %d",
 		metric("CountTimeOver1Ms") or 0, metric("CountTimeOver5Ms") or 0,
 		metric("CountTimeOver10Ms") or 0, metric("CountTimeOver50Ms") or 0))
+end
+
+-- ---------------------------------------------------------------------------
+--  Native aura path (12.1) — counts, not timings.
+--
+--  The expensive half of this path runs inside the engine, where neither our
+--  wrappers nor (reliably) the addon profiler can see it: declaring an aura
+--  group pre-creates a batch of aura buttons, and pushing candidate filters
+--  re-parses every aura on the unit. Both are COUNTABLE on our side, and a
+--  count is the honest measure here — it is a property of the configuration,
+--  not of the group size, so a solo capture predicts the raid case.
+--
+--  "per group" is the number to read first: if it lands on the engine's batch
+--  size, every declared group costs that many buttons whether it can show an
+--  icon or not.
+-- ---------------------------------------------------------------------------
+local function reportNative()
+	local RC = ns.RFC
+	if not (RC and RC.Stats) then return end
+	local ok, groups, containers, btns, pushes, units = pcall(RC.Stats)
+	if not ok or (groups or 0) == 0 then return end
+	print(format("                 |cff9d9d9dnative aura path: %s · %d unit frames · %d containers · %d groups|r",
+		RC.enabled and "ON" or "off", units or 0, containers or 0, groups))
+	print(format("                 |cff9d9d9d  %d aura buttons created (%.1f per group, %.1f per unit frame) · %d filter pushes|r",
+		btns or 0,
+		groups > 0 and (btns or 0) / groups or 0,
+		(units or 0) > 0 and (btns or 0) / units or 0,
+		pushes or 0))
 end
 
 -- ---------------------------------------------------------------------------
@@ -299,6 +348,8 @@ local function report()
 			k, p.n, p.hit, p.n > 0 and (p.hit / p.n * 100) or 0))
 	end
 
+	reportNative()
+
 	-- The wall-clock window to the first world state is dominated by the
 	-- LOADING SCREEN (world load, Blizzard UI), not by us — quoting it as a
 	-- Lumen cost would be plain wrong. What is ours is the measured time
@@ -328,6 +379,11 @@ local function resetCounters()
 	wipe(stats); wipe(probes)
 	depth, totalMs = 0, 0
 	tStart = debugprofilestop()
+	-- Filter pushes are a RATE (per zone-in, per settings change), so they belong
+	-- to the capture. Groups and aura buttons are structural totals since login —
+	-- resetting those would make "buttons per group" meaningless, since the
+	-- buttons the engine already created do not go away.
+	if ns.RFC and ns.RFC.stat then ns.RFC.stat.filterPush = 0 end
 end
 
 function Prof:Start(silent)

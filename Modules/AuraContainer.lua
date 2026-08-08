@@ -37,6 +37,19 @@ local floor, strfind    = math.floor, string.find
 
 RFC.enabled = false
 
+-- Audit counters for /lumenprof. Timing alone cannot see the two costs that
+-- matter on this path, because both are paid INSIDE the engine:
+--   * groups -- AddAuraGroup pre-creates a whole batch of aura buttons the
+--     moment a group is declared (Blizzard_CustomAuraContainer: the frame
+--     provider's CreateFrameBatch runs unconditionally, before maxFrameCount is
+--     ever read). A group that will never show an icon still costs frames.
+--   * filterPush -- SetAuraGroupCandidateFilters calls UpdateAllAuras() with no
+--     equality check of its own, so every push is a full re-parse of that
+--     unit's auras.
+-- Plain integer adds at declaration/reconcile sites, never in a per-aura path.
+-- Scaffolding for the 2026-08 audit round; goes out with the dev-only tooling.
+RFC.stat = { groups = 0, filterPush = 0 }
+
 -- Categories the native path owns. HELPFUL ones have TWO possible sources, see
 -- `flagFilters` below; debuffs are HARMFUL (harmful=true) and filter by MODE via
 -- filter strings (per-spellId matching is not permitted for harmful auras on
@@ -693,6 +706,7 @@ local function ensureDebuffGroup(container, gkey, filter, lo, maxN)
 	container._dbGroups = container._dbGroups or {}
 	if not container._dbGroups[gkey] then
 		container._dbGroups[gkey] = true
+		RFC.stat.groups = RFC.stat.groups + 1
 		container:AddAuraGroup(gkey, filter, {
 			maxFrameCount    = maxN,
 			candidateFilters = debuffCandidateFilters(),
@@ -748,6 +762,7 @@ local function syncHelpful(container, c, lo)
 	if c.groupBuffSource then
 		if not container._helpfulGroups then
 			container._helpfulGroups = true
+			RFC.stat.groups = RFC.stat.groups + 1
 			container:AddAuraGroup(key, "HELPFUL|PLAYER", {
 				maxFrameCount    = lo.maxN,
 				candidateFilters = { includeSpellIDs = buildBuffSource() },
@@ -759,6 +774,7 @@ local function syncHelpful(container, c, lo)
 	end
 	if not container._helpfulGroups then
 		container._helpfulGroups = true
+		RFC.stat.groups = RFC.stat.groups + 1
 		container:AddAuraGroup(key, "HELPFUL", {
 			maxFrameCount    = lo.maxN,
 			candidateFilters = { includeSpellIDs = buildInclude(c.wl) },
@@ -767,6 +783,7 @@ local function syncHelpful(container, c, lo)
 		for i = 1, (filters and #filters or 0) do
 			-- Declared with the full budget and corrected below, the way the debuff
 			-- groups are: a group that only ever sees 0 is untested ground.
+			RFC.stat.groups = RFC.stat.groups + 1
 			container:AddAuraGroup(flagGroupKey(key, i), filters[i], {
 				maxFrameCount    = lo.maxN,
 				candidateFilters = defExcludeArg(),
@@ -781,6 +798,7 @@ local function syncHelpful(container, c, lo)
 		-- Re-push the hide list on every reconcile, not only at creation: a profile
 		-- switch or an import replaces the stored set behind a container that is
 		-- already built, and its groups would otherwise keep the old exclusions.
+		RFC.stat.filterPush = RFC.stat.filterPush + 1
 		pcall(container.SetAuraGroupCandidateFilters, container, gk, defExcludeArg())
 	end
 end
@@ -918,6 +936,7 @@ local function syncDispel(button, parent)
 			container:ClearAllPoints()
 			container:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
 			layoutCall(container, "anchor", "TOPLEFT")
+			RFC.stat.groups = RFC.stat.groups + 1
 			container:AddAuraGroup(key, filter, {
 				maxFrameCount   = 1,
 				initializeFrame = initDispelFrame(mode, w, h, health),
@@ -1075,6 +1094,19 @@ function RFC.Suppresses(key)
 	return RFC.enabled and IS_NATIVE[key] ~= nil
 end
 
+-- Audit read-out for /lumenprof: declared groups, containers currently living on
+-- live buttons, aura buttons the engine created for us (= how many times our
+-- initializer ran), and candidate-filter pushes. See the RFC.stat block up top
+-- for why these cannot be derived from timings.
+function RFC.Stats()
+	local containers, buttons = 0, 0
+	forEachLiveButton(function(btn)
+		buttons = buttons + 1
+		if btn._rfc then for _ in pairs(btn._rfc) do containers = containers + 1 end end
+	end)
+	return RFC.stat.groups, containers, #auraBtns, RFC.stat.filterPush, buttons
+end
+
 function RFC.Enable(quiet)
 	if InCombatLockdown() then if not quiet then say("|cffff5555Out of combat only.|r") end return end
 	RFC.enabled = true
@@ -1112,6 +1144,7 @@ function RFC.RefreshBuffSource()
 	forEachLiveButton(function(btn)
 		local container = btn._rfc and btn._rfc.hotsOwn
 		if container then
+			RFC.stat.filterPush = RFC.stat.filterPush + 1
 			pcall(container.SetAuraGroupCandidateFilters, container, "hotsOwn",
 				{ includeSpellIDs = include })
 		end
@@ -1143,6 +1176,7 @@ function RFC.RefreshDefensiveSource()
 		local container = btn._rfc and btn._rfc.defensives
 		if container then
 			for i = 1, #filters do
+				RFC.stat.filterPush = RFC.stat.filterPush + 1
 				pcall(container.SetAuraGroupCandidateFilters, container,
 					flagGroupKey("defensives", i), arg)
 			end
