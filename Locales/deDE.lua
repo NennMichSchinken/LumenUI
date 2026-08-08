@@ -186,9 +186,7 @@ ns.RegisterLocale("deDE", {
 	["From WoW's Cooldown Manager — %d of %d entries hidden there."] = "Aus WoWs Abklingzeit-Manager — %d von %d Einträgen dort ausgeblendet.",
 
 	["From WoW's Cooldown Manager (%d entries)."] = "Aus WoWs Abklingzeit-Manager (%d Einträge).",
-	["Edit in Cooldown Manager"] = "Im Abklingzeit-Manager bearbeiten",
-	["Opens WoW's own panel on its group-buff list. What you hide there disappears from the frames too."] = "Öffnet WoWs eigenes Fenster mit der Gruppen-Stärkungsliste. Was du dort ausblendest, verschwindet auch von den Frames.",
-	["Could not open the Cooldown Manager — try %s."] = "Der Abklingzeit-Manager ließ sich nicht öffnen — versuche %s.",
+	["Edit with %s"] = "Bearbeiten mit %s",
 
 	["Not available for this specialization"] = "Für diese Spezialisierung nicht verfügbar",
 
@@ -224,8 +222,6 @@ ns.RegisterLocale("deDE", {
 	["Which debuffs"] = "Welche Debuffs",
 	["Search a spell to add …"] = "Zauber zum Hinzufügen suchen …",
 	["Show all again"] = "Alle wieder anzeigen",
-	["Everything is hidden — bring one back below."] = "Alles ausgeblendet — hol unten einen zurück.",
-	["Hidden"] = "Ausgeblendet",
 	["Your client does not carry these flags yet — until patch 12.1 this category uses Lumen's own defensive list."] = "Dein Client kennt diese Kennzeichnung noch nicht — bis Patch 12.1 nutzt diese Kategorie Lumens eigene Defensiv-Liste.",
 	["off"] = "aus",
 	["Where the icon row sits on the frame"] = "Wo die Icon-Reihe am Frame sitzt",

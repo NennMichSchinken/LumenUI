@@ -1464,8 +1464,16 @@ local function makeTrackRow(parent, e, onRemove, onAdd, action)
 		rm = W.IconButton(row, { icon = action.icon, size = M.iconAction,
 			color = action.color, hoverColor = action.hoverColor, onClick = onRemove })
 		rm:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+		-- `dim` = switched off but still in its place. Desaturating the icon is the
+		-- house rule for "off" (see the cooldown-icon standard); the row keeps its
+		-- position, because a list you have to re-find things in is worse than a
+		-- list with a few quiet rows (Florian 2026-08-09).
+		if action.dim then
+			icon:SetDesaturated(true)
+			icon:SetVertexColor(0.55, 0.55, 0.55)
+		end
 	end
-	local name = UI.FS(row, "selectText", Text.Primary)
+	local name = UI.FS(row, "selectText", (action and action.dim) and Text.Description or Text.Primary)
 	name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
 	name:SetPoint("RIGHT", rm, "LEFT", -10, 0)
 	name:SetJustifyH("LEFT"); name:SetWordWrap(false)
@@ -1625,28 +1633,19 @@ end
 
 -- ---------------------------------------------------------------------------
 --  The Cooldown Manager is the source of the group-buff category, so the tab has
---  to be able to send you there. Blizzard's own slash command does exactly what
---  openCooldownManager does (SlashCommandRegistration.lua in
---  Blizzard_CooldownViewer) -- but it routes through ShowUIPanel, which is edit
---  mode adjacent, so it is fenced in: out of combat only, wrapped, and never
---  toggling a panel that is already open. If it ever turns out to taint, the
---  button becomes the slash-command line this same helper provides.
+--  to point at it -- but only with WORDS.
+--  A button was built first and it TAINTED (Florian 2026-08-09):
+--  `CooldownViewerSettings:TogglePanel()` -- what Blizzard's own slash command
+--  calls -- runs their panel code from OUR execution, and what it touches on the
+--  way stays tainted for the rest of the session. Afterwards Blizzard's own aura
+--  handler died on every aura that landed: "attempted to index a table that
+--  cannot be accessed while tainted", on `auraInstanceIDToItemFramesMap`, with no
+--  Lumen frame anywhere on the stack. Poisoning a Blizzard system to save one
+--  typed command is a bad trade, and it stays a bad trade. Do not rebuild it.
 -- ---------------------------------------------------------------------------
 local function openCDMSlash()
 	-- Localized by the client; the fallback only matters if the global vanishes.
 	return _G.SLASH_COOLDOWNMANAGER1 or "/cooldownmanager"
-end
-
-local function openCooldownManager()
-	if InCombatLockdown() then return false end
-	local f = _G.CooldownViewerSettings
-	if not (f and f.TogglePanel) then return false end
-	local ok = pcall(function()
-		if not f:IsVisible() then f:TogglePanel() end
-		-- Land on the group-buff list instead of whatever tab was open last.
-		if f.SetDisplayMode then f:SetDisplayMode("groupBuffs") end
-	end)
-	return ok
 end
 
 -- Is the native path running with Blizzard's own sources behind it? Then both
@@ -1761,47 +1760,33 @@ local function auraHidePane(d, host)
 		return
 	end
 
-	local shown, hiddenList = {}, {}
-	for _, e in ipairs(pool) do
-		if hidden[e.id] then hiddenList[#hiddenList + 1] = e else shown[#shown + 1] = e end
-	end
+	local nHidden = 0
+	for _, e in ipairs(pool) do if hidden[e.id] then nHidden = nHidden + 1 end end
 
-	-- Trailing air only when something follows the list.
-	local tailGap = (#hiddenList > 0) and L.raidframes.tracking.afterList or 0
+	-- ONE list, in one order. A switched-off spell stays exactly where it was,
+	-- greyed out, and its button turns into the way back. Moving it to a section
+	-- at the bottom (the first attempt) meant scrolling to find it again -- and
+	-- someone who has forgotten they ever hid it would look for it in its class
+	-- and find nothing (Florian 2026-08-09).
+	local tailGap = (nHidden > 0) and L.raidframes.tracking.afterList or 0
 	local rowH, lastClass = L.raidframes.tracking.rowH, nil
-	for i, e in ipairs(shown) do
+	for i, e in ipairs(pool) do
 		-- Grouped by class: the row you want to switch off belongs to somebody
 		-- else's frame, so the class is the thing you navigate by.
 		if e.className ~= lastClass then
 			lastClass = e.className
 			st:place(subHeadRow(content, e.className), M.subHeadH, 0)
 		end
+		local off = hidden[e.id] and true or false
 		local tr = makeTrackRow(content, e, function()
-			if RFm then RFm:SetDefensiveHidden(e.id, true) end
+			if RFm then RFm:SetDefensiveHidden(e.id, not off) end
 			ns.Shell:RenderContent(true)
-		end)
-		st:place(tr, rowH, (i == #shown) and tailGap or L.raidframes.tracking.betweenRows)
-	end
-	if #shown == 0 then
-		st:place(W.EmptyState(content, { text = T("Everything is hidden — bring one back below.") }),
-			L.raidframes.tracking.emptyH, tailGap)
+		end, nil, off and { icon = "icon-reset", color = UI.Accent.color,
+			hoverColor = UI.Accent.hover, dim = true } or nil)
+		st:place(tr, rowH, (i == #pool) and tailGap or L.raidframes.tracking.betweenRows)
 	end
 
-	-- What was switched off keeps standing here, under its own heading, with the
-	-- way back on the row itself. It first lived in the search field's popover and
-	-- that was the wrong home twice over: the way back was hidden behind typing,
-	-- and the popover ate the click (Florian 2026-08-09). A list this short has no
-	-- reason to hide anything.
-	if #hiddenList > 0 then
-		st:place(subHeadRow(content, T("Hidden")), M.subHeadH, 0)
-		for i, e in ipairs(hiddenList) do
-			local tr = makeTrackRow(content, e, function()
-				if RFm then RFm:SetDefensiveHidden(e.id, false) end
-				ns.Shell:RenderContent(true)
-			end, nil, { icon = "icon-reset", color = UI.Accent.color, hoverColor = UI.Accent.hover })
-			st:place(tr, rowH, (i == #hiddenList) and L.raidframes.tracking.afterList
-				or L.raidframes.tracking.betweenRows)
-		end
+	if nHidden > 0 then
 		local back = W.Button(content, { text = T("Show all again"), variant = "secondary",
 			height = M.segCompactH,
 			onClick = function()
@@ -2233,28 +2218,21 @@ local function buildAuras(d, stack)
 			-- ancestors were still being built, and it recursed until the client died
 			-- (ACCESS_VIOLATION on this exact screen, 2026-08-08). The wording is kept
 			-- short enough to stay on one line instead.
-			-- The line names the source, so the way TO that source belongs next to it:
-			-- naming a panel the player cannot reach from here is half an answer.
+			-- The line names the source, so it names the way there too -- as TEXT.
+			-- A button that opens the panel is not available to us: see the taint
+			-- note at openCDMSlash.
 			local srcRow = CreateFrame("Frame", nil, body)
-			srcRow:SetHeight(M.segCompactH)
-			local edit = W.Button(srcRow, { text = T("Edit in Cooldown Manager"),
-				variant = "secondary", height = M.segCompactH,
-				tooltipTitle = T("Edit in Cooldown Manager"),
-				tooltip = T("Opens WoW's own panel on its group-buff list. What you hide there disappears from the frames too.")
-					.. "\n" .. (openCDMSlash() or ""),
-				onClick = function()
-					if not openCooldownManager() and ns.Lumen then
-						ns.Lumen:Print(T("Could not open the Cooldown Manager — try %s.")
-							:format(openCDMSlash() or "/cooldownmanager"))
-					end
-				end })
-			edit:SetPoint("RIGHT", srcRow, "RIGHT", 0, 0)
+			srcRow:SetHeight(M.sourceNoteH)
+			local howFS = UI.FS(srcRow, "hint", Text.Description)
+			howFS:SetPoint("RIGHT", srcRow, "RIGHT", 0, 0)
+			howFS:SetJustifyH("RIGHT"); howFS:SetWordWrap(false)
+			howFS:SetText(T("Edit with %s"):format(hi(openCDMSlash(), UI.Accent.color)))
 			local srcFS = UI.FS(srcRow, "hint", Text.Description)
 			srcFS:SetPoint("LEFT", srcRow, "LEFT", 0, 0)
-			srcFS:SetPoint("RIGHT", edit, "LEFT", -UI.S.s3, 0)
+			srcFS:SetPoint("RIGHT", howFS, "LEFT", -UI.S.s3, 0)
 			srcFS:SetJustifyH("LEFT"); srcFS:SetWordWrap(false)
 			srcFS:SetText(line)
-			bstack:place(srcRow, M.segCompactH, L.raidframes.auras.afterSourceNote)
+			bstack:place(srcRow, M.sourceNoteH, L.raidframes.auras.afterSourceNote)
 		end
 	end
 
