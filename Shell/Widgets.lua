@@ -2723,12 +2723,17 @@ function W.Button(parent, o)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.lineHover) end
 		txt:SetTextColor(v.txtHover.r, v.txtHover.g, v.txtHover.b)
 		if icon then icon:SetVertexColor(v.txtHover.r, v.txtHover.g, v.txtHover.b) end
+		-- o.tooltip: for buttons whose label cannot carry the consequence (what a
+		-- panel it opens will do to the frames, say). Same shape as every other
+		-- control here, so a caller does not have to hand-roll the scripts.
+		if o.tooltip then W.ShowTextTip(b, o.tooltipTitle or o.text, o.tooltip) end
 	end)
 	b:SetScript("OnLeave", function()
 		paintBg(false)
 		for _, e in ipairs(edges) do UI.SetColor(e, v.line) end
 		txt:SetTextColor(v.txt.r, v.txt.g, v.txt.b)
 		if icon then icon:SetVertexColor(v.txt.r, v.txt.g, v.txt.b) end
+		if o.tooltip then W.HideTip() end
 	end)
 	if o.onClick then b:SetScript("OnClick", o.onClick) end
 	b._txt = txt

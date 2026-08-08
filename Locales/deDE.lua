@@ -180,13 +180,15 @@ ns.RegisterLocale("deDE", {
 
 	-- ── Auras (collapsible at the bottom of the Raid/Group tabs) ──────────
 	["Aura indicators"] = "Aura-Indikatoren",
-	["HoTs"] = "HoTs",
 	["Group buffs"] = "Stärkungszauber",
 	["n/a"] = "n. v.",
 
 	["From WoW's Cooldown Manager — %d of %d entries hidden there."] = "Aus WoWs Abklingzeit-Manager — %d von %d Einträgen dort ausgeblendet.",
 
 	["From WoW's Cooldown Manager (%d entries)."] = "Aus WoWs Abklingzeit-Manager (%d Einträge).",
+	["Edit in Cooldown Manager"] = "Im Abklingzeit-Manager bearbeiten",
+	["Opens WoW's own panel on its group-buff list. What you hide there disappears from the frames too."] = "Öffnet WoWs eigenes Fenster mit der Gruppen-Stärkungsliste. Was du dort ausblendest, verschwindet auch von den Frames.",
+	["Could not open the Cooldown Manager — try %s."] = "Der Abklingzeit-Manager ließ sich nicht öffnen — versuche %s.",
 
 	["Not available for this specialization"] = "Für diese Spezialisierung nicht verfügbar",
 
@@ -217,8 +219,16 @@ ns.RegisterLocale("deDE", {
 	["Editing"] = "Bearbeiten",
 	["Spells"] = "Zauber",
 	["Tracked spells"] = "Erfasste Zauber",
+	["Additional spells"] = "Zusätzliche Zauber",
+	["Shown on top of the Cooldown Manager's list"] = "Wird zusätzlich zur Liste des Abklingzeit-Managers gezeigt",
+	["What is shown"] = "Was gezeigt wird",
+	["WoW itself flags these spells as defensive"] = "WoW selbst kennzeichnet diese Zauber als defensiv",
 	["Which debuffs"] = "Welche Debuffs",
 	["Search a spell to add …"] = "Zauber zum Hinzufügen suchen …",
+	["Search a spell to show again …"] = "Zauber zum Wiederanzeigen suchen …",
+	["Show all again"] = "Alle wieder anzeigen",
+	["Everything is hidden — search above to bring one back."] = "Alles ausgeblendet — such oben, um einen zurückzuholen.",
+	["Your client does not carry these flags yet — until patch 12.1 this category uses Lumen's own defensive list."] = "Dein Client kennt diese Kennzeichnung noch nicht — bis Patch 12.1 nutzt diese Kategorie Lumens eigene Defensiv-Liste.",
 	["off"] = "aus",
 	["Where the icon row sits on the frame"] = "Wo die Icon-Reihe am Frame sitzt",
 	["Appearance"] = "Aussehen",
@@ -238,6 +248,10 @@ ns.RegisterLocale("deDE", {
 	["Raid and Group"] = "Raid und Gruppe",
 	["Harmful effects on your group. Picked by filter, not one by one."] = "Schädliche Effekte auf deiner Gruppe. Per Filter gewählt, nicht einzeln.",
 	["Debuffs are chosen by filter, not one by one — WoW does not allow picking individual harmful effects on other players."] = "Debuffs werden per Filter gewählt, nicht einzeln — WoW erlaubt es nicht, einzelne schädliche Effekte auf anderen Spielern auszuwählen.",
+	["Go to dispel highlight"] = "Zur Dispel-Hervorhebung",
+	["Whether a dispellable debuff also lights the whole frame up is set on the Base tab."] = "Ob ein dispelbarer Debuff zusätzlich den ganzen Frame hervorhebt, steht im Base-Reiter.",
+	["Go to debuff icons"] = "Zu den Debuff-Symbolen",
+	["Which debuffs get an icon on the frame is set on the Auras tab."] = "Welche Debuffs ein Symbol am Frame bekommen, steht im Auren-Reiter.",
 
 	-- ── Copy popover (what + where-to grid) ──────────────────────────────
 	["Copy settings"] = "Einstellungen kopieren",
@@ -255,11 +269,13 @@ ns.RegisterLocale("deDE", {
 	["+ Add spell"] = "+ Spell hinzufügen",
 	["Restore defaults"] = "Standard wiederherstellen",
 	["Restore defaults?"] = "Standard wiederherstellen?",
+	["Remove all"] = "Alle entfernen",
+	["Remove all additions?"] = "Alle Zusätze entfernen?",
+	["Your own additions in this category will be removed. Blizzard's list is untouched."] = "Deine eigenen Zusätze in dieser Kategorie werden entfernt. Blizzards Liste bleibt unberührt.",
+	["Nothing added — Blizzard's list covers this category on its own."] = "Nichts hinzugefügt — Blizzards Liste deckt diese Kategorie allein ab.",
 	["This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."] = "Diese Liste wird auf Lumens kuratierten Standard für deine aktive Spec zurückgesetzt. Eigene Einträge in dieser Kategorie gehen dabei verloren.",
 	["Spell"] = "Spell",
-	["Your own heal-over-time effects as an icon on the frame."] = "Eigene Heilung über Zeit als Icon am Frame.",
 	["Your own defensives. External protection from others is shown automatically anyway."] = "Eigene Defensiven. Externe Schutzzauber anderer zeigt Lumen ohnehin automatisch.",
-	["Your class's big damage and resource cooldowns."] = "Große Schadens- und Ressourcen-Cooldowns deiner Klasse.",
 
 	-- ── Click-Cast ───────────────────────────────────────────────────────
 	["Click-cast enabled"] = "Click-Cast aktiviert",

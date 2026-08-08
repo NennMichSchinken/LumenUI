@@ -453,6 +453,21 @@ local function regJump(key, cardBox)
 		ns.Shell:RegisterJumpCard(key, cardBox._panel)
 	end
 end
+-- A cross-reference to a setting on ANOTHER tab: quiet neutral button with the
+-- link glyph, landing on the target card with the Shell's usual card flash.
+-- Same machinery the preview's click-to-configure uses (Shell:JumpTo).
+local function jumpRow(parent, label, tip, tab, cardKey)
+	local row = CreateFrame("Frame", nil, parent)
+	row:SetHeight(M.segCompactH)
+	local b = W.Button(row, { text = label, variant = "neutral", icon = "icon-link",
+		height = M.segCompactH, tooltipTitle = label, tooltip = tip,
+		onClick = function()
+			if ns.Shell and ns.Shell.JumpTo then ns.Shell:JumpTo("Raidframes", tab, cardKey) end
+		end })
+	b:SetPoint("LEFT", row, "LEFT", 0, 0)
+	return row
+end
+
 local function iconOpen(ctx) return ns.ShellIndexing or iconOpenState[ctx] or false end
 local function setIconOpen(ctx, v) iconOpenState[ctx] = v end
 
@@ -1154,11 +1169,18 @@ local function buildBase(d, stack)
 	end
 	local dispelHint = {}
 	for i, t in ipairs(DISPEL_TYPES) do dispelHint[i] = t.label end
+	-- The icons for those same debuffs are set on the Auras tab -- the highlight
+	-- answers "is this mine to remove", the icons answer "what is on them". Each
+	-- side carries the way over instead of one of them moving (Florian 2026-08-08).
+	sDispel:place(jumpRow(d, T("Go to debuff icons"),
+		T("Which debuffs get an icon on the frame is set on the Auras tab."),
+		"Auras", "aura-debuffs"), M.segCompactH, R.tight)
 	sDispel:place(W.Disclosure(d, { open = baseAdvState.dispel,
 		label = baseAdvState.dispel and T("Less") or T("More options"),
 		hint = table.concat(dispelHint, " · "),
 		onToggle = function(v) baseAdvState.dispel = v; ns.Shell:RenderContent(true) end }), M.disclosureH, R.tight)
 	sDispel:close()
+	regJump("dispel", sDispel)   -- jump target of the Auras tab's debuff pane
 
 	for _, w in ipairs({ dispMode, dispScope, dispColW[1], dispColW[2], dispColW[3], dispColW[4] }) do
 		dispelDeps[#dispelDeps + 1] = w
@@ -1598,51 +1620,56 @@ local function noGroupBuffList()
 	return ok and (owned or 0) == 0 and (total or 0) == 0
 end
 
-local function auraSpellsPane(d, host, cat, page)
-	local RFm  = ns.Raidframes
-	local spec = trkSpec()
-	local R    = L.rhythm
+-- ---------------------------------------------------------------------------
+--  The Cooldown Manager is the source of the group-buff category, so the tab has
+--  to be able to send you there. Blizzard's own slash command does exactly what
+--  openCooldownManager does (SlashCommandRegistration.lua in
+--  Blizzard_CooldownViewer) -- but it routes through ShowUIPanel, which is edit
+--  mode adjacent, so it is fenced in: out of combat only, wrapped, and never
+--  toggling a panel that is already open. If it ever turns out to taint, the
+--  button becomes the slash-command line this same helper provides.
+-- ---------------------------------------------------------------------------
+local function openCDMSlash()
+	-- Localized by the client; the fallback only matters if the global vanishes.
+	return _G.SLASH_COOLDOWNMANAGER1 or "/cooldownmanager"
+end
 
-	if not cat.typ then
-		-- Debuffs: per-spellId whitelisting is not permitted for harmful auras
-		-- (12.1 API constraint), so this category is filter-based by design.
-		local sfx = ctxSfx(auraTabCtx())
-		local box, st, content = innerBlock(d, T("Which debuffs"), nil)
-		local f1, fc = W.FieldRow(content, page, 1, { height = M.controlH + M.fieldGap })
-		W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
-			tooltip = T("Which debuffs are shown. Raid-relevant + dispellable adds everything your group can dispel — no matter who has to do it — so a dispel highlight never stands there without an icon. All drops the curation and shows every debuff."),
-			get = aget(cat.key, "filterMode" .. sfx), set = aset(cat.key, "filterMode" .. sfx) })
-			:SetAllPoints(fc[1])
-		st:place(f1, M.controlH + M.fieldGap, R.row)
-		st:place(W.Hint(content, T("Debuffs are chosen by filter, not one by one — WoW does not allow "
-			.. "picking individual harmful effects on other players."), M.hintH), M.hintH, 0)
-		host:place(box, blockClose(box, st, content), 0)
-		return
-	end
+local function openCooldownManager()
+	if InCombatLockdown() then return false end
+	local f = _G.CooldownViewerSettings
+	if not (f and f.TogglePanel) then return false end
+	local ok = pcall(function()
+		if not f:IsVisible() then f:TogglePanel() end
+		-- Land on the group-buff list instead of whatever tab was open last.
+		if f.SetDisplayMode then f:SetDisplayMode("groupBuffs") end
+	end)
+	return ok
+end
 
-	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
-	local box, st, content = innerBlock(d, T("Tracked spells"))
+-- Is the native path running with Blizzard's own sources behind it? Then both
+-- spell lists mean something different from what they used to: the group-buff
+-- list is only the player's EXTRAS on top of Blizzard's list, and the defensives
+-- list is a hide menu over Blizzard's flags. On 12.0.7 -- or after
+-- `/lumennative flags off` -- the whitelist really IS the source, so the wording
+-- follows the engine instead of assuming the new world.
+local function nativeAuras() return (ns.RFC and ns.RFC.enabled) and true or false end
+local function nativeDefFlags() return nativeAuras() and (ns.RFC.useFlags and true or false) end
 
-
-	-- Scope strip: everything else on this tab is per context, so the list has to
-	-- say out loud that it is not. Only the VALUES lead; the words around them
-	-- stay muted.
-	st:place(infoBar(content, ("%s %s  ·  %s %s"):format(
-		T("Applies to"), hi(T("Raid and Group")),
-		T("Active spec:"), hi((ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))),
-		M.infoBarH, L.rhythm.row)
-
-	-- The search field IS the add control (Florian 2026-07-29): typing lists the
-	-- spells of your spec that are NOT tracked yet, click adds one.
-	-- Results appear in a POPOVER under the field, not in the page: re-rendering
-	-- the screen on every keystroke destroyed the edit box mid-typing, which is
-	-- why the field felt dead. The popover leaves the layout alone entirely.
+-- ---------------------------------------------------------------------------
+--  Search field + floating result list — shared by both spell lists. The field
+--  IS the action control (Florian 2026-07-29): typing lists candidates, a click
+--  takes one. The results float in a POPOVER instead of the page, because
+--  re-rendering the screen on every keystroke destroyed the edit box mid-typing,
+--  which is what made the field feel dead.
+--  o = { placeholder, fetch() -> entries {id,name,icon}, onPick(entry) }
+-- ---------------------------------------------------------------------------
+local function spellSearchRow(d, content, st, gap, o)
 	local searchRow = CreateFrame("Frame", nil, content)
 	searchRow:SetHeight(M.controlH)
-	local search = W.TextInput(searchRow, { placeholder = T("Search a spell to add …") })
+	local search = W.TextInput(searchRow, { placeholder = o.placeholder })
 	search:SetPoint("LEFT", searchRow, "LEFT", 0, 0)
 	search:SetPoint("RIGHT", searchRow, "RIGHT", 0, 0)
-	st:place(searchRow, M.controlH, R.row)
+	st:place(searchRow, M.controlH, gap)
 
 	-- Result popover (floats on the menu host, like the dropdowns).
 	local resPop = CreateFrame("Frame", nil, W._menuHost or d)
@@ -1657,21 +1684,16 @@ local function auraSpellsPane(d, host, cat, page)
 	local function refreshResults()
 		for _, r in ipairs(resRows) do r:Hide() end
 		local needle = (search:GetText() or ""):lower()
-		-- Focused but empty = show what IS addable right away. An empty field
+		-- Focused but empty = show what IS available right away. An empty field
 		-- that answers a click with nothing reads as broken (Florian 2026-07-29);
-		-- the list is what tells you there is anything to add at all.
+		-- the list is what tells you there is anything to pick at all.
 		if needle == "" and not search._edit:HasFocus() then resPop:Hide(); return end
-		local tracked = (RFm and RFm:WhitelistMap(spec)) or {}
 		local pad, rowH = UI.S.s2, L.raidframes.tracking.rowH
 		local y, shownN = -pad, 0
-		for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
-			-- Normalize talent IDs to the real aura ID -> drop already-tracked ones.
-			local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
-			if not tracked[rid]
-				and (needle == "" or (sp.name or ""):lower():find(needle, 1, true))
+		for _, sp in ipairs(o.fetch() or {}) do
+			if (needle == "" or (sp.name or ""):lower():find(needle, 1, true))
 				and shownN < L.raidframes.tracking.maxHits then
 				shownN = shownN + 1
-				local id = sp.id
 				local r = resRows[shownN]
 				if not r then
 					r = makeTrackRow(resPop, sp, nil, function() end)
@@ -1680,7 +1702,7 @@ local function auraSpellsPane(d, host, cat, page)
 					r:SetEntry(sp)
 				end
 				r:SetScript("OnClick", function()
-					if RFm then RFm:AddWhitelist(spec, id, cat.typ) end
+					o.onPick(sp)
 					search:ClearText()
 					resPop:Hide()
 					ns.Shell:RenderContent(true)
@@ -1706,11 +1728,181 @@ local function auraSpellsPane(d, host, cat, page)
 		C_Timer.After(0.12, function() if not search._edit:HasFocus() then resPop:Hide() end end)
 	end)
 	content:HookScript("OnHide", function() resPop:Hide() end)
+end
+
+-- ---------------------------------------------------------------------------
+--  DEFENSIVES pane while Blizzard's flags are the source: not a tracked list but
+--  a HIDE MENU. Blizzard decides what a defensive is, and the flag set cannot be
+--  enumerated (there is only a per-id question) -- so the rows are the ids Lumen
+--  knows AND Blizzard confirms, and taking one out writes an exclusion.
+--  What is missing from the rows is still DRAWN; it just cannot be clicked away.
+-- ---------------------------------------------------------------------------
+local function auraHidePane(d, host)
+	local RFm = ns.Raidframes
+	local R   = L.rhythm
+	local pool   = (RFm and RFm:DefensivePool()) or {}
+	local hidden = (RFm and RFm:DefensiveHidden()) or {}
+
+	local box, st, content = innerBlock(d, T("What is shown"),
+		T("WoW itself flags these spells as defensive"))
+	st:place(infoBar(content, ("%s %s"):format(T("Applies to"), hi(T("Raid and Group")))),
+		M.infoBarH, R.row)
+
+	if #pool == 0 then
+		-- No pool at all = the client has no flag API (12.0.7). The category still
+		-- renders from the curated list there, so say that instead of showing an
+		-- empty box that reads like a broken list.
+		st:place(W.Hint(content, T("Your client does not carry these flags yet — until patch 12.1 "
+			.. "this category uses Lumen's own defensive list."), M.hintH), M.hintH, 0)
+		host:place(box, blockClose(box, st, content), 0)
+		return
+	end
+
+	local shown, hiddenList = {}, {}
+	for _, e in ipairs(pool) do
+		if hidden[e.id] then hiddenList[#hiddenList + 1] = e else shown[#shown + 1] = e end
+	end
+
+	-- The search only exists once something IS hidden: it is the way back, and a
+	-- field that can never return a result is furniture.
+	if #hiddenList > 0 then
+		spellSearchRow(d, content, st, R.row, {
+			placeholder = T("Search a spell to show again …"),
+			fetch       = function() return hiddenList end,
+			onPick      = function(e) if RFm then RFm:SetDefensiveHidden(e.id, false) end end,
+		})
+	end
+
+	-- Trailing air only when something follows the list (the way-back button).
+	local tailGap = (#hiddenList > 0) and L.raidframes.tracking.afterList or 0
+	local rowH, lastClass = L.raidframes.tracking.rowH, nil
+	for i, e in ipairs(shown) do
+		-- Grouped by class: the row you want to switch off belongs to somebody
+		-- else's frame, so the class is the thing you navigate by.
+		if e.className ~= lastClass then
+			lastClass = e.className
+			st:place(subHeadRow(content, e.className), M.subHeadH, 0)
+		end
+		local tr = makeTrackRow(content, e, function()
+			if RFm then RFm:SetDefensiveHidden(e.id, true) end
+			ns.Shell:RenderContent(true)
+		end)
+		st:place(tr, rowH, (i == #shown) and tailGap or L.raidframes.tracking.betweenRows)
+	end
+	if #shown == 0 then
+		st:place(W.EmptyState(content, { text = T("Everything is hidden — search above to bring one back.") }),
+			L.raidframes.tracking.emptyH, tailGap)
+	end
+
+	if #hiddenList > 0 then
+		local back = W.Button(content, { text = T("Show all again"), variant = "secondary",
+			height = M.segCompactH,
+			onClick = function()
+				if RFm then RFm:ResetDefensiveHidden() end
+				ns.Shell:RenderContent(true)
+			end })
+		local backRow = CreateFrame("Frame", nil, content)
+		backRow:SetHeight(M.segCompactH)
+		back:SetPoint("LEFT", backRow, "LEFT", 0, 0)
+		st:place(backRow, M.segCompactH, 0)
+	end
+
+	host:place(box, blockClose(box, st, content), 0)
+end
+
+local function auraSpellsPane(d, host, cat, page)
+	local RFm  = ns.Raidframes
+	local spec = trkSpec()
+	local R    = L.rhythm
+
+	if not cat.typ then
+		-- Debuffs: per-spellId whitelisting is not permitted for harmful auras
+		-- (12.1 API constraint), so this category is filter-based by design.
+		local sfx = ctxSfx(auraTabCtx())
+		local box, st, content = innerBlock(d, T("Which debuffs"), nil)
+		local f1, fc = W.FieldRow(content, page, 1, { height = M.controlH + M.fieldGap })
+		W.Select(fc[1], { label = T("Filter"), options = AURA_FILTER_OPTS,
+			tooltip = T("Which debuffs are shown. Raid-relevant + dispellable adds everything your group can dispel — no matter who has to do it — so a dispel highlight never stands there without an icon. All drops the curation and shows every debuff."),
+			get = aget(cat.key, "filterMode" .. sfx), set = aset(cat.key, "filterMode" .. sfx) })
+			:SetAllPoints(fc[1])
+		st:place(f1, M.controlH + M.fieldGap, R.row)
+		st:place(W.Hint(content, T("Debuffs are chosen by filter, not one by one — WoW does not allow "
+			.. "picking individual harmful effects on other players."), M.hintH), M.hintH, R.tight)
+		-- The other half of the debuff story lives in Base: the icons say WHAT is on
+		-- someone, the dispel highlight says whether the whole frame lights up for it.
+		-- Two tabs apart, so each side carries the way over (Florian 2026-08-08 --
+		-- his idea instead of moving one of them).
+		st:place(jumpRow(content, T("Go to dispel highlight"),
+			T("Whether a dispellable debuff also lights the whole frame up is set on the Base tab."),
+			"Base", "dispel"), M.segCompactH, 0)
+		host:place(box, blockClose(box, st, content), 0)
+		return
+	end
+
+	-- Defensives with Blizzard's flags behind them: the list is a hide menu, not a
+	-- source. Different enough to be its own pane rather than a branch in this one.
+	if cat.key == "defensives" and nativeDefFlags() then
+		auraHidePane(d, host)
+		return
+	end
+
+	-- Group buffs on the native path: Blizzard's group-window list carries the
+	-- category, so what is left here is only what the player added ON TOP.
+	local extras = (cat.key == "hotsOwn") and nativeAuras()
+	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
+	local box, st, content = innerBlock(d,
+		extras and T("Additional spells") or T("Tracked spells"),
+		extras and T("Shown on top of the Cooldown Manager's list") or nil)
+
+	-- Scope strip: everything else on this tab is per context, so the list has to
+	-- say out loud that it is not. Only the VALUES lead; the words around them
+	-- stay muted.
+	st:place(infoBar(content, ("%s %s  ·  %s %s"):format(
+		T("Applies to"), hi(T("Raid and Group")),
+		T("Active spec:"), hi((ns.ClickCast and ns.ClickCast:CurrentSpecName()) or "?"))),
+		M.infoBarH, L.rhythm.row)
+
+	spellSearchRow(d, content, st, R.row, {
+		placeholder = T("Search a spell to add …"),
+		fetch = function()
+			-- Candidates = the spells of your spec that are not tracked yet.
+			-- Talent ids normalize to the real aura id first, otherwise a spell
+			-- offered under its talent id looks untracked while it is tracked.
+			local tracked, out = (RFm and RFm:WhitelistMap(spec)) or {}, {}
+			for _, sp in ipairs((ns.ClickCast and ns.ClickCast:GetAuraSpells()) or {}) do
+				local rid = (RFm and RFm.ResolveTrackId) and RFm:ResolveTrackId(sp.id) or sp.id
+				if not tracked[rid] then out[#out + 1] = sp end
+			end
+			return out
+		end,
+		onPick = function(sp) if RFm then RFm:AddWhitelist(spec, sp.id, cat.typ) end end,
+	})
+
+	-- Bottom action, decided BEFORE the list so the list knows whether anything
+	-- follows it. A rarely-used, destructive action does not belong next to the
+	-- everyday search field -- and on the native path "restore defaults" would be
+	-- a lie, because the defaults are Blizzard's list, not ours. What is left for
+	-- the additions is emptying them, and only while there are any.
+	local action
+	if extras then
+		if #entries > 0 then
+			action = { text = T("Remove all"), title = T("Remove all additions?"),
+				body = T("Your own additions in this category will be removed. Blizzard's list is untouched."),
+				confirm = T("Remove") }
+		end
+	else
+		action = { text = T("Restore defaults"), title = T("Restore defaults?"),
+			body = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
+			confirm = T("Reset") }
+	end
+	local tailGap = action and L.raidframes.tracking.afterList or 0
 
 	local shown = entries
 	if #entries == 0 then
-		st:place(W.EmptyState(content, { text = T("No spells tracked yet — add the first one.") }),
-			L.raidframes.tracking.emptyH, L.raidframes.tracking.afterList)
+		st:place(W.EmptyState(content, { text = extras
+				and T("Nothing added — Blizzard's list covers this category on its own.")
+				or T("No spells tracked yet — add the first one.") }),
+			L.raidframes.tracking.emptyH, tailGap)
 	else
 		local rowH = L.raidframes.tracking.rowH
 		for i, e in ipairs(shown) do
@@ -1718,31 +1910,33 @@ local function auraSpellsPane(d, host, cat, page)
 				if RFm then RFm:RemoveWhitelist(spec, e.id) end
 				ns.Shell:RenderContent(true)
 			end)
-			st:place(tr, rowH, (i == #shown) and L.raidframes.tracking.afterList
-				or L.raidframes.tracking.betweenRows)
+			st:place(tr, rowH, (i == #shown) and tailGap or L.raidframes.tracking.betweenRows)
 		end
 	end
 
-	-- Restore defaults sits at the bottom: a rarely-used, destructive action does
-	-- not belong next to the everyday search field.
-	local reset = W.Button(content, { text = T("Restore defaults"), variant = "secondary",
-		height = M.segCompactH,
-		onClick = function()
-			W.Confirm({
-				title       = T("Restore defaults?"),
-				body        = T("This list will be reset to Lumen's curated default for your active spec. Your own entries in this category will be lost."),
-				confirmText = T("Reset"),
-				cancelText  = T("Cancel"),
-				onConfirm   = function()
-					if RFm then RFm:ResetWhitelist(spec, cat.typ) end
-					ns.Shell:RenderContent(true)
-				end,
-			})
-		end })
-	local resetRow = CreateFrame("Frame", nil, content)
-	resetRow:SetHeight(M.segCompactH)
-	reset:SetPoint("LEFT", resetRow, "LEFT", 0, 0)
-	st:place(resetRow, M.segCompactH, 0)
+	if action then
+		local reset = W.Button(content, { text = action.text, variant = "secondary",
+			height = M.segCompactH,
+			onClick = function()
+				W.Confirm({
+					title       = action.title,
+					body        = action.body,
+					confirmText = action.confirm,
+					cancelText  = T("Cancel"),
+					onConfirm   = function()
+						if RFm then
+							if extras then RFm:ClearWhitelist(spec, cat.typ)
+							else RFm:ResetWhitelist(spec, cat.typ) end
+						end
+						ns.Shell:RenderContent(true)
+					end,
+				})
+			end })
+		local resetRow = CreateFrame("Frame", nil, content)
+		resetRow:SetHeight(M.segCompactH)
+		reset:SetPoint("LEFT", resetRow, "LEFT", 0, 0)
+		st:place(resetRow, M.segCompactH, 0)
+	end
 
 	host:place(box, blockClose(box, st, content), 0)
 end
@@ -2044,8 +2238,28 @@ local function buildAuras(d, stack)
 			-- ancestors were still being built, and it recursed until the client died
 			-- (ACCESS_VIOLATION on this exact screen, 2026-08-08). The wording is kept
 			-- short enough to stay on one line instead.
-			bstack:place(W.Hint(body, line, M.sourceNoteH), M.sourceNoteH,
-				L.raidframes.auras.afterSourceNote)
+			-- The line names the source, so the way TO that source belongs next to it:
+			-- naming a panel the player cannot reach from here is half an answer.
+			local srcRow = CreateFrame("Frame", nil, body)
+			srcRow:SetHeight(M.segCompactH)
+			local edit = W.Button(srcRow, { text = T("Edit in Cooldown Manager"),
+				variant = "secondary", height = M.segCompactH,
+				tooltipTitle = T("Edit in Cooldown Manager"),
+				tooltip = T("Opens WoW's own panel on its group-buff list. What you hide there disappears from the frames too.")
+					.. "\n" .. (openCDMSlash() or ""),
+				onClick = function()
+					if not openCooldownManager() and ns.Lumen then
+						ns.Lumen:Print(T("Could not open the Cooldown Manager — try %s.")
+							:format(openCDMSlash() or "/cooldownmanager"))
+					end
+				end })
+			edit:SetPoint("RIGHT", srcRow, "RIGHT", 0, 0)
+			local srcFS = UI.FS(srcRow, "hint", Text.Description)
+			srcFS:SetPoint("LEFT", srcRow, "LEFT", 0, 0)
+			srcFS:SetPoint("RIGHT", edit, "LEFT", -UI.S.s3, 0)
+			srcFS:SetJustifyH("LEFT"); srcFS:SetWordWrap(false)
+			srcFS:SetText(line)
+			bstack:place(srcRow, M.segCompactH, L.raidframes.auras.afterSourceNote)
 		end
 	end
 

@@ -45,7 +45,7 @@ read_globals = {
     "IsInRaid", "IsInGroup", "IsInInstance", "GetNumGroupMembers", "GetNumSubgroupMembers",
     "IsRaidMarkerSystemEnabled",
     -- Colors / auras / numbers
-    "RAID_CLASS_COLORS", "AuraUtil", "CurveConstants", "AnchorUtil", "GetBuildInfo",
+    "RAID_CLASS_COLORS", "LOCALIZED_CLASS_NAMES_MALE", "AuraUtil", "CurveConstants", "AnchorUtil", "GetBuildInfo",
     "NumberFontNormalSmall",
     "AbbreviateNumbers", "AbbreviateNumbersAlt",
     "CreateColor", "Mixin", "GetTime",

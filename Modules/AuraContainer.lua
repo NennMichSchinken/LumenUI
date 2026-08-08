@@ -655,6 +655,32 @@ end
 -- only the SET of icons differs.
 local function flagGroupKey(key, i) return key .. "_f" .. i end
 
+-- What the player took OUT of a flag-fed category (Raidframes owns the data, see
+-- its "Defensives -- the SHOWN / HIDDEN list" block). A flag set cannot be
+-- enumerated, so excluding by id is the only way to drop a single aura out of it.
+-- Kept as our OWN copy rather than handing the profile table to the engine: the
+-- engine holds on to whatever table it is given, and the API promises nothing
+-- about noticing an edit made behind its back -- every change goes in as a new
+-- table through RFC.RefreshDefensiveSource.
+local defExcl, defExclArg
+local function defExcludeSet()
+	if defExcl then return defExcl end
+	local rf = ns.Raidframes
+	local h = (rf and rf.DefensiveHidden) and rf:DefensiveHidden() or nil
+	local out = {}
+	if h then for sid in pairs(h) do out[sid] = true end end
+	defExcl = out
+	return out
+end
+-- The argument table is cached too: a relayout pushes it once per group per live
+-- button, and building 40 identical tables for a raid would be allocation in a
+-- path that runs on every layout change. We never mutate it -- a change replaces
+-- both tables.
+local function defExcludeArg()
+	if not defExclArg then defExclArg = { excludeSpellIDs = defExcludeSet() } end
+	return defExclArg
+end
+
 local function syncHelpful(container, c, lo)
 	local key, filters = c.key, c.flagFilters
 	local useFlags = (RFC.useFlags and filters) and true or false
@@ -684,14 +710,20 @@ local function syncHelpful(container, c, lo)
 			-- Declared with the full budget and corrected below, the way the debuff
 			-- groups are: a group that only ever sees 0 is untested ground.
 			container:AddAuraGroup(flagGroupKey(key, i), filters[i], {
-				maxFrameCount   = lo.maxN,
-				initializeFrame = makeInitializer(lo.size, key),
+				maxFrameCount    = lo.maxN,
+				candidateFilters = defExcludeArg(),
+				initializeFrame  = makeInitializer(lo.size, key),
 			})
 		end
 	end
 	applyGroupLayout(container, key, lo, useFlags and 0 or lo.maxN)
 	for i = 1, (filters and #filters or 0) do
-		applyGroupLayout(container, flagGroupKey(key, i), lo, useFlags and lo.maxN or 0)
+		local gk = flagGroupKey(key, i)
+		applyGroupLayout(container, gk, lo, useFlags and lo.maxN or 0)
+		-- Re-push the hide list on every reconcile, not only at creation: a profile
+		-- switch or an import replaces the stored set behind a container that is
+		-- already built, and its groups would otherwise keep the old exclusions.
+		pcall(container.SetAuraGroupCandidateFilters, container, gk, defExcludeArg())
 	end
 end
 
@@ -938,6 +970,9 @@ end
 -- ones, re-apply layout + resize the rest (called on any aura settings change).
 function RFC.Relayout()
 	if not RFC.enabled then return end
+	-- Drop the cached hide list first: a profile switch or an import lands here
+	-- (UpdateLayout -> Relayout) and brings a different set with it.
+	defExcl, defExclArg = nil, nil
 	local sizes = {}
 	forEachLiveButton(function(btn)
 		if InCombatLockdown() then return end
@@ -1008,7 +1043,9 @@ autoFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- it in Blizzard's own panel, or the spec (and with it the whole list) changes.
 -- Pushing new candidate filters keeps the existing aura buttons -- no container
 -- rebuild, so this is legal while a container already lives on a frame.
-function RFC.RefreshBuffSource()
+-- `quiet` = the caller is the settings page itself (it rebuilds right after), so
+-- the courtesy re-render at the end would only be a second full rebuild.
+function RFC.RefreshBuffSource(quiet)
 	buffInclude, buffOwned, buffIcons = nil, nil, nil
 	-- The preview caches its icons per spec, and this can change without one.
 	local rf = ns.Raidframes
@@ -1029,9 +1066,31 @@ function RFC.RefreshBuffSource()
 	-- moment the player edits Blizzard's panel with the shell open beside it --
 	-- which is exactly how they will do it.
 	local S = ns.Shell
-	if S and S.RenderContent and S._frame and S._frame:IsShown() then
+	if not quiet and S and S.RenderContent and S._frame and S._frame:IsShown() then
 		pcall(S.RenderContent, S, true)
 	end
+end
+
+-- The player took a defensive off the list (or put it back). Same move as the
+-- buff source above: push new candidate filters instead of rebuilding anything,
+-- so this is legal with containers already sitting on live frames -- and it works
+-- in combat, because nothing is created or destroyed.
+function RFC.RefreshDefensiveSource()
+	defExcl, defExclArg = nil, nil
+	if not RFC.enabled then return end
+	local arg = defExcludeArg()
+	local filters
+	for _, c in ipairs(NATIVE_CATS) do if c.key == "defensives" then filters = c.flagFilters end end
+	if not filters then return end
+	forEachLiveButton(function(btn)
+		local container = btn._rfc and btn._rfc.defensives
+		if container then
+			for i = 1, #filters do
+				pcall(container.SetAuraGroupCandidateFilters, container,
+					flagGroupKey("defensives", i), arg)
+			end
+		end
+	end)
 end
 
 -- pcall per event: this file loads on 12.0.7 as well, where RegisterEvent on an

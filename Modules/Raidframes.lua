@@ -686,12 +686,21 @@ function Raidframes:WhitelistMap(specID)
 	if not specID or specID == 0 then return {} end
 	return whitelistFor(specID) or {}
 end
+-- The group-buff category is Blizzard's list PLUS the entries kept here, and the
+-- containers hold that union as a candidate filter -- so an edit in this list has
+-- to be pushed, or an added spell sits there until the next spec change. Quiet:
+-- every caller is the settings page, which rebuilds itself right after.
+local function pushBuffSource()
+	if ns.RFC and ns.RFC.RefreshBuffSource then pcall(ns.RFC.RefreshBuffSource, true) end
+end
+
 -- Add a spell to the whitelist.
 function Raidframes:AddWhitelist(specID, spellID, typ)
 	if not specID or specID == 0 or not spellID then return end
 	spellID = TALENT_TO_AURA[spellID] or spellID   -- talent ID -> real aura ID
 	local s = whitelistFor(specID); if not s then return end
 	s[spellID] = typ
+	pushBuffSource()
 	self:RefreshAuras()
 end
 -- Remove a spell. The seeded marker stays set deliberately -> a default-seeded spell
@@ -701,6 +710,19 @@ function Raidframes:RemoveWhitelist(specID, spellID)
 	local A = db().auras; if not A or not A.whitelist then return end
 	local s = A.whitelist[specID]; if not s then return end
 	s[spellID] = nil
+	pushBuffSource()
+	self:RefreshAuras()
+end
+-- Empty a type completely. The seeded markers stay, so nothing creeps back on the
+-- next spec visit -- this is the "remove all" of the additions list, where
+-- restoring OUR defaults would be the wrong promise: on the native path the
+-- defaults are Blizzard's list, and re-seeding ours would just duplicate it.
+function Raidframes:ClearWhitelist(specID, typ)
+	if not specID or specID == 0 then return end
+	local A = db().auras; if not A or not A.whitelist then return end
+	local s = A.whitelist[specID]; if not s then return end
+	for sid, t in pairs(s) do if t == typ then s[sid] = nil end end
+	pushBuffSource()
 	self:RefreshAuras()
 end
 -- Reset to the curated defaults of this type: first remove all entries of the type
@@ -723,8 +745,97 @@ function Raidframes:ResetWhitelist(specID, typ)
 		restore(DEF_DEFAULTS[specID])
 		restore(DEF_CLASS[SPEC_CLASS[specID]])
 	end
+	pushBuffSource()
 	self:RefreshAuras()
 end
+
+-- ---------------------------------------------------------------------------
+--  Defensives — the SHOWN / HIDDEN list.
+--  The category is fed by Blizzard's per-spell flags, and those cannot be
+--  enumerated: the API only answers a question about ONE id
+--  (C_Spell.IsExternalDefensive / C_UnitAuras.AuraIsBigDefensive). So the list
+--  the player edits is built from the ids we already curate, keeping the ones
+--  Blizzard itself confirms as defensive — Barkskin and Ironbark are in there
+--  because Blizzard says so, not because we decided it.
+--  That makes a hole in the curation harmless. The old list was the SOURCE, so a
+--  missing id meant a missing icon (that is what started the whole rework); this
+--  one is a HIDE MENU, so a missing id only means "cannot be switched off by
+--  clicking" — the aura is still drawn, the flag decides.
+--  Removed ids reach the container as candidateFilters.excludeSpellIDs.
+-- ---------------------------------------------------------------------------
+local defPool   -- built once per session (spell data is static)
+function Raidframes:DefensivePool()
+	if defPool then return defPool end
+	local out, seen = {}, {}
+	local playerClass = select(2, UnitClass("player"))
+	local function add(cls, list)
+		if not list then return end
+		for _, sid in ipairs(list) do
+			if not seen[sid] then
+				seen[sid] = true
+				local big, ext = false, false
+				if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
+					local ok, v = pcall(C_UnitAuras.AuraIsBigDefensive, sid); big = (ok and v) and true or false
+				end
+				if C_Spell and C_Spell.IsExternalDefensive then
+					local ok, v = pcall(C_Spell.IsExternalDefensive, sid); ext = (ok and v) and true or false
+				end
+				local name = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)) or nil
+				-- Only what Blizzard agrees is defensive: a row whose checkbox could
+				-- never change anything on screen is worse than no row.
+				if name and (big or ext) then
+					out[#out + 1] = {
+						id    = sid,
+						name  = name,
+						icon  = (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)) or 136243,
+						class = cls,
+						className = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[cls]) or cls or "",
+						own   = (cls == playerClass),
+					}
+				end
+			end
+		end
+	end
+	for cls, list in pairs(DEF_CLASS) do add(cls, list) end
+	for spec, list in pairs(DEF_DEFAULTS) do add(SPEC_CLASS[spec], list) end
+	table.sort(out, function(a, b)
+		if a.own ~= b.own then return a.own end          -- your own class reads first
+		if a.className ~= b.className then return a.className < b.className end
+		return a.name < b.name
+	end)
+	-- Cache only a non-empty answer: right after login the client can still be
+	-- missing the spell data, and a permanently cached empty list would be the
+	-- wrong answer for the rest of the session.
+	if #out > 0 then defPool = out end
+	return out
+end
+
+-- The hidden set, shared across specs and contexts (a defensive is a defensive
+-- for everybody). Deliberately NOT in the core defaults, same reason as the
+-- whitelist above: the first write has to create a profile-owned table instead of
+-- mutating the shared default table.
+function Raidframes:DefensiveHidden()
+	local A = db().auras
+	if not A then return {} end
+	local h = A.defHidden
+	if not h then h = {}; A.defHidden = h end
+	return h
+end
+
+function Raidframes:SetDefensiveHidden(spellID, hidden)
+	if not spellID then return end
+	self:DefensiveHidden()[spellID] = hidden and true or nil
+	if ns.RFC and ns.RFC.RefreshDefensiveSource then ns.RFC.RefreshDefensiveSource() end
+	self:RefreshAuras()
+end
+
+function Raidframes:ResetDefensiveHidden()
+	local h = self:DefensiveHidden()
+	for sid in pairs(h) do h[sid] = nil end
+	if ns.RFC and ns.RFC.RefreshDefensiveSource then ns.RFC.RefreshDefensiveSource() end
+	self:RefreshAuras()
+end
+
 -- Determine a spellId of an aura — secret-safe:
 --   * out of combat aura.spellId is directly readable.
 --   * in combat it is secret -> look up via the (out-of-combat learned) signature.
