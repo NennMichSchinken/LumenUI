@@ -1197,6 +1197,19 @@ end
 
 function RFC.Enable(quiet)
 	if InCombatLockdown() then if not quiet then say("|cffff5555Out of combat only.|r") end return end
+	-- Refuse on a client without the frame type instead of half-enabling. Setting
+	-- RFC.enabled is what makes Suppresses() true, and that takes the OLD holders
+	-- down -- but no container can be built here, so the result would be no aura
+	-- icons at all. A dev command must not be able to blank the display, and the
+	-- auto-enable path is gated on the same flag, so this only ever stops a manual
+	-- `/lumennative on` typed on 12.0.x.
+	if not IS_121 then
+		if not quiet then
+			say("|cffff5555This client has no AuraContainer (needs 12.1) -- staying off,|r "
+				.. "otherwise the old icons would go away with nothing replacing them.")
+		end
+		return
+	end
 	RFC.enabled = true
 	forEachLiveButton(function(btn)
 		RFC.Attach(btn)
