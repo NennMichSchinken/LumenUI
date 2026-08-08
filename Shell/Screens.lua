@@ -1623,6 +1623,22 @@ local function auraSpellsPane(d, host, cat, page)
 	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
 	local box, st, content = innerBlock(d, T("Tracked spells"))
 
+	-- Group buffs: say out loud that Blizzard's list is doing the work, and how much
+	-- of it the player has switched off there. Without this, hiding entries in the
+	-- Cooldown Manager makes icons disappear and the only page that mentions auras
+	-- says nothing about why (Florian, 2026-08-09).
+	if cat.key == "hotsOwn" and ns.RFC and ns.RFC.enabled and ns.RFC.GroupBuffState then
+		local okS, owned, _, nHidden = pcall(ns.RFC.GroupBuffState)
+		if okS and (owned or 0) > 0 then
+			local line = (nHidden or 0) > 0
+				and T("Blizzard's Cooldown Manager supplies this list — %d of %d entries are hidden there.")
+					:format(nHidden, owned)
+				or T("Blizzard's Cooldown Manager supplies this list (%d entries). Anything below is your own addition.")
+					:format(owned)
+			st:place(W.Hint(content, line, M.hintH * 2), M.hintH * 2, R.row)
+		end
+	end
+
 	-- Scope strip: everything else on this tab is per context, so the list has to
 	-- say out loud that it is not. Only the VALUES lead; the words around them
 	-- stay muted.

@@ -184,7 +184,10 @@ ns.RegisterLocale("deDE", {
 	["Group buffs"] = "Stärkungszauber",
 	["n/a"] = "n. v.",
 
-	["Not available for this specialization"] = "Für diese Spezialisierung nicht verfügbar",
+	["Blizzard's Cooldown Manager supplies this list — %d of %d entries are hidden there."] = "Diese Liste kommt aus Blizzards Abklingzeit-Manager — %d von %d Einträgen sind dort ausgeblendet.",
+	["Blizzard's Cooldown Manager supplies this list (%d entries). Anything below is your own addition."] = "Diese Liste kommt aus Blizzards Abklingzeit-Manager (%d Einträge). Was unten steht, hast du selbst ergänzt.",
+	["Not available for this specialization"] = "Für diese Spezialisierung nicht verfügbar",
+
 	["WoW's Cooldown Manager has no group-buff list for your current specialization, so there is nothing this category could show. Defensives and debuffs are unaffected."] = "Der Abklingzeit-Manager von WoW führt für deine aktuelle Spezialisierung keine Gruppen-Stärkungsliste, deshalb hat diese Kategorie nichts zu zeigen. Defensives und Debuffs sind davon nicht betroffen.",
 
 	["What you put on the group: HoTs, Innervate and the like. The list comes from the Cooldown Manager."] = "Was du auf die Gruppe legst: HoTs, Anregen und dergleichen. Die Liste kommt aus dem Abklingzeit-Manager.",

@@ -166,7 +166,7 @@ end
 --     Blizzard's list does not carry at all still gets shown.
 -- Cached because syncHelpful runs per button; invalidated by the events below
 -- rather than rebuilt per call (CLAUDE.md §9: no allocation in repeated paths).
-local buffInclude, buffOwned, buffIcons
+local buffInclude, buffOwned, buffIcons, buffHidden
 local function buildBuffSource()
 	if buffInclude then return buffInclude, buffOwned end
 	local owned = 0
@@ -183,6 +183,9 @@ local function buildBuffSource()
 		if rf and rf.MigrateGroupBuffs then rf:MigrateGroupBuffs(currentSpecID(), all) end
 	end
 	local include = buildInclude("hot")
+	-- pool = what the PREVIEW draws from, include = what the FRAMES draw. They differ
+	-- by the player's hidden set on purpose, see the note below.
+	local pool, nHidden = {}, 0
 	if ok and items then
 		local hidden = {}
 		if UA and UA.GetHiddenGroupBuffs then
@@ -191,37 +194,46 @@ local function buildBuffSource()
 		end
 		for _, it in ipairs(items) do
 			owned = owned + 1
-			if not hidden[it.spellID] then
-				local big, ext = false, false
-				if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
-					local o, v = pcall(C_UnitAuras.AuraIsBigDefensive, it.spellID); big = (o and v) and true or false
-				end
-				if C_Spell and C_Spell.IsExternalDefensive then
-					local o, v = pcall(C_Spell.IsExternalDefensive, it.spellID); ext = (o and v) and true or false
-				end
-				if not (big or ext) then include[it.spellID] = true end
+			local big, ext = false, false
+			if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
+				local o, v = pcall(C_UnitAuras.AuraIsBigDefensive, it.spellID); big = (o and v) and true or false
+			end
+			if C_Spell and C_Spell.IsExternalDefensive then
+				local o, v = pcall(C_Spell.IsExternalDefensive, it.spellID); ext = (o and v) and true or false
+			end
+			-- A defensive is drawn by the Defensives category, so it belongs in
+			-- neither set here -- not even as preview filler.
+			if not (big or ext) then
+				pool[it.spellID] = true
+				if hidden[it.spellID] then nHidden = nHidden + 1
+				else include[it.spellID] = true end
 			end
 		end
 	end
-	-- Ordered icon list for the preview. The preview has to show what the frames
-	-- show, or you end up configuring size and placement against a fiction. Order
-	-- is Blizzard's list first (their order), extras after, sorted -- DETERMINISTIC
-	-- on purpose, because the preview re-renders on every slider tick and a set
-	-- iterated with pairs would reshuffle mid-drag.
+
+	-- Ordered icon list for the preview, built from the FULL list rather than the
+	-- shown subset. The preview is a layout sample -- you size a row against it --
+	-- and hiding everything in the Cooldown Manager would otherwise leave an empty
+	-- preview whose cause is nowhere on this page (Florian, 2026-08-09). Order is
+	-- Blizzard's list first, extras sorted after: DETERMINISTIC on purpose, because
+	-- the preview re-renders on every slider tick and a set iterated with pairs
+	-- would reshuffle mid-drag.
 	local icons, seen = {}, {}
 	local function push(sid)
-		if seen[sid] or not include[sid] then return end
+		if seen[sid] then return end
 		seen[sid] = true
 		local tex = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)
 		if tex then icons[#icons + 1] = tex end
 	end
-	if ok and items then for _, it in ipairs(items) do push(it.spellID) end end
+	if ok and items then
+		for _, it in ipairs(items) do if pool[it.spellID] then push(it.spellID) end end
+	end
 	local rest = {}
 	for sid in pairs(include) do if not seen[sid] then rest[#rest + 1] = sid end end
 	table.sort(rest)
 	for _, sid in ipairs(rest) do push(sid) end
 
-	buffInclude, buffOwned, buffIcons = include, owned, icons
+	buffInclude, buffOwned, buffIcons, buffHidden = include, owned, icons, nHidden
 	return include, owned
 end
 
@@ -246,7 +258,7 @@ function RFC.GroupBuffState()
 	local include, owned = buildBuffSource()
 	local total = 0
 	for _ in pairs(include) do total = total + 1 end
-	return owned, total
+	return owned, total, buffHidden or 0
 end
 
 local function buffSourceEmpty()
