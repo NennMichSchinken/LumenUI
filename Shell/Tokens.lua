@@ -787,6 +787,10 @@ UI.LAYOUT = {
 		},
 		auras = {               -- Auras tab (category chips + inline editor)
 			afterChips = 20,  -- chip bar -> editor card
+			-- Source note (group buffs) -> first card. The note is a caption for what
+			-- follows, so it sits CLOSE to it -- the standard hint block reserves two
+			-- lines of height and left a hole here (Florian 2026-08-09).
+			afterSourceNote = 10,
 			-- Editor head: the pane switch carries an EXPLICIT width. A "hug"
 			-- segment sizes its inner bar from the measured text and leaves the
 			-- outer frame at 0 — it then renders nothing in a hand-anchored row

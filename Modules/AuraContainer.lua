@@ -1025,6 +1025,13 @@ function RFC.RefreshBuffSource()
 	-- An empty source has to take the whole category down (or bring it back), and
 	-- that is an attach/detach -- Relayout owns it, and it is out-of-combat only.
 	if not InCombatLockdown() then RFC.Relayout() end
+	-- The settings page reports how many entries are hidden, so it goes stale the
+	-- moment the player edits Blizzard's panel with the shell open beside it --
+	-- which is exactly how they will do it.
+	local S = ns.Shell
+	if S and S.RenderContent and S._frame and S._frame:IsShown() then
+		pcall(S.RenderContent, S, true)
+	end
 end
 
 -- pcall per event: this file loads on 12.0.7 as well, where RegisterEvent on an

@@ -2039,7 +2039,16 @@ local function buildAuras(d, stack)
 					:format(nHidden, owned)
 				or T("This list comes from WoW's Cooldown Manager (%d entries).")
 					:format(owned)
-			bstack:place(W.Hint(body, line, M.hintH * 2), M.hintH * 2, L.rhythm.row)
+			-- Measured, not reserved: M.hintH budgets two lines, and this note is one
+			-- at any usable shell width, which left a visible hole above the cards.
+			local hint = W.Hint(body, line, M.hintH)
+			local w = d:GetWidth() or 0
+			local hh = M.hintH
+			if w > 50 then
+				hint:SetWidth(w)
+				hh = math.ceil((hint._fs and hint._fs:GetStringHeight()) or M.hintH)
+			end
+			bstack:place(hint, hh, L.raidframes.auras.afterSourceNote)
 		end
 	end
 
