@@ -2518,6 +2518,31 @@ function Raidframes:RenderAurasLive(f)
 	local A = db().auras
 	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
 	if aurasRestricted() then return end          -- 12.1: the native path renders instead
+	-- Native path owns EVERY category below -> nothing here can draw, so leave
+	-- before the expensive part. `aurasRestricted` above does not cover this: it is
+	-- only true while auras are actually secret, which out in the world on 12.1
+	-- they are not. So the learner kept doing its full 40-index scan (a table per
+	-- index) on every UNIT_AURA of every unit, to feed a lookup that only the
+	-- suppressed branches read. Measured solo at 26.5 µs per call with the whole
+	-- category set switched to native (Florian, 2026-08-10).
+	-- The holders are still taken down here rather than only in the layout path:
+	-- this is the pass that runs when the native path is switched on mid-session.
+	local S = ns.RFC and ns.RFC.Suppresses
+	if S then
+		local allNative = true
+		for i = 1, #AURA_CATS do
+			if not S(AURA_CATS[i].key) then allNative = false; break end
+		end
+		if allNative then
+			if f.auraHolders then
+				for i = 1, #AURA_CATS do
+					local h = f.auraHolders[AURA_CATS[i].key]
+					if h and h:IsShown() then h:Hide() end
+				end
+			end
+			return
+		end
+	end
 	learnUnitSigs(u)   -- passive signature learning (out of combat; groundwork for the whitelist)
 	local spec = currentSpecID()
 	local wl   = whitelistCached(spec)   -- whitelist of the active spec (cached; seeded once)

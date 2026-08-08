@@ -297,14 +297,16 @@ end
 local function reportNative()
 	local RC = ns.RFC
 	if not (RC and RC.Stats) then return end
-	local ok, groups, containers, btns, pushes, units = pcall(RC.Stats)
+	local ok, groups, containers, btns, pushes, units, styled = pcall(RC.Stats)
 	if not ok or (groups or 0) == 0 then return end
 	print(format("                 |cff9d9d9dnative aura path: %s · %d unit frames · %d containers · %d groups|r",
 		RC.enabled and "ON" or "off", units or 0, containers or 0, groups))
-	print(format("                 |cff9d9d9d  %d aura buttons created (%.1f per group, %.1f per unit frame) · %d filter pushes|r",
+	print(format("                 |cff9d9d9d  %d aura buttons created (%.1f per group, %.1f per unit frame; %d carry icon+text)|r",
 		btns or 0,
 		groups > 0 and (btns or 0) / groups or 0,
 		(units or 0) > 0 and (btns or 0) / units or 0,
+		styled or 0))
+	print(format("                 |cff9d9d9d  %d filter pushes this capture (each = a full aura re-parse of one unit)|r",
 		pushes or 0))
 end
 

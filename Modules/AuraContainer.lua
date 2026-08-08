@@ -48,7 +48,10 @@ RFC.enabled = false
 --     unit's auras.
 -- Plain integer adds at declaration/reconcile sites, never in a per-aura path.
 -- Scaffolding for the 2026-08 audit round; goes out with the dev-only tooling.
-RFC.stat = { groups = 0, filterPush = 0 }
+-- `buttons` counts BOTH initializers. The first reading missed the dispel ones and
+-- reported 8.3 buttons per group where the engine actually creates exactly 10 --
+-- a counter that only sees one of two creation paths lies quietly.
+RFC.stat = { groups = 0, filterPush = 0, buttons = 0 }
 
 -- Categories the native path owns. HELPFUL ones have TWO possible sources, see
 -- `flagFilters` below; debuffs are HARMFUL (harmful=true) and filter by MODE via
@@ -183,9 +186,11 @@ end
 -- change if a spell Blizzard does not carry ever turns up.
 -- Cached because syncHelpful runs per button; invalidated by the events below
 -- rather than rebuilt per call (CLAUDE.md §9: no allocation in repeated paths).
-local buffInclude, buffOwned, buffIcons, buffHidden
+-- buffCached, not buffInclude, is the early-out sentinel: an EMPTY result has to
+-- stay re-askable, see the note where it is set.
+local buffInclude, buffOwned, buffIcons, buffHidden, buffCached
 local function buildBuffSource()
-	if buffInclude then return buffInclude, buffOwned end
+	if buffCached then return buffInclude, buffOwned end
 	local owned = 0
 	local CV, UA = C_CooldownViewer, C_UnitAuras
 	local ok, items = false, nil
@@ -251,6 +256,15 @@ local function buildBuffSource()
 	for _, sid in ipairs(rest) do push(sid) end
 
 	buffInclude, buffOwned, buffIcons, buffHidden = include, owned, icons, nHidden
+	-- Cache only a NON-EMPTY answer, the same rule DefensivePool follows. An empty
+	-- list has two very different causes that look identical here: a spec Blizzard
+	-- offers nothing for (a Hunter), or a client that has not loaded its cooldown
+	-- data yet -- and RFC.Enable runs one second after entering the world, well
+	-- inside that window. Caching it would take the whole category down for the
+	-- session with no way back except a spec change.
+	-- Re-asking is cheap in exactly the case where it repeats: with no entries there
+	-- is nothing to iterate, so an empty rebuild is two API calls and two empty loops.
+	buffCached = (owned > 0)
 	return include, owned
 end
 
@@ -542,6 +556,7 @@ end
 -- cropped icon, cooldown swipe) and the duration text.
 local function makeInitializer(size, key)
 	return function(button)
+		RFC.stat.buttons = RFC.stat.buttons + 1
 		button:SetSize(size, size) -- an unsized aura button renders nothing
 
 		local bg = button:CreateTexture(nil, "BACKGROUND")
@@ -790,17 +805,29 @@ local function syncHelpful(container, c, lo)
 				initializeFrame  = makeInitializer(lo.size, key),
 			})
 		end
+		container._defCF = defExcludeArg()   -- the groups were born with this set
 	end
 	applyGroupLayout(container, key, lo, useFlags and 0 or lo.maxN)
+	-- Re-push the hide list when it CHANGED, not on every reconcile: a profile
+	-- switch or an import replaces the stored set behind a container that is
+	-- already built, and its groups would otherwise keep the old exclusions --
+	-- but pushing it unconditionally is far from free. SetAuraGroupCandidateFilters
+	-- has no equality check of its own and ends in UpdateAllAuras(), i.e. a full
+	-- re-parse of every aura on that unit, per group. A Relayout in a 40-man was
+	-- paying 80 of those for a set that had not moved.
+	-- Identity is the right test, not a deep compare: defExcludeArg hands out a
+	-- CACHED table that is never mutated -- a change replaces it (see the note there).
+	local excl = defExcludeArg()
+	local push = (container._defCF ~= excl)
 	for i = 1, (filters and #filters or 0) do
 		local gk = flagGroupKey(key, i)
 		applyGroupLayout(container, gk, lo, useFlags and lo.maxN or 0)
-		-- Re-push the hide list on every reconcile, not only at creation: a profile
-		-- switch or an import replaces the stored set behind a container that is
-		-- already built, and its groups would otherwise keep the old exclusions.
-		RFC.stat.filterPush = RFC.stat.filterPush + 1
-		pcall(container.SetAuraGroupCandidateFilters, container, gk, defExcludeArg())
+		if push then
+			RFC.stat.filterPush = RFC.stat.filterPush + 1
+			pcall(container.SetAuraGroupCandidateFilters, container, gk, excl)
+		end
 	end
+	if push then container._defCF = excl end
 end
 
 -- Reconcile the debuffs container to the active filter mode: the active preset's
@@ -858,6 +885,7 @@ end
 -- would stamp a Blizzard border atlas over it).
 local function initDispelFrame(mode, w, h, health)
 	return function(button)
+		RFC.stat.buttons = RFC.stat.buttons + 1
 		button:SetSize(w, h)
 		local rf = ns.Raidframes
 		local edgeCurve, fillCurve = rf:DispelCurves()
@@ -1104,7 +1132,7 @@ function RFC.Stats()
 		buttons = buttons + 1
 		if btn._rfc then for _ in pairs(btn._rfc) do containers = containers + 1 end end
 	end)
-	return RFC.stat.groups, containers, #auraBtns, RFC.stat.filterPush, buttons
+	return RFC.stat.groups, containers, RFC.stat.buttons, RFC.stat.filterPush, buttons, #auraBtns
 end
 
 function RFC.Enable(quiet)
@@ -1180,6 +1208,9 @@ function RFC.RefreshDefensiveSource()
 				pcall(container.SetAuraGroupCandidateFilters, container,
 					flagGroupKey("defensives", i), arg)
 			end
+			-- Record what the container now carries, or the next reconcile would push
+			-- the very same set again (syncHelpful compares against this).
+			container._defCF = arg
 		end
 	end)
 end
@@ -1191,7 +1222,7 @@ for _, e in ipairs({ "HIDDEN_GROUP_BUFFS_CHANGED", "PLAYER_SPECIALIZATION_CHANGE
 	pcall(autoFrame.RegisterEvent, autoFrame, e)
 end
 autoFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-autoFrame:SetScript("OnEvent", function(_, event)
+autoFrame:SetScript("OnEvent", function(_, event, unit)
 	if event == "PLAYER_REGEN_ENABLED" then
 		if pendingRefresh then
 			pendingRefresh = false
@@ -1201,6 +1232,13 @@ autoFrame:SetScript("OnEvent", function(_, event)
 		return
 	end
 	if event ~= "PLAYER_ENTERING_WORLD" then
+		-- PLAYER_SPECIALIZATION_CHANGED carries a unit and fires for OTHER group
+		-- members too. Only our own spec can change the group-buff list, and the
+		-- work behind this is not small: a rebuild of the source, a candidate-filter
+		-- push to every live button and a full Relayout over all 40 of them. Without
+		-- the filter every stranger's respec paid for all of that. Raidframes and
+		-- ClickCast carry the same guard (2026-07-03 audit, A4).
+		if event == "PLAYER_SPECIALIZATION_CHANGED" and unit and unit ~= "player" then return end
 		if IS_121 then RFC.RefreshBuffSource() end
 		return
 	end
