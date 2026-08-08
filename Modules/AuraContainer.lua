@@ -849,6 +849,11 @@ function RFC.SetFlagSource(on)
 	RFC.Relayout()
 	say("Helpful categories now from |cff44ff44" ..
 		(on and "Blizzard's per-spell flags" or "the curated whitelist") .. "|r.")
+	-- On 12.0.x the native path is inert, so the switch is set but renders nothing.
+	-- Saying so beats letting an unchanged frame read as "the flags show nothing".
+	if not RFC.enabled then
+		say("|cffffcc00Note:|r the native path is off, so nothing changes on screen yet.")
+	end
 end
 
 function RFC.Disable()
