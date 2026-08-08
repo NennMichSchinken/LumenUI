@@ -34,7 +34,7 @@ local ADDON, ns = ...
 --  Registered card keys today:
 --   Raidframes › Raid / Group: power-bar, text-name, text-hp, icon-role, icon-lead
 --   Raidframes › Base: health-bar, text-style
---   Raidframes › Auras: aura-hotsOwn, aura-defensives, aura-major, aura-debuffs
+--   Raidframes › Auras: aura-hotsOwn, aura-defensives, aura-debuffs
 --     (the key also PRESELECTS that category when the jump lands)
 --   Global › Base: accent, whatsnew, font
 --   QoL › Base: qol-windows, qol-invites

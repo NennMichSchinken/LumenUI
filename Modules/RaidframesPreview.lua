@@ -75,9 +75,8 @@ local pvFrames = {}     -- shared preview pool (one band visible at a time)
 --  (f._c2c) — live secure frames and the world test pool stay untouched.
 -- ---------------------------------------------------------------------------
 local C2C_LABELS = {
-	hotsOwn    = "HoTs",
+	hotsOwn    = "Group buffs",
 	defensives = "Defensives & External",
-	major      = "Major CDs",
 	debuffs    = "Debuffs",
 }
 local c2cRing
@@ -231,7 +230,7 @@ end
 
 -- Eyes only HIDE: the fill pass before restored everything the settings show.
 -- Aura categories filter INDIVIDUALLY (holder keys = AURA_CATS keys, matching
--- the filter popover's children: hotsOwn/defensives/major/debuffs).
+-- the filter popover's children: hotsOwn/defensives/debuffs).
 local function pvEyePass(f, eyes)
 	if f.auraHolders then
 		for key, h in pairs(f.auraHolders) do
@@ -436,7 +435,7 @@ local epHolders = {}          -- ctx -> world holder frame (mirrors the live 200
 -- tab dock). Show just the class-coloured health bars + names — no auras/shields/
 -- icons/dispel/aggro — so overlapping Group/Raid previews stay clean (Florian).
 local PREVIEW_EYES = {
-	hotsOwn = false, defensives = false, major = false, debuffs = false,
+	hotsOwn = false, defensives = false, debuffs = false,
 	shields = false, icons = false, dispel = false, aggro = false,
 }
 local epListenerAdded = false

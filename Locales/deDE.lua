@@ -181,8 +181,9 @@ ns.RegisterLocale("deDE", {
 	-- ── Auras (collapsible at the bottom of the Raid/Group tabs) ──────────
 	["Aura indicators"] = "Aura-Indikatoren",
 	["HoTs"] = "HoTs",
+	["Group buffs"] = "Stärkungszauber",
+	["What you put on the group: HoTs, Innervate and the like. The list comes from the Cooldown Manager."] = "Was du auf die Gruppe legst: HoTs, Anregen und dergleichen. Die Liste kommt aus dem Abklingzeit-Manager.",
 	["Defensives & External"] = "Defensives & Externe",
-	["Major CDs"] = "Major CDs",
 	["Debuffs"] = "Debuffs",
 	["Show in preview"] = "In Vorschau zeigen",
 	["Click to edit"] = "Zum Bearbeiten klicken",

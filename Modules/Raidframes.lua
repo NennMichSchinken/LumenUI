@@ -196,17 +196,17 @@ local FAKE = {
 	{ name = "Grimoak",    class = "WARRIOR", hp = 1.00, power = 0.35, healAbsorb = 0.35, role = "TANK",
 		auras = { defensives = 2 } },
 	{ name = "Velisara",   class = "EVOKER",  hp = 0.71, power = 0.52, dispel = "Disease", role = "HEALER",
-		auras = { debuffs = 1, major = 1 } },
+		auras = { debuffs = 1 } },
 	{ name = "Ravynne",    class = "HUNTER",  hp = 0.95, power = 0.86, absorb = 0.10, role = "DAMAGER",
 		auras = {} },
 	{ name = "Stormhelm",  class = "DEATHKNIGHT", hp = 0.66, power = 0.28, predict = 0.20, role = "TANK",
 		auras = { defensives = 1 } },
 	{ name = "Brightwing", class = "PALADIN", hp = 0.50, power = 0.47, predict = 0.30, role = "HEALER",
-		auras = { hotsOwn = 2, major = 1 } },
+		auras = { hotsOwn = 2, defensives = 1 } },
 	{ name = "Embertide",  class = "MAGE",    hp = 0.50, power = 0.70, dispel = "Curse", role = "DAMAGER",
 		auras = { hotsOwn = 1, debuffs = 1 } },
 	{ name = "Drelvar",    class = "DEMONHUNTER", hp = 0.80, power = 0.58, healAbsorb = 0.30, role = "DAMAGER",
-		auras = { major = 1 } },
+		auras = { defensives = 1 } },
 	{ name = "Solveig",    class = "PRIEST",  hp = 0.40, power = 0.66, healAbsorb = 0.25, role = "DAMAGER" },
 	{ name = "Zulkhar",    class = "SHAMAN",  hp = 0.58, power = 0.74, dispel = "Poison", role = "DAMAGER",
 		auras = { debuffs = 1 } },
@@ -215,7 +215,7 @@ local FAKE = {
 	{ name = "Morgath",    class = "WARRIOR", hp = 0.72, power = 0.41, predict = 0.15, role = "DAMAGER",
 		auras = { hotsOwn = 2, defensives = 1 } },
 	{ name = "Aldris",     class = "DRUID",   hp = 0.45, power = 0.88, absorb = 0.15, role = "DAMAGER",
-		auras = { major = 2 } },
+		auras = { hotsOwn = 2 } },
 }
 
 -- Preview only: which power token a fake unit shows. Healers always run on mana
@@ -247,14 +247,6 @@ local FAKE_DEBUFF = {
 	"Interface\\Icons\\Ability_Creature_Poison_03",
 	"Interface\\Icons\\Spell_Nature_NullifyDisease",
 }
--- Major raid cooldowns (Bloodlust / Barrier / Tranquility / Aura Mastery) so the
--- preview reads as big CDs, not HoTs (Florian 2026-07-16).
-local FAKE_MAJOR = {
-	"Interface\\Icons\\Spell_Nature_BloodLust",
-	"Interface\\Icons\\Spell_Holy_PowerWordBarrier",
-	"Interface\\Icons\\Spell_Nature_Tranquility",
-	"Interface\\Icons\\Spell_Holy_AuraMastery",
-}
 
 -- Aura indicators: category registry. filter = Blizzard aura filter for GetAuraDataByIndex
 -- (secret-safe). subExclude/subInclude refine secret-safely via IsAuraFilteredOutByInstanceID:
@@ -269,14 +261,13 @@ local FAKE_MAJOR = {
 -- rows overlap -- but then it has to be DETERMINISTIC: as children created lazily
 -- at the same level, whichever category happened to be enabled first used to draw
 -- on top. Order by urgency, most urgent on top (Florian 2026-07-30):
---   debuffs > defensives > major CDs > HoTs > role/leader icons (f.iconLayer, +1).
+--   debuffs > defensives > HoTs > role/leader icons (f.iconLayer, +1).
 -- Stride 4 leaves each holder room for its own children (icon +1, cooldown +2).
 -- The text band (name/health text, role icon, leader crown) sits BELOW the aura
 -- band on purpose, so auras always win a collision.
 local AURA_CATS = {
 	{ key = "hotsOwn",    lvl = 4,  filter = "HELPFUL", whitelist = "hot", ownOnly = true,     fake = FAKE_HOTS },
 	{ key = "defensives", lvl = 12, filter = "HELPFUL", subInclude = "HELPFUL|EXTERNAL_DEFENSIVE", whitelist = "def", whitelistOr = true, fake = FAKE_DEFENSIVE },
-	{ key = "major",      lvl = 8,  filter = "HELPFUL", whitelist = "major", ownOnly = true,   fake = FAKE_MAJOR },
 	{ key = "debuffs",    lvl = 16, filter = "HARMFUL", harmfulModes = true,                  fake = FAKE_DEBUFF },
 }
 -- Debuff filter modes (Blizzard standard): "raid" = Blizzard's curated raid-relevant
@@ -535,19 +526,14 @@ local DEF_DEFAULTS = {
 	[1468] = { 357170, 363534 },                     -- Preservation: Time Dilation, Rewind
 	[1473] = { 361022 },                             -- Augmentation: Sense Power (secret, signature-learned)
 }
-local MAJOR_DEFAULTS = {
-	[65]   = { 31884 },       -- Holy Paladin: Avenging Wrath (Wings)
-	-- 117679 is the aura Incarnation: Tree of Life (33891) applies; the talent id
-	-- itself never shows up on a frame. The slot held 102558 for a long time, which
-	-- is Incarnation: Guardian of Ursoc -- a Guardian spell a Resto Druid never has,
-	-- so the category stayed empty except for Innervate.
-	[105]  = { 117679, 29166 },-- Resto Druid: Incarnation: Tree of Life, Innervate
-	[256]  = { 10060, 246287 },-- Disc Priest: Power Infusion, Evangelism
-	[257]  = { 10060, 265202 },-- Holy Priest: Power Infusion, Divine Hymn
-	[270]  = { 322118, 325197 },-- MW Monk: Invoke Yu'lon, Invoke Chi-Ji
-	[264]  = { 114052, 16191 }, -- Resto Shaman: Ascendance, Mana Tide Totem
-	[1468] = { 375087 },      -- Pres Evoker: Dragonrage
-}
+-- Major CDs used to be a category of its own, fed by a curated per-spec list. It
+-- is gone (Florian, 2026-08-09) and the reasoning is worth keeping: the list was
+-- mostly SELF buffs -- Tree of Life, Ascendance, Avenging Wrath -- which only ever
+-- appeared on your own frame, where the Cooldown Manager already shows them larger
+-- and with the cooldown attached. The two that genuinely belong on someone else's
+-- frame, Innervate and Power Infusion, are in Blizzard's group-window list anyway.
+-- What was left was a hand-kept list that produced the one real bug of the day (a
+-- Guardian spell sitting in the Resto Druid slot, unnoticed for months).
 
 local container
 local header                 -- SecureGroupHeader (live path)
@@ -585,7 +571,6 @@ local function whitelistFor(spec)
 	ensure(HOT_DEFAULTS[spec], "hot")
 	ensure(DEF_DEFAULTS[spec], "def")
 	ensure(DEF_CLASS[SPEC_CLASS[spec]], "def")   -- class-wide defensives
-	ensure(MAJOR_DEFAULTS[spec], "major")
 	return s
 end
 
@@ -619,12 +604,31 @@ function Raidframes:ResolveTrackId(spellID)
 	return (spellID and TALENT_TO_AURA[spellID]) or spellID
 end
 
--- Audit of the curated default lists: resolve every id to its in-game name, so a
--- wrong entry is readable without owning the class. The Resto Druid major slot held
--- a Guardian spell unnoticed because nobody ever saw a name next to the number.
--- Major CDs print in full (short list, and the one source that stays curated); the
--- much longer HoT/defensive lists print only ids the client does not know at all --
--- a name that resolves is still no proof that it is the RIGHT spell.
+-- One-time per spec, when Blizzard's group-window list takes over the HoT category.
+-- Everything that list carries stops being ours -- keeping it would mean the same
+-- spell is editable in two places and drawn twice. What is left over stays as the
+-- player's EXTRAS, so a spell Blizzard does not know (Hydrobubble on a Resto
+-- Shaman) does not disappear silently. Major CDs entries go with the category.
+-- `blizzardIDs` deliberately includes the ones the player HID in Blizzard's panel:
+-- hiding one there is a decision, and it must not come back here as an extra.
+function Raidframes:MigrateGroupBuffs(specID, blizzardIDs)
+	if not specID or specID == 0 or not blizzardIDs then return end
+	local A = db().auras; if not A then return end
+	local mig = A.groupBuffMigrated; if not mig then mig = {}; A.groupBuffMigrated = mig end
+	if mig[specID] then return end
+	mig[specID] = true
+	local s = whitelistFor(specID); if not s then return end
+	for sid, t in pairs(s) do
+		if t == "major" or (t == "hot" and blizzardIDs[sid]) then s[sid] = nil end
+	end
+end
+
+-- Audit of the remaining curated lists: HoT defaults now only seed the EXTRAS on
+-- top of Blizzard's group-window list, and the defensive lists are the fallback
+-- source. Reports ids the client does not know at all -- a name that resolves is
+-- still no proof that it is the RIGHT spell, which is exactly how a Guardian spell
+-- sat in the Resto Druid slot unnoticed. Use /lumennative buffs for that class of
+-- error: it compares against Blizzard's list and catches cast-id-instead-of-aura-id.
 function Raidframes:DumpCurated(emit)
 	local function nameOf(id)
 		return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or nil
@@ -632,17 +636,6 @@ function Raidframes:DumpCurated(emit)
 	local function specLabel(id)
 		local ok, _, nm = pcall(GetSpecializationInfoByID, id)
 		return ("%s %s (%d)"):format(SPEC_CLASS[id] or "?", (ok and nm) or "spec", id)
-	end
-
-	emit("Curated Major CDs -- read the names, not the numbers:")
-	local specs = {}
-	for sid in pairs(MAJOR_DEFAULTS) do specs[#specs + 1] = sid end
-	table.sort(specs)
-	for _, sid in ipairs(specs) do
-		emit("  " .. specLabel(sid))
-		for _, id in ipairs(MAJOR_DEFAULTS[sid]) do
-			emit(("     %d  %s"):format(id, nameOf(id) or "|cffff5555UNKNOWN TO THE CLIENT|r"))
-		end
 	end
 
 	local broken = 0
@@ -721,8 +714,6 @@ function Raidframes:ResetWhitelist(specID, typ)
 	end
 	if typ == "hot" then
 		restore(HOT_DEFAULTS[specID])
-	elseif typ == "major" then
-		restore(MAJOR_DEFAULTS[specID])
 	else
 		restore(DEF_DEFAULTS[specID])
 		restore(DEF_CLASS[SPEC_CLASS[specID]])

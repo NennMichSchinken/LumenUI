@@ -181,9 +181,8 @@ end
 local function previewEyeDefs()
 	return {
 		{ key = "auras", label = T("Aura indicators"), children = {
-			{ key = "hotsOwn",    label = T("HoTs") },
+			{ key = "hotsOwn",    label = T("Group buffs") },
 			{ key = "defensives", label = T("Defensives & External") },
-			{ key = "major",      label = T("Major CDs") },
 			{ key = "debuffs",    label = T("Debuffs") },
 		} },
 		{ key = "shields", label = T("Shields & heal absorb") },
@@ -201,7 +200,7 @@ local function previewEyeDefs()
 		{ key = "background", label = T("Background") }, -- the preview stage backdrop (Florian 2026-07-22)
 	}
 end
--- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/major/debuffs/
+-- Card-eye toggle: one preview LAYER key (hotsOwn/defensives/debuffs/
 -- shields/text/icons/dispel/aggro) lives in previewEyes as a bool (true = shown,
 -- false = hidden). The eye on the card header flips it and repaints the preview
 -- (and, stage 2, the selected Edit-Mode frame). Same keys the render path reads
@@ -1361,15 +1360,12 @@ end
 local AURA_CATS
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 	AURA_CATS = {
-		{ key = "hotsOwn",    typ = "hot",   label = T("HoTs"),
+		{ key = "hotsOwn",    typ = "hot",   label = T("Group buffs"),
 		  color = { r = 0.31, g = 0.75, b = 0.48 },
-		  desc  = T("Your own heal-over-time effects as an icon on the frame.") },
+		  desc  = T("What you put on the group: HoTs, Innervate and the like. The list comes from the Cooldown Manager.") },
 		{ key = "defensives", typ = "def",   label = T("Defensives & External"),
 		  color = { r = 0.36, g = 0.61, b = 0.84 },
 		  desc  = T("Your own defensives. External protection from others is shown automatically anyway.") },
-		{ key = "major",      typ = "major", label = T("Major CDs"),
-		  color = { r = 0.85, g = 0.70, b = 0.35 },
-		  desc  = T("Your class's big damage and resource cooldowns.") },
 		{ key = "debuffs",    typ = nil,     label = T("Debuffs"),
 		  color = { r = 0.69, g = 0.45, b = 0.85 },
 		  desc  = T("Harmful effects on your group. Picked by filter, not one by one.") },

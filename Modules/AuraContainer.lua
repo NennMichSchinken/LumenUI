@@ -2,12 +2,10 @@
 --
 -- Aura Phase 2 (WIP) -- native 12.1 AuraContainer rendering for raid-frame auras.
 -- Renders all four aura categories via the native container on the LIVE secure
--- raid buttons: the HELPFUL categories (HoTs, Defensives, Major CDs) from either
--- the curated whitelist (per-spellId includeSpellIDs) or Blizzard's own per-spell
--- category flags, and Debuffs (HARMFUL) via filter-mode groups (raid/all/
--- dispellable). Replaces the old manual scan/signature/secret-icon path.
--- Which source the helpful categories use is a session switch while its two open
--- in-game questions are unanswered -- see NATIVE_CATS.
+-- raid buttons: Buffs (Blizzard's group-window list plus the player's extras),
+-- Defensives (Blizzard's per-spell flags, with the curated whitelist as fallback)
+-- and Debuffs (HARMFUL) via filter-mode groups (raid/all/dispellable). Replaces
+-- the old manual scan/signature/secret-icon path -- see NATIVE_CATS.
 --
 -- Because SetAuraLayout* is CONTAINER-level (one anchor per container) and our
 -- categories use different corners, each category gets its OWN container per
@@ -64,18 +62,11 @@ RFC.enabled = false
 --
 -- Where a flag maps to a DIFFERENT category than ours, our curation decides:
 -- Barkskin and Ironbark are BIG_DEFENSIVE for Blizzard but sit in DEF_CLASS /
--- DEF_DEFAULTS for us, so BIG_DEFENSIVE feeds Defensives, not Major CDs.
+-- DEF_DEFAULTS for us, so BIG_DEFENSIVE feeds Defensives.
 --
--- Major CDs has NO flag source on purpose. It is Tree of Life, Innervate, Power
--- Infusion, Divine Hymn -- healing THROUGHPUT cooldowns, and Blizzard has no flag
--- for those (BIG_DEFENSIVE is about surviving, which is the other card). It also
--- does not need one: two or three signature buttons per healer spec is a set that
--- a curated list can actually hold complete, unlike every HoT in the game.
+-- Which source feeds Defensives is a SESSION switch (RFC.useFlags,
+-- `/lumennative flags off`) kept as a fallback while the group gates are open.
 --
--- Which source feeds the two flagged categories is a SESSION switch for now
--- (RFC.useFlags, `/lumennative flags on`), not a profile setting -- the override
--- layer (deselected -> excludeSpellIDs, extras -> their own group) still has to
--- be designed together with the Auras tab that explains it.
 -- hotsOwn takes neither source above: it reads Blizzard's own group-window buff
 -- list (Enum.CooldownViewerCategory.GroupBuff), which beats a flag string on the
 -- two counts that matter. It is BOUNDED and per spec -- 7 entries for a Resto
@@ -94,7 +85,6 @@ local NATIVE_CATS = {
 		-- an aura that is both is drawn once.
 		"HELPFUL|EXTERNAL_DEFENSIVE",
 		"HELPFUL|BIG_DEFENSIVE|!EXTERNAL_DEFENSIVE" } },
-	{ key = "major",      wl = "major" },
 	{ key = "debuffs",    harmful = true },
 }
 -- Session switch for the Defensives source: true = Blizzard's per-spell flags
@@ -179,10 +169,20 @@ end
 local buffInclude, buffOwned
 local function buildBuffSource()
 	if buffInclude then return buffInclude, buffOwned end
-	local include, owned = buildInclude("hot"), 0
+	local owned = 0
 	local CV, UA = C_CooldownViewer, C_UnitAuras
 	local ok, items = false, nil
 	if CV and CV.GetGroupBuffItems then ok, items = pcall(CV.GetGroupBuffItems) end
+	if ok and items and #items > 0 then
+		-- Before reading our own extras: a non-empty answer means the data is loaded,
+		-- which is the only moment the one-time prune can tell "Blizzard has it" from
+		-- "not known yet".
+		local all = {}
+		for _, it in ipairs(items) do all[it.spellID] = true end
+		local rf = ns.Raidframes
+		if rf and rf.MigrateGroupBuffs then rf:MigrateGroupBuffs(currentSpecID(), all) end
+	end
+	local include = buildInclude("hot")
 	if ok and items then
 		local hidden = {}
 		if UA and UA.GetHiddenGroupBuffs then
@@ -602,8 +602,6 @@ end
 -- each other.
 -- Every group runs through the SAME initializer, so both sources look identical and
 -- only the SET of icons differs.
--- A category without flagFilters (Major CDs) simply keeps its whitelist group in
--- both modes -- see the note on NATIVE_CATS for why it has no flag source.
 local function flagGroupKey(key, i) return key .. "_f" .. i end
 
 local function syncHelpful(container, c, lo)
@@ -944,7 +942,7 @@ function RFC.Enable(quiet)
 		syncDispel(btn, btn.overlay or btn)
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	if not quiet then say("Native auras |cff44ff44ON|r (HoTs · Defensives · Major CDs · Debuffs).") end
+	if not quiet then say("Native auras |cff44ff44ON|r (Buffs · Defensives · Debuffs).") end
 end
 
 -- Auto-default: on 12.1 turn native on by itself (once, after login), so no
@@ -1003,7 +1001,7 @@ function RFC.SetFlagSource(on)
 	RFC.Relayout()
 	say("HoTs + Defensives now from |cff44ff44" ..
 		(on and "Blizzard's per-spell flags" or "the curated whitelist") ..
-		"|r (Major CDs stay curated either way).")
+		"|r.")
 	-- On 12.0.x the native path is inert, so the switch is set but renders nothing.
 	-- Saying so beats letting an unchanged frame read as "the flags show nothing".
 	if not RFC.enabled then
@@ -1011,23 +1009,7 @@ function RFC.SetFlagSource(on)
 	end
 end
 
--- ---------------------------------------------------------------------------
---  Measurement aid: what does Blizzard's Cooldown Manager know about this spec?
---  Major CDs has no aura FLAG to source from (see NATIVE_CATS), but the Cooldown
---  Manager carries a per-spec, Blizzard-maintained categorisation of the same
---  spells -- Innervate sits under Utility, and that is exactly the kind of entry
---  our curated major list holds. Whether that set can REPLACE the list is a
---  question about its contents, so this prints them instead of arguing about them.
---  Dev command, cold path, everything guarded: a missing API just prints a line.
---
---  Read the two answers it gives:
---    * the listing = what Blizzard would hand us (aura-carrying entries only --
---      nothing else can ever land on a raid frame), with the two defensive flags
---      marked, because those are already covered by the Defensives category and
---      would have to be subtracted.
---    * the REVERSE CHECK = our curated major entries that the Cooldown Manager
---      does NOT know. Every one of those is a hole the swap would open.
--- ---------------------------------------------------------------------------
+-- Blizzard's own verdict on a spell, used to keep the categories disjoint.
 local function cdmFlags(spellID)
 	local big, ext = false, false
 	if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
@@ -1043,56 +1025,6 @@ local function spellName(id)
 	return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or ("#" .. tostring(id))
 end
 
-function RFC.DumpCDM()
-	local CV = C_CooldownViewer
-	if not (CV and CV.GetCooldownViewerCategorySet and Enum and Enum.CooldownViewerCategory) then
-		say("|cffff5555Cooldown Manager API not present on this build.|r"); return
-	end
-	if CV.IsCooldownViewerAvailable and not CV.IsCooldownViewerAvailable() then
-		say("|cffffcc00Cooldown Manager reports not available yet -- try again after login finishes.|r")
-	end
-	local spec = currentSpecID()
-	local wl = (ns.Raidframes and ns.Raidframes.WhitelistMap and ns.Raidframes:WhitelistMap(spec)) or {}
-	say("Cooldown Manager, spec " .. spec .. " -- aura-carrying entries only:")
-	local seen = {}
-	for _, cat in ipairs({
-		{ e = Enum.CooldownViewerCategory.Essential, tag = "Essential" },
-		{ e = Enum.CooldownViewerCategory.Utility,   tag = "Utility" },
-	}) do
-		local ok, ids = pcall(CV.GetCooldownViewerCategorySet, cat.e, true)
-		if ok and ids then
-			for _, cdID in ipairs(ids) do
-				local ok2, info = pcall(CV.GetCooldownViewerCooldownInfo, cdID)
-				if ok2 and info and info.hasAura then
-					local sid = info.overrideSpellID or info.spellID
-					if sid then
-						-- The aura a spell APPLIES is what a raid frame filters on, and that
-						-- is rarely the cast id -- linkedSpellIDs is the bridge.
-						local auraID = (info.linkedSpellIDs and info.linkedSpellIDs[1]) or sid
-						seen[auraID] = true
-						seen[sid] = true
-						local big, ext = cdmFlags(auraID)
-						say(("  %s  %s (%d)%s%s%s%s"):format(
-							cat.tag, spellName(sid), auraID,
-							info.selfAura and "  self" or "  on-target",
-							info.isKnown and "" or "  |cff888888unlearned|r",
-							(big or ext) and "  |cffffcc00already a defensive|r" or "",
-							wl[auraID] and ("  |cff44ff44we track as " .. wl[auraID] .. "|r") or ""))
-					end
-				end
-			end
-		end
-	end
-	-- The reverse check is the decisive half: what we curate and Blizzard does not know.
-	local missing = 0
-	for sid, typ in pairs(wl) do
-		if typ == "major" and not seen[sid] then
-			missing = missing + 1
-			say("  |cffff5555NOT in the Cooldown Manager:|r " .. spellName(sid) .. " (" .. sid .. ")")
-		end
-	end
-	if missing == 0 then say("|cff44ff44Every curated Major CD of this spec appears above.|r") end
-end
 
 -- ---------------------------------------------------------------------------
 --  Blizzard's own per-spec "Buffs (Group window)" list (CooldownViewerCategory
@@ -1193,7 +1125,6 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "refresh" then RFC.Disable(); RFC.Enable()
 	elseif arg == "flagson" then RFC.SetFlagSource(true)
 	elseif arg == "flagsoff" then RFC.SetFlagSource(false)
-	elseif arg == "cdm" then RFC.DumpCDM()
 	elseif arg == "buffs" then RFC.DumpGroupBuffs()
 	elseif arg == "curated" then
 		if ns.Raidframes and ns.Raidframes.DumpCurated then ns.Raidframes:DumpCurated(say) end
@@ -1201,9 +1132,8 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 		say("Auras through the native 12.1 container. Enabled automatically on 12.1.")
 		say("  /lumennative on | off | refresh   (currently: "
 			.. (RFC.enabled and "ON" or "OFF") .. (IS_121 and ", 12.1 detected" or ", not 12.1") .. ")")
-		say("  /lumennative flags on | off   -- source of HoTs/Defensives (Major CDs stay curated): "
+		say("  /lumennative flags on | off   -- source of the Defensives: "
 			.. (RFC.useFlags and "|cff44ff44Blizzard flags|r" or "|cffffcc00curated whitelist|r"))
-		say("  /lumennative cdm   -- what the Cooldown Manager knows about this spec")
 		say("  /lumennative buffs   -- Blizzard's own group-window buff list for this spec")
 		say("  /lumennative curated   -- our own default lists, resolved to spell names")
 	end

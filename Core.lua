@@ -176,7 +176,7 @@ local defaults = {
 			-- stays SHARED (whitelist, below). Four categories (HoTs/Defensives/Major/Debuffs);
 			-- default only HoTs on, the rest off + pre-placed in different corners
 			-- (collision-free when enabled).
-			-- Phase 2 (B2/B3): auras.whitelist[specID][spellID] = "hot"|"def"|"major" is seeded
+			-- Phase 2 (B2/B3): auras.whitelist[specID][spellID] = "hot"|"def" is seeded
 			-- LAZILY on first entering a spec from HOT_DEFAULTS ("hot") + DEF_DEFAULTS ("def")
 			-- (Raidframes.lua, whitelistFor) — deliberately NOT here in the defaults, so the first
 			-- write creates a real profile-owned table (no mutating of the shared defaults).
@@ -216,9 +216,10 @@ local defaults = {
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 				},
-				-- Major CDs (big class cooldowns). Whitelist "major" (MAJOR_DEFAULTS,
-				-- Raidframes.lua). Default anchor TOPLEFT = the last free corner (HoTs=BOTTOMLEFT,
-				-- Defensives=TOPRIGHT, Debuffs=BOTTOMRIGHT) -> collision-free when enabled.
+				-- Retired 2026-08-09: Major CDs is no longer a category (most of it was self
+				-- buffs the Cooldown Manager already shows). The block stays so an existing
+				-- profile keeps loading and nothing has to be rewritten on disk; no code reads
+				-- it any more. Remove once profiles have turned over.
 				major = {
 					showTooltip = false,
 					enabledRaid = false, enabledParty = false,
