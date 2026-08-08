@@ -1588,6 +1588,16 @@ end
 --  SHARED by Raid + Group — the hint above the list says so, because everything
 --  else on this tab is per context.
 -- ---------------------------------------------------------------------------
+-- True only while the native path is the one rendering AND Blizzard has nothing
+-- for this spec. On 12.0.x the old scan path still draws the curated list, so the
+-- absence of a group-buff list says nothing there.
+local function noGroupBuffList()
+	local R = ns.RFC
+	if not (R and R.enabled and R.GroupBuffCount) then return false end
+	local ok, n = pcall(R.GroupBuffCount)
+	return ok and (n or 0) == 0
+end
+
 local function auraSpellsPane(d, host, cat, page)
 	local RFm  = ns.Raidframes
 	local spec = trkSpec()
@@ -1606,6 +1616,18 @@ local function auraSpellsPane(d, host, cat, page)
 		st:place(f1, M.controlH + M.fieldGap, R.row)
 		st:place(W.Hint(content, T("Debuffs are chosen by filter, not one by one — WoW does not allow "
 			.. "picking individual harmful effects on other players."), M.hintH), M.hintH, 0)
+		host:place(box, blockClose(box, st, content), 0)
+		return
+	end
+
+	-- Group buffs come from Blizzard's per-spec list, and some specs have none at
+	-- all. Without this the page shows a switched-on category and a spell list for
+	-- something that cannot draw a single icon.
+	if cat.key == "hotsOwn" and noGroupBuffList() then
+		local box, st, content = innerBlock(d, T("Group buffs"))
+		st:place(W.Hint(content, T("Your current specialization has no group-buff list in WoW's "
+			.. "Cooldown Manager, so this category stays empty. Defensives and debuffs are "
+			.. "unaffected."), M.hintH * 2), M.hintH * 2, 0)
 		host:place(box, blockClose(box, st, content), 0)
 		return
 	end
@@ -1890,6 +1912,7 @@ local function buildAuras(d, stack)
 			key = c.key, label = c.label, color = c.color,
 			on = function() return aget(c.key, "enabled" .. sfx)() and true or false end,
 			badge = function()
+				if c.key == "hotsOwn" and noGroupBuffList() then return T("n/a") end
 				if not aget(c.key, "enabled" .. sfx)() then return T("off") end
 				return tostring(aget(c.key, "maxIcons" .. sfx)() or 0)
 			end,

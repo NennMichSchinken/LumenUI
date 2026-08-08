@@ -210,6 +210,15 @@ end
 -- True while there is nothing to draw at all: Blizzard offers no list for this
 -- spec (a Hunter) AND the player added no extras. The category then goes dark
 -- instead of reserving space for an empty row.
+-- How many entries Blizzard's list carries for the ACTIVE spec. The Auras tab
+-- needs this: a category that is switched on in the profile but has no list
+-- behind it draws nothing, and saying so beats a settings page that claims
+-- otherwise (a Hunter has no group-buff list at all).
+function RFC.GroupBuffCount()
+	local _, owned = buildBuffSource()
+	return owned
+end
+
 local function buffSourceEmpty()
 	local include, owned = buildBuffSource()
 	if owned > 0 then return false end
@@ -1075,22 +1084,24 @@ function RFC.DumpGroupBuffs()
 		-- boundary: those belong to Defensives (already flag-sourced), not to HoTs.
 		local big, ext = cdmFlags(it.spellID)
 		if big or ext then note = note .. "  |cffffcc00is a defensive|r" end
-		note = note .. (wl[it.spellID] and ("  |cff44ff44we track as " .. wl[it.spellID] .. "|r")
-			or "  |cffff5555we do NOT track this|r")
+		-- After the migration our whitelist holds only the EXTRAS, so an entry that is
+		-- not in it is the normal case: Blizzard's list owns it. Saying "we do NOT
+		-- track this" here read like a fault when it is the working state.
+		if wl[it.spellID] then note = note .. "  |cffffcc00also in your extras|r" end
 		say(("  %s (%d)  %s%s"):format(it.name or "?", it.spellID, state, note))
 	end
 
-	-- The decisive half again: what we curate as a HoT and Blizzard's list does not
-	-- carry. Every hit here is something a swap to Blizzard's list would drop.
-	local missing = 0
+	-- Our own additions: spells Blizzard's list does not carry at all, which is the
+	-- only reason the extras layer exists.
+	local extras = 0
 	for sid, typ in pairs(wl) do
 		if typ == "hot" and not blizz[sid] then
-			missing = missing + 1
-			say("  |cffff5555not in Blizzard's list:|r " .. spellName(sid) .. " (" .. sid .. ")")
+			extras = extras + 1
+			say("  |cff44ff44your extra:|r " .. spellName(sid) .. " (" .. sid .. ")")
 		end
 	end
-	if missing == 0 and #items > 0 then
-		say("|cff44ff44Blizzard's list carries every HoT we curate for this spec.|r")
+	if extras == 0 and #items > 0 then
+		say("Everything shown comes from Blizzard's list; you have no extras on this spec.")
 	end
 
 	-- Same name, different id = we are almost certainly tracking the CAST spell while

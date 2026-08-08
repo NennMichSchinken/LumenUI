@@ -182,6 +182,8 @@ ns.RegisterLocale("deDE", {
 	["Aura indicators"] = "Aura-Indikatoren",
 	["HoTs"] = "HoTs",
 	["Group buffs"] = "Stärkungszauber",
+	["n/a"] = "n. v.",
+	["Your current specialization has no group-buff list in WoW's Cooldown Manager, so this category stays empty. Defensives and debuffs are unaffected."] = "Deine aktuelle Spezialisierung hat im Abklingzeit-Manager von WoW keine Gruppen-Stärkungsliste, deshalb bleibt diese Kategorie leer. Defensives und Debuffs sind davon nicht betroffen.",
 	["What you put on the group: HoTs, Innervate and the like. The list comes from the Cooldown Manager."] = "Was du auf die Gruppe legst: HoTs, Anregen und dergleichen. Die Liste kommt aus dem Abklingzeit-Manager.",
 	["Defensives & External"] = "Defensives & Externe",
 	["Debuffs"] = "Debuffs",
