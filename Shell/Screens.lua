@@ -29,7 +29,7 @@ ns.Screens = ns.Screens or {}
 local ALIGN_OPTS, HPTEXT_SEG_OPTS, POINT_OPTS, GROW_OPTS
 local AURA_FILTER_OPTS, SORT_MODE_OPTS
 local ROLE_LABEL, DISPEL_TYPES
-local OUTLINE_SEG_OPTS, DISPEL_SEG_OPTS, AGGRO_SEG_OPTS, POWER_COLOR_SEG_OPTS
+local OUTLINE_SEG_OPTS, DISPEL_SEG_OPTS, AGGRO_SEG_OPTS, POWER_COLOR_SEG_OPTS, DUR_MAX_SEG_OPTS
 local DISPEL_SCOPE_OPTS
 
 ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
@@ -92,6 +92,15 @@ ns.onLocaleReady[#ns.onLocaleReady + 1] = function()
 		{ value = "shadow",  label = T("Shadow") },
 		{ value = "outline", label = T("Thin") },
 		{ value = "thick",   label = T("Thick") },
+	}
+	-- When the number appears at all. The remaining time is secret, so the engine
+	-- decides on our behalf (colour curve, alpha 0 above the threshold) -- which is
+	-- also why this is a short list of thresholds and not a free slider: every value
+	-- costs a curve, and nobody needs 47 seconds.
+	DUR_MAX_SEG_OPTS = {
+		{ value = 0,   label = T("Always") },
+		{ value = 60,  label = T("< 1 min") },
+		{ value = 300, label = T("< 5 min") },
 	}
 	DISPEL_SEG_OPTS = {
 		{ value = "recolor", label = T("Recolor") },
@@ -1416,7 +1425,7 @@ local function ctxSfx(ctx) return (ctx == "raid") and "Raid" or "Party" end
 local AURA_COPY_GROUPS = {
 	place = { "anchor", "grow", "spacing", "outside", "offX", "offY" },
 	look  = { "maxIcons", "size", "autoFit", "showSwipe" },
-	text  = { "showDuration", "durationSize", "durationOutline" },
+	text  = { "showDuration", "durationSize", "durationOutline", "durationMax" },
 }
 
 -- ---------------------------------------------------------------------------
@@ -2020,8 +2029,17 @@ local function auraDisplayPane(d, host, cat, ctx, page)
 	-- segHugPad, so the air is guaranteed regardless of the card width.
 	local durOut = W.Segment(dC, { label = T("Outline"), hug = true, options = OUTLINE_SEG_OPTS,
 		get = cget("durationOutline"), set = cset("durationOutline") })
-	dSt:place(durOut, fieldH, 0)
+	dSt:place(durOut, fieldH, R.row)
 	durDeps[#durDeps + 1] = durOut
+	-- A long buff writes "58m" -- three characters at a size chosen for "8", hanging
+	-- off the icon. Shrinking the font until that fits makes the numbers that MATTER
+	-- unreadable, so the answer is to leave the number out while it is still far away
+	-- (Florian 2026-08-09).
+	local durMax = W.Segment(dC, { label = T("Show the number"), hug = true, options = DUR_MAX_SEG_OPTS,
+		tooltip = T("A buff with an hour left writes 58m across its icon. Below the chosen mark the number appears — before that the icon speaks for itself."),
+		get = cget("durationMax"), set = cset("durationMax") })
+	dSt:place(durMax, fieldH, 0)
+	durDeps[#durDeps + 1] = durMax
 	local dH = blockClose(dBox, dSt, dC)
 
 	-- --- Cues ----------------------------------------------------------------

@@ -353,10 +353,33 @@ end
 -- Per-category duration-text options (per context).
 local function durOptsFor(key)
 	local cat, sfx = catCfg(key), ctxSfx()
-	if not cat then return true, 12, "shadow" end
+	if not cat then return true, 12, "shadow", 60 end
 	local on = cat["showDuration" .. sfx]
 	if on == nil then on = true end
-	return on, cat["durationSize" .. sfx] or 12, cat["durationOutline" .. sfx] or "shadow"
+	local maxSec = cat["durationMax" .. sfx]
+	if maxSec == nil then maxSec = 60 end
+	return on, cat["durationSize" .. sfx] or 12, cat["durationOutline" .. sfx] or "shadow", maxSec
+end
+
+-- "Only show the number once it matters." A 58-minute Earth Shield reads as "58m"
+-- -- three characters at a size chosen for "8", hanging far off a 16px icon, and
+-- shrinking the font until it fits makes the numbers that DO matter unreadable
+-- (Florian 2026-08-09).
+-- The remaining duration is secret, so the decision cannot be ours: we hand the
+-- engine a colour curve whose ALPHA is 0 above the threshold and 1 below it, keyed
+-- to RemainingDuration. It evaluates that internally, exactly like the dispel type
+-- curve does for its (also secret) colour. Step type, so it flips rather than
+-- fades. One curve per threshold value, built once.
+local durCurves = {}
+local function durationCurve(maxSec)
+	if durCurves[maxSec] then return durCurves[maxSec] end
+	if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and Enum and Enum.LuaCurveType) then return nil end
+	local c = C_CurveUtil.CreateColorCurve()
+	c:SetType(Enum.LuaCurveType.Step)
+	c:AddPoint(0, CreateColor(1, 1, 1, 1))
+	c:AddPoint(maxSec + 1, CreateColor(1, 1, 1, 0))
+	durCurves[maxSec] = c
+	return c
 end
 
 -- Every aura button the engine has created for us, as { button, fs, key, ring }.
@@ -379,7 +402,7 @@ local pendingRefresh = false
 -- in the engine's SetText path, so the font is set before the binding is attached.
 local function applyDurStyle(e)
 	local button, fs = e.button, e.fs
-	local on, size, outline = durOptsFor(e.key)
+	local on, size, outline, maxSec = durOptsFor(e.key)
 	local function style()
 		if ns.Raidframes and ns.Raidframes.StyleTextFont then
 			ns.Raidframes:StyleTextFont(fs, size, outline)
@@ -388,6 +411,13 @@ local function applyDurStyle(e)
 	style()
 	pcall(fs.SetTextColor, fs, 1, 1, 1)   -- VertexColor is a secret aspect once bound
 	if on then
+		-- The threshold lives in the BINDING, so a change to it needs a re-bind --
+		-- unlike size and outline, which are pure font state. Blizzard's own comment
+		-- asks for the active binding to be cleared first.
+		if e.durBound and e.durMax ~= maxSec then
+			pcall(button.ClearDurationText, button)
+			e.durBound = false
+		end
 		if not e.durBound then
 			local fmt = getDurationFormatter()
 			-- 68914 renamed this option key from `formatter` to `textFormatter`, and
@@ -397,11 +427,18 @@ local function applyDurStyle(e)
 			-- each build reads the one it knows.
 			local opts
 			if fmt then opts = { textFormatter = fmt, formatter = fmt } else opts = {} end
+			local curve = (maxSec or 0) > 0 and durationCurve(maxSec) or nil
+			if curve and Enum and Enum.DurationTextBindingProperty then
+				opts.textColor = { curve = curve,
+					property = Enum.DurationTextBindingProperty.RemainingDuration }
+			end
 			-- Bound ONCE, not on every settings change: SetDurationText re-arms the
 			-- binding and re-stamps the secret aspects, and Blizzard's own comment
 			-- warns that replacing an active binding needs the old one disabled first.
 			-- Size/outline are pure font state and do not need a re-bind.
-			if pcall(button.SetDurationText, button, fs, opts) then e.durBound = true end
+			if pcall(button.SetDurationText, button, fs, opts) then
+				e.durBound, e.durMax = true, maxSec
+			end
 		end
 		-- Style AGAIN after the binding: taking the string over resets it to the
 		-- font object's size, which ate every size change (Florian 2026-08-06).

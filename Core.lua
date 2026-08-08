@@ -197,6 +197,10 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
+					-- Only draw the number once the aura is nearly gone. A long buff (a
+					-- 60-minute Earth Shield) otherwise reads "58m" -- three characters at
+					-- a size picked for "8", hanging off the icon. 0 = always show.
+					durationMaxRaid = 60, durationMaxParty = 60,
 					-- Pandemic marker (12.1+): the icon is marked while re-casting would
 					-- carry duration over. The engine drives it (base vs. extended duration
 					-- are secret), we only own the option -- shared across raid/group like
@@ -215,6 +219,10 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
+					-- Only draw the number once the aura is nearly gone. A long buff (a
+					-- 60-minute Earth Shield) otherwise reads "58m" -- three characters at
+					-- a size picked for "8", hanging off the icon. 0 = always show.
+					durationMaxRaid = 60, durationMaxParty = 60,
 				},
 				-- Retired 2026-08-09: Major CDs is no longer a category (most of it was self
 				-- buffs the Cooldown Manager already shows). The block stays so an existing
@@ -243,6 +251,10 @@ local defaults = {
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
+					-- Only draw the number once the aura is nearly gone. A long buff (a
+					-- 60-minute Earth Shield) otherwise reads "58m" -- three characters at
+					-- a size picked for "8", hanging off the icon. 0 = always show.
+					durationMaxRaid = 60, durationMaxParty = 60,
 					-- Filter (per context): "raid" = only raid-relevant debuffs (Blizzard's
 					-- own default), "all" = all, "dispellable" = only self-dispellable.
 					-- "all" rather than Blizzard's "raid" (Florian 2026-08-07): the dispel

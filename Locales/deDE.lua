@@ -238,6 +238,11 @@ ns.RegisterLocale("deDE", {
 	["Duration text"] = "Restzeit-Text",
 	["The remaining time on the icon"] = "Die Restzeit auf dem Icon",
 	["Show duration"] = "Restzeit anzeigen",
+	["Show the number"] = "Zahl zeigen",
+	["Always"] = "Immer",
+	["< 1 min"] = "< 1 Min",
+	["< 5 min"] = "< 5 Min",
+	["A buff with an hour left writes 58m across its icon. Below the chosen mark the number appears — before that the icon speaks for itself."] = "Ein Stärkungszauber mit einer Stunde Restzeit schreibt 58m quer übers Symbol. Ab der gewählten Marke erscheint die Zahl — davor spricht das Symbol für sich.",
 	["Outline"] = "Umrandung",
 	-- Split so the VALUE can be highlighted separately in the info bar.
 	["Applies to"] = "Gilt für",
