@@ -364,6 +364,16 @@ end
 -- marker, icon size) instead of rebuilding the containers.
 local auraBtns = {}
 
+-- Once auras are secret, the aura buttons and their regions belong to the ENGINE:
+-- styling the duration FontString from our (tainted) code is a forbidden access,
+-- and it is a hard error, not a silent no-op -- hiding a defensive mid-fight threw
+-- exactly there (Florian 2026-08-09). So every LOOK change waits for the end of the
+-- fight, and this flag remembers that one is owed.
+-- The DATA side deliberately does NOT wait: pushing candidate filters is legal in
+-- combat, which is why hiding a buff in Blizzard's own panel takes effect
+-- immediately, and why the icon still disappears the moment you click.
+local pendingRefresh = false
+
 -- Style one duration fontstring from its category's options + (re)register or
 -- clear the engine binding for the on/off state. An unstyled FontString hard-errors
 -- in the engine's SetText path, so the font is set before the binding is attached.
@@ -457,7 +467,9 @@ end
 
 -- Re-apply every per-button option (called on any aura settings change): duration
 -- text, tooltip/mouse, pandemic marker. Dead entries are swapped out as we go.
+-- Deferred to the end of combat, both of them: see the note at pendingRefresh.
 function RFC.RefreshOptions()
+	if InCombatLockdown() then pendingRefresh = true; return end
 	for i = #auraBtns, 1, -1 do
 		local e = auraBtns[i]
 		if e.fs and e.button then
@@ -974,6 +986,7 @@ end
 -- ones, re-apply layout + resize the rest (called on any aura settings change).
 function RFC.Relayout()
 	if not RFC.enabled then return end
+	if InCombatLockdown() then pendingRefresh = true; return end
 	-- Drop the cached hide list first: a profile switch or an import lands here
 	-- (UpdateLayout -> Relayout) and brings a different set with it.
 	defExcl, defExclArg = nil, nil
@@ -1101,7 +1114,16 @@ for _, e in ipairs({ "HIDDEN_GROUP_BUFFS_CHANGED", "PLAYER_SPECIALIZATION_CHANGE
 	"COOLDOWN_VIEWER_DATA_LOADED" }) do
 	pcall(autoFrame.RegisterEvent, autoFrame, e)
 end
+autoFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 autoFrame:SetScript("OnEvent", function(_, event)
+	if event == "PLAYER_REGEN_ENABLED" then
+		if pendingRefresh then
+			pendingRefresh = false
+			RFC.Relayout()
+			RFC.RefreshOptions()
+		end
+		return
+	end
 	if event ~= "PLAYER_ENTERING_WORLD" then
 		if IS_121 then RFC.RefreshBuffSource() end
 		return
