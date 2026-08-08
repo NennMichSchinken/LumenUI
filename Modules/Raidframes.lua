@@ -2529,6 +2529,14 @@ end
 local pvIcons = { spec = -1, lists = {} }
 local function invalidatePreviewIcons() pvIcons.spec = -1 end
 local function previewIconsFor(c)
+	-- Group buffs: the source is Blizzard's per-spec list, not our whitelist, so the
+	-- preview asks the same place the frames do. It also means a spec with no list
+	-- (a Hunter) previews NOTHING instead of somebody else's HoTs -- players know
+	-- their own buffs, and stock art from another class only reads as a bug.
+	if c.key == "hotsOwn" and ns.RFC and ns.RFC.enabled and ns.RFC.GroupBuffIcons then
+		local ok, icons = pcall(ns.RFC.GroupBuffIcons)
+		if ok and icons then return (#icons > 0) and icons or nil end
+	end
 	if not c.whitelist then return c.fake or FAKE_HOTS end
 	local sid = currentSpecID()
 	if pvIcons.spec ~= sid then
@@ -2575,6 +2583,12 @@ function Raidframes:RenderAurasFake(f)
 			-- the older per-render WhitelistEntries scan; falls back to the static
 			-- fake list when nothing is tracked or the category is filter-mode).
 			local fakeTex = previewIconsFor(c)
+			-- nil = the category has no source on this spec. Hiding the leftover icons
+			-- matters: the holder keeps whatever it drew last otherwise.
+			if not fakeTex then
+				for k = 1, #holder.icons do holder.icons[k]:Hide() end
+				n = 0
+			end
 			-- Duration-text options mirror the native path (per context): show
 			-- on/off, size, and outline (same outline set as the name text).
 			local durOn = cat[K.showDuration]

@@ -166,7 +166,7 @@ end
 --     Blizzard's list does not carry at all still gets shown.
 -- Cached because syncHelpful runs per button; invalidated by the events below
 -- rather than rebuilt per call (CLAUDE.md §9: no allocation in repeated paths).
-local buffInclude, buffOwned
+local buffInclude, buffOwned, buffIcons
 local function buildBuffSource()
 	if buffInclude then return buffInclude, buffOwned end
 	local owned = 0
@@ -203,8 +203,33 @@ local function buildBuffSource()
 			end
 		end
 	end
-	buffInclude, buffOwned = include, owned
+	-- Ordered icon list for the preview. The preview has to show what the frames
+	-- show, or you end up configuring size and placement against a fiction. Order
+	-- is Blizzard's list first (their order), extras after, sorted -- DETERMINISTIC
+	-- on purpose, because the preview re-renders on every slider tick and a set
+	-- iterated with pairs would reshuffle mid-drag.
+	local icons, seen = {}, {}
+	local function push(sid)
+		if seen[sid] or not include[sid] then return end
+		seen[sid] = true
+		local tex = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)
+		if tex then icons[#icons + 1] = tex end
+	end
+	if ok and items then for _, it in ipairs(items) do push(it.spellID) end end
+	local rest = {}
+	for sid in pairs(include) do if not seen[sid] then rest[#rest + 1] = sid end end
+	table.sort(rest)
+	for _, sid in ipairs(rest) do push(sid) end
+
+	buffInclude, buffOwned, buffIcons = include, owned, icons
 	return include, owned
+end
+
+-- Icons of everything the category would draw, for the preview. Empty means the
+-- preview must skip the category entirely rather than fall back to stock art.
+function RFC.GroupBuffIcons()
+	buildBuffSource()
+	return buffIcons
 end
 
 -- True while there is nothing to draw at all: Blizzard offers no list for this
@@ -972,7 +997,10 @@ autoFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- Pushing new candidate filters keeps the existing aura buttons -- no container
 -- rebuild, so this is legal while a container already lives on a frame.
 function RFC.RefreshBuffSource()
-	buffInclude, buffOwned = nil, nil
+	buffInclude, buffOwned, buffIcons = nil, nil, nil
+	-- The preview caches its icons per spec, and this can change without one.
+	local rf = ns.Raidframes
+	if rf and rf._InvalidatePreviewIcons then pcall(rf._InvalidatePreviewIcons) end
 	if not RFC.enabled then return end
 	local include = buildBuffSource()
 	forEachLiveButton(function(btn)
