@@ -1016,14 +1016,22 @@ function RFC.DumpGroupBuffs()
 		say("  |cffffcc00none -- Blizzard offers no group-buff list for this spec.|r")
 	end
 
-	local blizz = {}
+	local blizz, blizzByName = {}, {}
 	local defFlag = (Enum and Enum.GroupBuffItemFlags and Enum.GroupBuffItemFlags.HideByDefault) or 1
 	for _, it in ipairs(items) do
 		blizz[it.spellID] = true
+		if it.name then
+			local l = blizzByName[it.name]; if not l then l = {}; blizzByName[it.name] = l end
+			l[#l + 1] = it.spellID
+		end
 		local state = hidden[it.spellID] and "|cff888888not shown|r" or "|cff44ff44shown|r"
 		local note = ""
 		if bit.band(it.flags or 0, defFlag) ~= 0 then note = note .. "  |cff888888hidden by default|r" end
 		if not it.isKnown then note = note .. "  |cff888888unlearned|r" end
+		-- Which of these Blizzard itself considers a defensive decides the category
+		-- boundary: those belong to Defensives (already flag-sourced), not to HoTs.
+		local big, ext = cdmFlags(it.spellID)
+		if big or ext then note = note .. "  |cffffcc00is a defensive|r" end
 		note = note .. (wl[it.spellID] and ("  |cff44ff44we track as " .. wl[it.spellID] .. "|r")
 			or "  |cffff5555we do NOT track this|r")
 		say(("  %s (%d)  %s%s"):format(it.name or "?", it.spellID, state, note))
@@ -1040,6 +1048,19 @@ function RFC.DumpGroupBuffs()
 	end
 	if missing == 0 and #items > 0 then
 		say("|cff44ff44Blizzard's list carries every HoT we curate for this spec.|r")
+	end
+
+	-- Same name, different id = we are almost certainly tracking the CAST spell while
+	-- the aura that lands on the frame has its own id. That is the bug the Resto Druid
+	-- major slot had, and a name audit cannot see it -- both ids resolve to a name.
+	for sid in pairs(wl) do
+		local ids = blizzByName[spellName(sid)]
+		if ids and not blizz[sid] then
+			for _, other in ipairs(ids) do
+				say(("  |cffffcc00same name, other id:|r we track %s (%d), Blizzard's list has %d")
+					:format(spellName(sid), sid, other))
+			end
+		end
 	end
 end
 
