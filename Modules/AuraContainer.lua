@@ -370,6 +370,11 @@ end
 -- to RemainingDuration. It evaluates that internally, exactly like the dispel type
 -- curve does for its (also secret) colour. Step type, so it flips rather than
 -- fades. One curve per threshold value, built once.
+-- ALWAYS built, including for the "no threshold" case -- and that is the point:
+-- a re-bind that simply LEAVES OUT the colour curve does not clear the one the
+-- binding already carries, so switching back to Always kept the number invisible
+-- (Florian 2026-08-09, H3). The zero curve is a single opaque point that
+-- overwrites the old one.
 local durCurves = {}
 local function durationCurve(maxSec)
 	if durCurves[maxSec] then return durCurves[maxSec] end
@@ -377,7 +382,7 @@ local function durationCurve(maxSec)
 	local c = C_CurveUtil.CreateColorCurve()
 	c:SetType(Enum.LuaCurveType.Step)
 	c:AddPoint(0, CreateColor(1, 1, 1, 1))
-	c:AddPoint(maxSec + 1, CreateColor(1, 1, 1, 0))
+	if maxSec > 0 then c:AddPoint(maxSec + 1, CreateColor(1, 1, 1, 0)) end
 	durCurves[maxSec] = c
 	return c
 end
@@ -427,7 +432,7 @@ local function applyDurStyle(e)
 			-- each build reads the one it knows.
 			local opts
 			if fmt then opts = { textFormatter = fmt, formatter = fmt } else opts = {} end
-			local curve = (maxSec or 0) > 0 and durationCurve(maxSec) or nil
+			local curve = durationCurve(maxSec or 0)
 			if curve and Enum and Enum.DurationTextBindingProperty then
 				opts.textColor = { curve = curve,
 					property = Enum.DurationTextBindingProperty.RemainingDuration }
