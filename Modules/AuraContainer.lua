@@ -1162,13 +1162,31 @@ autoFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- it in Blizzard's own panel, or the spec (and with it the whole list) changes.
 -- Pushing new candidate filters keeps the existing aura buttons -- no container
 -- rebuild, so this is legal while a container already lives on a frame.
+-- Same id set? Both sides are Blizzard's group-buff list, so this is at most 16
+-- entries either way -- cheap next to what the comparison prevents.
+local function sameIDSet(a, b)
+	if a == b then return true end
+	if not (a and b) then return false end
+	for k in pairs(a) do if b[k] == nil then return false end end
+	for k in pairs(b) do if a[k] == nil then return false end end
+	return true
+end
+
 function RFC.RefreshBuffSource()
-	buffInclude, buffOwned, buffIcons = nil, nil, nil
+	-- The events behind this fire far more often than the list actually changes: a
+	-- shapeshift reloads the cooldown-viewer data, and a single solo dummy fight
+	-- produced FIFTEEN rebuilds (measured 2026-08-10, Florian on a Resto Druid
+	-- cycling Tree of Life). Everything after the rebuild is expensive -- a
+	-- candidate-filter push is a full aura re-parse of one unit, and there is one
+	-- per live button -- so the answer is compared before any of it runs.
+	local prev, prevHidden = buffInclude, buffHidden
+	buffCached = nil
+	local include = buildBuffSource()
+	if prev and prevHidden == buffHidden and sameIDSet(prev, include) then return end
 	-- The preview caches its icons per spec, and this can change without one.
 	local rf = ns.Raidframes
 	if rf and rf._InvalidatePreviewIcons then pcall(rf._InvalidatePreviewIcons) end
 	if not RFC.enabled then return end
-	local include = buildBuffSource()
 	forEachLiveButton(function(btn)
 		local container = btn._rfc and btn._rfc.hotsOwn
 		if container then
@@ -1215,6 +1233,23 @@ function RFC.RefreshDefensiveSource()
 	end)
 end
 
+-- Coalesce a burst into ONE rebuild on the next frame -- the same move the
+-- in-combat roster burst makes (Raidframes._RosterPaint). The three events below
+-- arrive together (a spec change reloads the cooldown data, which re-derives the
+-- hidden set), and reacting to each one separately means re-deriving the same
+-- answer two or three times. A module-level function reference, so queueing
+-- allocates no closure.
+local buffQueued = false
+local function flushBuffSource()
+	buffQueued = false
+	RFC.RefreshBuffSource()
+end
+local function queueBuffSource()
+	if buffQueued then return end
+	buffQueued = true
+	C_Timer.After(0, flushBuffSource)
+end
+
 -- pcall per event: this file loads on 12.0.7 as well, where RegisterEvent on an
 -- event the client does not know is a hard error, not a no-op.
 for _, e in ipairs({ "HIDDEN_GROUP_BUFFS_CHANGED", "PLAYER_SPECIALIZATION_CHANGED",
@@ -1239,7 +1274,7 @@ autoFrame:SetScript("OnEvent", function(_, event, unit)
 		-- the filter every stranger's respec paid for all of that. Raidframes and
 		-- ClickCast carry the same guard (2026-07-03 audit, A4).
 		if event == "PLAYER_SPECIALIZATION_CHANGED" and unit and unit ~= "player" then return end
-		if IS_121 then RFC.RefreshBuffSource() end
+		if IS_121 then queueBuffSource() end
 		return
 	end
 	if autoDone or not IS_121 then return end
