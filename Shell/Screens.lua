@@ -1633,19 +1633,44 @@ end
 
 -- ---------------------------------------------------------------------------
 --  The Cooldown Manager is the source of the group-buff category, so the tab has
---  to point at it -- but only with WORDS.
---  A button was built first and it TAINTED (Florian 2026-08-09):
---  `CooldownViewerSettings:TogglePanel()` -- what Blizzard's own slash command
---  calls -- runs their panel code from OUR execution, and what it touches on the
---  way stays tainted for the rest of the session. Afterwards Blizzard's own aura
---  handler died on every aura that landed: "attempted to index a table that
---  cannot be accessed while tainted", on `auraInstanceIDToItemFramesMap`, with no
---  Lumen frame anywhere on the stack. Poisoning a Blizzard system to save one
---  typed command is a bad trade, and it stays a bad trade. Do not rebuild it.
+--  to be able to send you there. Three attempts, and the third is deliberately
+--  the SMALLEST one -- the history matters, because the obvious two are traps:
+--
+--  🔴 1. `CooldownViewerSettings:TogglePanel()` + `SetDisplayMode("groupBuffs")`
+--     TAINTED (Florian 2026-08-09). TogglePanel routes through `ShowUIPanel` (the
+--     whole UIParent panel manager) and SetDisplayMode reaches through the data
+--     provider into the viewer frames -- both ran from OUR execution, and what
+--     they touched stayed tainted for the session. Afterwards Blizzard's own aura
+--     handler died on every aura that landed: "attempted to index a table that
+--     cannot be accessed while tainted", on `auraInstanceIDToItemFramesMap`, with
+--     no Lumen frame anywhere on the stack. `pcall` does not catch a taint and
+--     "out of combat only" is no guard against one.
+--  🔴 2. A SecureActionButton carrying the slash command as `macrotext` (the QoL
+--     marker-bar pattern) would keep the execution Blizzard's -- but it puts a
+--     PROTECTED frame inside the Shell's frame tree, and hiding a frame that has
+--     protected children is blocked in combat. The Shell has no combat handling
+--     at all (it can sit open when a fight starts and rebuilds on every tab
+--     switch), so that trades a taint for blocked actions. See
+--     `lumen-protected-ancestor-visibility`.
+--  ✅ 3. What is left is the narrow one: `:Show()` on the settings frame, nothing
+--     else. No panel manager, no tab switching, no attributes -- one call on a
+--     plain (unprotected) frame. The panel opens on whatever tab it was left on,
+--     so the tooltip names the tab instead of us switching it.
+--  The slash command stays as the fallback text: SLASH_* is localized, a literal
+--  "/cooldownmanager" would be dead on a German client.
 -- ---------------------------------------------------------------------------
 local function openCDMSlash()
 	-- Localized by the client; the fallback only matters if the global vanishes.
 	return _G.SLASH_COOLDOWNMANAGER1 or "/cooldownmanager"
+end
+
+local function openCDM()
+	if InCombatLockdown() then return false end
+	local f = _G.CooldownViewerSettings
+	if not f then return false end
+	return (pcall(function()
+		if f:IsShown() then f:Hide() else f:Show() end
+	end))
 end
 
 -- Is the native path running with Blizzard's own sources behind it? Then both
@@ -2218,21 +2243,37 @@ local function buildAuras(d, stack)
 			-- ancestors were still being built, and it recursed until the client died
 			-- (ACCESS_VIOLATION on this exact screen, 2026-08-08). The wording is kept
 			-- short enough to stay on one line instead.
-			-- The line names the source, so it names the way there too -- as TEXT.
-			-- A button that opens the panel is not available to us: see the taint
-			-- note at openCDMSlash.
+			-- The line names the source, so the way there belongs beside it. In
+			-- combat the button cannot do anything (see openCDM), so the row falls
+			-- back to naming the slash command, which always works.
+			local combat = InCombatLockdown()
 			local srcRow = CreateFrame("Frame", nil, body)
-			srcRow:SetHeight(M.sourceNoteH)
-			local howFS = UI.FS(srcRow, "hint", Text.Description)
-			howFS:SetPoint("RIGHT", srcRow, "RIGHT", 0, 0)
-			howFS:SetJustifyH("RIGHT"); howFS:SetWordWrap(false)
-			howFS:SetText(T("Edit with %s"):format(hi(openCDMSlash(), UI.Accent.color)))
+			local rowH = combat and M.sourceNoteH or M.segCompactH
+			srcRow:SetHeight(rowH)
+			local right
+			if combat then
+				right = UI.FS(srcRow, "hint", Text.Description)
+				right:SetPoint("RIGHT", srcRow, "RIGHT", 0, 0)
+				right:SetJustifyH("RIGHT"); right:SetWordWrap(false)
+				right:SetText(T("Edit with %s"):format(hi(openCDMSlash(), UI.Accent.color)))
+			else
+				right = W.Button(srcRow, { text = T("Open Cooldown Manager"),
+					variant = "secondary", height = M.segCompactH,
+					tooltipTitle = T("Open Cooldown Manager"),
+					tooltip = T("Opens WoW's own panel. The list sits on its Buffs (Group window) tab — what you hide there disappears from the frames too."),
+					onClick = function()
+						if not openCDM() and ns.Lumen then
+							ns.Lumen:Print(T("Edit with %s"):format(openCDMSlash()))
+						end
+					end })
+				right:SetPoint("RIGHT", srcRow, "RIGHT", 0, 0)
+			end
 			local srcFS = UI.FS(srcRow, "hint", Text.Description)
 			srcFS:SetPoint("LEFT", srcRow, "LEFT", 0, 0)
-			srcFS:SetPoint("RIGHT", howFS, "LEFT", -UI.S.s3, 0)
+			srcFS:SetPoint("RIGHT", right, "LEFT", -UI.S.s3, 0)
 			srcFS:SetJustifyH("LEFT"); srcFS:SetWordWrap(false)
 			srcFS:SetText(line)
-			bstack:place(srcRow, M.sourceNoteH, L.raidframes.auras.afterSourceNote)
+			bstack:place(srcRow, rowH, L.raidframes.auras.afterSourceNote)
 		end
 	end
 

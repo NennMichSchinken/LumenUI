@@ -187,6 +187,8 @@ ns.RegisterLocale("deDE", {
 
 	["From WoW's Cooldown Manager (%d entries)."] = "Aus WoWs Abklingzeit-Manager (%d Einträge).",
 	["Edit with %s"] = "Bearbeiten mit %s",
+	["Open Cooldown Manager"] = "Abklingzeit-Manager öffnen",
+	["Opens WoW's own panel. The list sits on its Buffs (Group window) tab — what you hide there disappears from the frames too."] = "Öffnet WoWs eigenes Fenster. Die Liste sitzt auf der Registerkarte Stärkungszauber (Gruppenfenster) — was du dort ausblendest, verschwindet auch von den Frames.",
 
 	["Not available for this specialization"] = "Für diese Spezialisierung nicht verfügbar",
 
