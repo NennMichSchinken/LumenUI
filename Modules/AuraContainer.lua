@@ -1473,7 +1473,16 @@ function RFC.Disable()
 		if btn._rfc then for _, c in pairs(btn._rfc) do c:SetEnabled(false); c:Hide() end end
 	end)
 	if ns.Raidframes and ns.Raidframes.RefreshAuras then ns.Raidframes:RefreshAuras() end
-	say("Native auras |cffffcc00OFF|r (old path renders again).")
+	-- On 12.1 this is an OFF switch, not a fallback. The old scan path is denied to
+	-- a tainted caller while auras are secret, which on a 12.1 client is always --
+	-- measured solo in the open world, not just in a group (Florian, 2026-08-10).
+	-- Saying so beats leaving empty frames that read as a bug.
+	if IS_121 then
+		say("Native auras |cffffcc00OFF|r -- on 12.1 that means |cffff5555no aura icons at all|r; "
+			.. "the old scan path is not allowed to run. |cff44ff44/lumennative on|r brings them back.")
+	else
+		say("Native auras |cffffcc00OFF|r (old path renders again).")
+	end
 end
 
 SLASH_LUMENNATIVE1 = "/lumennative"

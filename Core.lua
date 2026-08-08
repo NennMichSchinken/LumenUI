@@ -224,22 +224,11 @@ local defaults = {
 					-- a size picked for "8", hanging off the icon. 0 = always show.
 					durationMaxRaid = 60, durationMaxParty = 60,
 				},
-				-- Retired 2026-08-09: Major CDs is no longer a category (most of it was self
-				-- buffs the Cooldown Manager already shows). The block stays so an existing
-				-- profile keeps loading and nothing has to be rewritten on disk; no code reads
-				-- it any more. Remove once profiles have turned over.
-				major = {
-					showTooltip = false,
-					enabledRaid = false, enabledParty = false,
-					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 3, maxIconsParty = 3,
-					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
-					anchorRaid = "TOPLEFT", anchorParty = "TOPLEFT", growRaid = "RIGHT", growParty = "RIGHT",
-					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
-					sizeRaid = 16, sizeParty = 22,
-					showDurationRaid = true, showDurationParty = true,
-					durationSizeRaid = 12, durationSizeParty = 14,
-					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
-				},
+				-- (Major CDs was retired here on 2026-08-09 -- most of it was self buffs the
+				-- Cooldown Manager already shows. The defaults block was kept at the time
+				-- "so existing profiles keep loading", which was simply wrong: AceDB does
+				-- not care about keys it has no default for. All it actually did was write
+				-- twenty dead keys into every profile and every export.)
 				debuffs = {
 					showTooltip = false,
 					enabledRaid = false, enabledParty = false,
