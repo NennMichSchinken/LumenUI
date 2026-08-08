@@ -787,27 +787,44 @@ local function syncHelpful(container, c, lo)
 		applyGroupLayout(container, key, lo, lo.maxN)
 		return
 	end
-	if not container._helpfulGroups then
-		container._helpfulGroups = true
+	-- Declare ONLY the side that is actually feeding the category. Declaring both
+	-- and flipping the frame budget looked free and is not: AddAuraGroup creates a
+	-- whole batch of aura buttons there and then -- ten, measured on the 12.1 PTR
+	-- (Florian, 2026-08-10) -- whether the group can ever show one or not, because
+	-- the frame provider batches before maxFrameCount is ever read. On top of that
+	-- every declared group is another parse filter that each aura change has to be
+	-- tested against, and the idle one carried the widest filter in the file
+	-- ("HELPFUL", i.e. every buff on the unit).
+	-- Switching the source is a slash command, out of combat and rare, so paying
+	-- the declaration at that moment is the right trade. A group that was declared
+	-- by an earlier flip stays -- the engine has no way to take one back -- and is
+	-- silenced with a zero budget as before.
+	local declared = container._groups
+	if not declared then declared = {}; container._groups = declared end
+	if useFlags then
+		for i = 1, #filters do
+			local gk = flagGroupKey(key, i)
+			if not declared[gk] then
+				declared[gk] = true
+				RFC.stat.groups = RFC.stat.groups + 1
+				container:AddAuraGroup(gk, filters[i], {
+					maxFrameCount    = lo.maxN,
+					candidateFilters = defExcludeArg(),
+					initializeFrame  = makeInitializer(lo.size, key),
+				})
+				container._defCF = defExcludeArg()   -- born with this set
+			end
+		end
+	elseif not declared[key] then
+		declared[key] = true
 		RFC.stat.groups = RFC.stat.groups + 1
 		container:AddAuraGroup(key, "HELPFUL", {
 			maxFrameCount    = lo.maxN,
 			candidateFilters = { includeSpellIDs = buildInclude(c.wl) },
 			initializeFrame  = makeInitializer(lo.size, key),
 		})
-		for i = 1, (filters and #filters or 0) do
-			-- Declared with the full budget and corrected below, the way the debuff
-			-- groups are: a group that only ever sees 0 is untested ground.
-			RFC.stat.groups = RFC.stat.groups + 1
-			container:AddAuraGroup(flagGroupKey(key, i), filters[i], {
-				maxFrameCount    = lo.maxN,
-				candidateFilters = defExcludeArg(),
-				initializeFrame  = makeInitializer(lo.size, key),
-			})
-		end
-		container._defCF = defExcludeArg()   -- the groups were born with this set
 	end
-	applyGroupLayout(container, key, lo, useFlags and 0 or lo.maxN)
+	if declared[key] then applyGroupLayout(container, key, lo, useFlags and 0 or lo.maxN) end
 	-- Re-push the hide list when it CHANGED, not on every reconcile: a profile
 	-- switch or an import replaces the stored set behind a container that is
 	-- already built, and its groups would otherwise keep the old exclusions --
@@ -821,10 +838,15 @@ local function syncHelpful(container, c, lo)
 	local push = (container._defCF ~= excl)
 	for i = 1, (filters and #filters or 0) do
 		local gk = flagGroupKey(key, i)
-		applyGroupLayout(container, gk, lo, useFlags and lo.maxN or 0)
-		if push then
-			RFC.stat.filterPush = RFC.stat.filterPush + 1
-			pcall(container.SetAuraGroupCandidateFilters, container, gk, excl)
+		-- Only groups that were actually declared: every setter looks its group up
+		-- and asserts when it is missing, and since the flip above they no longer
+		-- all exist.
+		if declared[gk] then
+			applyGroupLayout(container, gk, lo, useFlags and lo.maxN or 0)
+			if push then
+				RFC.stat.filterPush = RFC.stat.filterPush + 1
+				pcall(container.SetAuraGroupCandidateFilters, container, gk, excl)
+			end
 		end
 	end
 	if push then container._defCF = excl end
@@ -866,6 +888,18 @@ end
 -- creation and cannot be re-written afterwards (post-creation writes to an aura
 -- button are denied while auras are secret). Switching the mode enables the other
 -- container instead of rebuilding this one.
+--
+-- An aura SLOT, not a group. A slot renders the single highest-priority aura of
+-- its filter and is exactly what this display is -- Blizzard names "dispel type
+-- indicators" as the intended use in Blizzard_AuraContainerShared. The difference
+-- is not cosmetic: a group's frame provider batches ten frames the moment the
+-- group is declared, so a display that can never show more than one was paying
+-- for ten, each carrying five frame-sized textures. A slot's provider has a batch
+-- size of one. Same filter handling, same candidate filters, same live filter
+-- swap, and the engine shows/hides the frame on exactly the same signal.
+-- The price is that slots take no part in flow layout, so the frame anchors
+-- itself in the initializer -- which is better anyway: SetAllPoints follows a
+-- frame resize on its own, where the old fixed size did not.
 local DISPEL_MODES = { overlay = "dispel_ov", recolor = "dispel_bar" }
 
 local function rfCfg()
@@ -883,10 +917,17 @@ end
 -- The engine colours whatever textures we register. CustomAsset with NO asset map
 -- leaves our own texture in place and takes only the colour (every other style
 -- would stamp a Blizzard border atlas over it).
-local function initDispelFrame(mode, w, h, health)
+local function initDispelFrame(mode, host, health, asSlot)
 	return function(button)
 		RFC.stat.buttons = RFC.stat.buttons + 1
-		button:SetSize(w, h)
+		if asSlot then
+			-- Anchored, not sized: a slot frame is ours to place, and matching the unit
+			-- button by anchor means a frame-size change carries over on its own.
+			button:SetAllPoints(host)
+		else
+			-- Group fallback: flow layout owns the anchor, so only the size is ours.
+			button:SetSize(host:GetWidth() or 1, host:GetHeight() or 1)
+		end
 		local rf = ns.Raidframes
 		local edgeCurve, fillCurve = rf:DispelCurves()
 		local function reg(tex, curve)
@@ -947,8 +988,6 @@ local function syncDispel(button, parent)
 
 	local key = DISPEL_MODES[mode]
 	local container = button._rfc[key]
-	local w, h = button:GetWidth() or 0, button:GetHeight() or 0
-	if w < 2 or h < 2 then return end
 	-- Scope comes from Raidframes so the native and the scan path cannot drift.
 	local filter = (ns.Raidframes and ns.Raidframes.DispelFilter
 		and ns.Raidframes:DispelFilter()) or "HARMFUL|RAID"
@@ -963,12 +1002,25 @@ local function syncDispel(button, parent)
 			container:SetSize(1, 1)
 			container:ClearAllPoints()
 			container:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-			layoutCall(container, "anchor", "TOPLEFT")
 			RFC.stat.groups = RFC.stat.groups + 1
-			container:AddAuraGroup(key, filter, {
-				maxFrameCount   = 1,
-				initializeFrame = initDispelFrame(mode, w, h, health),
-			})
+			-- A slot, not a group: one frame instead of a batch of ten. The frame
+			-- anchors itself to the button in the initializer, so the container needs
+			-- no flow layout at all -- slots do not take part in it.
+			-- Resolved by presence like every other engine call in this file: a build
+			-- without slots falls back to the one-frame group, because losing the
+			-- dispel display outright is far worse than paying for nine idle frames.
+			if container.AddAuraSlot then
+				container._dispelSlot = true
+				container:AddAuraSlot(key, filter, {
+					initializeFrame = initDispelFrame(mode, button, health, true),
+				})
+			else
+				layoutCall(container, "anchor", "TOPLEFT")
+				container:AddAuraGroup(key, filter, {
+					maxFrameCount   = 1,
+					initializeFrame = initDispelFrame(mode, button, health, false),
+				})
+			end
 			container._dispelFilter = filter
 			local u = button.unit or button:GetAttribute("unit")
 			if u then container:SetUnit(u) end
@@ -978,14 +1030,22 @@ local function syncDispel(button, parent)
 		if not built then button._rfc[key] = nil end
 		return
 	end
-	-- Live changes: the filter mode swaps through the group (no container churn),
-	-- the size follows the frame.
-	if container._dispelFilter ~= filter and container.SetAuraGroupFilterString then
-		if pcall(container.SetAuraGroupFilterString, container, key, filter) then
+	-- Live change: the dispel scope swaps through the slot (or the fallback group),
+	-- no container churn. The SIZE needs nothing on the slot path -- that frame is
+	-- anchored to the button and follows it.
+	if container._dispelFilter ~= filter then
+		local set = container._dispelSlot and container.SetAuraSlotFilterString
+			or container.SetAuraGroupFilterString
+		if set and pcall(set, container, key, filter) then
 			container._dispelFilter = filter
 		end
 	end
-	pcall(container.SetAuraGroupLayout, container, key, { elementWidth = w, elementHeight = h })
+	if not container._dispelSlot then
+		local w, h = button:GetWidth() or 0, button:GetHeight() or 0
+		if w >= 2 and h >= 2 then
+			pcall(container.SetAuraGroupLayout, container, key, { elementWidth = w, elementHeight = h })
+		end
+	end
 	container:Show(); container:SetEnabled(true)
 	pcall(container.UpdateAllAuras, container)
 end
@@ -1220,11 +1280,15 @@ function RFC.RefreshDefensiveSource()
 	if not filters then return end
 	forEachLiveButton(function(btn)
 		local container = btn._rfc and btn._rfc.defensives
-		if container then
+		-- Declared groups only -- with the whitelist source selected the flag groups
+		-- do not exist, and the setter asserts on an unknown key.
+		if container and container._groups then
 			for i = 1, #filters do
-				RFC.stat.filterPush = RFC.stat.filterPush + 1
-				pcall(container.SetAuraGroupCandidateFilters, container,
-					flagGroupKey("defensives", i), arg)
+				if container._groups[flagGroupKey("defensives", i)] then
+					RFC.stat.filterPush = RFC.stat.filterPush + 1
+					pcall(container.SetAuraGroupCandidateFilters, container,
+						flagGroupKey("defensives", i), arg)
+				end
 			end
 			-- Record what the container now carries, or the next reconcile would push
 			-- the very same set again (syncHelpful compares against this).

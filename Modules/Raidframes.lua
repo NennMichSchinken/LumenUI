@@ -2514,19 +2514,16 @@ end
 -- Fill aura icons — LIVE (secret-safe: filter scan, swipe via duration object).
 -- Holder/icons are pre-created in the layout path; here only set texture/swipe/show.
 function Raidframes:RenderAurasLive(f)
-	local u = f.unit
-	local A = db().auras
-	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
-	if aurasRestricted() then return end          -- 12.1: the native path renders instead
-	-- Native path owns EVERY category below -> nothing here can draw, so leave
-	-- before the expensive part. `aurasRestricted` above does not cover this: it is
-	-- only true while auras are actually secret, which out in the world on 12.1
-	-- they are not. So the learner kept doing its full 40-index scan (a table per
-	-- index) on every UNIT_AURA of every unit, to feed a lookup that only the
-	-- suppressed branches read. Measured solo at 26.5 µs per call with the whole
-	-- category set switched to native (Florian, 2026-08-10).
-	-- The holders are still taken down here rather than only in the layout path:
-	-- this is the pass that runs when the native path is switched on mid-session.
+	-- Native path owns EVERY category below -> nothing here can draw. This sits
+	-- FIRST, ahead of aurasRestricted(), and that placement is the whole point:
+	-- the check is not free. It answers "would a scan throw for us" by trying one,
+	-- and the try costs a pcall plus a table allocation, cached for a single frame
+	-- -- so it ran once per UNIT_AURA per unit for nothing. Measured at 76.8 us
+	-- average with a 401 us peak across a 144 s dummy fight, the third-largest item
+	-- in that capture, in a function that draws nothing at all on 12.1 (Florian,
+	-- 2026-08-10).
+	-- The holders come down here rather than only in the layout path: this is the
+	-- pass that runs when the native path is switched on mid-session.
 	local S = ns.RFC and ns.RFC.Suppresses
 	if S then
 		local allNative = true
@@ -2543,6 +2540,10 @@ function Raidframes:RenderAurasLive(f)
 			return
 		end
 	end
+	local u = f.unit
+	local A = db().auras
+	if not (A and u and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
+	if aurasRestricted() then return end   -- auras are secret for us -> a scan would throw
 	learnUnitSigs(u)   -- passive signature learning (out of combat; groundwork for the whitelist)
 	local spec = currentSpecID()
 	local wl   = whitelistCached(spec)   -- whitelist of the active spec (cached; seeded once)
