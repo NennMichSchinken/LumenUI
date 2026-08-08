@@ -1002,6 +1002,8 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "flagson" then RFC.SetFlagSource(true)
 	elseif arg == "flagsoff" then RFC.SetFlagSource(false)
 	elseif arg == "cdm" then RFC.DumpCDM()
+	elseif arg == "curated" then
+		if ns.Raidframes and ns.Raidframes.DumpCurated then ns.Raidframes:DumpCurated(say) end
 	else
 		say("Auras through the native 12.1 container. Enabled automatically on 12.1.")
 		say("  /lumennative on | off | refresh   (currently: "
@@ -1009,5 +1011,6 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 		say("  /lumennative flags on | off   -- source of HoTs/Defensives (Major CDs stay curated): "
 			.. (RFC.useFlags and "|cff44ff44Blizzard flags|r" or "|cffffcc00curated whitelist|r"))
 		say("  /lumennative cdm   -- what the Cooldown Manager knows about this spec")
+		say("  /lumennative curated   -- our own default lists, resolved to spell names")
 	end
 end

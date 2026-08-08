@@ -537,7 +537,11 @@ local DEF_DEFAULTS = {
 }
 local MAJOR_DEFAULTS = {
 	[65]   = { 31884 },       -- Holy Paladin: Avenging Wrath (Wings)
-	[105]  = { 102558, 29166 },-- Resto Druid: Incarnation: Tree of Life, Innervate
+	-- 117679 is the aura Incarnation: Tree of Life (33891) applies; the talent id
+	-- itself never shows up on a frame. The slot held 102558 for a long time, which
+	-- is Incarnation: Guardian of Ursoc -- a Guardian spell a Resto Druid never has,
+	-- so the category stayed empty except for Innervate.
+	[105]  = { 117679, 29166 },-- Resto Druid: Incarnation: Tree of Life, Innervate
 	[256]  = { 10060, 246287 },-- Disc Priest: Power Infusion, Evangelism
 	[257]  = { 10060, 265202 },-- Holy Priest: Power Infusion, Divine Hymn
 	[270]  = { 322118, 325197 },-- MW Monk: Invoke Yu'lon, Invoke Chi-Ji
@@ -607,11 +611,55 @@ end
 --  * 155675 (talent "Germination") -> 155777 (aura "Rejuvenation (Germination)")
 local TALENT_TO_AURA = {
 	[155675] = 155777,
+	[33891]  = 117679,   -- Incarnation: Tree of Life -> the aura it applies
 }
 -- Public: normalize a tracked/offered spellId to the aura ID that actually appears
 -- (for add + dropdown dedupe in options).
 function Raidframes:ResolveTrackId(spellID)
 	return (spellID and TALENT_TO_AURA[spellID]) or spellID
+end
+
+-- Audit of the curated default lists: resolve every id to its in-game name, so a
+-- wrong entry is readable without owning the class. The Resto Druid major slot held
+-- a Guardian spell unnoticed because nobody ever saw a name next to the number.
+-- Major CDs print in full (short list, and the one source that stays curated); the
+-- much longer HoT/defensive lists print only ids the client does not know at all --
+-- a name that resolves is still no proof that it is the RIGHT spell.
+function Raidframes:DumpCurated(emit)
+	local function nameOf(id)
+		return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or nil
+	end
+	local function specLabel(id)
+		local ok, _, nm = pcall(GetSpecializationInfoByID, id)
+		return ("%s %s (%d)"):format(SPEC_CLASS[id] or "?", (ok and nm) or "spec", id)
+	end
+
+	emit("Curated Major CDs -- read the names, not the numbers:")
+	local specs = {}
+	for sid in pairs(MAJOR_DEFAULTS) do specs[#specs + 1] = sid end
+	table.sort(specs)
+	for _, sid in ipairs(specs) do
+		emit("  " .. specLabel(sid))
+		for _, id in ipairs(MAJOR_DEFAULTS[sid]) do
+			emit(("     %d  %s"):format(id, nameOf(id) or "|cffff5555UNKNOWN TO THE CLIENT|r"))
+		end
+	end
+
+	local broken = 0
+	local function scan(label, list)
+		for _, id in ipairs(list) do
+			if not nameOf(id) then
+				broken = broken + 1
+				emit(("  |cffff5555unknown id|r %d  in %s"):format(id, label))
+			end
+		end
+	end
+	for sid, list in pairs(HOT_DEFAULTS) do scan("HoTs, " .. specLabel(sid), list) end
+	for sid, list in pairs(DEF_DEFAULTS) do scan("Defensives, " .. specLabel(sid), list) end
+	for cls, list in pairs(DEF_CLASS) do scan("Defensives, " .. cls .. " class-wide", list) end
+	if broken == 0 then
+		emit("|cff44ff44Every HoT/defensive id resolves to a spell.|r (No proof it is the right one.)")
+	end
 end
 
 -- ---------------------------------------------------------------------------

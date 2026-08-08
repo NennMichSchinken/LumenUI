@@ -54,7 +54,7 @@ read_globals = {
     "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents", "C_CooldownViewer",
     "GetInventoryItemTexture", "GetInventoryItemLink",
     -- Spec / secure bindings (click-cast)
-    "GetSpecialization", "GetSpecializationInfo", "GetNumSpecializations",
+    "GetSpecialization", "GetSpecializationInfo", "GetSpecializationInfoByID", "GetNumSpecializations",
     "IsShiftKeyDown", "IsControlKeyDown", "IsAltKeyDown",
     "RegisterStateDriver", "UnregisterStateDriver",
     "RegisterAttributeDriver", "UnregisterAttributeDriver",
