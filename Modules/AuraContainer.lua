@@ -983,6 +983,66 @@ function RFC.DumpCDM()
 	if missing == 0 then say("|cff44ff44Every curated Major CD of this spec appears above.|r") end
 end
 
+-- ---------------------------------------------------------------------------
+--  Blizzard's own per-spec "Buffs (Group window)" list (CooldownViewerCategory
+--  .GroupBuff). It is the closest thing to a maintained HoT list that exists:
+--  bounded (16 entries max), scoped to the spec, aimed at group frames by name
+--  -- and the user curates it in Blizzard's own settings, which we can read back.
+--    * GetGroupBuffItems  = the candidates, with a HideByDefault flag
+--    * GetHiddenGroupBuffs = what the user has moved to "not shown"
+--    * shown = candidates minus hidden (that is exactly how Blizzard's own UI
+--      builds its two sections)
+--  An empty list means Blizzard offers nothing for this spec -- a Hunter has no
+--  such tab at all -- which is the signal a "use Blizzard's list" switch gates on.
+-- ---------------------------------------------------------------------------
+function RFC.DumpGroupBuffs()
+	local CV, UA = C_CooldownViewer, C_UnitAuras
+	if not (CV and CV.GetGroupBuffItems) then
+		say("|cffff5555GetGroupBuffItems does not exist on this build.|r"); return
+	end
+	local ok, items = pcall(CV.GetGroupBuffItems)
+	if not (ok and items) then say("|cffff5555GetGroupBuffItems failed.|r"); return end
+
+	local hidden = {}
+	if UA and UA.GetHiddenGroupBuffs then
+		local ok2, ids = pcall(UA.GetHiddenGroupBuffs)
+		if ok2 and ids then for _, id in ipairs(ids) do hidden[id] = true end end
+	end
+
+	local spec = currentSpecID()
+	local wl = (ns.Raidframes and ns.Raidframes.WhitelistMap and ns.Raidframes:WhitelistMap(spec)) or {}
+	say(("Group Buffs (Blizzard's group-window list), spec %d -- %d entries:"):format(spec, #items))
+	if #items == 0 then
+		say("  |cffffcc00none -- Blizzard offers no group-buff list for this spec.|r")
+	end
+
+	local blizz = {}
+	local defFlag = (Enum and Enum.GroupBuffItemFlags and Enum.GroupBuffItemFlags.HideByDefault) or 1
+	for _, it in ipairs(items) do
+		blizz[it.spellID] = true
+		local state = hidden[it.spellID] and "|cff888888not shown|r" or "|cff44ff44shown|r"
+		local note = ""
+		if bit.band(it.flags or 0, defFlag) ~= 0 then note = note .. "  |cff888888hidden by default|r" end
+		if not it.isKnown then note = note .. "  |cff888888unlearned|r" end
+		note = note .. (wl[it.spellID] and ("  |cff44ff44we track as " .. wl[it.spellID] .. "|r")
+			or "  |cffff5555we do NOT track this|r")
+		say(("  %s (%d)  %s%s"):format(it.name or "?", it.spellID, state, note))
+	end
+
+	-- The decisive half again: what we curate as a HoT and Blizzard's list does not
+	-- carry. Every hit here is something a swap to Blizzard's list would drop.
+	local missing = 0
+	for sid, typ in pairs(wl) do
+		if typ == "hot" and not blizz[sid] then
+			missing = missing + 1
+			say("  |cffff5555not in Blizzard's list:|r " .. spellName(sid) .. " (" .. sid .. ")")
+		end
+	end
+	if missing == 0 and #items > 0 then
+		say("|cff44ff44Blizzard's list carries every HoT we curate for this spec.|r")
+	end
+end
+
 function RFC.Disable()
 	if InCombatLockdown() then say("|cffff5555Out of combat only.|r"); return end
 	RFC.enabled = false
@@ -1002,6 +1062,7 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "flagson" then RFC.SetFlagSource(true)
 	elseif arg == "flagsoff" then RFC.SetFlagSource(false)
 	elseif arg == "cdm" then RFC.DumpCDM()
+	elseif arg == "buffs" then RFC.DumpGroupBuffs()
 	elseif arg == "curated" then
 		if ns.Raidframes and ns.Raidframes.DumpCurated then ns.Raidframes:DumpCurated(say) end
 	else
@@ -1011,6 +1072,7 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 		say("  /lumennative flags on | off   -- source of HoTs/Defensives (Major CDs stay curated): "
 			.. (RFC.useFlags and "|cff44ff44Blizzard flags|r" or "|cffffcc00curated whitelist|r"))
 		say("  /lumennative cdm   -- what the Cooldown Manager knows about this spec")
+		say("  /lumennative buffs   -- Blizzard's own group-window buff list for this spec")
 		say("  /lumennative curated   -- our own default lists, resolved to spell names")
 	end
 end
