@@ -51,7 +51,7 @@ read_globals = {
     "CreateColor", "Mixin", "GetTime",
     -- Namespaces
     "C_Timer", "C_UnitAuras", "C_CurveUtil", "C_AddOns", "Enum", "C_StringUtil", "C_Texture",
-    "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents",
+    "C_Spell", "C_SpellBook", "C_Traits", "C_ClassTalents", "C_CooldownViewer",
     "GetInventoryItemTexture", "GetInventoryItemLink",
     -- Spec / secure bindings (click-cast)
     "GetSpecialization", "GetSpecializationInfo", "GetNumSpecializations",

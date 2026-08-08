@@ -900,6 +900,89 @@ function RFC.SetFlagSource(on)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+--  Measurement aid: what does Blizzard's Cooldown Manager know about this spec?
+--  Major CDs has no aura FLAG to source from (see NATIVE_CATS), but the Cooldown
+--  Manager carries a per-spec, Blizzard-maintained categorisation of the same
+--  spells -- Innervate sits under Utility, and that is exactly the kind of entry
+--  our curated major list holds. Whether that set can REPLACE the list is a
+--  question about its contents, so this prints them instead of arguing about them.
+--  Dev command, cold path, everything guarded: a missing API just prints a line.
+--
+--  Read the two answers it gives:
+--    * the listing = what Blizzard would hand us (aura-carrying entries only --
+--      nothing else can ever land on a raid frame), with the two defensive flags
+--      marked, because those are already covered by the Defensives category and
+--      would have to be subtracted.
+--    * the REVERSE CHECK = our curated major entries that the Cooldown Manager
+--      does NOT know. Every one of those is a hole the swap would open.
+-- ---------------------------------------------------------------------------
+local function cdmFlags(spellID)
+	local big, ext = false, false
+	if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
+		local ok, v = pcall(C_UnitAuras.AuraIsBigDefensive, spellID); big = (ok and v) and true or false
+	end
+	if C_Spell and C_Spell.IsExternalDefensive then
+		local ok, v = pcall(C_Spell.IsExternalDefensive, spellID); ext = (ok and v) and true or false
+	end
+	return big, ext
+end
+
+local function spellName(id)
+	return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or ("#" .. tostring(id))
+end
+
+function RFC.DumpCDM()
+	local CV = C_CooldownViewer
+	if not (CV and CV.GetCooldownViewerCategorySet and Enum and Enum.CooldownViewerCategory) then
+		say("|cffff5555Cooldown Manager API not present on this build.|r"); return
+	end
+	if CV.IsCooldownViewerAvailable and not CV.IsCooldownViewerAvailable() then
+		say("|cffffcc00Cooldown Manager reports not available yet -- try again after login finishes.|r")
+	end
+	local spec = currentSpecID()
+	local wl = (ns.Raidframes and ns.Raidframes.WhitelistMap and ns.Raidframes:WhitelistMap(spec)) or {}
+	say("Cooldown Manager, spec " .. spec .. " -- aura-carrying entries only:")
+	local seen = {}
+	for _, cat in ipairs({
+		{ e = Enum.CooldownViewerCategory.Essential, tag = "Essential" },
+		{ e = Enum.CooldownViewerCategory.Utility,   tag = "Utility" },
+	}) do
+		local ok, ids = pcall(CV.GetCooldownViewerCategorySet, cat.e, true)
+		if ok and ids then
+			for _, cdID in ipairs(ids) do
+				local ok2, info = pcall(CV.GetCooldownViewerCooldownInfo, cdID)
+				if ok2 and info and info.hasAura then
+					local sid = info.overrideSpellID or info.spellID
+					if sid then
+						-- The aura a spell APPLIES is what a raid frame filters on, and that
+						-- is rarely the cast id -- linkedSpellIDs is the bridge.
+						local auraID = (info.linkedSpellIDs and info.linkedSpellIDs[1]) or sid
+						seen[auraID] = true
+						seen[sid] = true
+						local big, ext = cdmFlags(auraID)
+						say(("  %s  %s (%d)%s%s%s%s"):format(
+							cat.tag, spellName(sid), auraID,
+							info.selfAura and "  self" or "  on-target",
+							info.isKnown and "" or "  |cff888888unlearned|r",
+							(big or ext) and "  |cffffcc00already a defensive|r" or "",
+							wl[auraID] and ("  |cff44ff44we track as " .. wl[auraID] .. "|r") or ""))
+					end
+				end
+			end
+		end
+	end
+	-- The reverse check is the decisive half: what we curate and Blizzard does not know.
+	local missing = 0
+	for sid, typ in pairs(wl) do
+		if typ == "major" and not seen[sid] then
+			missing = missing + 1
+			say("  |cffff5555NOT in the Cooldown Manager:|r " .. spellName(sid) .. " (" .. sid .. ")")
+		end
+	end
+	if missing == 0 then say("|cff44ff44Every curated Major CD of this spec appears above.|r") end
+end
+
 function RFC.Disable()
 	if InCombatLockdown() then say("|cffff5555Out of combat only.|r"); return end
 	RFC.enabled = false
@@ -918,11 +1001,13 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "refresh" then RFC.Disable(); RFC.Enable()
 	elseif arg == "flagson" then RFC.SetFlagSource(true)
 	elseif arg == "flagsoff" then RFC.SetFlagSource(false)
+	elseif arg == "cdm" then RFC.DumpCDM()
 	else
 		say("Auras through the native 12.1 container. Enabled automatically on 12.1.")
 		say("  /lumennative on | off | refresh   (currently: "
 			.. (RFC.enabled and "ON" or "OFF") .. (IS_121 and ", 12.1 detected" or ", not 12.1") .. ")")
 		say("  /lumennative flags on | off   -- source of HoTs/Defensives (Major CDs stay curated): "
 			.. (RFC.useFlags and "|cff44ff44Blizzard flags|r" or "|cffffcc00curated whitelist|r"))
+		say("  /lumennative cdm   -- what the Cooldown Manager knows about this spec")
 	end
 end
