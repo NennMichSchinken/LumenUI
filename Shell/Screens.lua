@@ -1620,18 +1620,6 @@ local function auraSpellsPane(d, host, cat, page)
 		return
 	end
 
-	-- Group buffs come from Blizzard's per-spec list, and some specs have none at
-	-- all. Without this the page shows a switched-on category and a spell list for
-	-- something that cannot draw a single icon.
-	if cat.key == "hotsOwn" and noGroupBuffList() then
-		local box, st, content = innerBlock(d, T("Group buffs"))
-		st:place(W.Hint(content, T("Your current specialization has no group-buff list in WoW's "
-			.. "Cooldown Manager, so this category stays empty. Defensives and debuffs are "
-			.. "unaffected."), M.hintH * 2), M.hintH * 2, 0)
-		host:place(box, blockClose(box, st, content), 0)
-		return
-	end
-
 	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
 	local box, st, content = innerBlock(d, T("Tracked spells"))
 
@@ -1987,6 +1975,29 @@ local function buildAuras(d, stack)
 			ns.Shell:RenderContent(true)
 		end,
 	})
+	-- Nothing behind the category on this spec: no Blizzard list and no extras of
+	-- the player's own. Then the card carries no switch, no pane segment and no
+	-- copy button -- a switch that cannot change anything is worse than no switch,
+	-- and placement options for a row that never draws are noise. The stored
+	-- setting is left untouched, so switching back to a supported spec finds it
+	-- exactly as it was (Florian, 2026-08-09).
+	if cat.key == "hotsOwn" and noGroupBuffList() then
+		local dead = stack:section(("%s  ·  %s"):format(cat.label,
+			ctx == "raid" and T("Raid") or T("Group")))
+		local note = CreateFrame("Frame", nil, d)
+		local nstack = ns.Shell.NewStack(note)
+		local box, st, content = innerBlock(note, T("Not available for this specialization"))
+		st:place(W.Hint(content, T("WoW's Cooldown Manager has no group-buff list for your current "
+			.. "specialization, so there is nothing this category could show. Defensives and "
+			.. "debuffs are unaffected."), M.hintH * 2), M.hintH * 2, 0)
+		nstack:place(box, blockClose(box, st, content), 0)
+		dead:place(note, stackContentH(nstack), 0)
+		dead:close()
+		regJump("aura-" .. cat.key, dead)
+		applyModuleGate(d, rf().enabled)
+		return
+	end
+
 	-- The card is created LAST of the head parts, because its header takes the
 	-- already-built controls (they chain leftwards from the master switch).
 	local editor = stack:section(("%s  ·  %s"):format(cat.label,

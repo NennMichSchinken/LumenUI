@@ -506,7 +506,12 @@ local DEF_DEFAULTS = {
 	-- Death Knight
 	[250]  = { 55233, 49028, 48743, 194679 },        -- Blood: Vampiric Blood, Dancing Rune Weapon, Death Pact, Rune Tap
 	-- Shaman
-	[264]  = { 98008 },                              -- Resto: Spirit Link Totem
+	-- Spirit Link Totem used to sit here as 98008 -- but that is the totem SPELL,
+	-- and the aura it puts on the group is 325174, so the entry never matched
+	-- anything (found 2026-08-09 by the name comparison in /lumennative buffs; a
+	-- name audit cannot see it, both ids resolve to "Spirit Link Totem"). No
+	-- replacement id is needed: Blizzard's group-window list carries 325174, so it
+	-- now comes through the Group buffs category on its own.
 	-- Mage (Class deckt Ice Block/Alter Time)
 	[62]   = { 235450 },                             -- Arcane: Prismatic Barrier
 	[63]   = { 235313 },                             -- Fire: Blazing Barrier
