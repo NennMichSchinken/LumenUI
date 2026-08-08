@@ -935,8 +935,17 @@ function EditMode:ApplyLinks()
 	for childKey, e in pairs(links) do
 		local cf, af = self.byKey[childKey], e.to and self.byKey[e.to]
 		if cf and af and af:IsShown() then
+			-- The offset is frozen in UIParent units (rectOf), but SetPoint reads its
+			-- offsets in the CHILD's own coordinate space -- so an element carrying its
+			-- own size slider (Ready & Pull, the marker bar, the trackers: 70-160 %)
+			-- landed off by exactly that factor and jumped the moment you coupled it,
+			-- which is the one thing CompleteLink promises not to do. Worse, the next
+			-- drag froze the displaced offset and the error compounded (Florian
+			-- 2026-08-07: "it snaps too far into the card"). Same conversion the
+			-- absolute fallback uses.
+			local inv = UIParent:GetEffectiveScale() / cf:GetEffectiveScale()
 			cf:ClearAllPoints()
-			cf:SetPoint("BOTTOMLEFT", af, "BOTTOMLEFT", e.offX or 0, e.offY or 0)
+			cf:SetPoint("BOTTOMLEFT", af, "BOTTOMLEFT", (e.offX or 0) * inv, (e.offY or 0) * inv)
 		end
 	end
 end
