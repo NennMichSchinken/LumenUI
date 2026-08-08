@@ -530,6 +530,7 @@ UI.WIDGET = {
 
 	-- Hint (muted body-text line)
 	hintH       = 40, -- default height of a hint block (1–2 lines)
+	sourceNoteH = 20, -- one-line caption above a card group (e.g. the group-buff source note). Never measure a FontString to size one of these: GetStringHeight during a render pass makes the engine resolve a half-built layout and it recurses into a client crash (2026-08-08).
 	subHeadH    = 26, -- left-aligned sub-heading (e.g. aggro-stage blocks)
 
 	-- Category chip bar (W.ChipBar) — the selector above an inline editor. Shared
@@ -789,7 +790,7 @@ UI.LAYOUT = {
 			afterChips = 20,  -- chip bar -> editor card
 			-- Source note (group buffs) -> first card. The note is a caption for what
 			-- follows, so it sits CLOSE to it -- the standard hint block reserves two
-			-- lines of height and left a hole here (Florian 2026-08-09).
+			-- lines of height and left a hole here (Florian 2026-08-08).
 			afterSourceNote = 10,
 			-- Editor head: the pane switch carries an EXPLICIT width. A "hug"
 			-- segment sizes its inner bar from the measured text and leaves the

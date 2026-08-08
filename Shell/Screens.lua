@@ -1981,7 +1981,7 @@ local function buildAuras(d, stack)
 	-- copy button -- a switch that cannot change anything is worse than no switch,
 	-- and placement options for a row that never draws are noise. The stored
 	-- setting is left untouched, so switching back to a supported spec finds it
-	-- exactly as it was (Florian, 2026-08-09).
+	-- exactly as it was (Florian, 2026-08-08).
 	if cat.key == "hotsOwn" and noGroupBuffList() then
 		local dead = stack:section(("%s  ·  %s"):format(cat.label,
 			ctx == "raid" and T("Raid") or T("Group")))
@@ -2030,25 +2030,22 @@ local function buildAuras(d, stack)
 	-- Group buffs: name the source, and say how much of it is switched off in
 	-- Blizzard's panel. This sits ABOVE the pane split on purpose -- it first lived
 	-- inside the spell pane, where someone working on Display never saw it, which is
-	-- exactly the person wondering why icons vanished (Florian, 2026-08-09).
+	-- exactly the person wondering why icons vanished (Florian, 2026-08-08).
 	if cat.key == "hotsOwn" and ns.RFC and ns.RFC.enabled and ns.RFC.GroupBuffState then
 		local okS, owned, _, nHidden = pcall(ns.RFC.GroupBuffState)
 		if okS and (owned or 0) > 0 then
 			local line = (nHidden or 0) > 0
-				and T("This list comes from WoW's Cooldown Manager — %d of %d entries are hidden there and do not show on the frames.")
+				and T("From WoW's Cooldown Manager — %d of %d entries hidden there.")
 					:format(nHidden, owned)
-				or T("This list comes from WoW's Cooldown Manager (%d entries).")
+				or T("From WoW's Cooldown Manager (%d entries).")
 					:format(owned)
-			-- Measured, not reserved: M.hintH budgets two lines, and this note is one
-			-- at any usable shell width, which left a visible hole above the cards.
-			local hint = W.Hint(body, line, M.hintH)
-			local w = d:GetWidth() or 0
-			local hh = M.hintH
-			if w > 50 then
-				hint:SetWidth(w)
-				hh = math.ceil((hint._fs and hint._fs:GetStringHeight()) or M.hintH)
-			end
-			bstack:place(hint, hh, L.raidframes.auras.afterSourceNote)
+			-- Fixed one-line height, NOT measured. Asking a FontString for its height
+			-- during the render pass forced the engine to resolve a layout whose
+			-- ancestors were still being built, and it recursed until the client died
+			-- (ACCESS_VIOLATION on this exact screen, 2026-08-08). The wording is kept
+			-- short enough to stay on one line instead.
+			bstack:place(W.Hint(body, line, M.sourceNoteH), M.sourceNoteH,
+				L.raidframes.auras.afterSourceNote)
 		end
 	end
 

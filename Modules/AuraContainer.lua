@@ -74,7 +74,7 @@ RFC.enabled = false
 -- the flag". And the player CURATES it in Blizzard's own settings, which we can
 -- read back (GetHiddenGroupBuffs) and get told about (HIDDEN_GROUP_BUFFS_CHANGED),
 -- so there is exactly one list instead of ours competing with theirs.
--- Measured on the PTR (Florian, 2026-08-09): the list carried every HoT we curate
+-- Measured on the PTR (Florian, 2026-08-08): the list carried every HoT we curate
 -- for the Resto Druid, and for the Resto Shaman it also held a SECOND Earth Shield
 -- id we never had. A Hunter gets an empty list -- that is the signal to switch the
 -- category off rather than show an empty row.
@@ -214,7 +214,7 @@ local function buildBuffSource()
 	-- Ordered icon list for the preview, built from the FULL list rather than the
 	-- shown subset. The preview is a layout sample -- you size a row against it --
 	-- and hiding everything in the Cooldown Manager would otherwise leave an empty
-	-- preview whose cause is nowhere on this page (Florian, 2026-08-09). Order is
+	-- preview whose cause is nowhere on this page (Florian, 2026-08-08). Order is
 	-- Blizzard's list first, extras sorted after: DETERMINISTIC on purpose, because
 	-- the preview re-renders on every slider tick and a set iterated with pairs
 	-- would reshuffle mid-drag.

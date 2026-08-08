@@ -184,9 +184,9 @@ ns.RegisterLocale("deDE", {
 	["Group buffs"] = "Stärkungszauber",
 	["n/a"] = "n. v.",
 
-	["This list comes from WoW's Cooldown Manager — %d of %d entries are hidden there and do not show on the frames."] = "Diese Liste kommt aus WoWs Abklingzeit-Manager — %d von %d Einträgen sind dort ausgeblendet und erscheinen nicht auf den Frames.",
+	["From WoW's Cooldown Manager — %d of %d entries hidden there."] = "Aus WoWs Abklingzeit-Manager — %d von %d Einträgen dort ausgeblendet.",
 
-	["This list comes from WoW's Cooldown Manager (%d entries)."] = "Diese Liste kommt aus WoWs Abklingzeit-Manager (%d Einträge).",
+	["From WoW's Cooldown Manager (%d entries)."] = "Aus WoWs Abklingzeit-Manager (%d Einträge).",
 
 	["Not available for this specialization"] = "Für diese Spezialisierung nicht verfügbar",
 

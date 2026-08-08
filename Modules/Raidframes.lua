@@ -508,7 +508,7 @@ local DEF_DEFAULTS = {
 	-- Shaman
 	-- Spirit Link Totem used to sit here as 98008 -- but that is the totem SPELL,
 	-- and the aura it puts on the group is 325174, so the entry never matched
-	-- anything (found 2026-08-09 by the name comparison in /lumennative buffs; a
+	-- anything (found 2026-08-08 by the name comparison in /lumennative buffs; a
 	-- name audit cannot see it, both ids resolve to "Spirit Link Totem"). No
 	-- replacement id is needed: Blizzard's group-window list carries 325174, so it
 	-- now comes through the Group buffs category on its own.
@@ -532,7 +532,7 @@ local DEF_DEFAULTS = {
 	[1473] = { 361022 },                             -- Augmentation: Sense Power (secret, signature-learned)
 }
 -- Major CDs used to be a category of its own, fed by a curated per-spec list. It
--- is gone (Florian, 2026-08-09) and the reasoning is worth keeping: the list was
+-- is gone (Florian, 2026-08-08) and the reasoning is worth keeping: the list was
 -- mostly SELF buffs -- Tree of Life, Ascendance, Avenging Wrath -- which only ever
 -- appeared on your own frame, where the Cooldown Manager already shows them larger
 -- and with the cooldown attached. The two that genuinely belong on someone else's
