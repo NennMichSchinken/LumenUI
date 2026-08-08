@@ -76,11 +76,19 @@ RFC.enabled = false
 -- (RFC.useFlags, `/lumennative flags on`), not a profile setting -- the override
 -- layer (deselected -> excludeSpellIDs, extras -> their own group) still has to
 -- be designed together with the Auras tab that explains it.
+-- hotsOwn takes neither source above: it reads Blizzard's own group-window buff
+-- list (Enum.CooldownViewerCategory.GroupBuff), which beats a flag string on the
+-- two counts that matter. It is BOUNDED and per spec -- 7 entries for a Resto
+-- Druid, 10 for a Resto Shaman -- where RAID_IN_COMBAT is "every spell carrying
+-- the flag". And the player CURATES it in Blizzard's own settings, which we can
+-- read back (GetHiddenGroupBuffs) and get told about (HIDDEN_GROUP_BUFFS_CHANGED),
+-- so there is exactly one list instead of ours competing with theirs.
+-- Measured on the PTR (Florian, 2026-08-09): the list carried every HoT we curate
+-- for the Resto Druid, and for the Resto Shaman it also held a SECOND Earth Shield
+-- id we never had. A Hunter gets an empty list -- that is the signal to switch the
+-- category off rather than show an empty row.
 local NATIVE_CATS = {
-	{ key = "hotsOwn",    wl = "hot", flagFilters = {
-		-- Self-cast raid-relevant buffs, minus anything that is really a defensive
-		-- (out of combat Ironbark matched here too).
-		"HELPFUL|PLAYER|RAID_IN_COMBAT|!EXTERNAL_DEFENSIVE|!BIG_DEFENSIVE" } },
+	{ key = "hotsOwn",    wl = "hot", groupBuffSource = true },
 	{ key = "defensives", wl = "def", flagFilters = {
 		-- Externals first; big personal defensives second, minus the externals so
 		-- an aura that is both is drawn once.
@@ -89,9 +97,10 @@ local NATIVE_CATS = {
 	{ key = "major",      wl = "major" },
 	{ key = "debuffs",    harmful = true },
 }
--- Session switch: false = the curated whitelist feeds the three helpful
--- categories (today's behaviour), true = Blizzard's per-spell flags do.
-RFC.useFlags = false
+-- Session switch for the Defensives source: true = Blizzard's per-spell flags
+-- (the default since the PTR round confirmed them), false = the curated whitelist,
+-- kept only as a fallback for comparing the two while the group gates are open.
+RFC.useFlags = true
 local IS_NATIVE = {}
 for _, c in ipairs(NATIVE_CATS) do IS_NATIVE[c.key] = true end
 
@@ -157,6 +166,54 @@ local function buildInclude(wlType)
 		if typ == wlType then include[sid] = true end
 	end
 	return include
+end
+
+-- Blizzard's group-window buff list, resolved to the set we actually draw:
+--   shown = every item minus the ones the player moved to "not shown"
+--   minus anything Blizzard itself flags as a defensive, because the Defensives
+--     category already draws those and it would land twice otherwise
+--   plus the player's own extras (whitelist type "hot"), which is how a spell
+--     Blizzard's list does not carry at all still gets shown.
+-- Cached because syncHelpful runs per button; invalidated by the events below
+-- rather than rebuilt per call (CLAUDE.md §9: no allocation in repeated paths).
+local buffInclude, buffOwned
+local function buildBuffSource()
+	if buffInclude then return buffInclude, buffOwned end
+	local include, owned = buildInclude("hot"), 0
+	local CV, UA = C_CooldownViewer, C_UnitAuras
+	local ok, items = false, nil
+	if CV and CV.GetGroupBuffItems then ok, items = pcall(CV.GetGroupBuffItems) end
+	if ok and items then
+		local hidden = {}
+		if UA and UA.GetHiddenGroupBuffs then
+			local ok2, ids = pcall(UA.GetHiddenGroupBuffs)
+			if ok2 and ids then for _, id in ipairs(ids) do hidden[id] = true end end
+		end
+		for _, it in ipairs(items) do
+			owned = owned + 1
+			if not hidden[it.spellID] then
+				local big, ext = false, false
+				if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
+					local o, v = pcall(C_UnitAuras.AuraIsBigDefensive, it.spellID); big = (o and v) and true or false
+				end
+				if C_Spell and C_Spell.IsExternalDefensive then
+					local o, v = pcall(C_Spell.IsExternalDefensive, it.spellID); ext = (o and v) and true or false
+				end
+				if not (big or ext) then include[it.spellID] = true end
+			end
+		end
+	end
+	buffInclude, buffOwned = include, owned
+	return include, owned
+end
+
+-- True while there is nothing to draw at all: Blizzard offers no list for this
+-- spec (a Hunter) AND the player added no extras. The category then goes dark
+-- instead of reserving space for an empty row.
+local function buffSourceEmpty()
+	local include, owned = buildBuffSource()
+	if owned > 0 then return false end
+	return next(include) == nil
 end
 
 -- The height the icons actually have available: the HEALTH bar, not the whole
@@ -552,6 +609,21 @@ local function flagGroupKey(key, i) return key .. "_f" .. i end
 local function syncHelpful(container, c, lo)
 	local key, filters = c.key, c.flagFilters
 	local useFlags = (RFC.useFlags and filters) and true or false
+	-- The group-buff category has ONE group and no source switch: the ids come from
+	-- Blizzard's list, the filter string only narrows it to auras WE applied (without
+	-- PLAYER a second druid's Rejuvenation would show up as ours).
+	if c.groupBuffSource then
+		if not container._helpfulGroups then
+			container._helpfulGroups = true
+			container:AddAuraGroup(key, "HELPFUL|PLAYER", {
+				maxFrameCount    = lo.maxN,
+				candidateFilters = { includeSpellIDs = buildBuffSource() },
+				initializeFrame  = makeInitializer(lo.size, key),
+			})
+		end
+		applyGroupLayout(container, key, lo, lo.maxN)
+		return
+	end
 	if not container._helpfulGroups then
 		container._helpfulGroups = true
 		container:AddAuraGroup(key, "HELPFUL", {
@@ -780,11 +852,19 @@ local function attachCat(button, parent, c)
 end
 
 -- Attach every ENABLED native category on a button (idempotent).
+-- Enabled in the profile AND with something to draw. The second half only ever
+-- says no for the group-buff category on a spec Blizzard has no list for.
+local function catActive(c)
+	if not catEnabled(c.key) then return false end
+	if c.groupBuffSource and buffSourceEmpty() then return false end
+	return true
+end
+
 function RFC.Attach(button)
 	if not button or InCombatLockdown() then return end
 	local parent = button.overlay or button
 	for _, c in ipairs(NATIVE_CATS) do
-		if catEnabled(c.key) then attachCat(button, parent, c) end
+		if catActive(c) then attachCat(button, parent, c) end
 	end
 	syncDispel(button, parent)
 end
@@ -814,7 +894,7 @@ function RFC.Relayout()
 		if InCombatLockdown() then return end
 		local parent = btn.overlay or btn
 		for _, c in ipairs(NATIVE_CATS) do
-			local on = catEnabled(c.key)
+			local on = catActive(c)
 			local container = btn._rfc and btn._rfc[c.key]
 			if on then
 				if not container then
@@ -874,7 +954,38 @@ end
 local autoDone = false
 local autoFrame = CreateFrame("Frame")
 autoFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-autoFrame:SetScript("OnEvent", function()
+
+-- The group-buff set changes without any settings change of ours: the player edits
+-- it in Blizzard's own panel, or the spec (and with it the whole list) changes.
+-- Pushing new candidate filters keeps the existing aura buttons -- no container
+-- rebuild, so this is legal while a container already lives on a frame.
+function RFC.RefreshBuffSource()
+	buffInclude, buffOwned = nil, nil
+	if not RFC.enabled then return end
+	local include = buildBuffSource()
+	forEachLiveButton(function(btn)
+		local container = btn._rfc and btn._rfc.hotsOwn
+		if container then
+			pcall(container.SetAuraGroupCandidateFilters, container, "hotsOwn",
+				{ includeSpellIDs = include })
+		end
+	end)
+	-- An empty source has to take the whole category down (or bring it back), and
+	-- that is an attach/detach -- Relayout owns it, and it is out-of-combat only.
+	if not InCombatLockdown() then RFC.Relayout() end
+end
+
+-- pcall per event: this file loads on 12.0.7 as well, where RegisterEvent on an
+-- event the client does not know is a hard error, not a no-op.
+for _, e in ipairs({ "HIDDEN_GROUP_BUFFS_CHANGED", "PLAYER_SPECIALIZATION_CHANGED",
+	"COOLDOWN_VIEWER_DATA_LOADED" }) do
+	pcall(autoFrame.RegisterEvent, autoFrame, e)
+end
+autoFrame:SetScript("OnEvent", function(_, event)
+	if event ~= "PLAYER_ENTERING_WORLD" then
+		if IS_121 then RFC.RefreshBuffSource() end
+		return
+	end
 	if autoDone or not IS_121 then return end
 	autoDone = true
 	C_Timer.After(1, function() if IS_121 and not RFC.enabled then RFC.Enable(true) end end)
