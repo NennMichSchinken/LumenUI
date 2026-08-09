@@ -1117,38 +1117,48 @@ function Raidframes:GetDispel(u, d)
 	-- container group (HARMFUL|RAID_PLAYER_DISPELLABLE) instead of a scan.
 	if aurasRestricted() then return false end
 	if not dispelCurve then buildDispelCurve() end
-	-- Ask the narrow question FIRST: "HARMFUL|RAID" returns at most a handful and we
-	-- leave on the first hit, so this is far cheaper than the wide scan it replaces
-	-- when it hits -- and when it misses we pay one empty call. Order matters: a
-	-- debuff the player can remove must win its colour even though the wide filter
-	-- would also have matched it.
-	if self:SelfDispelActive() then
-		local mine = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
-		if mine and mine.dispelName ~= nil then   -- secret-safe presence test
-			local r, g, b = selfCol(d)
-			return true, r, g, b
-		end
-	end
 	local filter = self:DispelFilter()
+	-- "Is this one mine to remove?" is asked PER AURA inside the one scan we already
+	-- run, not by scanning a second time (§9.10). IsAuraFilteredOutByInstanceID
+	-- answers it with a plain bool -- filtered OUT by "HARMFUL|RAID" means the player
+	-- cannot dispel it, so the answer we want is the negation.
+	local mineAsk = self:SelfDispelActive() and C_UnitAuras.IsAuraFilteredOutByInstanceID
+	-- "Mine" OUTRANKS the others, so the first hit may not simply win: a frame
+	-- carrying somebody else's dispel AND one of my own has to read as mine. The
+	-- first foreign hit is therefore remembered and only returned once the scan ends
+	-- without finding one of mine. `haveType` is our own bool -- the colours may be
+	-- secret, and testing one against nil would be a read.
+	local haveType, tr, tg, tb = false, nil, nil, nil
 	local i = 1
 	while true do
 		local aura = C_UnitAuras.GetAuraDataByIndex(u, i, filter)
 		if not aura then break end
 		i = i + 1
 		if aura.dispelName ~= nil then   -- secret-safe
-			if dispelCurve and C_UnitAuras.GetAuraDispelTypeColor then
-				local col = C_UnitAuras.GetAuraDispelTypeColor(u, aura.auraInstanceID, dispelCurve)
-				if col then
-					local sc = dispelScratch
-					sc.r, sc.g, sc.b = col:GetRGB()
-					return true, sc.r, sc.g, sc.b
+			if mineAsk and not mineAsk(u, aura.auraInstanceID, "HARMFUL|RAID") then
+				local sr, sg, sb = selfCol(d)
+				return true, sr, sg, sb
+			end
+			if not haveType then
+				if dispelCurve and C_UnitAuras.GetAuraDispelTypeColor then
+					local col = C_UnitAuras.GetAuraDispelTypeColor(u, aura.auraInstanceID, dispelCurve)
+					if col then
+						local sc = dispelScratch
+						sc.r, sc.g, sc.b = col:GetRGB()
+						haveType, tr, tg, tb = true, sc.r, sc.g, sc.b
+					end
+				end
+				if not haveType then
+					-- Fallback (API missing): generic magic color as a "dispellable" hint.
+					haveType, tr, tg, tb = true, dispelCol(d, "Magic")
 				end
 			end
-			-- Fallback (API missing): generic magic color as a "dispellable" hint.
-			local r, g, b = dispelCol(d, "Magic")
-			return true, r, g, b
+			-- Without the split there is nothing better to find -- leave at once and
+			-- keep the old single-pass cost.
+			if not mineAsk then return true, tr, tg, tb end
 		end
 	end
+	if haveType then return true, tr, tg, tb end
 	return false
 end
 
