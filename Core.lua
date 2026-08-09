@@ -14,7 +14,7 @@ local defaults = {
 			enabled        = true,
 
 			-- Health bar (shared — "Base" tab)
-			healthTexture  = "Lumen Aurora",
+			healthTexture  = "Lumen Glow",
 			auroraStrength = 0.85,   -- glow alpha for the "Lumen Aurora" texture (bright classes clip toward white at 1.0)
 			useClassColor  = true,
 			fillColor      = { r = 0.20, g = 0.60, b = 0.30 },
@@ -43,7 +43,7 @@ local defaults = {
 
 			-- Background & transparency (shared — "Base" tab). Alpha 0..1.
 			bgColor         = { r = 0.11, g = 0.11, b = 0.11 }, -- frame background color (was fixed 0.11)
-			bgAlpha         = 1,                                -- background opacity
+			bgAlpha         = 0.7,                              -- background opacity
 			healthAlpha     = 1,                                -- opacity of the health bar FILL only
 			shieldAlpha     = 1,                                -- shield overlay opacity
 			healAbsorbAlpha = 1,                                -- heal-absorb overlay opacity
@@ -64,7 +64,7 @@ local defaults = {
 
 			-- Frame visibility: show the group frame even when solo (default off -> no frame
 			-- when alone; on -> always visible). Sets the SecureGroupHeader attribute showSolo.
-			showWhenSolo = false,
+			showWhenSolo = true,
 
 			-- Shields (own textures, always visible when shielded)
 			absorbStyle     = "Blizzard",         -- Blizzard | Flach
@@ -75,7 +75,11 @@ local defaults = {
 
 			-- Dispel (secret-safe: Blizzard filter + color curve, works in combat)
 			dispelEnabled = true,
-			dispelMode    = "recolor",          -- "recolor" (recolor bar) | "overlay" (border+overlay, keeps class color)
+			-- Default "overlay" rather than recolouring the bar (Florian 2026-08-09):
+			-- the class colour is the thing the eye sorts the raid by, so a dispel
+			-- must not spend it -- it lays a tinted overlay + border ON the frame and
+			-- gives the colour back untouched the moment the debuff is gone.
+			dispelMode    = "overlay",          -- "recolor" (recolor bar) | "overlay" (border+overlay, keeps class color)
 			-- Which dispels light the frame up. Straight from Blizzard's aura filter
 			-- list (AuraUtil.AuraFilters), so all three are secret-safe -- the dispel
 			-- TYPE never has to be read in Lua:
@@ -85,7 +89,7 @@ local defaults = {
 			-- Default "mine": Lumen is built for healers under pressure, and a
 			-- highlight you cannot act on is noise (Florian 2026-08-07).
 			dispelScope   = "mine",
-			dispelAlpha   = 0.30,               -- overlay fill opacity (only mode "overlay")
+			dispelAlpha   = 0.70,               -- overlay fill opacity (only mode "overlay")
 			dispelColors  = {
 				Magic   = { r = 0.20, g = 0.60, b = 1.00 },
 				Curse   = { r = 0.64, g = 0.19, b = 0.79 },
@@ -109,17 +113,21 @@ local defaults = {
 			aggroModeWarn   = "border",            -- "border" | "overlay"
 			aggroTextWarn   = false,
 			-- Shared display for both stages:
-			aggroFillAlpha   = 0.22,               -- overlay opacity
-			aggroTextSize    = 12,
-			aggroTextPoint   = "TOP",
+			-- Loud on purpose (Florian 2026-08-09): aggro is the one state that outranks
+			-- everything else on the frame, so the fill is opaque enough to read at a
+			-- glance and the word sits in the middle, over the name and health text.
+			-- See the draw order in Raidframes:Decorate.
+			aggroFillAlpha   = 0.8,                -- overlay opacity
+			aggroTextSize    = 16,
+			aggroTextPoint   = "CENTER",
 			aggroTextX       = 0,
-			aggroTextY       = -2,
-			aggroTextOutline = "thick",            -- none | outline | thick
+			aggroTextY       = 0,
+			aggroTextOutline = "shadow",           -- none | outline | thick
 
 			-- Sorting (global, secure via SecureGroupHeader attributes). "group" = by
 			-- raid group (default, as before), "role" = by assigned role in the freely
 			-- reorderable priority order. Applies to raid AND party alike.
-			sortMode = "group",                    -- "group" | "role"
+			sortMode = "role",                     -- "group" | "role"
 			sortRoleOrder = { "TANK", "HEALER", "DAMAGER" },  -- priority list (top = first)
 			sortApplyRaid = false,                 -- role sorting in raid too? (dungeon/party always)
 
@@ -131,10 +139,13 @@ local defaults = {
 			-- PER CONTEXT only size-/position-dependent fields + show/type remain.
 			-- Color/outline of name & HP live shared above (Base).
 			raid = {
-				width = 114, height = 60, spacing = 6, orientation = "vertical",
+				-- Tuned against a real 40-man layout (Florian 2026-08-09): slightly
+				-- shorter frames packed tight, laid out in ROWS so a 40-man reads as
+				-- eight columns of five rather than a wall.
+				width = 110, height = 55, spacing = 2, orientation = "horizontal",
 				point = "CENTER", x = 0, y = -120,
-				showName = true, nameSize = 12, namePoint = "TOPLEFT", nameX = 4, nameY = -3,
-				healthTextType = "Aktuell", healthTextSize = 16, healthTextPoint = "CENTER",
+				showName = true, nameSize = 12, namePoint = "TOP", nameX = 0, nameY = 2,
+				healthTextType = "Prozent", healthTextSize = 10, healthTextPoint = "CENTER",
 				healthTextX = 0, healthTextY = 0,
 				-- Resource bar: height + WHO gets one. Raid default = HEALERS ONLY —
 				-- the other healers' mana is what a healer watches; twenty DPS rage
@@ -142,17 +153,21 @@ local defaults = {
 				powerHeight = 4,
 				powerShowHealer = true, powerShowTank = false, powerShowDps = false,
 				-- Indicator icons (role / leader) — per context like all size/
-				-- position knobs. Raid defaults OFF (40 icons = noise).
-				roleShow = false, roleHideDps = false, roleSize = 14,
-				rolePoint = "TOPRIGHT", roleX = -2, roleY = -2,
-				leadShow = false, leadSize = 12,
-				leadPoint = "TOPLEFT", leadX = -4, leadY = 6,
+				-- position knobs. ON in the raid too, but only for tanks and healers
+				-- (roleHideDps): 40 icons would be noise, 6 are a map. TOPLEFT, not
+				-- TOPRIGHT — that corner belongs to the debuff row.
+				roleShow = true, roleHideDps = true, roleSize = 14,
+				rolePoint = "TOPLEFT", roleX = 1, roleY = 1,
+				leadShow = true, leadSize = 12,
+				leadPoint = "TOPLEFT", leadX = 2, leadY = 8,
 			},
 			party = {
-				width = 114, height = 60, spacing = 6, orientation = "vertical",
+				-- Bigger than the raid frame on purpose: five people leave the room for
+				-- it, and the group frame is what a healer stares at in a key.
+				width = 150, height = 80, spacing = 6, orientation = "vertical",
 				point = "CENTER", x = 0, y = -120,
 				showName = true, nameSize = 12, namePoint = "TOPLEFT", nameX = 4, nameY = -3,
-				healthTextType = "Aktuell", healthTextSize = 16, healthTextPoint = "CENTER",
+				healthTextType = "Prozent", healthTextSize = 16, healthTextPoint = "CENTER",
 				healthTextX = 0, healthTextY = 0,
 				-- Resource bar: in a 5-man there is room for everyone's resource,
 				-- so the group default shows all three roles.
@@ -190,7 +205,10 @@ local defaults = {
 					enabledRaid = true,  enabledParty = true,
 					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 5, maxIconsParty = 5,
 					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
-					anchorRaid = "BOTTOMLEFT", anchorParty = "BOTTOMLEFT", growRaid = "RIGHT", growParty = "RIGHT",
+					-- Bottom right, growing inward (Florian 2026-08-09): the bottom left
+					-- is where the name sits, and a HoT row that starts under the name
+					-- reads as part of it. Growing LEFT keeps the row inside the frame.
+					anchorRaid = "BOTTOMRIGHT", anchorParty = "BOTTOMRIGHT", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
 					sizeRaid = 16, sizeParty = 22,
 					-- Duration text on the icon (native aura path): show + size + outline (like the name text).
@@ -200,23 +218,37 @@ local defaults = {
 					-- Only draw the number once the aura is nearly gone. A long buff (a
 					-- 60-minute Earth Shield) otherwise reads "58m" -- three characters at
 					-- a size picked for "8", hanging off the icon. 0 = always show.
-					durationMaxRaid = 60, durationMaxParty = 60,
+					-- The group gets a far higher threshold than the raid (Florian
+					-- 2026-08-09): on a 5-man frame the number is legible, and a healer
+					-- wants to see a HoT ticking down long before it is nearly gone.
+					durationMaxRaid = 60, durationMaxParty = 300,
 					-- Pandemic marker (12.1+): the icon is marked while re-casting would
 					-- carry duration over. The engine drives it (base vs. extended duration
 					-- are secret), we only own the option -- shared across raid/group like
 					-- the tooltip. HoTs ONLY: it lights inside the refresh window, so an aura
 					-- that never gets re-cast would never trigger it.
-					pandemic = false,
+					pandemic = true,
 				},
 				defensives = {
 					showTooltip = false,
-					enabledRaid = false, enabledParty = false,
-					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 3, maxIconsParty = 3,
-					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
-					anchorRaid = "TOPRIGHT", anchorParty = "TOPRIGHT", growRaid = "LEFT", growParty = "LEFT",
+					enabledRaid = true, enabledParty = true,
+					-- Few and large beats many and small: one defensive in the raid, two
+					-- in the group. A third icon would only shrink the row.
+					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 1, maxIconsParty = 2,
+					-- The category that does NOT auto-fit (Florian 2026-08-09, after
+					-- seeing it in game): a defensive is rare and worth noticing, and at
+					-- the auto-fitted size it went under. Fixed 30px in BOTH contexts --
+					-- deliberately the largest thing on the frame.
+					autoFitRaid = false, autoFitParty = false, showSwipeRaid = true, showSwipeParty = true,
+					-- Centred: the strongest spot on the frame, for the rarest icon. It
+					-- overlaps the centred HP text on purpose -- while a defensive runs,
+					-- IT is the news; the number comes back when the aura drops.
+					anchorRaid = "CENTER", anchorParty = "CENTER", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
-					sizeRaid = 16, sizeParty = 22,
-					showDurationRaid = true, showDurationParty = true,
+					sizeRaid = 30, sizeParty = 30,
+					-- No number on a defensive: at this size the icon IS the message,
+					-- and the swipe already shows how much is left.
+					showDurationRaid = false, showDurationParty = false,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
 					-- Only draw the number once the aura is nearly gone. A long buff (a
@@ -230,13 +262,19 @@ local defaults = {
 				-- not care about keys it has no default for. All it actually did was write
 				-- twenty dead keys into every profile and every export.)
 				debuffs = {
-					showTooltip = false,
-					enabledRaid = false, enabledParty = false,
+					-- The one category whose tooltip is ON: a debuff is the icon you do
+					-- not recognise, so hovering it has to explain itself.
+					showTooltip = true,
+					enabledRaid = true, enabledParty = true,
 					spacingRaid = 2, spacingParty = 2, maxIconsRaid = 4, maxIconsParty = 4,
-					autoFitRaid = true, autoFitParty = true, showSwipeRaid = true, showSwipeParty = true,
-					anchorRaid = "BOTTOMRIGHT", anchorParty = "BOTTOMRIGHT", growRaid = "LEFT", growParty = "LEFT",
+					-- Fixed sizes rather than auto-fit (Florian 2026-08-09, in game):
+					-- auto-fitted debuffs went under next to the larger frames.
+					autoFitRaid = false, autoFitParty = false, showSwipeRaid = true, showSwipeParty = true,
+					-- Top right, growing inward: the opposite corner from the HoTs, so
+					-- "what is on them" and "what I put on them" never share a row.
+					anchorRaid = "TOPRIGHT", anchorParty = "TOPRIGHT", growRaid = "LEFT", growParty = "LEFT",
 					offXRaid = 0, offXParty = 0, offYRaid = 0, offYParty = 0, outsideRaid = false, outsideParty = false,
-					sizeRaid = 16, sizeParty = 22,
+					sizeRaid = 22, sizeParty = 30,
 					showDurationRaid = true, showDurationParty = true,
 					durationSizeRaid = 12, durationSizeParty = 14,
 					durationOutlineRaid = "shadow", durationOutlineParty = "shadow",
@@ -263,7 +301,11 @@ local defaults = {
 		-- ClickCast.getSpec). Mouse-click AND hovercast bindings in ONE list,
 		-- separated by the binding.hovercast field.
 		clickCast = {
-			enabled     = false,
+			-- ON with an empty binding set: left-click targets, right-click opens the
+			-- menu -- exactly what Blizzard's frames do. So enabling it changes nothing
+			-- until the player binds a spell, and the feature is discoverable instead
+			-- of hidden behind a switch nobody finds.
+			enabled     = true,
 			helpfulOnly = true,   -- limit spell selection to helpful (castable-on-allies) spells
 			specs       = {},     -- [specID] = { { key=, type=, ... }, ... }
 		},
@@ -318,13 +360,18 @@ local defaults = {
 				-- screen and greys out while unavailable; instanceOnly limits
 				-- both of them to dungeons/raids.
 				instanceOnly = false,
-				brez = { enabled = false, size = 40, pos = { point = "CENTER", x = -30, y = -240 } },
-				lust = { enabled = false, size = 40, pos = { point = "CENTER", x = 30, y = -240 } },
+				-- Both ON by default: they only ever SHOW something (charges left, who
+				-- is sated) and never act, so nothing happens that the player did not
+				-- ask for -- unlike the vendor/invite automations, which stay opt-in.
+				brez = { enabled = true, size = 50, pos = { point = "CENTER", x = -30, y = -240 } },
+				lust = { enabled = true, size = 50, pos = { point = "CENTER", x = 30, y = -240 } },
 			},
 			windows = {
 				-- Movable Blizzard windows (Shift+drag). Saved spots per frame
 				-- name; empty until the user actually moves a window.
-				enabled   = false,
+				-- ON by default: it adds an ability (Shift+drag) without changing
+				-- anything until the player uses it.
+				enabled   = true,
 				positions = {},
 			},
 			invites = {
