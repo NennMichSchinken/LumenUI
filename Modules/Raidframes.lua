@@ -1619,22 +1619,42 @@ local function Decorate(f)
 	f.overlay:SetAllPoints()
 	f.overlay:SetFrameLevel(base + 6)
 
+	-- One level above f.overlay, and that single step is what carries the whole text
+	-- rule (Florian 2026-08-09, from three screenshots that looked contradictory):
+	--   * a FontString and a Texture in the SAME draw layer do not sort by sub-level
+	--     -- the text always wins. So no sub-level can push the health number under
+	--     the aggro fill; only a lower draw LAYER can, and that is what it gets.
+	--   * the native dispel overlay is not a texture at all but a child FRAME of
+	--     f.overlay, and a child frame covers every region of its parent -- which is
+	--     why the name vanished under a dispel but survived aggro.
+	-- Putting the name and the "Aggro" word on iconLayer (+1) lifts them over both:
+	-- over f.overlay's own textures AND over the dispel container that sits at
+	-- f.overlay's level. The aura holders start at +4 and stay on top of everything.
+	f.iconLayer = CreateFrame("Frame", nil, f)
+	f.iconLayer:SetAllPoints(f)
+	f.iconLayer:SetFrameLevel(base + 7)
+
 	f.auraHolders = {}   -- [catKey] = holder frame with icon pool (lazy in ApplyConfig)
 
-	f.name = f.overlay:CreateFontString(nil, "OVERLAY")
 	-- The name rides ABOVE the state fills, the health number stays under them
 	-- (Florian 2026-08-09): while a frame is lit up you still need to know WHO it is,
 	-- but not what they are at -- the colour already says "act on this one".
-	f.name:SetDrawLayer("OVERLAY", 5)
+	-- Reading order on a lit frame: health number, then the state, then the name.
+	f.name = f.iconLayer:CreateFontString(nil, "OVERLAY")
 	setFrameFont(f.name, 11, "OUTLINE")
 	f.name:SetPoint("TOPLEFT", 4, -3)
-	f.htext = f.overlay:CreateFontString(nil, "OVERLAY")
+	-- ARTWORK, not OVERLAY: the fills are OVERLAY textures, and a whole draw layer is
+	-- the only thing that reliably sorts a FontString below a Texture.
+	f.htext = f.overlay:CreateFontString(nil, "ARTWORK")
+	f.htext:SetDrawLayer("ARTWORK", 7)
 	setFrameFont(f.htext, 16, "OUTLINE")
 	f.htext:SetPoint("CENTER")
 
 	-- Status layer: center text (Offline/Dead/Ghost/Rez — replaces the HP text
 	-- while shown) + center icon (ready check / incoming summon).
-	f.stext = f.overlay:CreateFontString(nil, "OVERLAY")
+	-- Rides with the health number it replaces, one layer down.
+	f.stext = f.overlay:CreateFontString(nil, "ARTWORK")
+	f.stext:SetDrawLayer("ARTWORK", 7)
 	setFrameFont(f.stext, 12, "OUTLINE")
 	f.stext:SetPoint("CENTER")
 	f.stext:Hide()
@@ -1649,17 +1669,21 @@ local function Decorate(f)
 	--
 	-- Sub-layer ladder on f.overlay, bottom up (Florian 2026-08-09) — the fills used
 	-- to sit on ARTWORK, i.e. UNDER the texts, and the state got lost behind a name:
-	--   0 health + status text  ·  1 dispel fill  ·  2 dispel border  ·  3 aggro fill
-	--   4 aggro border  ·  5 name + "Aggro"  ·  6 status icon  ·  7 hover edge
-	-- (Name and "Aggro" share 5 and never overlap: one sits at the top edge, the
-	-- other in the middle. The status text stays down with the health number -- move
-	-- it up if "Offline" ever gets lost behind a dispel.)
+	-- ARTWORK: health + status text. OVERLAY, bottom up: 1 aggro fill · 2 dispel fill
+	-- · 3 dispel border · 4 aggro border · 6 status icon · 7 hover edge. The name and
+	-- the "Aggro" word are not here at all -- they live on f.iconLayer, one frame
+	-- level up (see there for why).
+	--
+	-- Dispel fill ABOVE aggro fill, aggro border ABOVE dispel border (Florian
+	-- 2026-08-09): with aggro on you could no longer see that something was
+	-- dispellable. They do not have to share one channel -- aggro owns the border and
+	-- the word, the dispel owns the surface colour, and both read at once.
 	-- A state that covers the name is the point: while it is on, IT is the news, and
 	-- the name comes back the moment it clears. The aura band stays above all of this
 	-- for free -- holders are child FRAMES of f.overlay, never its textures.
 	-- (This is a deliberate departure from the benchmark, which keeps its text on top
 	-- and offers the inverse only as an option.)
-	f.dFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 1)
+	f.dFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
 	-- Anchored to the WHOLE frame, not to f.health: the health bar gives up its
 	-- bottom rows to the resource strip (_setPowerShown owns that height), so a fill
 	-- pinned to it stopped short and the strip sat there in its own colour, looking
@@ -1667,7 +1691,7 @@ local function Decorate(f)
 	-- the whole frame -- now the fill agrees with them.
 	f.dFill:SetColorTexture(1, 1, 1, 1); f.dFill:SetAllPoints(); f.dFill:Hide()
 	local function dedge()
-		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
+		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
 		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t
 	end
 	f.dT, f.dB, f.dL, f.dR = dedge(), dedge(), dedge(), dedge()
@@ -1688,7 +1712,7 @@ local function Decorate(f)
 	-- render above any of its textures). Unified rule: dispel/aggro are area/border
 	-- signals that stay visible around the icons; the icons + duration text carry
 	-- detail info and must never be occluded. White textures -> color via SetVertexColor.
-	f.aggroFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
+	f.aggroFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 1)
 	f.aggroFill:SetColorTexture(1, 1, 1, 1); f.aggroFill:SetAllPoints(); f.aggroFill:Hide()
 	local function aedge()
 		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 4)
@@ -1699,10 +1723,9 @@ local function Decorate(f)
 	f.aB:SetPoint("BOTTOMLEFT"); f.aB:SetPoint("BOTTOMRIGHT"); f.aB:SetHeight(2)
 	f.aL:SetPoint("TOPLEFT"); f.aL:SetPoint("BOTTOMLEFT"); f.aL:SetWidth(2)
 	f.aR:SetPoint("TOPRIGHT"); f.aR:SetPoint("BOTTOMRIGHT"); f.aR:SetWidth(2)
-	-- CreateFontString has no sub-level argument (unlike CreateTexture) -- it has to
-	-- be set afterwards, or the word would tie with the name at sub-level 0.
-	f.aggroText = f.overlay:CreateFontString(nil, "OVERLAY")
-	f.aggroText:SetDrawLayer("OVERLAY", 5)
+	-- On iconLayer with the name: it has to clear the dispel container too, or the
+	-- word disappears exactly when a dispelled target also has aggro.
+	f.aggroText = f.iconLayer:CreateFontString(nil, "OVERLAY")
 	setFrameFont(f.aggroText, 12, "OUTLINE")
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 
@@ -1714,9 +1737,8 @@ local function Decorate(f)
 	-- occlude auras. Same reasoning as the text band above: information you can
 	-- also read from the frame's position yields to information you cannot.
 	-- Anchored/sized per context in ApplyConfig, filled in the render pass.
-	f.iconLayer = CreateFrame("Frame", nil, f)
-	f.iconLayer:SetAllPoints(f)
-	f.iconLayer:SetFrameLevel(base + 7) -- = f.overlay + 1; aura holders start at +4
+	-- (f.iconLayer is created up with f.overlay -- the name and the "Aggro" word ride
+	-- on it, and they are built long before this block.)
 	-- ART textures get pixel snapping turned OFF: these are Blizzard atlases far
 	-- larger than the 12-16px we draw them at, and snapping a downscaled icon to
 	-- the pixel grid is what makes its edges look chewed (Florian 2026-08-07).
