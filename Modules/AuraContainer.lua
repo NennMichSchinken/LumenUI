@@ -990,18 +990,20 @@ local function syncDispel(button, parent)
 	-- one slot carries one filter -- and a slot is the ONE-frame variant, so the
 	-- second half costs a single frame per button, not a group.
 	--
-	-- Both halves are ALWAYS built, because a slot's colour curve is fixed when its
-	-- frame is initialised and groups cannot be removed from a container. Switching
-	-- the scope therefore may not depend on adding a slot later -- it only ever
-	-- rewrites filter strings. When the split is off, the "mine" half is pointed at
-	-- a filter that cannot match (a token and its own negation), which parks it
-	-- without touching the half that is drawing.
+	-- The "mine" half is built ON DEMAND. It used to be built unconditionally, which
+	-- was measured at 42 aura buttons per unit frame instead of 41 -- one frame per
+	-- button spent on a feature that is OFF by default (Florian's /lumenprof capture,
+	-- 2026-08-09). Since it defaults off, most installs never want it at all.
+	--
+	-- Turning it OFF again does NOT tear the slot down: slots cannot be removed, so
+	-- the off state parks the filter on a token together with its own negation, which
+	-- cannot match. Only the first switch-on ever builds anything.
 	local mineFilter = MINE_OFF
 	if rf and rf.SelfDispelActive and rf:SelfDispelActive() then
 		mineFilter, filter = rf:SelfDispelFilters()
 	end
+	local health = button.health or button
 	if not container then
-		local health = button.health or button
 		local ok, c = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
 		if not ok or not c then return end
 		container = c
@@ -1020,10 +1022,11 @@ local function syncDispel(button, parent)
 				container:AddAuraSlot(key, filter, {
 					initializeFrame = initDispelFrame(mode, button, health, true),
 				})
-				if mineFilter then
+				if mineFilter ~= MINE_OFF then
 					container:AddAuraSlot(MINE_KEY, mineFilter, {
 						initializeFrame = initDispelFrame(mode, button, health, true, true),
 					})
+					container._mineBuilt = true
 				end
 			else
 				layoutCall(container, "anchor", "TOPLEFT")
@@ -1031,11 +1034,12 @@ local function syncDispel(button, parent)
 					maxFrameCount   = 1,
 					initializeFrame = initDispelFrame(mode, button, health, false),
 				})
-				if mineFilter then
+				if mineFilter ~= MINE_OFF then
 					container:AddAuraGroup(MINE_KEY, mineFilter, {
 						maxFrameCount   = 1,
 						initializeFrame = initDispelFrame(mode, button, health, false, true),
 					})
+					container._mineBuilt = true
 				end
 			end
 			container._dispelFilter, container._mineFilter = filter, mineFilter
@@ -1050,12 +1054,41 @@ local function syncDispel(button, parent)
 	-- Live changes: the dispel scope swaps through the slot (or the fallback group),
 	-- no container churn. Only the fallback needs its size pushed -- the slot frame
 	-- is anchored to the button and follows it.
+	-- First switch-on: the half does not exist yet. Try to declare it on the living
+	-- container -- we are out of combat here, RFC.Attach guarantees it. If the engine
+	-- refuses a slot after the fact, fall back to the path we KNOW works: throw the
+	-- container away and let the creation branch declare both halves up front. The
+	-- discarded container leaks a few frames (WoW never frees them), which is why
+	-- this is the fallback and not the plan -- but it can only ever happen once per
+	-- button, on the first switch-on, and never in the default configuration.
+	if mineFilter ~= MINE_OFF and not container._mineBuilt then
+		local addedOK = false
+		if container._dispelSlot and container.AddAuraSlot then
+			addedOK = pcall(container.AddAuraSlot, container, MINE_KEY, mineFilter, {
+				initializeFrame = initDispelFrame(mode, button, health, true, true) })
+		elseif container.AddAuraGroup then
+			addedOK = pcall(container.AddAuraGroup, container, MINE_KEY, mineFilter, {
+				maxFrameCount   = 1,
+				initializeFrame = initDispelFrame(mode, button, health, false, true) })
+		end
+		if addedOK then
+			container._mineBuilt, container._mineFilter = true, mineFilter
+			pcall(container.UpdateAllAuras, container)
+		else
+			pcall(container.SetEnabled, container, false)
+			pcall(container.Hide, container)
+			button._rfc[key] = nil
+			return syncDispel(button, parent)   -- rebuilds, depth 1: the new one has it
+		end
+	end
 	local set = container._dispelSlot and container.SetAuraSlotFilterString
 		or container.SetAuraGroupFilterString
 	if set and container._dispelFilter ~= filter then
 		if pcall(set, container, key, filter) then container._dispelFilter = filter end
 	end
-	if set and container._mineFilter ~= mineFilter then
+	-- Only park/unpark a half that exists. Without the guard this would push a filter
+	-- at a slot key the container never declared.
+	if set and container._mineBuilt and container._mineFilter ~= mineFilter then
 		if pcall(set, container, MINE_KEY, mineFilter) then
 			container._mineFilter = mineFilter
 		end
