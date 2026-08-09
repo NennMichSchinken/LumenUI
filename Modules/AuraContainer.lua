@@ -1310,6 +1310,32 @@ function RFC.RefreshDefensiveSource()
 	end)
 end
 
+-- Make every live container evaluate its group membership again.
+--
+-- Needed after a ZONE CHANGE, and the reason is engine-side: our includeSpellIDs
+-- only apply while `CanApplyIdentityCandidateFilters` says yes, and that asks
+-- `UnitCanAssist("player", unit)`. While a zone is still settling that can answer
+-- NO for a moment -- and then the engine skips the id filter entirely instead of
+-- failing, so the group falls back to its bare filter string. `hotsOwn` briefly
+-- becomes "every buff I cast on myself": Florian came out of a portal with a ring
+-- proc, his flight style and a Dragonflight mark sitting in the HoT row
+-- (2026-08-09). The wrong assignment then stays until something re-parses, which
+-- is why a /reload cleared it.
+--
+-- Until the candidate-filter push was gated on a real change, this got cleaned up
+-- BY ACCIDENT -- every reconcile pushed filters, and that call re-parses as a side
+-- effect. Gating the push was right, but it removed an unnoticed safety net, so
+-- the re-parse is now asked for on purpose. One call per container per zone, which
+-- is what the accidental version cost anyway.
+function RFC.Reparse()
+	if not RFC.enabled then return end
+	forEachLiveButton(function(btn)
+		if btn._rfc then
+			for _, c in pairs(btn._rfc) do pcall(c.UpdateAllAuras, c) end
+		end
+	end)
+end
+
 -- Coalesce a burst into ONE rebuild on the next frame -- the same move the
 -- in-combat roster burst makes (Raidframes._RosterPaint). The three events below
 -- arrive together (a spec change reloads the cooldown data, which re-derives the
@@ -1354,9 +1380,15 @@ autoFrame:SetScript("OnEvent", function(_, event, unit)
 		if IS_121 then queueBuffSource() end
 		return
 	end
-	if autoDone or not IS_121 then return end
+	if not IS_121 then return end
+	if autoDone then
+		-- Every later world entry is a zone change -> re-evaluate once it has
+		-- settled, see RFC.Reparse. A plain function reference, no closure.
+		C_Timer.After(1, RFC.Reparse)
+		return
+	end
 	autoDone = true
-	C_Timer.After(1, function() if IS_121 and not RFC.enabled then RFC.Enable(true) end end)
+	C_Timer.After(1, function() if not RFC.enabled then RFC.Enable(true) end end)
 end)
 
 -- Flip the SOURCE of the three helpful categories (see NATIVE_CATS). Relayout
