@@ -51,7 +51,7 @@ RFC.enabled = false
 -- `buttons` counts BOTH initializers. The first reading missed the dispel ones and
 -- reported 8.3 buttons per group where the engine actually creates exactly 10 --
 -- a counter that only sees one of two creation paths lies quietly.
-RFC.stat = { groups = 0, filterPush = 0, buttons = 0 }
+RFC.stat = { groups = 0, filterPush = 0, buttons = 0, dispelReg = 0, dispelFail = 0 }
 
 -- Categories the native path owns. HELPFUL ones have TWO possible sources, see
 -- `flagFilters` below; debuffs are HARMFUL (harmful=true) and filter by MODE via
@@ -918,9 +918,24 @@ local function dispelMode()
 	return (d and d.dispelMode == "recolor") and "recolor" or "overlay"
 end
 
--- The engine colours whatever textures we register. CustomAsset with NO asset map
--- leaves our own texture in place and takes only the colour (every other style
--- would stamp a Blizzard border atlas over it).
+-- The engine colours whatever textures we register, and the STYLE decides what it
+-- does to the texture's asset first. That is the whole trick, and we had it wrong
+-- from the start:
+--   * CustomAsset looks the asset up in `customDispelAssetMap` -- and when that map
+--     is absent, `ApplyDispelTypeTextureAsset` takes the nil branch and calls
+--     `SetTexture(secretwrap(nil))`, i.e. it WIPES the texture we just built. The
+--     colour was then applied to an empty image, which is why the overlay never
+--     appeared even though the container was alive and enabled (Florian, 2026-08-09).
+--   * PreserveAsset is the one that means what we want: it leaves the asset alone
+--     and only sets a colour, which `ApplyCustomDispelTypeTextureColor` then
+--     overwrites with the value from our curve.
+-- Read from Blizzard_CustomAuraButton.lua `ApplyDispelTypeTextureStyle`; the old
+-- comment here asserted the opposite without ever having checked.
+-- Registration failures are counted rather than swallowed: this call sits in a
+-- pcall (the engine hard-errors on a bad option table), and a silent pcall is
+-- exactly what hid this for two days.
+local DISPEL_STYLE = Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
+	and Enum.CustomAuraButtonDispelTypeTextureStyle.PreserveAsset
 local function initDispelFrame(mode, w, h, health)
 	return function(button)
 		RFC.stat.buttons = RFC.stat.buttons + 1
@@ -928,10 +943,12 @@ local function initDispelFrame(mode, w, h, health)
 		local rf = ns.Raidframes
 		local edgeCurve, fillCurve = rf:DispelCurves()
 		local function reg(tex, curve)
-			pcall(button.AddDispelTypeTexture, button, tex, {
-				style = Enum.CustomAuraButtonDispelTypeTextureStyle.CustomAsset,
+			local ok = pcall(button.AddDispelTypeTexture, button, tex, {
+				style = DISPEL_STYLE,
 				customDispelColorCurve = curve,
 			})
+			if ok then RFC.stat.dispelReg = RFC.stat.dispelReg + 1
+			else RFC.stat.dispelFail = RFC.stat.dispelFail + 1 end
 		end
 		pcall(button.SetMouseClickEnabled, button, false)
 		pcall(button.SetMouseMotionEnabled, button, false)
@@ -1502,9 +1519,10 @@ function RFC.DumpState()
 		:format(RFC.enabled and "ON" or "off", IS_121 and "yes" or "no", sfx,
 			sfx == "Party" and "solo/party -- the Raid tab is NOT what renders now" or "in a raid"))
 	local rf = ns.Raidframes
-	say(("dispel: enabled=%s · mode=%s · filter=%s"):format(
+	say(("dispel: enabled=%s · mode=%s · filter=%s · style=%s · textures ok=%d fail=%d"):format(
 		tostring(dispelOn()), dispelMode(),
-		(rf and rf.DispelFilter and rf:DispelFilter()) or "?"))
+		(rf and rf.DispelFilter and rf:DispelFilter()) or "?",
+		tostring(DISPEL_STYLE), RFC.stat.dispelReg, RFC.stat.dispelFail))
 	say(("debuffs: mode=%s · groups=%s"):format(debuffMode(),
 		table.concat((function()
 			local t = {}
