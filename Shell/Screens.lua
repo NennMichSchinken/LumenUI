@@ -1239,12 +1239,14 @@ local function buildBase(d, stack)
 	-- segment combines mode + text like the old dropdown: "+ Text" = overlay
 	-- mode WITH text. The separate profile fields modeKey + textKey are still
 	-- written (data model/render unchanged).
-	local function aggroStage(label, colorKey, modeKey, textKey)
-		-- Stage heading with the shared top hairline (rule: the line always
-		-- sits ABOVE — Florian 2026-07-11; without it the stages blurred).
-		sAggro:place(subHeadRow(d, label), M.subHeadH, R.tight)
-		local r, c = W.FieldRow(d, d, 1, { height = fieldH })
-		local mode = W.Segment(c[1], { label = T("Display"), options = AGGRO_SEG_OPTS,
+	-- No stage heading any more (Florian 2026-08-09): it cost a whole row to say
+	-- something the next row's label can carry, and it named the colours ("red",
+	-- "yellow") which stops being true the moment anyone picks their own. The stage
+	-- now rides in the two labels, and the row height matches the dispel card's so
+	-- the two cards' dividers line up instead of drifting apart.
+	local function aggroStage(stage, colorKey, modeKey, textKey)
+		local r, c = W.FieldRow(d, d, 1, { height = M.sliderBoxH })
+		local mode = W.Segment(c[1], { label = T("Display") .. " — " .. stage, options = AGGRO_SEG_OPTS,
 			get = function()
 				if rf()[modeKey] == "overlay" and rf()[textKey] then return "overlaytext" end
 				return rf()[modeKey]
@@ -1256,14 +1258,14 @@ local function buildBase(d, stack)
 				relayout(); refreshAggro()
 			end })
 		mode:SetAllPoints(c[1])
-		sAggro:place(r, fieldH, R.tight)
-		local sw = colorRow(d, T("Color"), tcget(colorKey), tcset(colorKey))
+		sAggro:place(r, M.sliderBoxH, R.tight)
+		local sw = colorRow(d, T("Color") .. " — " .. stage, tcget(colorKey), tcset(colorKey))
 		sAggro:place(sw, M.optionRowH, R.row)
 		aggroAlways[#aggroAlways + 1] = sw
 		aggroAlways[#aggroAlways + 1] = mode
 	end
-	aggroStage(T("Has aggro (red)"),         "aggroColorAggro", "aggroModeAggro", "aggroTextAggro")
-	aggroStage(T("Aggro incoming (yellow)"), "aggroColorWarn",  "aggroModeWarn",  "aggroTextWarn")
+	aggroStage(T("has aggro"),      "aggroColorAggro", "aggroModeAggro", "aggroTextAggro")
+	aggroStage(T("aggro incoming"), "aggroColorWarn",  "aggroModeWarn",  "aggroTextWarn")
 
 	-- Advanced: text fine-tuning (both stages), overlay opacity and the
 	-- instance filter (curation 2026-07-04: all set-once).
