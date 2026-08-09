@@ -1591,7 +1591,12 @@ local function Decorate(f)
 	-- (This is a deliberate departure from the benchmark, which keeps its text on top
 	-- and offers the inverse only as an option.)
 	f.dFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 1)
-	f.dFill:SetColorTexture(1, 1, 1, 1); f.dFill:SetAllPoints(f.health); f.dFill:Hide()
+	-- Anchored to the WHOLE frame, not to f.health: the health bar gives up its
+	-- bottom rows to the resource strip (_setPowerShown owns that height), so a fill
+	-- pinned to it stopped short and the strip sat there in its own colour, looking
+	-- like it was ON TOP of the state (Florian 2026-08-09). The borders always framed
+	-- the whole frame -- now the fill agrees with them.
+	f.dFill:SetColorTexture(1, 1, 1, 1); f.dFill:SetAllPoints(); f.dFill:Hide()
 	local function dedge()
 		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
 		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t
@@ -1615,7 +1620,7 @@ local function Decorate(f)
 	-- signals that stay visible around the icons; the icons + duration text carry
 	-- detail info and must never be occluded. White textures -> color via SetVertexColor.
 	f.aggroFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
-	f.aggroFill:SetColorTexture(1, 1, 1, 1); f.aggroFill:SetAllPoints(f.health); f.aggroFill:Hide()
+	f.aggroFill:SetColorTexture(1, 1, 1, 1); f.aggroFill:SetAllPoints(); f.aggroFill:Hide()
 	local function aedge()
 		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 4)
 		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t

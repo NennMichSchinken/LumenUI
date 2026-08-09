@@ -86,9 +86,12 @@ local defaults = {
 			--   mine  = HARMFUL|RAID                    "harmful auras the player can dispel"
 			--   group = HARMFUL|RAID_PLAYER_DISPELLABLE "someone in the player's raid can dispel"
 			--   all   = HARMFUL                          every debuff carrying a dispel type
-			-- Default "mine": Lumen is built for healers under pressure, and a
-			-- highlight you cannot act on is noise (Florian 2026-08-07).
-			dispelScope   = "mine",
+			-- Default "group" (Florian 2026-08-09, revised from "mine"): a healer wants
+			-- to SEE that something is removable even when it is not their type -- a
+			-- frame that stays quiet reads as "nothing wrong here". What the player can
+			-- take off themselves is told apart by COLOUR instead (dispelSelfColor),
+			-- which keeps the information without hiding the rest.
+			dispelScope   = "group",
 			dispelAlpha   = 0.70,               -- overlay fill opacity (only mode "overlay")
 			dispelColors  = {
 				Magic   = { r = 0.20, g = 0.60, b = 1.00 },
@@ -140,9 +143,9 @@ local defaults = {
 			-- Color/outline of name & HP live shared above (Base).
 			raid = {
 				-- Tuned against a real 40-man layout (Florian 2026-08-09): slightly
-				-- shorter frames packed tight, laid out in ROWS so a 40-man reads as
-				-- eight columns of five rather than a wall.
-				width = 110, height = 55, spacing = 2, orientation = "horizontal",
+				-- shorter frames packed tight. Vertical like Blizzard's own: on a combat
+				-- frame the familiar shape beats the better-packed one.
+				width = 110, height = 55, spacing = 2, orientation = "vertical",
 				point = "CENTER", x = 0, y = -120,
 				showName = true, nameSize = 12, namePoint = "TOP", nameX = 0, nameY = 2,
 				healthTextType = "Prozent", healthTextSize = 10, healthTextPoint = "CENTER",
