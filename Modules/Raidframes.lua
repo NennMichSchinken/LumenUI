@@ -1560,6 +1560,10 @@ local function Decorate(f)
 	f.auraHolders = {}   -- [catKey] = holder frame with icon pool (lazy in ApplyConfig)
 
 	f.name = f.overlay:CreateFontString(nil, "OVERLAY")
+	-- The name rides ABOVE the state fills, the health number stays under them
+	-- (Florian 2026-08-09): while a frame is lit up you still need to know WHO it is,
+	-- but not what they are at -- the colour already says "act on this one".
+	f.name:SetDrawLayer("OVERLAY", 5)
 	setFrameFont(f.name, 11, "OUTLINE")
 	f.name:SetPoint("TOPLEFT", 4, -3)
 	f.htext = f.overlay:CreateFontString(nil, "OVERLAY")
@@ -1583,8 +1587,11 @@ local function Decorate(f)
 	--
 	-- Sub-layer ladder on f.overlay, bottom up (Florian 2026-08-09) — the fills used
 	-- to sit on ARTWORK, i.e. UNDER the texts, and the state got lost behind a name:
-	--   0 name / health / status text  ·  1 dispel fill  ·  2 dispel border
-	--   3 aggro fill  ·  4 aggro border  ·  5 "Aggro"  ·  6 status icon  ·  7 hover edge
+	--   0 health + status text  ·  1 dispel fill  ·  2 dispel border  ·  3 aggro fill
+	--   4 aggro border  ·  5 name + "Aggro"  ·  6 status icon  ·  7 hover edge
+	-- (Name and "Aggro" share 5 and never overlap: one sits at the top edge, the
+	-- other in the middle. The status text stays down with the health number -- move
+	-- it up if "Offline" ever gets lost behind a dispel.)
 	-- A state that covers the name is the point: while it is on, IT is the news, and
 	-- the name comes back the moment it clears. The aura band stays above all of this
 	-- for free -- holders are child FRAMES of f.overlay, never its textures.
