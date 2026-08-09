@@ -950,7 +950,19 @@ end
 -- filter list and resolve the (secret) dispel type engine-side.
 function Raidframes:DispelFilter()
 	local scope = db().dispelScope
-	if scope == "all" then return "HARMFUL" end
+	if scope == "all" then
+		-- "All" means "carries a dispel type, no matter who could remove it" -- and
+		-- 12.1 has a token that says exactly that. Plain HARMFUL is NOT the same
+		-- thing: it matches every debuff, typed or not. The scan path never noticed
+		-- because it re-checks dispelName afterwards, but a native slot holds ONE
+		-- aura, so an untyped debuff winning the slot means nothing gets coloured at
+		-- all (Florian 2026-08-09, moonkin with an undispellable debuff).
+		-- Resolved by presence: the token does not exist on 12.0.7, where HARMFUL plus
+		-- the scan's own check is still correct.
+		local F = AuraUtil and AuraUtil.AuraFilters
+		local tok = F and F.Dispellable
+		return tok and ("HARMFUL|" .. tok) or "HARMFUL"
+	end
 	if scope == "group" then return "HARMFUL|RAID_PLAYER_DISPELLABLE" end
 	return "HARMFUL|RAID"   -- "mine": harmful auras THE PLAYER can dispel
 end

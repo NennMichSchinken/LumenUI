@@ -85,7 +85,9 @@ local defaults = {
 			-- TYPE never has to be read in Lua:
 			--   mine  = HARMFUL|RAID                    "harmful auras the player can dispel"
 			--   group = HARMFUL|RAID_PLAYER_DISPELLABLE "someone in the player's raid can dispel"
-			--   all   = HARMFUL                          every debuff carrying a dispel type
+			--   all   = HARMFUL|DISPELLABLE             every debuff carrying a dispel type
+			--           (12.1 token; falls back to plain HARMFUL on 12.0.7, where the
+			--            scan re-checks dispelName anyway — see Raidframes:DispelFilter)
 			-- Default "group" (Florian 2026-08-09, revised from "mine"): a healer wants
 			-- to SEE that something is removable even when it is not their type -- a
 			-- frame that stays quiet reads as "nothing wrong here". What the player can
