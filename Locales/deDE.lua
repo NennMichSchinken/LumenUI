@@ -161,6 +161,7 @@ ns.RegisterLocale("deDE", {
 	-- ── Base: Dispel ─────────────────────────────────────────────────────
 	["Dispel display"] = "Dispel-Anzeige",
 	["Highlight dispels for"] = "Dispels hervorheben für",
+	["Colour for what you can dispel"] = "Farbe für selbst Entfernbares",
 	["Mine"] = "Mich",
 	["Mine: only debuffs your own class can remove — nothing lights up that you cannot act on. Group: everything somebody in the group can dispel. All: every debuff carrying a dispel type, even when nobody present has the right dispel."] = "Mich: nur Debuffs, die deine eigene Klasse entfernen kann — es leuchtet nichts auf, worauf du nicht reagieren kannst. Gruppe: alles, was irgendwer in der Gruppe entfernen kann. Alle: jeder Debuff mit einem Dispel-Typ, auch wenn niemand Anwesendes den passenden Dispel hat.",
 	["Overlay opacity"] = "Overlay-Deckkraft",

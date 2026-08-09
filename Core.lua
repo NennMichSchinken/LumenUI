@@ -93,6 +93,11 @@ local defaults = {
 			-- which keeps the information without hiding the rest.
 			dispelScope   = "group",
 			dispelAlpha   = 0.70,               -- overlay fill opacity (only mode "overlay")
+			-- Signal colour for "this one is MINE to remove". Only meaningful in the
+			-- wider scopes: with scope "mine" every highlight would be this colour, so
+			-- the picker is greyed out there. Deliberately a colour no dispel type
+			-- owns -- it must not read as "some kind of magic", it must read as "you".
+			dispelSelfColor = { r = 1.00, g = 0.15, b = 0.70 },
 			dispelColors  = {
 				Magic   = { r = 0.20, g = 0.60, b = 1.00 },
 				Curse   = { r = 0.64, g = 0.19, b = 0.79 },

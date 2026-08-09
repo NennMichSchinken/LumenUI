@@ -889,6 +889,11 @@ local function dispelCol(d, key)
 	local c = (d.dispelColors and d.dispelColors[key]) or DISPEL_DEFAULTS[key]
 	return c.r or 0.5, c.g or 0.5, c.b or 0.5
 end
+-- Signal colour for a debuff the player can remove themselves.
+local function selfCol(d)
+	local c = d.dispelSelfColor or {}
+	return c.r or 1, c.g or 0.15, c.b or 0.7
+end
 -- Base color of the health bar: class color or fixed fill color (NO dispel logic anymore).
 local function fillRGB(d, class)
 	if d.useClassColor then return classColor(class) end
@@ -923,6 +928,21 @@ local function buildDispelCurve()
 	pt(2, "Curse")
 	pt(3, "Disease")
 	pt(4, "Poison")
+
+	-- The "mine" curve: every type maps to the SAME colour. It looks pointless as a
+	-- curve, and that is the trick -- the filter has already answered the question
+	-- ("harmful auras the player can dispel"), so the type carries no information
+	-- here. Going through a curve anyway keeps the engine the only thing that ever
+	-- resolves the secret type. Parked on the module table rather than as two more
+	-- file locals: this file lives near Lua's 200-local ceiling.
+	local sr, sg, sb = selfCol(d)
+	local s, sf = C_CurveUtil.CreateColorCurve(), C_CurveUtil.CreateColorCurve()
+	s:SetType(Enum.LuaCurveType.Step); sf:SetType(Enum.LuaCurveType.Step)
+	for idx = 0, 4 do
+		s:AddPoint(idx, CreateColor(sr, sg, sb, 1))
+		sf:AddPoint(idx, CreateColor(sr, sg, sb, a))
+	end
+	Raidframes._dSelf, Raidframes._dSelfFill = s, sf
 end
 
 -- The aura filter behind the dispel highlight. Shared with the native 12.1 path
@@ -933,6 +953,26 @@ function Raidframes:DispelFilter()
 	if scope == "all" then return "HARMFUL" end
 	if scope == "group" then return "HARMFUL|RAID_PLAYER_DISPELLABLE" end
 	return "HARMFUL|RAID"   -- "mine": harmful auras THE PLAYER can dispel
+end
+
+-- Is the "mine" highlight a separate colour right now? Only in the wider scopes:
+-- under scope "mine" the whole highlight already means "yours", so a second colour
+-- would paint everything and say nothing.
+function Raidframes:SelfDispelActive()
+	return db().dispelScope ~= "mine"
+end
+
+-- The complementary pair the wider scopes render with: what the player can remove
+-- (own colour) and everything else (type colours). Blizzard's own filter grammar
+-- allows the negation, so both questions stay on the engine's side of the fence.
+function Raidframes:SelfDispelFilters()
+	return "HARMFUL|RAID", self:DispelFilter() .. "|!RAID"
+end
+
+-- Curves for the "mine" highlight; same shape as DispelCurves (border, fill).
+function Raidframes:SelfDispelCurves()
+	if not dispelCurve then buildDispelCurve() end
+	return self._dSelf, self._dSelfFill
 end
 
 -- Public: the two dispel colour curves (border, fill). The native overlay passes
@@ -1077,6 +1117,18 @@ function Raidframes:GetDispel(u, d)
 	-- container group (HARMFUL|RAID_PLAYER_DISPELLABLE) instead of a scan.
 	if aurasRestricted() then return false end
 	if not dispelCurve then buildDispelCurve() end
+	-- Ask the narrow question FIRST: "HARMFUL|RAID" returns at most a handful and we
+	-- leave on the first hit, so this is far cheaper than the wide scan it replaces
+	-- when it hits -- and when it misses we pay one empty call. Order matters: a
+	-- debuff the player can remove must win its colour even though the wide filter
+	-- would also have matched it.
+	if self:SelfDispelActive() then
+		local mine = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
+		if mine and mine.dispelName ~= nil then   -- secret-safe presence test
+			local r, g, b = selfCol(d)
+			return true, r, g, b
+		end
+	end
 	local filter = self:DispelFilter()
 	local i = 1
 	while true do
@@ -2478,7 +2530,14 @@ function Raidframes:RenderFake(f)
 	-- something a preview has, so the wider scopes simply show every sample dispel.
 	if d.dispelEnabled and fk.dispel
 		and (d.dispelScope ~= "mine" or playerDispels[fk.dispel]) then
-		dr, dg, dbb = dispelCol(d, fk.dispel)
+		-- Same split as the live paths: what the player can take off gets the signal
+		-- colour, the rest keeps its type colour -- so the preview shows the two
+		-- cases side by side, which is the whole point of picking that colour here.
+		if d.dispelScope ~= "mine" and playerDispels[fk.dispel] then
+			dr, dg, dbb = selfCol(d)
+		else
+			dr, dg, dbb = dispelCol(d, fk.dispel)
+		end
 		hasDispel = true
 	end
 	local ha = max(HEALTH_ALPHA_MIN, d.healthAlpha or 1)

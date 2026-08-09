@@ -120,6 +120,7 @@ local DEBUFF_PRESETS = {
 	                { key = "db_raidc", filter = "HARMFUL|RAID_IN_COMBAT|!RAID" },
 	                { key = "db_raidd", filter = "HARMFUL|RAID_PLAYER_DISPELLABLE|!RAID|!RAID_IN_COMBAT" } },
 	dispellable = { { key = "db_disp",  filter = "HARMFUL|RAID_PLAYER_DISPELLABLE" } },
+	-- (see MINE_KEY / MINE_OFF below the table)
 }
 local ALL_DEBUFF_KEYS = { "db_all", "db_raid", "db_raidc", "db_raidd", "db_disp" }
 
@@ -866,6 +867,11 @@ end
 -- behind it. Lesson: a revert needs the same standard of evidence as a change, and
 -- "confirmed working" has to name WHICH path was confirmed.
 local DISPEL_MODES = { overlay = "dispel_ov", recolor = "dispel_bar" }
+-- The second dispel half: "what the player can remove themselves", drawn in its own
+-- signal colour. MINE_OFF parks it -- a token together with its own negation cannot
+-- hold, so the slot exists and matches nothing. It has to be parked rather than
+-- omitted because a slot's colour curve is fixed at initialisation.
+local MINE_KEY, MINE_OFF = "dispel_mine", "HARMFUL|RAID|!RAID"
 
 local function rfCfg()
 	return ns.Lumen and ns.Lumen.db and ns.Lumen.db.profile.raidframes
@@ -897,7 +903,9 @@ end
 -- exactly what hid this for two days.
 local DISPEL_STYLE = Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
 	and Enum.CustomAuraButtonDispelTypeTextureStyle.PreserveAsset
-local function initDispelFrame(mode, host, health, asSlot)
+-- `mineOnly` picks the curve pair: the slot fed by "HARMFUL|RAID" paints in the
+-- player's own signal colour, every other slot keeps the per-type colours.
+local function initDispelFrame(mode, host, health, asSlot, mineOnly)
 	return function(button)
 		RFC.stat.buttons = RFC.stat.buttons + 1
 		if asSlot then
@@ -909,7 +917,9 @@ local function initDispelFrame(mode, host, health, asSlot)
 			button:SetSize(host:GetWidth() or 1, host:GetHeight() or 1)
 		end
 		local rf = ns.Raidframes
-		local edgeCurve, fillCurve = rf:DispelCurves()
+		local edgeCurve, fillCurve
+		if mineOnly then edgeCurve, fillCurve = rf:SelfDispelCurves()
+		else edgeCurve, fillCurve = rf:DispelCurves() end
 		local function reg(tex, curve)
 			local ok = pcall(button.AddDispelTypeTexture, button, tex, {
 				style = DISPEL_STYLE,
@@ -973,8 +983,23 @@ local function syncDispel(button, parent)
 	local w, h = button:GetWidth() or 0, button:GetHeight() or 0
 	if w < 2 or h < 2 then return end
 	-- Scope comes from Raidframes so the native and the scan path cannot drift.
-	local filter = (ns.Raidframes and ns.Raidframes.DispelFilter
-		and ns.Raidframes:DispelFilter()) or "HARMFUL|RAID"
+	local rf = ns.Raidframes
+	local filter = (rf and rf.DispelFilter and rf:DispelFilter()) or "HARMFUL|RAID"
+	-- In the wider scopes the highlight splits in two complementary halves: what the
+	-- player can remove (own colour) and the rest (type colours). Two slots, because
+	-- one slot carries one filter -- and a slot is the ONE-frame variant, so the
+	-- second half costs a single frame per button, not a group.
+	--
+	-- Both halves are ALWAYS built, because a slot's colour curve is fixed when its
+	-- frame is initialised and groups cannot be removed from a container. Switching
+	-- the scope therefore may not depend on adding a slot later -- it only ever
+	-- rewrites filter strings. When the split is off, the "mine" half is pointed at
+	-- a filter that cannot match (a token and its own negation), which parks it
+	-- without touching the half that is drawing.
+	local mineFilter = MINE_OFF
+	if rf and rf.SelfDispelActive and rf:SelfDispelActive() then
+		mineFilter, filter = rf:SelfDispelFilters()
+	end
 	if not container then
 		local health = button.health or button
 		local ok, c = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
@@ -995,14 +1020,25 @@ local function syncDispel(button, parent)
 				container:AddAuraSlot(key, filter, {
 					initializeFrame = initDispelFrame(mode, button, health, true),
 				})
+				if mineFilter then
+					container:AddAuraSlot(MINE_KEY, mineFilter, {
+						initializeFrame = initDispelFrame(mode, button, health, true, true),
+					})
+				end
 			else
 				layoutCall(container, "anchor", "TOPLEFT")
 				container:AddAuraGroup(key, filter, {
 					maxFrameCount   = 1,
 					initializeFrame = initDispelFrame(mode, button, health, false),
 				})
+				if mineFilter then
+					container:AddAuraGroup(MINE_KEY, mineFilter, {
+						maxFrameCount   = 1,
+						initializeFrame = initDispelFrame(mode, button, health, false, true),
+					})
+				end
 			end
-			container._dispelFilter = filter
+			container._dispelFilter, container._mineFilter = filter, mineFilter
 			local u = button.unit or button:GetAttribute("unit")
 			if u then container:SetUnit(u) end
 			container:SetEnabled(true)
@@ -1014,11 +1050,14 @@ local function syncDispel(button, parent)
 	-- Live changes: the dispel scope swaps through the slot (or the fallback group),
 	-- no container churn. Only the fallback needs its size pushed -- the slot frame
 	-- is anchored to the button and follows it.
-	if container._dispelFilter ~= filter then
-		local set = container._dispelSlot and container.SetAuraSlotFilterString
-			or container.SetAuraGroupFilterString
-		if set and pcall(set, container, key, filter) then
-			container._dispelFilter = filter
+	local set = container._dispelSlot and container.SetAuraSlotFilterString
+		or container.SetAuraGroupFilterString
+	if set and container._dispelFilter ~= filter then
+		if pcall(set, container, key, filter) then container._dispelFilter = filter end
+	end
+	if set and container._mineFilter ~= mineFilter then
+		if pcall(set, container, MINE_KEY, mineFilter) then
+			container._mineFilter = mineFilter
 		end
 	end
 	if not container._dispelSlot then

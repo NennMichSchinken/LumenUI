@@ -1131,7 +1131,7 @@ local function buildBase(d, stack)
 	absBand.close()
 
 	-- ===== Band 2: Dispel (6) + Aggro (6) — master toggles in the header ====
-	local dispelDeps, dispelAlphaW = {}, nil
+	local dispelDeps, dispelAlphaW, selfColW = {}, nil, nil
 	local refreshDispel, refreshAggro -- forward: the header toggles call them
 	local b2 = stack:band({
 		{ span = 6, title = T("Dispel display"), subtitle = T("Dispel highlight settings"),
@@ -1149,6 +1149,9 @@ local function buildBase(d, stack)
 		local on = rf().dispelEnabled and true or false
 		for _, w in ipairs(dispelDeps) do w:SetWidgetEnabled(on) end
 		if dispelAlphaW then dispelAlphaW:SetWidgetEnabled(on and rf().dispelMode == "overlay") end
+		-- Greyed under "Mine": there every highlight already means "yours", so a
+		-- second colour would repaint all of them and distinguish nothing.
+		if selfColW then selfColW:SetWidgetEnabled(on and rf().dispelScope ~= "mine") end
 	end
 
 	-- Scope segment first, then the two field controls (2 unit cells fill the
@@ -1156,9 +1159,17 @@ local function buildBase(d, stack)
 	local dr0, dc0 = W.FieldRow(d, d, 1, { height = M.sliderBoxH })
 	local dispScope = W.Segment(dc0[1], { label = T("Highlight dispels for"), options = DISPEL_SCOPE_OPTS,
 		tooltip = T("Mine: only debuffs your own class can remove — nothing lights up that you cannot act on. Group: everything somebody in the group can dispel. All: every debuff carrying a dispel type, even when nobody present has the right dispel."),
-		get = tget("dispelScope"), set = tset("dispelScope") })
+		get = tget("dispelScope"),
+		set = function(v) tset("dispelScope")(v); refreshDispel() end })
 	dispScope:SetAllPoints(dc0[1])
 	sDispel:place(dr0, M.sliderBoxH, R.row)
+	-- Own colour for "this one is mine to remove": with a wider scope the frame
+	-- lights up for debuffs somebody ELSE has to take off, and those two cases have
+	-- to be told apart at a glance without giving up either.
+	selfColW = colorRow(d, T("Colour for what you can dispel"),
+		function() local c = rf().dispelSelfColor or {}; return c.r or 1, c.g or 0.15, c.b or 0.7 end,
+		function(r, g, b) rf().dispelSelfColor = { r = r, g = g, b = b }; relayout() end)
+	sDispel:place(selfColW, M.optionRowH, R.row)
 	local dr1, dc1 = W.FieldRow(d, d, 2, { height = M.sliderBoxH })
 	local dispMode = W.Segment(dc1[1], { label = T("Display"), options = DISPEL_SEG_OPTS,
 		get = tget("dispelMode"), set = function(v) tset("dispelMode")(v); refreshDispel() end })
