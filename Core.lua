@@ -99,7 +99,13 @@ local defaults = {
 			-- wider scopes: with scope "mine" every highlight would be this colour, so
 			-- the picker is greyed out there. Deliberately a colour no dispel type
 			-- owns -- it must not read as "some kind of magic", it must read as "you".
-			dispelSelfOn    = true,
+			-- OFF by default (Florian 2026-08-09), unlike almost everything else in this
+			-- round: Blizzard has no equivalent, so a pink debuff on a fresh install
+			-- reads as "something is wrong" rather than "this one is yours". It is a
+			-- genuinely useful habit -- but one the player opts into, not one we spring
+			-- on them. Same rule as the combat layer generally: stay near the original,
+			-- make the departures opt-in.
+			dispelSelfOn    = false,
 			dispelSelfColor = { r = 1.00, g = 0.15, b = 0.70 },
 			dispelColors  = {
 				Magic   = { r = 0.20, g = 0.60, b = 1.00 },
