@@ -889,17 +889,21 @@ end
 -- button are denied while auras are secret). Switching the mode enables the other
 -- container instead of rebuilding this one.
 --
--- An aura SLOT, not a group. A slot renders the single highest-priority aura of
--- its filter and is exactly what this display is -- Blizzard names "dispel type
--- indicators" as the intended use in Blizzard_AuraContainerShared. The difference
--- is not cosmetic: a group's frame provider batches ten frames the moment the
--- group is declared, so a display that can never show more than one was paying
--- for ten, each carrying five frame-sized textures. A slot's provider has a batch
--- size of one. Same filter handling, same candidate filters, same live filter
--- swap, and the engine shows/hides the frame on exactly the same signal.
--- The price is that slots take no part in flow layout, so the frame anchors
--- itself in the initializer -- which is better anyway: SetAllPoints follows a
--- frame resize on its own, where the old fixed size did not.
+-- ⛔ TRIED AND REVERTED (2026-08-09): an aura SLOT instead of a group.
+-- On paper it is the right shape -- a slot renders the single highest-priority
+-- aura of its filter, Blizzard names "dispel type indicators" as the intended use
+-- in Blizzard_AuraContainerShared, and its frame provider batches ONE frame where
+-- a group batches ten. That is nine frames per unit, each carrying five
+-- frame-sized textures, for a display that can never show more than one thing.
+-- It did not work: with the slot the overlay stopped appearing entirely, on the
+-- same character and the SAME debuff (a Magic one) that had coloured the frame the
+-- day before with the group version (Florian, 2026-08-09). Nothing in the sources
+-- explains it -- the slot manager assigns, shows and hides on the same signals,
+-- and `showWhenHarmful` defaults to true so the dispel texture should apply. So
+-- the cause is unknown, and an unexplained failure in the dispel display is not
+-- worth nine frames.
+-- Reopen ONLY with a way to see what the engine does with the slot; a second
+-- attempt without that would just repeat this one.
 local DISPEL_MODES = { overlay = "dispel_ov", recolor = "dispel_bar" }
 
 local function rfCfg()
@@ -917,17 +921,10 @@ end
 -- The engine colours whatever textures we register. CustomAsset with NO asset map
 -- leaves our own texture in place and takes only the colour (every other style
 -- would stamp a Blizzard border atlas over it).
-local function initDispelFrame(mode, host, health, asSlot)
+local function initDispelFrame(mode, w, h, health)
 	return function(button)
 		RFC.stat.buttons = RFC.stat.buttons + 1
-		if asSlot then
-			-- Anchored, not sized: a slot frame is ours to place, and matching the unit
-			-- button by anchor means a frame-size change carries over on its own.
-			button:SetAllPoints(host)
-		else
-			-- Group fallback: flow layout owns the anchor, so only the size is ours.
-			button:SetSize(host:GetWidth() or 1, host:GetHeight() or 1)
-		end
+		button:SetSize(w, h)
 		local rf = ns.Raidframes
 		local edgeCurve, fillCurve = rf:DispelCurves()
 		local function reg(tex, curve)
@@ -988,6 +985,8 @@ local function syncDispel(button, parent)
 
 	local key = DISPEL_MODES[mode]
 	local container = button._rfc[key]
+	local w, h = button:GetWidth() or 0, button:GetHeight() or 0
+	if w < 2 or h < 2 then return end
 	-- Scope comes from Raidframes so the native and the scan path cannot drift.
 	local filter = (ns.Raidframes and ns.Raidframes.DispelFilter
 		and ns.Raidframes:DispelFilter()) or "HARMFUL|RAID"
@@ -1002,25 +1001,12 @@ local function syncDispel(button, parent)
 			container:SetSize(1, 1)
 			container:ClearAllPoints()
 			container:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+			layoutCall(container, "anchor", "TOPLEFT")
 			RFC.stat.groups = RFC.stat.groups + 1
-			-- A slot, not a group: one frame instead of a batch of ten. The frame
-			-- anchors itself to the button in the initializer, so the container needs
-			-- no flow layout at all -- slots do not take part in it.
-			-- Resolved by presence like every other engine call in this file: a build
-			-- without slots falls back to the one-frame group, because losing the
-			-- dispel display outright is far worse than paying for nine idle frames.
-			if container.AddAuraSlot then
-				container._dispelSlot = true
-				container:AddAuraSlot(key, filter, {
-					initializeFrame = initDispelFrame(mode, button, health, true),
-				})
-			else
-				layoutCall(container, "anchor", "TOPLEFT")
-				container:AddAuraGroup(key, filter, {
-					maxFrameCount   = 1,
-					initializeFrame = initDispelFrame(mode, button, health, false),
-				})
-			end
+			container:AddAuraGroup(key, filter, {
+				maxFrameCount   = 1,
+				initializeFrame = initDispelFrame(mode, w, h, health),
+			})
 			container._dispelFilter = filter
 			local u = button.unit or button:GetAttribute("unit")
 			if u then container:SetUnit(u) end
@@ -1030,22 +1016,14 @@ local function syncDispel(button, parent)
 		if not built then button._rfc[key] = nil end
 		return
 	end
-	-- Live change: the dispel scope swaps through the slot (or the fallback group),
-	-- no container churn. The SIZE needs nothing on the slot path -- that frame is
-	-- anchored to the button and follows it.
-	if container._dispelFilter ~= filter then
-		local set = container._dispelSlot and container.SetAuraSlotFilterString
-			or container.SetAuraGroupFilterString
-		if set and pcall(set, container, key, filter) then
+	-- Live changes: the dispel scope swaps through the group (no container churn),
+	-- the size follows the frame.
+	if container._dispelFilter ~= filter and container.SetAuraGroupFilterString then
+		if pcall(container.SetAuraGroupFilterString, container, key, filter) then
 			container._dispelFilter = filter
 		end
 	end
-	if not container._dispelSlot then
-		local w, h = button:GetWidth() or 0, button:GetHeight() or 0
-		if w >= 2 and h >= 2 then
-			pcall(container.SetAuraGroupLayout, container, key, { elementWidth = w, elementHeight = h })
-		end
-	end
+	pcall(container.SetAuraGroupLayout, container, key, { elementWidth = w, elementHeight = h })
 	container:Show(); container:SetEnabled(true)
 	pcall(container.UpdateAllAuras, container)
 end
