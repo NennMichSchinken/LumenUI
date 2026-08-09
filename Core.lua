@@ -97,6 +97,7 @@ local defaults = {
 			-- wider scopes: with scope "mine" every highlight would be this colour, so
 			-- the picker is greyed out there. Deliberately a colour no dispel type
 			-- owns -- it must not read as "some kind of magic", it must read as "you".
+			dispelSelfOn    = true,
 			dispelSelfColor = { r = 1.00, g = 0.15, b = 0.70 },
 			dispelColors  = {
 				Magic   = { r = 0.20, g = 0.60, b = 1.00 },

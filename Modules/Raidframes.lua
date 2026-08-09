@@ -959,7 +959,8 @@ end
 -- under scope "mine" the whole highlight already means "yours", so a second colour
 -- would paint everything and say nothing.
 function Raidframes:SelfDispelActive()
-	return db().dispelScope ~= "mine"
+	local d = db()
+	return d.dispelSelfOn ~= false and d.dispelScope ~= "mine"
 end
 
 -- The complementary pair the wider scopes render with: what the player can remove
@@ -2565,7 +2566,7 @@ function Raidframes:RenderFake(f)
 		-- Same split as the live paths: what the player can take off gets the signal
 		-- colour, the rest keeps its type colour -- so the preview shows the two
 		-- cases side by side, which is the whole point of picking that colour here.
-		if d.dispelScope ~= "mine" and playerDispels[fk.dispel] then
+		if self:SelfDispelActive() and playerDispels[fk.dispel] then
 			dr, dg, dbb = selfCol(d)
 		else
 			dr, dg, dbb = dispelCol(d, fk.dispel)

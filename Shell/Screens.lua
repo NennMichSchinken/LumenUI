@@ -1131,7 +1131,7 @@ local function buildBase(d, stack)
 	absBand.close()
 
 	-- ===== Band 2: Dispel (6) + Aggro (6) — master toggles in the header ====
-	local dispelDeps, dispelAlphaW, selfColW = {}, nil, nil
+	local dispelDeps, dispelAlphaW, selfColW, selfSwW = {}, nil, nil, nil
 	local refreshDispel, refreshAggro -- forward: the header toggles call them
 	local b2 = stack:band({
 		{ span = 6, title = T("Dispel display"), subtitle = T("Dispel highlight settings"),
@@ -1151,7 +1151,9 @@ local function buildBase(d, stack)
 		if dispelAlphaW then dispelAlphaW:SetWidgetEnabled(on and rf().dispelMode == "overlay") end
 		-- Greyed under "Mine": there every highlight already means "yours", so a
 		-- second colour would repaint all of them and distinguish nothing.
-		if selfColW then selfColW:SetWidgetEnabled(on and rf().dispelScope ~= "mine") end
+		local split = on and rf().dispelScope ~= "mine"
+		if selfSwW then selfSwW:SetWidgetEnabled(split) end
+		if selfColW then selfColW:SetWidgetEnabled(split and rf().dispelSelfOn ~= false) end
 	end
 
 	-- Scope segment first, then the two field controls (2 unit cells fill the
@@ -1166,6 +1168,14 @@ local function buildBase(d, stack)
 	-- Own colour for "this one is mine to remove": with a wider scope the frame
 	-- lights up for debuffs somebody ELSE has to take off, and those two cases have
 	-- to be told apart at a glance without giving up either.
+	-- Own switch rather than "set the scope back to Mine": that would change WHAT is
+	-- highlighted, not just how, and someone can want the group view without the
+	-- second colour.
+	selfSwW = switchRow(d, T("Mark what you can dispel"), {
+		tooltip = T("Highlights debuffs your own class can remove in a colour of their own, so a wider scope still tells your work from somebody else's."),
+		get = tget("dispelSelfOn"),
+		set = function(v) tset("dispelSelfOn")(v); refreshDispel() end })
+	sDispel:place(selfSwW, M.optionRowH, 0)
 	selfColW = colorRow(d, T("Colour for what you can dispel"),
 		function() local c = rf().dispelSelfColor or {}; return c.r or 1, c.g or 0.15, c.b or 0.7 end,
 		function(r, g, b) rf().dispelSelfColor = { r = r, g = g, b = b }; relayout() end)
