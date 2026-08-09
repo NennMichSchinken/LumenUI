@@ -1572,7 +1572,7 @@ local function Decorate(f)
 	setFrameFont(f.stext, 12, "OUTLINE")
 	f.stext:SetPoint("CENTER")
 	f.stext:Hide()
-	f.statusIcon = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
+	f.statusIcon = f.overlay:CreateTexture(nil, "OVERLAY", nil, 6)
 	f.statusIcon:SetSnapToPixelGrid(false); f.statusIcon:SetTexelSnappingBias(0)
 	f.statusIcon:SetSize(20, 20)
 	f.statusIcon:SetPoint("CENTER")
@@ -1580,7 +1580,17 @@ local function Decorate(f)
 
 	-- Dispel overlay (mode "overlay"): colored border + light fill in the dispel color.
 	-- White textures -> color via SetVertexColor (tolerates secret values).
-	f.dFill = f.overlay:CreateTexture(nil, "ARTWORK", nil, 1)
+	--
+	-- Sub-layer ladder on f.overlay, bottom up (Florian 2026-08-09) — the fills used
+	-- to sit on ARTWORK, i.e. UNDER the texts, and the state got lost behind a name:
+	--   0 name / health / status text  ·  1 dispel fill  ·  2 dispel border
+	--   3 aggro fill  ·  4 aggro border  ·  5 "Aggro"  ·  6 status icon  ·  7 hover edge
+	-- A state that covers the name is the point: while it is on, IT is the news, and
+	-- the name comes back the moment it clears. The aura band stays above all of this
+	-- for free -- holders are child FRAMES of f.overlay, never its textures.
+	-- (This is a deliberate departure from the benchmark, which keeps its text on top
+	-- and offers the inverse only as an option.)
+	f.dFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 1)
 	f.dFill:SetColorTexture(1, 1, 1, 1); f.dFill:SetAllPoints(f.health); f.dFill:Hide()
 	local function dedge()
 		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
@@ -1593,7 +1603,7 @@ local function Decorate(f)
 	f.dR:SetPoint("TOPRIGHT"); f.dR:SetPoint("BOTTOMRIGHT"); f.dR:SetWidth(2)
 
 	local function edge()
-		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
+		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 7)
 		-- brand gold (palette C1 #E9BB69 — kept literal: combat-path file, no Shell coupling)
 		t:SetColorTexture(0.91, 0.73, 0.41, 1); t:Hide(); return t
 	end
@@ -1604,10 +1614,10 @@ local function Decorate(f)
 	-- render above any of its textures). Unified rule: dispel/aggro are area/border
 	-- signals that stay visible around the icons; the icons + duration text carry
 	-- detail info and must never be occluded. White textures -> color via SetVertexColor.
-	f.aggroFill = f.overlay:CreateTexture(nil, "ARTWORK", nil, 2)
+	f.aggroFill = f.overlay:CreateTexture(nil, "OVERLAY", nil, 3)
 	f.aggroFill:SetColorTexture(1, 1, 1, 1); f.aggroFill:SetAllPoints(f.health); f.aggroFill:Hide()
 	local function aedge()
-		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 2)
+		local t = f.overlay:CreateTexture(nil, "OVERLAY", nil, 4)
 		t:SetColorTexture(1, 1, 1, 1); t:Hide(); return t
 	end
 	f.aT, f.aB, f.aL, f.aR = aedge(), aedge(), aedge(), aedge()
@@ -1615,7 +1625,10 @@ local function Decorate(f)
 	f.aB:SetPoint("BOTTOMLEFT"); f.aB:SetPoint("BOTTOMRIGHT"); f.aB:SetHeight(2)
 	f.aL:SetPoint("TOPLEFT"); f.aL:SetPoint("BOTTOMLEFT"); f.aL:SetWidth(2)
 	f.aR:SetPoint("TOPRIGHT"); f.aR:SetPoint("BOTTOMRIGHT"); f.aR:SetWidth(2)
+	-- CreateFontString has no sub-level argument (unlike CreateTexture) -- it has to
+	-- be set afterwards, or the word would tie with the name at sub-level 0.
 	f.aggroText = f.overlay:CreateFontString(nil, "OVERLAY")
+	f.aggroText:SetDrawLayer("OVERLAY", 5)
 	setFrameFont(f.aggroText, 12, "OUTLINE")
 	f.aggroText:SetText(ns.T("Aggro")); f.aggroText:Hide()
 
@@ -2106,7 +2119,10 @@ function Raidframes:RenderHealth(f)
 		-- format is safe (no arithmetic outside). pcall per guide recommendation.
 		local curve = CurveConstants and CurveConstants.ScaleTo100
 		local ok, p = pcall(UnitHealthPercent, u, true, curve)
-		f.htext:SetText((ok and p) and format("%d%%", p) or "")
+		-- Bare number, no "%" sign (Florian 2026-08-09): in a column of health values
+		-- the sign is the same on every frame, so it carries nothing and only eats
+		-- width that the digits need.
+		f.htext:SetText((ok and p) and format("%d", p) or "")
 	else
 		-- AbbreviateNumbers accepts a secret number and returns a non-secret string
 		-- (official 12.0 formatter); pcall only as a belt for exotic clients.
@@ -2471,7 +2487,7 @@ function Raidframes:RenderFake(f)
 
 	local t = L.healthTextType
 	if t == "Keine" then f.htext:SetText("")
-	elseif t == "Prozent" then f.htext:SetText(floor(hp * 100) .. "%")
+	elseif t == "Prozent" then f.htext:SetText(tostring(floor(hp * 100)))
 	else f.htext:SetText(AbbrevNum(floor(hp * FAKE_MAX))) end
 
 	setIndicators(f, fk.role, fk.lead, fk.assist)
