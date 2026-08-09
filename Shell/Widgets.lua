@@ -2039,17 +2039,31 @@ local function rgb2hsv(r, g, b)
 	end
 	return h, s, v
 end
+-- Which of the three ramp values lands on r/g/b, per 60-degree sector of the hue
+-- circle. 1 = the full value, 2 = rising edge, 3 = falling edge, 4 = the floor.
+-- A table instead of a branch chain: the sector IS an index, so there is nothing
+-- to decide -- and the six rows read as the colour wheel they describe.
+local HSV_SECTORS = {
+	[0] = { 1, 2, 4 },   -- red     -> yellow
+	[1] = { 3, 1, 4 },   -- yellow  -> green
+	[2] = { 4, 1, 2 },   -- green   -> cyan
+	[3] = { 4, 3, 1 },   -- cyan    -> blue
+	[4] = { 2, 4, 1 },   -- blue    -> magenta
+	[5] = { 1, 4, 3 },   -- magenta -> red
+}
+-- Reused scratch: the colour picker calls this from a drag handler, so it runs
+-- per frame while the mouse is down and must not allocate (§9).
+local hsvRamp = { 0, 0, 0, 0 }
 local function hsv2rgb(h, s, v)
-	local i = math.floor(h * 6)
-	local f = h * 6 - i
-	local p, q, t = v * (1 - s), v * (1 - f * s), v * (1 - (1 - f) * s)
-	i = i % 6
-	if i == 0 then return v, t, p
-	elseif i == 1 then return q, v, p
-	elseif i == 2 then return p, v, t
-	elseif i == 3 then return p, q, v
-	elseif i == 4 then return t, p, v
-	else return v, p, q end
+	local x = h * 6
+	local sector = math.floor(x)
+	local f = x - sector
+	hsvRamp[1] = v                        -- full
+	hsvRamp[2] = v * (1 - (1 - f) * s)    -- rising edge
+	hsvRamp[3] = v * (1 - f * s)          -- falling edge
+	hsvRamp[4] = v * (1 - s)              -- floor
+	local pick = HSV_SECTORS[sector % 6]
+	return hsvRamp[pick[1]], hsvRamp[pick[2]], hsvRamp[pick[3]]
 end
 local function toHex(r, g, b)
 	return string.format("%02X%02X%02X", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))

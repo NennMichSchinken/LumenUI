@@ -80,9 +80,6 @@ RFC.stat = { groups = 0, filterPush = 0, buttons = 0, dispelReg = 0, dispelFail 
 -- Barkskin and Ironbark are BIG_DEFENSIVE for Blizzard but sit in DEF_CLASS /
 -- DEF_DEFAULTS for us, so BIG_DEFENSIVE feeds Defensives.
 --
--- Which source feeds Defensives is a SESSION switch (RFC.useFlags,
--- `/lumennative flags off`) kept as a fallback while the group gates are open.
---
 -- hotsOwn takes neither source above: it reads Blizzard's own group-window buff
 -- list (Enum.CooldownViewerCategory.GroupBuff), which beats a flag string on the
 -- two counts that matter. It is BOUNDED and per spec -- 7 entries for a Resto
@@ -95,18 +92,14 @@ RFC.stat = { groups = 0, filterPush = 0, buttons = 0, dispelReg = 0, dispelFail 
 -- id we never had. A Hunter gets an empty list -- that is the signal to switch the
 -- category off rather than show an empty row.
 local NATIVE_CATS = {
-	{ key = "hotsOwn",    wl = "hot", groupBuffSource = true },
-	{ key = "defensives", wl = "def", flagFilters = {
+	{ key = "hotsOwn",    groupBuffSource = true },
+	{ key = "defensives", flagFilters = {
 		-- Externals first; big personal defensives second, minus the externals so
 		-- an aura that is both is drawn once.
 		"HELPFUL|EXTERNAL_DEFENSIVE",
 		"HELPFUL|BIG_DEFENSIVE|!EXTERNAL_DEFENSIVE" } },
 	{ key = "debuffs",    harmful = true },
 }
--- Session switch for the Defensives source: true = Blizzard's per-spell flags
--- (the default since the PTR round confirmed them), false = the curated whitelist,
--- kept only as a fallback for comparing the two while the group gates are open.
-RFC.useFlags = true
 local IS_NATIVE = {}
 for _, c in ipairs(NATIVE_CATS) do IS_NATIVE[c.key] = true end
 
@@ -160,18 +153,6 @@ end
 local function debuffMode()
 	local cat = catCfg("debuffs")
 	return (cat and cat["filterMode" .. ctxSfx()]) or "raid"
-end
-
--- Whitelist -> includeSpellIDs, by type. Sourced from the curated per-spec
--- whitelist (stable ids), NEVER from live aura reads (12.1 aura.spellId is secret).
-local function buildInclude(wlType)
-	local include = {}
-	local rf = ns.Raidframes
-	if not rf or not rf.WhitelistMap then return include end
-	for sid, typ in pairs(rf:WhitelistMap(currentSpecID())) do
-		if typ == wlType then include[sid] = true end
-	end
-	return include
 end
 
 -- Blizzard's group-window buff list, resolved to the set we actually draw:
@@ -770,7 +751,6 @@ end
 
 local function syncHelpful(container, c, lo)
 	local key, filters = c.key, c.flagFilters
-	local useFlags = (RFC.useFlags and filters) and true or false
 	-- The group-buff category has ONE group and no source switch: the ids come from
 	-- Blizzard's list, the filter string only narrows it to auras WE applied (without
 	-- PLAYER a second druid's Rejuvenation would show up as ours).
@@ -787,44 +767,27 @@ local function syncHelpful(container, c, lo)
 		applyGroupLayout(container, key, lo, lo.maxN)
 		return
 	end
-	-- Declare ONLY the side that is actually feeding the category. Declaring both
-	-- and flipping the frame budget looked free and is not: AddAuraGroup creates a
-	-- whole batch of aura buttons there and then -- ten, measured on the 12.1 PTR
-	-- (Florian, 2026-08-08) -- whether the group can ever show one or not, because
-	-- the frame provider batches before maxFrameCount is ever read. On top of that
+	-- One group per flag, declared once. Declaring a group is not free even when it
+	-- carries no frame budget: AddAuraGroup creates a whole batch of aura buttons
+	-- there and then -- ten, measured on the 12.1 PTR (Florian, 2026-08-08) --
+	-- because the frame provider batches before maxFrameCount is ever read, and
 	-- every declared group is another parse filter that each aura change has to be
-	-- tested against, and the idle one carried the widest filter in the file
-	-- ("HELPFUL", i.e. every buff on the unit).
-	-- Switching the source is a slash command, out of combat and rare, so paying
-	-- the declaration at that moment is the right trade. A group that was declared
-	-- by an earlier flip stays -- the engine has no way to take one back -- and is
-	-- silenced with a zero budget as before.
+	-- tested against. So nothing gets declared "just in case".
 	local declared = container._groups
 	if not declared then declared = {}; container._groups = declared end
-	if useFlags then
-		for i = 1, #filters do
-			local gk = flagGroupKey(key, i)
-			if not declared[gk] then
-				declared[gk] = true
-				RFC.stat.groups = RFC.stat.groups + 1
-				container:AddAuraGroup(gk, filters[i], {
-					maxFrameCount    = lo.maxN,
-					candidateFilters = defExcludeArg(),
-					initializeFrame  = makeInitializer(lo.size, key),
-				})
-				container._defCF = defExcludeArg()   -- born with this set
-			end
+	for i = 1, #filters do
+		local gk = flagGroupKey(key, i)
+		if not declared[gk] then
+			declared[gk] = true
+			RFC.stat.groups = RFC.stat.groups + 1
+			container:AddAuraGroup(gk, filters[i], {
+				maxFrameCount    = lo.maxN,
+				candidateFilters = defExcludeArg(),
+				initializeFrame  = makeInitializer(lo.size, key),
+			})
+			container._defCF = defExcludeArg()   -- born with this set
 		end
-	elseif not declared[key] then
-		declared[key] = true
-		RFC.stat.groups = RFC.stat.groups + 1
-		container:AddAuraGroup(key, "HELPFUL", {
-			maxFrameCount    = lo.maxN,
-			candidateFilters = { includeSpellIDs = buildInclude(c.wl) },
-			initializeFrame  = makeInitializer(lo.size, key),
-		})
 	end
-	if declared[key] then applyGroupLayout(container, key, lo, useFlags and 0 or lo.maxN) end
 	-- Re-push the hide list when it CHANGED, not on every reconcile: a profile
 	-- switch or an import replaces the stored set behind a container that is
 	-- already built, and its groups would otherwise keep the old exclusions --
@@ -836,17 +799,12 @@ local function syncHelpful(container, c, lo)
 	-- CACHED table that is never mutated -- a change replaces it (see the note there).
 	local excl = defExcludeArg()
 	local push = (container._defCF ~= excl)
-	for i = 1, (filters and #filters or 0) do
+	for i = 1, #filters do
 		local gk = flagGroupKey(key, i)
-		-- Only groups that were actually declared: every setter looks its group up
-		-- and asserts when it is missing, and since the flip above they no longer
-		-- all exist.
-		if declared[gk] then
-			applyGroupLayout(container, gk, lo, useFlags and lo.maxN or 0)
-			if push then
-				RFC.stat.filterPush = RFC.stat.filterPush + 1
-				pcall(container.SetAuraGroupCandidateFilters, container, gk, excl)
-			end
+		applyGroupLayout(container, gk, lo, lo.maxN)
+		if push then
+			RFC.stat.filterPush = RFC.stat.filterPush + 1
+			pcall(container.SetAuraGroupCandidateFilters, container, gk, excl)
 		end
 	end
 	if push then container._defCF = excl end
@@ -1411,126 +1369,6 @@ autoFrame:SetScript("OnEvent", function(_, event, unit)
 	C_Timer.After(1, function() if not RFC.enabled then RFC.Enable(true) end end)
 end)
 
--- Flip the SOURCE of the three helpful categories (see NATIVE_CATS). Relayout
--- carries it to every live button; buttons that have no container yet pick the
--- current setting up when they build one. Out of combat only, like everything
--- that touches a container.
-function RFC.SetFlagSource(on)
-	on = on and true or false
-	if RFC.useFlags == on then return end
-	if InCombatLockdown() then say("|cffff5555Out of combat only.|r"); return end
-	RFC.useFlags = on
-	RFC.Relayout()
-	say("HoTs + Defensives now from |cff44ff44" ..
-		(on and "Blizzard's per-spell flags" or "the curated whitelist") ..
-		"|r.")
-	-- On 12.0.x the native path is inert, so the switch is set but renders nothing.
-	-- Saying so beats letting an unchanged frame read as "the flags show nothing".
-	if not RFC.enabled then
-		say("|cffffcc00Note:|r the native path is off, so nothing changes on screen yet.")
-	end
-end
-
--- Blizzard's own verdict on a spell, used to keep the categories disjoint.
-local function cdmFlags(spellID)
-	local big, ext = false, false
-	if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
-		local ok, v = pcall(C_UnitAuras.AuraIsBigDefensive, spellID); big = (ok and v) and true or false
-	end
-	if C_Spell and C_Spell.IsExternalDefensive then
-		local ok, v = pcall(C_Spell.IsExternalDefensive, spellID); ext = (ok and v) and true or false
-	end
-	return big, ext
-end
-
-local function spellName(id)
-	return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or ("#" .. tostring(id))
-end
-
-
--- ---------------------------------------------------------------------------
---  Blizzard's own per-spec "Buffs (Group window)" list (CooldownViewerCategory
---  .GroupBuff). It is the closest thing to a maintained HoT list that exists:
---  bounded (16 entries max), scoped to the spec, aimed at group frames by name
---  -- and the user curates it in Blizzard's own settings, which we can read back.
---    * GetGroupBuffItems  = the candidates, with a HideByDefault flag
---    * GetHiddenGroupBuffs = what the user has moved to "not shown"
---    * shown = candidates minus hidden (that is exactly how Blizzard's own UI
---      builds its two sections)
---  An empty list means Blizzard offers nothing for this spec -- a Hunter has no
---  such tab at all -- which is the signal a "use Blizzard's list" switch gates on.
--- ---------------------------------------------------------------------------
-function RFC.DumpGroupBuffs()
-	local CV, UA = C_CooldownViewer, C_UnitAuras
-	if not (CV and CV.GetGroupBuffItems) then
-		say("|cffff5555GetGroupBuffItems does not exist on this build.|r"); return
-	end
-	local ok, items = pcall(CV.GetGroupBuffItems)
-	if not (ok and items) then say("|cffff5555GetGroupBuffItems failed.|r"); return end
-
-	local hidden = {}
-	if UA and UA.GetHiddenGroupBuffs then
-		local ok2, ids = pcall(UA.GetHiddenGroupBuffs)
-		if ok2 and ids then for _, id in ipairs(ids) do hidden[id] = true end end
-	end
-
-	local spec = currentSpecID()
-	local wl = (ns.Raidframes and ns.Raidframes.WhitelistMap and ns.Raidframes:WhitelistMap(spec)) or {}
-	say(("Group Buffs (Blizzard's group-window list), spec %d -- %d entries:"):format(spec, #items))
-	if #items == 0 then
-		say("  |cffffcc00none -- Blizzard offers no group-buff list for this spec.|r")
-	end
-
-	local blizz, blizzByName = {}, {}
-	local defFlag = (Enum and Enum.GroupBuffItemFlags and Enum.GroupBuffItemFlags.HideByDefault) or 1
-	for _, it in ipairs(items) do
-		blizz[it.spellID] = true
-		if it.name then
-			local l = blizzByName[it.name]; if not l then l = {}; blizzByName[it.name] = l end
-			l[#l + 1] = it.spellID
-		end
-		local state = hidden[it.spellID] and "|cff888888not shown|r" or "|cff44ff44shown|r"
-		local note = ""
-		if bit.band(it.flags or 0, defFlag) ~= 0 then note = note .. "  |cff888888hidden by default|r" end
-		if not it.isKnown then note = note .. "  |cff888888unlearned|r" end
-		-- Which of these Blizzard itself considers a defensive decides the category
-		-- boundary: those belong to Defensives (already flag-sourced), not to HoTs.
-		local big, ext = cdmFlags(it.spellID)
-		if big or ext then note = note .. "  |cffffcc00is a defensive|r" end
-		-- After the migration our whitelist holds only the EXTRAS, so an entry that is
-		-- not in it is the normal case: Blizzard's list owns it. Saying "we do NOT
-		-- track this" here read like a fault when it is the working state.
-		if wl[it.spellID] then note = note .. "  |cffffcc00also in your extras|r" end
-		say(("  %s (%d)  %s%s"):format(it.name or "?", it.spellID, state, note))
-	end
-
-	-- Our own additions: spells Blizzard's list does not carry at all, which is the
-	-- only reason the extras layer exists.
-	local extras = 0
-	for sid, typ in pairs(wl) do
-		if typ == "hot" and not blizz[sid] then
-			extras = extras + 1
-			say("  |cff44ff44your extra:|r " .. spellName(sid) .. " (" .. sid .. ")")
-		end
-	end
-	if extras == 0 and #items > 0 then
-		say("Everything shown comes from Blizzard's list; you have no extras on this spec.")
-	end
-
-	-- Same name, different id = we are almost certainly tracking the CAST spell while
-	-- the aura that lands on the frame has its own id. That is the bug the Resto Druid
-	-- major slot had, and a name audit cannot see it -- both ids resolve to a name.
-	for sid in pairs(wl) do
-		local ids = blizzByName[spellName(sid)]
-		if ids and not blizz[sid] then
-			for _, other in ipairs(ids) do
-				say(("  |cffffcc00same name, other id:|r we track %s (%d), Blizzard's list has %d")
-					:format(spellName(sid), sid, other))
-			end
-		end
-	end
-end
-
 -- What the ENGINE is actually working from, as opposed to what the settings page
 -- shows. Built because two reports in a row ("switching does nothing", "no dispel
 -- overlay") could each have had three causes, and guessing between them cost a
@@ -1601,20 +1439,11 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	if arg == "on" then RFC.Enable()
 	elseif arg == "off" then RFC.Disable()
 	elseif arg == "refresh" then RFC.Disable(); RFC.Enable()
-	elseif arg == "flagson" then RFC.SetFlagSource(true)
-	elseif arg == "flagsoff" then RFC.SetFlagSource(false)
-	elseif arg == "buffs" then RFC.DumpGroupBuffs()
 	elseif arg == "state" then RFC.DumpState()
-	elseif arg == "curated" then
-		if ns.Raidframes and ns.Raidframes.DumpCurated then ns.Raidframes:DumpCurated(say) end
 	else
 		say("Auras through the native 12.1 container. Enabled automatically on 12.1.")
 		say("  /lumennative on | off | refresh   (currently: "
 			.. (RFC.enabled and "ON" or "OFF") .. (IS_121 and ", 12.1 detected" or ", not 12.1") .. ")")
-		say("  /lumennative flags on | off   -- source of the Defensives: "
-			.. (RFC.useFlags and "|cff44ff44Blizzard flags|r" or "|cffffcc00curated whitelist|r"))
 		say("  /lumennative state   -- what the ENGINE reads right now (context, dispel, containers)")
-		say("  /lumennative buffs   -- Blizzard's own group-window buff list for this spec")
-		say("  /lumennative curated   -- our own default lists, resolved to spell names")
 	end
 end

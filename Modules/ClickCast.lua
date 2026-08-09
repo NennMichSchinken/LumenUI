@@ -93,14 +93,16 @@ local DISPEL_SPELLS = {
 	{ id = 89808,  class = "WARLOCK" },  -- Singe Magic (Imp)
 	{ id = 475,    class = "MAGE" },     -- Remove Curse
 }
+-- Class token -> its resurrection spells. The ids are facts; the ORDER is ours
+-- and is alphabetical on purpose, so an id can be looked up by eye.
 local REZ_BY_CLASS = {
-	PRIEST      = { single = 2006,   group = 212036 },
-	PALADIN     = { single = 7328,   group = 212056, battle = 391054 },
-	SHAMAN      = { single = 2008,   group = 212048 },
-	DRUID       = { single = 50769,  group = 212040, battle = 20484 },
-	MONK        = { single = 115178, group = 212051 },
-	EVOKER      = { single = 361227, group = 361178 },
 	DEATHKNIGHT = { battle = 61999 },
+	DRUID       = { single = 50769,  group = 212040, battle = 20484 },
+	EVOKER      = { single = 361227, group = 361178 },
+	MONK        = { single = 115178, group = 212051 },
+	PALADIN     = { single = 7328,   group = 212056, battle = 391054 },
+	PRIEST      = { single = 2006,   group = 212036 },
+	SHAMAN      = { single = 2008,   group = 212048 },
 	WARLOCK     = { battle = 20707 },
 }
 -- External defensives cast on an ally (by class; spec-aware where the spell differs).
@@ -201,17 +203,27 @@ end
 -- ---------------------------------------------------------------------------
 --  Key parsing
 -- ---------------------------------------------------------------------------
+-- The four prefixes WoW puts in front of a binding. None of them is a prefix of
+-- another, so the order they are tried in does not matter.
+local KEY_MODIFIERS = { "SHIFT-", "CTRL-", "META-", "ALT-" }
 -- "ALT-CTRL-SHIFT-KEY" -> modifiers (run of "MOD-"), key, isMouse, buttonNum.
 local function parseKey(keyStr)
 	if not keyStr or keyStr == "" then return { modifiers = "", key = "", isMouse = false } end
-	local rest, mods = keyStr, ""
-	while true do
-		local pre = (rest:sub(1, 4) == "ALT-" and "ALT-")
-			or (rest:sub(1, 5) == "CTRL-" and "CTRL-")
-			or (rest:sub(1, 6) == "SHIFT-" and "SHIFT-")
-			or (rest:sub(1, 5) == "META-" and "META-")
-		if pre and #rest > #pre then mods = mods .. pre; rest = rest:sub(#pre + 1) else break end
-	end
+	-- Peel one "MOD-" off the front at a time. Anchored gsub-free matching against
+	-- the four prefixes WoW actually emits; the loop ends as soon as none of them
+	-- fits, or when peeling would leave nothing behind (a lone "ALT-" is a key
+	-- string we must not swallow).
+	local tail, mods = keyStr, ""
+	repeat
+		local taken
+		for _, mod in ipairs(KEY_MODIFIERS) do
+			if tail:sub(1, #mod) == mod and #tail > #mod then
+				mods, tail, taken = mods .. mod, tail:sub(#mod + 1), true
+				break
+			end
+		end
+	until not taken
+	local rest = tail
 	local btn = rest:match("^BUTTON(%d+)$")
 	return { modifiers = mods, key = rest, isMouse = btn ~= nil, buttonNum = btn and tonumber(btn) }
 end

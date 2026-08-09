@@ -628,38 +628,6 @@ function Raidframes:MigrateGroupBuffs(specID, blizzardIDs)
 	end
 end
 
--- Audit of the remaining curated lists: HoT defaults now only seed the EXTRAS on
--- top of Blizzard's group-window list, and the defensive lists are the fallback
--- source. Reports ids the client does not know at all -- a name that resolves is
--- still no proof that it is the RIGHT spell, which is exactly how a Guardian spell
--- sat in the Resto Druid slot unnoticed. Use /lumennative buffs for that class of
--- error: it compares against Blizzard's list and catches cast-id-instead-of-aura-id.
-function Raidframes:DumpCurated(emit)
-	local function nameOf(id)
-		return (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or nil
-	end
-	local function specLabel(id)
-		local ok, _, nm = pcall(GetSpecializationInfoByID, id)
-		return ("%s %s (%d)"):format(SPEC_CLASS[id] or "?", (ok and nm) or "spec", id)
-	end
-
-	local broken = 0
-	local function scan(label, list)
-		for _, id in ipairs(list) do
-			if not nameOf(id) then
-				broken = broken + 1
-				emit(("  |cffff5555unknown id|r %d  in %s"):format(id, label))
-			end
-		end
-	end
-	for sid, list in pairs(HOT_DEFAULTS) do scan("HoTs, " .. specLabel(sid), list) end
-	for sid, list in pairs(DEF_DEFAULTS) do scan("Defensives, " .. specLabel(sid), list) end
-	for cls, list in pairs(DEF_CLASS) do scan("Defensives, " .. cls .. " class-wide", list) end
-	if broken == 0 then
-		emit("|cff44ff44Every HoT/defensive id resolves to a spell.|r (No proof it is the right one.)")
-	end
-end
-
 -- ---------------------------------------------------------------------------
 --  Whitelist editor (B4, options tab "Tracking") — public API.
 --  Works on db().auras.whitelist[specID] (spellID -> "hot"|"def"); seeds the
@@ -2766,18 +2734,33 @@ end
 -- to a hidden SecureActionButton proxy that safely runs "togglemenu" itself.
 -- "useparent-unit" -> the proxy gets the unit from the parent button (header-managed).
 local function getMenuProxy(button)
-	local proxy = button._lumenMenuProxy
-	if not proxy then
-		proxy = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
-		proxy:SetSize(1, 1); proxy:SetAlpha(0); proxy:EnableMouse(false)
-		proxy:RegisterForClicks("AnyUp")
-		proxy:SetAttribute("type", "togglemenu")
-		for i = 1, 5 do proxy:SetAttribute("type" .. i, "togglemenu") end  -- resolved per button suffix
-		proxy:SetAttribute("useparent-unit", true)
-		proxy:SetAttribute("useOnKeyDown", false)
-		button._lumenMenuProxy = proxy
+	local menu = button._lumenMenuProxy
+	if menu then return menu end
+
+	-- Invisible, mouse-less child: it never receives a click itself, it only holds
+	-- the attributes that the OWNER's right click is forwarded to.
+	menu = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
+	menu:SetSize(1, 1)
+	menu:SetAlpha(0)
+	menu:EnableMouse(false)
+	menu:RegisterForClicks("AnyUp")
+
+	-- The unit is never set here: `useparent-unit` makes the proxy read whatever
+	-- the raid button currently holds, which is what keeps it correct across the
+	-- header's re-assignments without us touching a secure attribute in combat.
+	menu:SetAttribute("useparent-unit", true)
+	menu:SetAttribute("useOnKeyDown", false)
+
+	-- "togglemenu" goes on the bare key AND on every mouse-button suffix: a click
+	-- on button N resolves `typeN` first and only falls back to `type` when that
+	-- key is absent, so the bare one alone is not something to rely on.
+	menu:SetAttribute("type", "togglemenu")
+	for i = 1, 5 do
+		menu:SetAttribute("type" .. i, "togglemenu")
 	end
-	return proxy
+
+	button._lumenMenuProxy = menu
+	return menu
 end
 ns.RF_GetMenuProxy = getMenuProxy
 

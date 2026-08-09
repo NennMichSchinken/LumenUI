@@ -1689,7 +1689,6 @@ end
 -- `/lumennative flags off` -- the whitelist really IS the source, so the wording
 -- follows the engine instead of assuming the new world.
 local function nativeAuras() return (ns.RFC and ns.RFC.enabled) and true or false end
-local function nativeDefFlags() return nativeAuras() and (ns.RFC.useFlags and true or false) end
 
 -- ---------------------------------------------------------------------------
 --  Search field + floating result list — shared by both spell lists. The field
@@ -1867,15 +1866,15 @@ local function auraSpellsPane(d, host, cat, page)
 
 	-- Defensives with Blizzard's flags behind them: the list is a hide menu, not a
 	-- source. Different enough to be its own pane rather than a branch in this one.
-	if cat.key == "defensives" and nativeDefFlags() then
+	if cat.key == "defensives" and nativeAuras() then
 		auraHidePane(d, host)
 		return
 	end
 
-	-- Plain whitelist editor. On the native path this is only ever reached for the
-	-- defensives FALLBACK (`/lumennative flags off`) and on 12.0.7 -- where our
-	-- list really is the source. Group buffs never land here: Blizzard's list is
-	-- the category and has no second half to edit.
+	-- Plain whitelist editor. The native path no longer reaches this at all -- both
+	-- of its categories have their own source (Blizzard's group-buff list, Blizzard's
+	-- flags). What is left here is 12.0.7, where the whitelist really IS the source.
+	-- Goes with the old scan path at the cutover.
 	local entries = (RFm and RFm:WhitelistEntries(spec, cat.typ)) or {}
 	local box, st, content = innerBlock(d, T("Tracked spells"))
 
