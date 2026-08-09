@@ -1489,6 +1489,50 @@ function RFC.DumpGroupBuffs()
 	end
 end
 
+-- What the ENGINE is actually working from, as opposed to what the settings page
+-- shows. Built because two reports in a row ("switching does nothing", "no dispel
+-- overlay") could each have had three causes, and guessing between them cost a
+-- good optimization that got reverted for nothing.
+-- The first line is the one that usually settles it: every per-context aura key
+-- carries a Raid/Party suffix, and SOLO the active context is Party -- so editing
+-- the Raid tab changes a value nobody reads.
+function RFC.DumpState()
+	local sfx = ctxSfx()
+	say(("native=%s · 12.1=%s · active context = |cff44ff44%s|r (%s)")
+		:format(RFC.enabled and "ON" or "off", IS_121 and "yes" or "no", sfx,
+			sfx == "Party" and "solo/party -- the Raid tab is NOT what renders now" or "in a raid"))
+	local rf = ns.Raidframes
+	say(("dispel: enabled=%s · mode=%s · filter=%s"):format(
+		tostring(dispelOn()), dispelMode(),
+		(rf and rf.DispelFilter and rf:DispelFilter()) or "?"))
+	say(("debuffs: mode=%s · groups=%s"):format(debuffMode(),
+		table.concat((function()
+			local t = {}
+			for _, g in ipairs(DEBUFF_PRESETS[debuffMode()] or {}) do t[#t + 1] = g.key end
+			return t
+		end)(), ", ")))
+	for _, c in ipairs(NATIVE_CATS) do
+		say(("  %s: enabled=%s · maxIcons=%s"):format(c.key, tostring(catEnabled(c.key)),
+			tostring((catCfg(c.key) or {})["maxIcons" .. sfx])))
+	end
+	local n = 0
+	forEachLiveButton(function(btn)
+		n = n + 1
+		if n > 2 then return end          -- two frames is enough to see the shape
+		local names = {}
+		if btn._rfc then
+			for k, cont in pairs(btn._rfc) do
+				names[#names + 1] = ("%s(%s%s)"):format(k,
+					cont:IsShown() and "shown" or "hidden",
+					cont.IsEnabled and cont:IsEnabled() and ",on" or ",off")
+			end
+		end
+		say(("  frame %d [%s]: %s"):format(n, tostring(btn.unit),
+			#names > 0 and table.concat(names, " ") or "|cffff5555no containers|r"))
+	end)
+	if n == 0 then say("  |cffff5555no live buttons at all.|r") end
+end
+
 function RFC.Disable()
 	if InCombatLockdown() then say("|cffff5555Out of combat only.|r"); return end
 	RFC.enabled = false
@@ -1517,6 +1561,7 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "flagson" then RFC.SetFlagSource(true)
 	elseif arg == "flagsoff" then RFC.SetFlagSource(false)
 	elseif arg == "buffs" then RFC.DumpGroupBuffs()
+	elseif arg == "state" then RFC.DumpState()
 	elseif arg == "curated" then
 		if ns.Raidframes and ns.Raidframes.DumpCurated then ns.Raidframes:DumpCurated(say) end
 	else
@@ -1525,6 +1570,7 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 			.. (RFC.enabled and "ON" or "OFF") .. (IS_121 and ", 12.1 detected" or ", not 12.1") .. ")")
 		say("  /lumennative flags on | off   -- source of the Defensives: "
 			.. (RFC.useFlags and "|cff44ff44Blizzard flags|r" or "|cffffcc00curated whitelist|r"))
+		say("  /lumennative state   -- what the ENGINE reads right now (context, dispel, containers)")
 		say("  /lumennative buffs   -- Blizzard's own group-window buff list for this spec")
 		say("  /lumennative curated   -- our own default lists, resolved to spell names")
 	end
