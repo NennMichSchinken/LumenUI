@@ -889,21 +889,24 @@ end
 -- button are denied while auras are secret). Switching the mode enables the other
 -- container instead of rebuilding this one.
 --
--- ⛔ TRIED AND REVERTED (2026-08-09): an aura SLOT instead of a group.
--- On paper it is the right shape -- a slot renders the single highest-priority
--- aura of its filter, Blizzard names "dispel type indicators" as the intended use
--- in Blizzard_AuraContainerShared, and its frame provider batches ONE frame where
--- a group batches ten. That is nine frames per unit, each carrying five
--- frame-sized textures, for a display that can never show more than one thing.
--- It did not work: with the slot the overlay stopped appearing entirely, on the
--- same character and the SAME debuff (a Magic one) that had coloured the frame the
--- day before with the group version (Florian, 2026-08-09). Nothing in the sources
--- explains it -- the slot manager assigns, shows and hides on the same signals,
--- and `showWhenHarmful` defaults to true so the dispel texture should apply. So
--- the cause is unknown, and an unexplained failure in the dispel display is not
--- worth nine frames.
--- Reopen ONLY with a way to see what the engine does with the slot; a second
--- attempt without that would just repeat this one.
+-- An aura SLOT, not a group. A slot renders the single highest-priority aura of
+-- its filter -- Blizzard names "dispel type indicators" as the intended use in
+-- Blizzard_AuraContainerShared -- and its frame provider batches ONE frame where a
+-- group batches ten. Nine frames per unit, each carrying five frame-sized
+-- textures, for a display that can never show more than one thing.
+-- Slots take no part in flow layout, so the frame anchors itself in the
+-- initializer, which also makes it follow a frame resize instead of holding a size
+-- captured once.
+--
+-- 📌 This was built, reverted and rebuilt on 2026-08-09, and the detour is worth
+-- recording. The overlay was not appearing, and it was blamed on the slot because
+-- "the same debuff worked yesterday" -- except that sentence had been about the
+-- DEBUFF being a reliable test case, not about the overlay. There was no A/B at
+-- all. The real cause was the dispel texture STYLE erasing its own texture (see
+-- initDispelFrame), and it had been broken from the start: what was signed off in
+-- August was the preview, which renders through the fake path with no container
+-- behind it. Lesson: a revert needs the same standard of evidence as a change, and
+-- "confirmed working" has to name WHICH path was confirmed.
 local DISPEL_MODES = { overlay = "dispel_ov", recolor = "dispel_bar" }
 
 local function rfCfg()
@@ -936,10 +939,17 @@ end
 -- exactly what hid this for two days.
 local DISPEL_STYLE = Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
 	and Enum.CustomAuraButtonDispelTypeTextureStyle.PreserveAsset
-local function initDispelFrame(mode, w, h, health)
+local function initDispelFrame(mode, host, health, asSlot)
 	return function(button)
 		RFC.stat.buttons = RFC.stat.buttons + 1
-		button:SetSize(w, h)
+		if asSlot then
+			-- Anchored, not sized: a slot frame is ours to place, and matching the unit
+			-- button by anchor means a frame-size change carries over on its own.
+			button:SetAllPoints(host)
+		else
+			-- Group fallback: flow layout owns the anchor, so only the size is ours.
+			button:SetSize(host:GetWidth() or 1, host:GetHeight() or 1)
+		end
 		local rf = ns.Raidframes
 		local edgeCurve, fillCurve = rf:DispelCurves()
 		local function reg(tex, curve)
@@ -1018,12 +1028,22 @@ local function syncDispel(button, parent)
 			container:SetSize(1, 1)
 			container:ClearAllPoints()
 			container:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-			layoutCall(container, "anchor", "TOPLEFT")
 			RFC.stat.groups = RFC.stat.groups + 1
-			container:AddAuraGroup(key, filter, {
-				maxFrameCount   = 1,
-				initializeFrame = initDispelFrame(mode, w, h, health),
-			})
+			-- Resolved by presence like every other engine call in this file: a build
+			-- without slots falls back to the one-frame group, because losing the
+			-- dispel display outright is far worse than paying for nine idle frames.
+			if container.AddAuraSlot then
+				container._dispelSlot = true
+				container:AddAuraSlot(key, filter, {
+					initializeFrame = initDispelFrame(mode, button, health, true),
+				})
+			else
+				layoutCall(container, "anchor", "TOPLEFT")
+				container:AddAuraGroup(key, filter, {
+					maxFrameCount   = 1,
+					initializeFrame = initDispelFrame(mode, button, health, false),
+				})
+			end
 			container._dispelFilter = filter
 			local u = button.unit or button:GetAttribute("unit")
 			if u then container:SetUnit(u) end
@@ -1033,14 +1053,19 @@ local function syncDispel(button, parent)
 		if not built then button._rfc[key] = nil end
 		return
 	end
-	-- Live changes: the dispel scope swaps through the group (no container churn),
-	-- the size follows the frame.
-	if container._dispelFilter ~= filter and container.SetAuraGroupFilterString then
-		if pcall(container.SetAuraGroupFilterString, container, key, filter) then
+	-- Live changes: the dispel scope swaps through the slot (or the fallback group),
+	-- no container churn. Only the fallback needs its size pushed -- the slot frame
+	-- is anchored to the button and follows it.
+	if container._dispelFilter ~= filter then
+		local set = container._dispelSlot and container.SetAuraSlotFilterString
+			or container.SetAuraGroupFilterString
+		if set and pcall(set, container, key, filter) then
 			container._dispelFilter = filter
 		end
 	end
-	pcall(container.SetAuraGroupLayout, container, key, { elementWidth = w, elementHeight = h })
+	if not container._dispelSlot then
+		pcall(container.SetAuraGroupLayout, container, key, { elementWidth = w, elementHeight = h })
+	end
 	container:Show(); container:SetEnabled(true)
 	pcall(container.UpdateAllAuras, container)
 end
