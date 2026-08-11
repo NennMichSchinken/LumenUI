@@ -840,10 +840,27 @@ end
 -- context ("raid"/"party") so the band renders the tab's context regardless of
 -- the group state. Always cleared right after the (synchronous) fill.
 local previewCtx
+-- IN COMBAT the answer is the context the buttons were last CONFIGURED for
+-- (_cfgCtx), not the one that is true right now. A party converted to a raid
+-- mid-fight flips IsInRaid() instantly, but the geometry cannot follow: every
+-- SetSize on a secure button is forbidden in combat, so LayoutLive defers the
+-- whole layout to PLAYER_REGEN_ENABLED. The render pass meanwhile owns things
+-- that are NOT protected — the health-bar height above all — and happily
+-- applied the new context to them, so the two halves drifted apart: raid-height
+-- health bars inside party-sized buttons, background sticking out below
+-- (Florian 2026-08-11). Freezing the context here keeps every render-side read
+-- on the applied layout and lets the switch land in ONE step at combat end.
+-- _cfgCtx nil = nothing configured yet (fresh header) -> read the world.
+local function isRaidContext()
+	if previewCtx then return previewCtx == "raid" end
+	local applied = Raidframes._cfgCtx
+	if applied and InCombatLockdown() then return applied == "raid" end
+	return IsInRaid()
+end
 local function layoutCtx()
 	local d = db()
 	if previewCtx then return d[previewCtx] end
-	return IsInRaid() and d.raid or d.party
+	return isRaidContext() and d.raid or d.party
 end
 
 -- Single funnel for every class-color lookup (fillRGB + _powerRGB both land here).
@@ -1221,11 +1238,8 @@ local function applyStripeTex(stripe, spec, patternTex, L, vCoord, vRepeat)
 end
 
 -- ----- Aura indicators (phase 1): icon pool, anchor, auto-fit size -----
--- Which context determines the explicit icon size (auto-fit off)? raid vs party.
-local function isRaidContext()
-	if previewCtx then return previewCtx == "raid" end
-	return IsInRaid()
-end
+-- Which context determines the explicit icon size (auto-fit off)? raid vs party
+-- -- isRaidContext lives up with layoutCtx (both answer the same question).
 -- Suffix of the context-dependent aura fields (anchorRaid/anchorParty, growRaid/…, sizeRaid/…,
 -- offX/offY, outside) — position/size are separate per context (like frame size/text).
 local function auraCtxSuffix() return isRaidContext() and "Raid" or "Party" end
@@ -2287,11 +2301,13 @@ end
 -- return nil from now on -- nothing reads them back.
 function Raidframes._applyFrameAlpha(f)
 	local a = (f._statusMode == "offline") and 0.55 or 1
-	local r = f._range
-	-- `== nil` does not READ a secret value -> safe even while r is secret.
-	if r == nil or not f.SetAlphaFromBoolean then f:SetAlpha(a); return end
+	-- "Do we have a verdict at all" is answered by a PLAIN boolean of our own
+	-- (`_rangeOn`), never by testing `_range` itself -- not even against nil. A
+	-- comparison is already the forbidden step on a secret value, so a `r == nil`
+	-- guard IS the error rather than the protection against it.
+	if not f._rangeOn or not f.SetAlphaFromBoolean then f:SetAlpha(a); return end
 	-- Offline AND out of range: the stronger dim wins, the two don't stack.
-	f:SetAlphaFromBoolean(r, a, a < 0.5 and a or 0.5)
+	f:SetAlphaFromBoolean(f._range, a, a < 0.5 and a or 0.5)
 end
 
 -- UNIT_IN_RANGE_UPDATE: dim a member you cannot reach. The event carries the new
@@ -2316,14 +2332,30 @@ function Raidframes:RenderRange(f)
 	-- RANGE -> with "show frame when solo" on, your own frame sat there dimmed.
 	-- IsInGroup is a plain boolean, safe to branch on.
 	if f._isMe or not IsInGroup() then
-		if f._range ~= nil then f._range = nil; self._applyFrameAlpha(f) end
+		-- ALWAYS write the alpha back, never only when the remembered verdict
+		-- changes. Dropping the verdict is bookkeeping -- it does not touch the
+		-- frame, and the frame may still be wearing a dim from when this unit was
+		-- somebody else. That is exactly what a party converted to a raid MID-FIGHT
+		-- produced: the header hands your own token to a different button while
+		-- UnitIsUnit is secret, so the button dims itself as a stranger out of
+		-- range; at combat end the full pass clears `_range` first and "me" finally
+		-- resolves -- and the old guard then saw a clean nil and returned without
+		-- ever undoing the dim. Your own frame stayed washed out until /reload
+		-- (Florian 2026-08-11). Restoring an alpha that is already 1 is one cheap
+		-- C call on a path that runs per range event, not per tick.
+		f._range, f._rangeOn = nil, nil
+		self._applyFrameAlpha(f)
 		return
 	end
 	local ok, inRange, checked = pcall(UnitInRange, u)
 	-- A secret `checkedRange` cannot be tested -> assume the check happened; the
 	-- engine still decides the actual alpha from the (secret) in-range flag.
 	if ok and issecretvalue and issecretvalue(checked) then checked = true end
-	if ok and checked then f._range = inRange else f._range = nil end
+	if ok and checked then
+		f._range, f._rangeOn = inRange, true
+	else
+		f._range, f._rangeOn = nil, nil
+	end
 	self._applyFrameAlpha(f)
 end
 
@@ -2527,7 +2559,7 @@ function Raidframes:RenderLive(f)
 	-- A full pass is the one place where class, role and every setting behind the
 	-- render memos can have changed -> drop them all and let this pass re-derive.
 	f._cGrey, f._cDOn, f._pwShown, f._pwType = nil, nil, nil, nil
-	f._range = nil       -- the previous occupant's range state must not leak into this unit
+	f._range, f._rangeOn = nil, nil   -- the previous occupant's range state must not leak into this unit
 
 	local L = layoutCtx()
 	if L.showName then f.name:SetText(UnitName(u) or "") end
@@ -2556,7 +2588,7 @@ function Raidframes:RenderFake(f)
 	-- Test mode has no real units -> neutral status layer (no dead/offline and no
 	-- range check either; a preview has no distances).
 	f.stext:Hide(); f.statusIcon:Hide(); f.htext:Show()
-	f._statusMode, f._greyed, f._range = nil, nil, nil
+	f._statusMode, f._greyed, f._range, f._rangeOn = nil, nil, nil, nil
 	f:SetAlpha(1)
 
 	local L = layoutCtx()
