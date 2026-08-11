@@ -450,6 +450,38 @@ ns.Defaults = defaults
 -- everyone for ten minutes and would own a slot without saying anything.
 ns.LustLockoutIDs = { 57723, 57724, 80354, 95809, 160455, 264689, 390435, 428628 }
 
+-- Debuffs that carry no information for the group and would otherwise sit in the
+-- debuff row for a long time. Kept SEPARATE from the lockout list above: the QoL
+-- tracker reads that one to decide whether lust is on cooldown, and an entry here
+-- must never be mistaken for a lockout.
+--
+-- Forbearance is Blizzard's own example of this class of aura. Their comment in
+-- AuraUtil.ShouldDisplayDebuff -- "would only be 'mine' in the case of something
+-- like forbearance" -- describes a spell flagged to show on its BEARER only, and
+-- their Mainline/AuraUtil.lua names the id outright while making it a priority
+-- debuff for PALADINS specifically. So the rule is Blizzard's, not ours:
+-- a paladin needs to see it (no second Lay on Hands), everyone else does not.
+-- ns.NoiseDebuffIDs() applies that condition; see the caller for how it reaches
+-- the aura engine.
+local FORBEARANCE = 25771
+
+-- Returns the ids to drop from the debuff row for the CURRENT character, or nil.
+-- Cached per class because the answer only changes with the character.
+local noiseIDs
+function ns.NoiseDebuffIDs()
+	if noiseIDs ~= nil then return noiseIDs end
+	local _, classFile = UnitClass("player")   -- the player is never identity-restricted
+	local out = {}
+	for i = 1, #ns.LustLockoutIDs do out[#out + 1] = ns.LustLockoutIDs[i] end
+	if classFile ~= "PALADIN" then out[#out + 1] = FORBEARANCE end
+	-- Only remember the answer once the client actually knows the class. Asked too
+	-- early it returns nothing, and caching that would hide a paladin's own
+	-- Forbearance from them for the rest of the session -- the one case Blizzard
+	-- wants shown.
+	if classFile then noiseIDs = out end
+	return out
+end
+
 -- Name/HP text fields that live per context (raid/party) (for the migration).
 local TEXT_FIELDS = {
 	"showName", "nameSize", "namePoint", "nameX", "nameY", "nameColor", "nameOutline",

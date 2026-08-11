@@ -690,12 +690,22 @@ end
 -- NeverSecret. Blizzard names this exact case in Blizzard_AuraContainerUtil -- "this
 -- allows noisy debuffs (Exhaustion/Sated) to be filtered out on friendly units".
 -- Confirmed present under the native path before the fix (Florian, PTR 2026-08-08).
+-- Forbearance joined the set on 2026-08-11 (Florian saw it on a party paladin's
+-- frame in a dungeon). It rides on the same mechanism, but whether it CLEARS the
+-- gate is not ours to decide: only NeverSecret spells may be filtered by id on a
+-- friendly unit. The lockouts are named by Blizzard as the sanctioned case;
+-- Forbearance is not, so it may or may not pass. `/lumennative noise` prints the
+-- verdict per id rather than leaving us to guess -- if it reports anything other
+-- than NeverSecret, that id silently does nothing here and needs another route.
+local noiseArg
 local function debuffCandidateFilters()
-	local ids = ns.LustLockoutIDs
+	if noiseArg then return noiseArg end
+	local ids = ns.NoiseDebuffIDs and ns.NoiseDebuffIDs() or ns.LustLockoutIDs
 	if not ids then return nil end
 	local excl = {}
 	for i = 1, #ids do excl[ids[i]] = true end
-	return { excludeSpellIDs = excl }
+	noiseArg = { excludeSpellIDs = excl }
+	return noiseArg
 end
 
 -- Declare a debuff group on demand (engine groups are add-only) + configure it.
@@ -1505,6 +1515,43 @@ function RFC.Disable()
 	end
 end
 
+-- Diagnostic: does the noise list actually reach the engine, and what does
+-- Blizzard itself think of each id? Both questions have exact answers we can ask
+-- for, and neither can be settled by looking at a frame -- an id that fails the
+-- NeverSecret gate is dropped silently, which looks exactly like "the filter did
+-- not work". Development aid; can be removed once the list has been confirmed.
+function RFC.DumpNoise()
+	local ids = ns.NoiseDebuffIDs and ns.NoiseDebuffIDs()
+	if not ids then say("no noise list"); return end
+	local _, classFile = UnitClass("player")
+	say("Debuffs excluded from the debuff row (class: " .. tostring(classFile) .. "):")
+	for i = 1, #ids do
+		local id = ids[i]
+		local name = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or "?"
+		-- Only NeverSecret spells may be filtered by id on a friendly unit.
+		local gate = "unknown"
+		if C_Secrets and C_Secrets.GetSpellAuraSecrecy and Enum and Enum.SecrecyLevel then
+			local ok, lvl = pcall(C_Secrets.GetSpellAuraSecrecy, id)
+			if ok then
+				gate = (lvl == Enum.SecrecyLevel.NeverSecret)
+					and "|cff44ff44passes|r" or "|cffff4444BLOCKED|r"
+			end
+		end
+		-- Blizzard's own per-spell visibility record, the thing their raid frames
+		-- consult. hasCustom = there is a special rule for this spell at all.
+		local vis = ""
+		if C_Spell and C_Spell.GetVisibilityInfo and Enum and Enum.SpellAuraVisibilityType then
+			local ok, hasCustom, mine, spec = pcall(C_Spell.GetVisibilityInfo, id,
+				Enum.SpellAuraVisibilityType.RaidInCombat)
+			if ok and hasCustom ~= nil then
+				vis = ("  blizzard: custom=%s mineOnly=%s mySpec=%s")
+					:format(tostring(hasCustom), tostring(mine), tostring(spec))
+			end
+		end
+		say(("  %d  %s  -- id filter %s%s"):format(id, name, gate, vis))
+	end
+end
+
 SLASH_LUMENNATIVE1 = "/lumennative"
 SlashCmdList["LUMENNATIVE"] = function(arg)
 	arg = (arg or ""):lower():gsub("%s", "")
@@ -1512,10 +1559,12 @@ SlashCmdList["LUMENNATIVE"] = function(arg)
 	elseif arg == "off" then RFC.Disable()
 	elseif arg == "refresh" then RFC.Disable(); RFC.Enable()
 	elseif arg == "state" then RFC.DumpState()
+	elseif arg == "noise" then RFC.DumpNoise()
 	else
 		say("Auras through the native 12.1 container. Enabled automatically on 12.1.")
 		say("  /lumennative on | off | refresh   (currently: "
 			.. (RFC.enabled and "ON" or "OFF") .. (IS_121 and ", 12.1 detected" or ", not 12.1") .. ")")
 		say("  /lumennative state   -- what the ENGINE reads right now (context, dispel, containers)")
+		say("  /lumennative noise   -- which debuffs are excluded, and whether the filter is allowed to")
 	end
 end
